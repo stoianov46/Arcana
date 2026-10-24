@@ -28,7 +28,7 @@ import java.nio.file.Path
 import kotlinx.coroutines.launch
 
 private enum class Group(val title: String) {
-    Ollama("Ollama"), Vault("Vault"), Appearance("Appearance"), Console("Console"), Prompts("Prompts"), Accessibility("Accessibility"), Tabs("Tabs"),
+    Ollama("Ollama"), Vault("Vault"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Accessibility("Accessibility"), Tabs("Tabs"),
 }
 
 /** How Enter edits a setting that is not simply stepped with ←/→. */
@@ -139,6 +139,11 @@ private val settings: List<Setting> = listOf(
     toggle(Group.Console, "Ask before leaving chat", "When a chat has not been saved to your vault, show a question first: save it, or press Esc again to leave.", { it.confirmLeaveChat }, { c, v -> c.copy(confirmLeaveChat = v) }),
     stepper(Group.Console, "Chats kept", "How many saved chats to keep; the least recently used are deleted. ←/→ step by 5.", 5..200, 5, { it.chatsKept }, { c, n -> c.copy(chatsKept = n) }),
     choice(Group.Console, "Copy as", "What select mode (s) puts on the clipboard. Markdown: as written. Plain text: markers removed.", listOf("markdown" to "Markdown", "plain" to "Plain text"), { it.copyAs }, { c, v -> c.copy(copyAs = v) }),
+
+    toggle(Group.Tools, "Tools in Chat", "Lets the model search, read and write your notes, and read and write files in the folders below. Every change asks you first. Needs a model with tool support (Gemma 4 has it). Also /tools in Chat.", { it.toolsEnabled }, { c, v -> c.copy(toolsEnabled = v) }),
+    text(Group.Tools, "Extra folders", "Folders besides your vault that tools may use, separated by ;  For example ~/Documents/notes;~/Projects/app. Nothing outside the vault and these is ever touched.", { it.toolFolders }, { c, v -> c.copy(toolFolders = v.trim().trim(';')) }, allowEmpty = true),
+    toggle(Group.Tools, "Read without asking", "On: searching and reading run at once. Off: every tool call waits for your y / n. Changes always ask.", { it.toolAutoRead }, { c, v -> c.copy(toolAutoRead = v) }),
+    stepper(Group.Tools, "Steps per question", "How many rounds of tool use one question may take before the model has to answer.", 1..20, 1, { it.toolSteps }, { c, n -> c.copy(toolSteps = n) }),
 
     text(Group.Prompts, "System prompt", "Tells the model who it is. Sent with every request.", { it.systemPrompt }, { c, v -> c.copy(systemPrompt = v) }),
     text(Group.Prompts, "Summary prompt", "The instruction used by Summarize.", { it.summaryPrompt }, { c, v -> c.copy(summaryPrompt = v) }),

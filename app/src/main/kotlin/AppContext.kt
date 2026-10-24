@@ -43,6 +43,9 @@ class AppContext(
 
     /** Whether the chosen model can look at pictures: null while unknown (Ollama did not say, or is not reachable). */
     var vision by mutableStateOf<Boolean?>(null)
+
+    /** Whether the model can call tools (null = unknown). */
+    var tools by mutableStateOf<Boolean?>(null)
         private set
     val client = OllamaClient { config }
 
@@ -97,11 +100,9 @@ class AppContext(
         } catch (e: Exception) {
             Connection.Offline(e.message ?: e.toString())
         }
-        vision = if (connection is Connection.Online) {
-            runCatching { client.capabilities(config.model) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { "vision" in it }
-        } else {
-            null
-        }
+        val capabilities = if (connection is Connection.Online) runCatching { client.capabilities(config.model) }.getOrNull()?.takeIf { it.isNotEmpty() } else null
+        vision = capabilities?.let { "vision" in it }
+        tools = capabilities?.let { "tools" in it }
     }
 
     /** The daily-note settings of the open vault: Obsidian's own when it has them, else the ones from Settings. */

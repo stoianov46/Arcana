@@ -427,4 +427,60 @@ class CoreTest {
         val fake = dir.resolve("fake.pdf").also { Files.writeString(it, "not a pdf") }
         assertFailsWith<IllegalArgumentException> { TextFiles.load(fake) }
     }
+
+    private fun call(name: String, vararg args: Pair<String, String>) =
+        ToolCall(ToolFunction(name, kotlinx.serialization.json.JsonObject(args.associate { it.first to kotlinx.serialization.json.JsonPrimitive(it.second) })))
+
+    @Test
+    fun toolsStayInsideTheAllowedFolders() {
+        val root = Files.createTempDirectory("arcana-tools")
+        val vaultDir = Files.createDirectories(root.resolve("vault"))
+        val other = Files.createDirectories(root.resolve("other"))
+        Files.writeString(vaultDir.resolve("Idea.md"), "# Idea\nbody")
+        Files.writeString(other.resolve("secret.txt"), "nope")
+        val box = ToolBox(Vault(vaultDir), emptyList(), root.resolve("backups"))
+        assertEquals("# Idea\nbody", box.execute(call("read_note", "path" to "Idea")))
+        assertTrue(box.execute(call("read_file", "path" to other.resolve("secret.txt").toString())).startsWith("Error:"))
+        assertTrue(box.execute(call("read_file", "path" to "../other/secret.txt")).startsWith("Error:"))
+        Files.createSymbolicLink(vaultDir.resolve("link.txt"), other.resolve("secret.txt"))
+        assertTrue(box.execute(call("read_file", "path" to "link.txt")).startsWith("Error:"))
+        // an extra folder opens exactly that folder
+        val wide = ToolBox(Vault(vaultDir), listOf(other), root.resolve("backups"))
+        assertEquals("nope", wide.execute(call("read_file", "path" to other.resolve("secret.txt").toString())))
+        assertTrue(box.execute(call("nothing")).startsWith("Error: there is no tool"))
+    }
+
+    @Test
+    fun writeToolsBackUpAndProtect() {
+        val root = Files.createTempDirectory("arcana-write")
+        val vaultDir = Files.createDirectories(root.resolve("vault"))
+        val box = ToolBox(Vault(vaultDir), emptyList(), root.resolve("backups"), outputFolder = "Arcana")
+        assertTrue(box.execute(call("create_note", "title" to "Plan", "content" to "first")).startsWith("Created Arcana/Plan.md"))
+        assertTrue(box.execute(call("append_to_note", "path" to "Arcana/Plan", "content" to "second")).startsWith("Added"))
+        assertTrue(Files.readString(vaultDir.resolve("Arcana/Plan.md")).let { "first" in it && "second" in it })
+        box.execute(call("write_file", "path" to "data.txt", "content" to "v1"))
+        assertTrue(box.execute(call("write_file", "path" to "data.txt", "content" to "v2")).contains("backed up"))
+        assertEquals(listOf("v1"), Files.list(root.resolve("backups")).use { it.toList() }.map { Files.readString(it) })
+        assertTrue(box.execute(call("edit_file", "path" to "data.txt", "old" to "v2", "new" to "v3")).startsWith("Edited"))
+        assertEquals(setOf("v1", "v2"), Files.list(root.resolve("backups")).use { it.toList() }.map { Files.readString(it) }.toSet())
+        assertEquals("v3", Files.readString(vaultDir.resolve("data.txt")))
+        assertTrue(box.execute(call("edit_file", "path" to "data.txt", "old" to "missing", "new" to "x")).startsWith("Error:"))
+        Files.createDirectories(vaultDir.resolve(".obsidian"))
+        assertTrue(box.execute(call("write_file", "path" to ".obsidian/app.json", "content" to "{}")).contains("protected"))
+        assertTrue(box.find("write_file")!!.risk == ToolRisk.Write && box.find("read_note")!!.risk == ToolRisk.Read)
+    }
+
+    @Test
+    fun toolCallsTravelInTheOllamaFormat() {
+        val box = ToolBox(null, listOf(Files.createTempDirectory("arcana-fmt")), Files.createTempDirectory("arcana-bk"))
+        val request = OllamaProtocol.chatRequest(
+            AppConfig(),
+            listOf(ChatMessage.assistantCalls("", listOf(call("read_file", "path" to "a.txt"))), ChatMessage.toolResult("read_file", "hi")),
+            tools = box.definitions(),
+        ).toString()
+        assertTrue("\"tool_calls\"" in request && "\"tool_name\":\"read_file\"" in request && "\"type\":\"function\"" in request)
+        val chunk = OllamaProtocol.parseChunk("""{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"search_notes","arguments":{"query":"llm"}}}]},"done":true}""")
+        assertEquals("search_notes", chunk.toolCalls.single().name)
+        assertEquals("llm", (chunk.toolCalls.single().arguments["query"] as kotlinx.serialization.json.JsonPrimitive).content)
+    }
 }

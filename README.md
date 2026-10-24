@@ -10,7 +10,7 @@ app/build/install/arcana/bin/arcana        # or: make install, then "arcana"
 
 The loop it is built around: **capture** a thought from anywhere (`Ctrl+N` → today's daily note) → **see** how the vault is doing
 (Brain: notes, links, tags, inbox, islands, broken links, stale notes) → **think** (Chat: attach notes with `@`, pictures, PDFs and text files with `Ctrl+O` (also in AI notes and Capture),
-or answer from the vault with `/vault`) → **shape** (AI notes: summarize, improve, translate, connect…) → **keep** (each session can be
+or answer from the vault with `/vault`; turn on `/tools` and it can also read and write your notes and files, asking before every change) → **shape** (AI notes: summarize, improve, translate, connect…) → **keep** (each session can be
 saved into the vault as a note of what you did and learned; Arcana offers it before you quit).
 
 Screens: Brain, Chat, Library (browse by inbox / no links / no tags / broken links / stale / tags, with links, backlinks and preview),
@@ -50,3 +50,8 @@ The shared build logic was extracted to a convention plugin located in `buildSrc
 
 This project uses a version catalog (see `gradle/libs.versions.toml`) to declare and version dependencies
 and both a build cache and a configuration cache (see `gradle.properties`).
+
+## Documentation
+
+Architecture, features, module maps, the tool loop, data/config and contributor rules are in [`docs/`](docs/README.md)
+(written to be read by AI coding agents as well as people).

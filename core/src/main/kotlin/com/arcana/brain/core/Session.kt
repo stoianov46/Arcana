@@ -20,6 +20,7 @@ object SessionKind {
     const val Captured = "captured"
     const val Processed = "processed"
     const val Attached = "attached"
+    const val Tool = "tool"
     const val Session = "session"
 }
 
@@ -125,6 +126,7 @@ object SessionReport {
         SessionKind.Captured -> "Captured"
         SessionKind.Processed -> "Filed"
         SessionKind.Attached -> "Attached"
+        SessionKind.Tool -> "Used tool"
         else -> "Session"
     }
 

@@ -148,6 +148,13 @@ Talk to Gemma. The message field **always has the keyboard**: letters never act 
 - `/vault` makes Chat **answer from your vault**: each question searches your notes, and the answer lists the **Sources** it used and cites them as `[[Note]]`. Switch it off the same way.
 - `Backspace` on an empty message takes the last attachment back.
 
+## Letting it act: tools
+Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use tools instead of only talking:
+- **Reading** (runs at once): `search_notes`, `list_notes`, `read_note`, `list_dir`, `read_file` (text, code, JSON, PDF).
+- **Changing** (always asks first): `create_note`, `append_to_note`, `write_file`, `edit_file`. A panel shows exactly what would change; `y` allows, `n` denies, `a` allows that tool for the rest of the session.
+- Each step shows in the chat as `⚙ tool  what` and `↳ ✓ result`. It may take up to *Steps per question* rounds before it must answer.
+- **Safety:** tools only touch your vault and the folders you add in *Settings → Tools → Extra folders*; `..` and symlinks cannot escape them, and `.git` and `.obsidian` are never written. A file that is replaced or edited is backed up first (in `~/.config/arcana/backups`). Text in a note or file is only data: the model is never obliged to follow instructions found in it, and every change still needs your `y`.
+
 ## Sending things to the vault
 - `Ctrl+S` saves the chat as a new note (whole chat or just the last answer).
 - Palette or `/append`: add the last answer to an existing note. `/replace`: replace a note with it (the old text is kept in `.trash`).

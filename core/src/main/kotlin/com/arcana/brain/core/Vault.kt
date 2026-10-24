@@ -228,8 +228,8 @@ object Prompts {
      * also carries the excerpts found for it when the vault is being searched ([hits]; null = not searching). The model is
      * told to cite the notes it used as `[[Note title]]`.
      */
-    fun chatMessages(config: AppConfig, history: List<ChatMessage>, hits: List<SearchHit>?, noteTexts: Map<String, String>): List<ChatMessage> {
-        val system = config.systemPrompt + if (hits == null) "" else {
+    fun chatMessages(config: AppConfig, history: List<ChatMessage>, hits: List<SearchHit>?, noteTexts: Map<String, String>, tools: Boolean = false): List<ChatMessage> {
+        val system = config.systemPrompt + (if (tools) TOOLS_PROMPT else "") + if (hits == null) "" else {
             " Answer using the vault excerpts given with the latest question. Cite the notes you used as [[Note title]]. " +
                 "If the excerpts do not contain the answer, say so."
         }

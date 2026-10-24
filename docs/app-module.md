@@ -1,0 +1,92 @@
+# `app` module reference
+
+Path: `app/src/main/kotlin/` (package `com.arcana.brain.app`; sub-packages `design`, `input`, `navigation`, `screens`).
+Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `FilePickerTest`, `AppSessionTest`).
+
+## Top-level state holders (package `com.arcana.brain.app`)
+
+| File | Class / function | Responsibility |
+|---|---|---|
+| `App.kt` | `main()`, `ArcanaApp` | entry point; creates `AppContext`/`Navigator`; effects for theme, connection, brain refresh; renders the screen inside `Shell` wrapped in `key(app.revision)` |
+| `AppContext.kt` | `AppContext` | the app-wide state; see [architecture.md](architecture.md) |
+| `AppSession.kt` | `AppSession` | the run's logged session: `events`, `log(kind, text, path?)` (persisted as it happens), `markSaved(path)`, `needsSaving`/`unsavedCount` (activity since the last save), `finish()`. Writing the summary note/log into the vault is done by `screens/Session.kt` |
+| `BrainState.kt` | `BrainState` | background `VaultIndex` (`index`, `reading`, `error`, `revision`); `changed()` (after vault writes) and `refresh()` |
+| `ChatSession.kt` | `ChatSession` | the persistent chat: `messages`, `input`, `attachments`, `send()`, `gen`, tool loop (`runTools`), approvals, history, `startNew/open/deleteCurrent`, `persist()` |
+| `Generation.kt` | `Generation`, `GenState`, `rememberGeneration` | one streamed model request (and the tool-use loop); observable `state/text/thinking/error/stats` |
+| `Terminal.kt` | `TerminalSize`, `ResizeSignalGuard` | size from stty polling + SIGWINCH guard; `ARCANA_COLUMNS/ROWS` overrides |
+| `SystemOpen.kt` | `SystemOpen` | open files / `obsidian://` links with the OS opener |
+| `com/jakewharton/mosaic/compat.kt` | shadow of Mosaic's key mapping | fixes a crash on non-ASCII keys (Mosaic 0.18); copied from CosmoCLI. Do not delete |
+
+`GenState`: `Idle → Running → Done | Failed | Cancelled`. `Generation.start(json, tools, maxSteps, prepare)` runs
+`prepare()` on IO, streams, and may loop for tool rounds. `consume()` returns to Idle after the reply is stored.
+
+## `navigation/`
+
+- `Navigator.kt`
+  - `Screen` enum (Home, Chat, Library, Inbox, Compose, Session, Usage, Settings, Guide) with `title`, `icon`, `group`
+    (`ScreenGroup.Workspace`="BRAIN", `Account`="SYSTEM"); `ScreenOrder` applies the user's `tabOrder`; `SHORTCUT_KEYS="1234567890"`.
+  - `Navigator` holds: `current`, `navigate(screen, force)`, `leaveGuard` (a screen may veto leaving), overlays
+    (`helpOpen`, `paletteOpen`, `captureOpen`, `palette`, `captureField`), `toast`/`showToast`, `exitFlow`/`quitPending`,
+    cross-screen requests (`libraryFilter`, `libraryNote`, `libraryTag`, `noteRequest` to open AI notes with a note,
+    `sessionIntent`), `focusMode`, `actionBars`.
+  - Screen-side API (composable effects): `Hints(vararg)` footer hints, `FocusMode(active)` (true while typing: global letter keys
+    off), `Commands(list)` extra palette entries. `Command(label, group, keys, enabled, run)`.
+- `Shell.kt`: layout (left/right sidebar or `TopBar`), `Sidebar` with badges and an icon rail under 90 columns, the logo
+  animation (colour sweep while `app.busy > 0`), `Footer` with toast, global key map (`Ctrl+C` flow, `Ctrl+B`, number keys,
+  `?`), `LocalContentWidth/Height` providers. Dispatch order: overlay → screen `KeyHandler` → global.
+- `Overlays.kt`: `paletteCommands` (every screen jump, navigation position switches, session actions, quit, plus the screen's own
+  `Commands`), `overlayKey` (keys while an overlay is open, incl. capture + capture attachments), `PaletteOverlay`, `CaptureOverlay`.
+
+## `screens/` (one file per screen)
+
+| File | Screen | Notable internals |
+|---|---|---|
+| `Home.kt` | Brain | two-column dashboard from `BrainHealth`; Enter jumps (Library filter / Chat / note) |
+| `Chat.kt` | Chat | `ChatMode` (Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear); `messageLines` renders messages incl. tool steps; approval panel; select mode via `OutputState`; slash commands |
+| `Library.kt` | Library | `LibraryMode` (List, Reading, ConfirmDelete); filters from `LibraryFilter`; preview pane; trash; open in Obsidian |
+| `Inbox.kt` | Inbox | `InboxMode`; `Analysis` (Ready/Failed); uses `InboxProcessing`; editable plan fields |
+| `Compose.kt` | AI notes (`NoteComposerScreen`) | `Task` enum, `Mode` (Start, PickSource, Input, Follow, Title, AppendPick, ConfirmReplace, ConfirmDiscard, Result); conversation + `drafts` stack for undo; attachments |
+| `Session.kt` | Session | `SessionMode` (Overview, Summary, ConfirmNew); exit flow |
+| `Usage.kt` | Usage | period switch, per-feature/day bars, clear history |
+| `Settings.kt` | Settings | declarative `settings` list (`Setting`, `choice`, `toggle`, `stepper`, `text`, `Editor.{Text,Model,Folder,Theme}`), tabs by `Group` |
+| `Guide.kt` | Guide | list of pages (Markdown strings) |
+| `Common.kt` | helpers | `bodyRows`, `outputRows(fixed, notice, actions)`, `panelWidth`, `outputWidth`, `WithVault`, `GenerationView`, `ReplyStatus`, `relativeTime`, `saveFailure` |
+| `AttachBrowser.kt` | shared | the full-screen file browser used by Chat, AI notes and Capture |
+
+Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `KeyHandler { key -> Boolean }`, and draws.
+`KeyHandler` returns `true` when it used the key (stops propagation to the global handler).
+
+## `design/` (the design system; reuse before adding)
+
+| File | Provides |
+|---|---|
+| `Theme.kt` | `ThemeSpec`, `Themes.all/byId`, `Colors`, `Palette` (live theme accessors: `Palette.Text/Accent/Cta/Green/Red/Console*/UserBg…`), `Dimens` |
+| `Layout.kt` | `Stack` (column that clips), `VGap`, `HGap`, `LocalContentWidth/Height/UiScale`, `rememberDensity()` (`inline` mode at small sizes) |
+| `Label.kt` | `Label` (single-style, clipped to its width; use instead of `Text`), `HBar`, `TailText`, `WrappedText`, `wrap`, `wrapRows` |
+| `Panel.kt` | `Panel(title, accent)`, `Card`, `ScreenHeader(title, subtitle)`, frame glyphs |
+| `Fields.kt` | `TextInput(label, field, focused, placeholder, maxRows, attachments)`, `LabeledField`, `InlineField`, `handleAttachmentKey` |
+| `Actions.kt` | `ActionItem`, `ActionBar`, `actionBarRows`, `Badge` |
+| `Messages.kt` | `Notice`, `NoticeLine`, `Hint`, `Warning`, `Cta`, `Loading`, `Spinner` |
+| `Picker.kt` | `PickerState` + `Picker<T>`: `/` filters (any order of words), ↑↓, Enter |
+| `FilePicker.kt` | `FilePickerState`/`FilePicker`: folder browser returning files (tick with Space, Tab to attach) |
+| `DirectoryPicker.kt` | folder-only picker (vault path) |
+| `Attachments.kt` | `Attachments` state (pictures, files, notes, plain), `AttachmentLine`, `SentAttachments`, `attachBrowserHints` |
+| `ScrollView.kt` | `Line`, `OutputState` (scroll + select mode + copy), `ScrollView`, `ScrollBar`, `RunsRow` |
+| `Markdown.kt` | `parseMarkdown` (blocks), `renderMarkdown` (styled `Line`s), code highlighter, tables, `unmath`, `plainText`, `codeAndTables` |
+| `ReplyFooter.kt` | `replyFooter(stats, plain)`: `✓ Done · 6.4s · ↑ 293 ↓ 820 tokens · 101 tok/s` |
+| `Sanitize.kt` | `sanitizeForTerminal` (wide chars/emoji → one-cell lookalikes) |
+| `TabBar.kt` | `TabBar(tabs, current)` used by Settings |
+
+## `input/`
+
+| File | Provides |
+|---|---|
+| `Key.kt` | `sealed interface Key` (`Up/Down/Enter/Escape/Tab/Backspace…`, `Text(char)`, plus app keys `Save` Ctrl+S, `Browse` Ctrl+O, `Palette` Ctrl+P, `Capture` Ctrl+N, `Skip` Ctrl+X); helpers `char`, `isUp/isDown` |
+| `KeyMapping.kt` | Mosaic `KeyEvent` → `Key` (handles lock bits, Kitty-style modifiers) |
+| `KeyDispatcher.kt` | dispatch order overlay → screen → global; **paste repair** (keys <20 ms apart are text); `Meta` sequences |
+| `MetaSequence.kt` | ESC-prefixed sequences (Alt+arrows, word jumps) |
+| `KeyboardLayout.kt` | Cyrillic letters mapped back to the QWERTY key in the same position so shortcuts work on any layout |
+| `TextEdit.kt` / `TextFieldState.kt` | caret, selection, word moves/deletes, line start/end, Ctrl+U; `TextFieldState` + `KeyHandler` composable |
+| `Clipboard.kt` | OS clipboard via `pbcopy` (macOS), `wl-copy` / `xclip` / `xsel` (Linux) writers + readers |
+
+Rules: never bind `z`/`Z` as a control key (CosmoCLI rule). Printable keys must reach text fields as typed (including Cyrillic).

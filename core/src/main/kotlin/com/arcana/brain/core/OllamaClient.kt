@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -38,6 +39,10 @@ data class ChatMessage(
     val sources: List<String> = emptyList(),
     /** For a message of yours: the text files attached to it (their text is sent with the message and kept in the chat). */
     val files: List<FileAttachment> = emptyList(),
+    /** For a reply: the tools the model asked to use (its text, if any, is [content]). */
+    @SerialName("tool_calls") val toolCalls: List<ToolCall> = emptyList(),
+    /** For a `tool` message: the tool whose result [content] is. */
+    @SerialName("tool_name") val toolName: String? = null,
 ) {
     companion object {
         fun system(content: String) = ChatMessage("system", content)
@@ -45,6 +50,9 @@ data class ChatMessage(
             ChatMessage("user", content, images.map { it.base64 }, images.map { it.name }, noteNames = notes, files = files)
         fun assistant(content: String, stats: ReplyStats? = null, sources: List<String> = emptyList()) =
             ChatMessage("assistant", content, stats = stats, sources = sources)
+        fun assistantCalls(content: String, calls: List<ToolCall>, stats: ReplyStats? = null) =
+            ChatMessage("assistant", content, stats = stats, toolCalls = calls)
+        fun toolResult(name: String, content: String) = ChatMessage("tool", content, toolName = name)
     }
 
     /** The same message with its text files written into its text, which is how the model receives them. */
@@ -65,6 +73,8 @@ data class ChatChunk(
     val totalMillis: Long = 0,
     /** Time spent generating the reply itself (without loading the model or reading the prompt), in milliseconds. */
     val evalMillis: Long = 0,
+    /** Tools the model asked for (usually in the last chunk). */
+    val toolCalls: List<ToolCall> = emptyList(),
 ) {
     /** What to show under a finished reply; null when Ollama reported no token counts. */
     fun toStats(): ReplyStats? =
@@ -95,7 +105,7 @@ private data class WireChunk(
 )
 
 @Serializable
-private data class WireMessage(val content: String = "", val thinking: String = "")
+private data class WireMessage(val content: String = "", val thinking: String = "", @SerialName("tool_calls") val toolCalls: List<ToolCall> = emptyList())
 
 @Serializable
 private data class WireShow(val capabilities: List<String> = emptyList())
@@ -110,10 +120,11 @@ object OllamaProtocol {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** [jsonMode] asks Ollama to constrain the reply to valid JSON (used when the app needs to read the answer). */
-    fun chatRequest(config: AppConfig, messages: List<ChatMessage>, jsonMode: Boolean = false): JsonObject = buildJsonObject {
+    fun chatRequest(config: AppConfig, messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null): JsonObject = buildJsonObject {
         put("model", config.model)
         put("stream", true)
         if (jsonMode) put("format", "json")
+        if (tools != null && tools.isNotEmpty()) put("tools", tools)
         put("messages", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ChatMessage.serializer()), messages.map { it.withFilesInlined() }))
         put("options", buildJsonObject { put("temperature", config.temperature) })
     }
@@ -129,6 +140,7 @@ object OllamaProtocol {
             completionTokens = chunk.evalCount,
             totalMillis = chunk.totalDuration / 1_000_000,
             evalMillis = chunk.evalDuration / 1_000_000,
+            toolCalls = chunk.message?.toolCalls.orEmpty(),
         )
     }
 
@@ -142,12 +154,12 @@ object OllamaProtocol {
 class OllamaClient(private val config: () -> AppConfig) {
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()
 
-    fun chat(messages: List<ChatMessage>, jsonMode: Boolean = false): Flow<ChatChunk> = flow {
+    fun chat(messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null): Flow<ChatChunk> = flow {
         val cfg = config()
         val request = HttpRequest.newBuilder(endpoint(cfg, "/api/chat"))
             .timeout(Duration.ofSeconds(cfg.timeoutSeconds.toLong()))
             .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(OllamaProtocol.chatRequest(cfg, messages, jsonMode).toString()))
+            .POST(HttpRequest.BodyPublishers.ofString(OllamaProtocol.chatRequest(cfg, messages, jsonMode, tools).toString()))
             .build()
         val future = http.sendAsync(request, HttpResponse.BodyHandlers.ofLines())
         // Cancelling the future closes the connection, which unblocks the line reader below.

@@ -53,6 +53,14 @@ data class AppConfig(
     val lastPickerDir: String = "",
     /** How many chats are kept; the least recently used are deleted. */
     val chatsKept: Int = 50,
+    /** Chat may use tools: read and write notes and files. Off by default. */
+    val toolsEnabled: Boolean = false,
+    /** Folders besides the vault that tools may read and write, separated by ";". */
+    val toolFolders: String = "",
+    /** Tools that only read run without asking; off asks about every call. Writes are always asked. */
+    val toolAutoRead: Boolean = true,
+    /** How many rounds of tool use one question may take before the model must answer. */
+    val toolSteps: Int = 8,
     /** What select mode copies: "markdown" (as written) or "plain" (Markdown markers removed). */
     val copyAs: String = "markdown",
     val summaryPrompt: String = "Summarize the following note. Start with a one-sentence TL;DR, " +

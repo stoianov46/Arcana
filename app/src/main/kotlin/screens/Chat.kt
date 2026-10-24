@@ -8,6 +8,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.arcana.brain.app.AppContext
+import com.arcana.brain.app.ChatSession
 import com.arcana.brain.app.GenState
 import com.arcana.brain.app.design.*
 import com.arcana.brain.app.input.Key
@@ -25,9 +26,12 @@ import com.arcana.brain.core.ImageFiles
 import com.arcana.brain.core.TextFiles
 import com.arcana.brain.core.SessionKind
 import com.arcana.brain.core.StoredChat
+import com.arcana.brain.core.ToolCall
 import com.arcana.brain.core.Vault
 import com.jakewharton.mosaic.ui.Row
 import java.nio.file.Path
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 private const val MaxInputRows = 3
 private const val MaxNotes = 5
@@ -80,7 +84,7 @@ fun ChatScreen(app: AppContext) {
         onDispose { navigator.leaveGuard = null }
     }
 
-    val lastAnswer = chat.messages.lastOrNull { it.role == "assistant" }?.content
+    val lastAnswer = chat.messages.lastOrNull { it.role == "assistant" && it.toolCalls.isEmpty() }?.content
 
     fun startNew() {
         if (gen.state == GenState.Running) {
@@ -190,6 +194,16 @@ fun ChatScreen(app: AppContext) {
         toast(if (on) "Answering from your vault: each question searches your notes and the answer cites them." else "Answering from the model's own knowledge.")
     }
 
+    fun toggleTools() {
+        val on = !app.config.toolsEnabled
+        app.update(app.config.copy(toolsEnabled = on))
+        when {
+            !on -> toast("Tools are off: the model only answers.")
+            app.tools == false -> toast("${app.config.model} does not support tools, so it will only answer. Choose another model in Settings → Ollama → Model.", error = true)
+            else -> toast("Tools are on: the model may search and read your notes and files, and ask before changing anything. Folders: Settings → Tools.")
+        }
+    }
+
     fun runCommand(command: String) {
         when (command) {
             "/new" -> startNew()
@@ -199,9 +213,10 @@ fun ChatScreen(app: AppContext) {
             "/image" -> openAttach()
             "/note" -> openNotePick()
             "/vault" -> toggleVault()
+            "/tools" -> toggleTools()
             "/append" -> openTargetPick(Target.Append)
             "/replace" -> openTargetPick(Target.Replace)
-            else -> toast("Unknown command. Try /new /history /clear /save /image /note /vault /append /replace", error = true)
+            else -> toast("Unknown command. Try /new /history /clear /save /image /note /vault /tools /append /replace", error = true)
         }
     }
 
@@ -219,7 +234,7 @@ fun ChatScreen(app: AppContext) {
 
     // Select mode walks entries: each of your messages is one, and a reply is split into its Markdown blocks.
     val shownMessages = chat.messages.toList() + if (gen.text.isNotEmpty()) listOf(ChatMessage.assistant(gen.text)) else emptyList()
-    val entries = shownMessages.flatMap { m -> if (m.role == "user") listOf(m.content) else parseMarkdown(m.content).map { it.raw } }
+    val entries = shownMessages.flatMap(::entriesOf)
 
     Commands(
         listOf(
@@ -228,6 +243,7 @@ fun ChatScreen(app: AppContext) {
             Command("Save chat to the vault…", "Chat", "Ctrl+S") { openSave(null) },
             Command("Attach a note…", "Chat", "@") { openNotePick() },
             Command("Attach a file or picture…", "Chat", "Ctrl+O") { openAttach() },
+            Command(if (app.config.toolsEnabled) "Tools: turn off" else "Tools: turn on (read and write notes and files)", "Chat", "/tools") { toggleTools() },
             Command(if (app.config.chatUseVault) "Answer from my vault: turn off" else "Answer from my vault: turn on", "Chat", "/vault") { toggleVault() },
             Command("Select & copy", "Chat", "Esc then s", entries.isNotEmpty()) { browsing = true; output.beginSelect { toast(it.text) } },
             Command("Append the last answer to a note…", "Chat", "/append", lastAnswer != null) { openTargetPick(Target.Append) },
@@ -239,15 +255,16 @@ fun ChatScreen(app: AppContext) {
     val attachments = chat.attachments
     val request = saving
     val leave = leaving
+    val approval = chat.approval
     FocusMode(
-        when (mode) {
+        if (approval != null) true else when (mode) {
             ChatMode.Chat -> if (attachments.browsing) attachments.filtering else !browsing
             ChatMode.History -> historyPicker.filtering
             ChatMode.PickNote, ChatMode.PickTarget -> notePicker.filtering
             else -> true
         },
     )
-    if (attachments.browsing) Hints(*attachBrowserHints(attachments).toTypedArray()) else when (mode) {
+    if (approval != null) Hints("y  allow", "n  deny", "a  always this session") else if (attachments.browsing) Hints(*attachBrowserHints(attachments).toTypedArray()) else when (mode) {
         ChatMode.Save -> Hints("Enter  save", "Tab  whole chat / last answer", "Esc  cancel")
         ChatMode.Leave -> Hints("w  save to vault", "Esc  leave chat", "any other key  stay")
         ChatMode.ConfirmClear -> Hints("y  erase this chat", "any other key  keep")
@@ -264,6 +281,15 @@ fun ChatScreen(app: AppContext) {
     }
 
     KeyHandler { key ->
+        if (approval != null) {
+            // a pending change owns y / n / a / Esc; other keys (screen numbers, Ctrl+C) still work
+            return@KeyHandler when {
+                key.char == 'y' || key.char == 'Y' -> { chat.answer(ChatSession.ApprovalChoice.Allow); true }
+                key.char == 'a' || key.char == 'A' -> { chat.answer(ChatSession.ApprovalChoice.Always); true }
+                key.char == 'n' || key.char == 'N' || key == Key.Escape -> { chat.answer(ChatSession.ApprovalChoice.Deny); true }
+                else -> false
+            }
+        }
         if (attachments.browsing) return@KeyHandler attachments.handle(key)
         when (mode) {
             ChatMode.Save -> when {
@@ -443,7 +469,8 @@ fun ChatScreen(app: AppContext) {
                 ScreenHeader(
                     "Chat",
                     "${chat.title} · ${if (count == 0) "empty" else "$count messages"}${if (chat.unsaved && count > 0) " · not saved to vault" else ""}" +
-                        if (app.config.chatUseVault) " · ◉ answering from your vault" else "",
+                        (if (app.config.chatUseVault) " · ◉ answering from your vault" else "") +
+                        (if (app.config.toolsEnabled) " · ⚙ tools on" else ""),
                 )
                 VGap()
                 Panel("Conversation") {
@@ -456,21 +483,33 @@ fun ChatScreen(app: AppContext) {
                         var next = 0
                         shownMessages.forEach { m ->
                             addAll(messageLines(app, m, next, width))
-                            next += if (m.role == "user") 1 else parseMarkdown(m.content).size.coerceAtLeast(1)
+                            next += entriesOf(m).size
                         }
                     }
                     output.copyPlain = app.config.copyAs == "plain"
                     // Everything under the panel is counted exactly, so the conversation fills the rest of the height.
                     val inputRows = wrapRows(input.text, (LocalContentWidth.current - 4).coerceAtLeast(10)).size.coerceIn(1, MaxInputRows)
-                    val actions = chatActions(browsing, entries.isNotEmpty())
+                    val actions = if (approval != null) approvalActions else chatActions(browsing, entries.isNotEmpty())
                     val pendingRow = chat.attachments.rows
                     val statusRow = if (gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled) 1 else 0
-                    ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + pendingRow + 1 + 1 + inputRows, actions = actions), output)
+                    // what sits under the conversation: the message field, or the change waiting for an answer
+                    val below = if (approval != null) approvalLines(approval).size + 3 else 2 + inputRows + pendingRow
+                    ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below, actions = actions), output)
                     ReplyStatus(app, gen)
                 }
-                VGap()
-                TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = MaxInputRows, attachments = chat.attachments)
-                ActionBar(chatActions(browsing, entries.isNotEmpty()))
+                if (approval != null) {
+                    Panel("Allow this change?", accent = Palette.Warn) {
+                        Label("⚙ ${approval.title}", color = Palette.Warn, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
+                        approvalLines(approval).forEach { l ->
+                            Label(l, color = when { l.startsWith("+ ") -> Palette.Green; l.startsWith("- ") -> Palette.Red; else -> Palette.Text })
+                        }
+                    }
+                    ActionBar(approvalActions)
+                } else {
+                    VGap()
+                    TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = MaxInputRows, attachments = chat.attachments)
+                    ActionBar(chatActions(browsing, entries.isNotEmpty()))
+                }
             }
         }
     }
@@ -480,6 +519,7 @@ fun ChatScreen(app: AppContext) {
 private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, width: Int): List<Line> {
     val user = message.role == "user"
     val config = app.config
+    if (message.role == "tool") return toolResultLines(message, config.plainGlyphs, width)
     return buildList {
         if (user) {
             // Your messages sit on an amber band, so they stand apart from the model's answers.
@@ -496,6 +536,8 @@ private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, widt
         } else {
             add(Line(config.model, Palette.Accent, bold = true, entry = entry))
             addAll(renderMarkdown(parseMarkdown(message.content), width, entry = { entry + it }, rich = config.renderMarkdown, plainGlyphs = config.plainGlyphs))
+            // the tools it asked for, one line each
+            message.toolCalls.forEach { call -> add(Line("${if (config.plainGlyphs) "[tool]" else "⚙"} ${call.name}  ${sanitizeForTerminal(callSummary(call))}".take(width), Palette.ConsoleTool, bold = true)) }
             // the notes the answer was built from, when the vault was searched
             if (message.sources.isNotEmpty()) {
                 wrap("Sources  " + message.sources.joinToString("  ") { "▤ ${sanitizeForTerminal(it.removeSuffix(".md"))}" }, width).forEach { add(Line(it, Palette.Accent)) }
@@ -508,12 +550,46 @@ private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, widt
     }
 }
 
+/** What select mode can pick in [m]: your message as one entry, a reply as its Markdown blocks, tool results as none. */
+private fun entriesOf(m: ChatMessage): List<String> = when (m.role) {
+    "user" -> listOf(m.content)
+    "tool" -> emptyList()
+    else -> parseMarkdown(m.content).map { it.raw }
+}
+
+/** The one thing a tool call is about, for its line in the chat: its path, query or title. */
+private fun callSummary(call: ToolCall): String {
+    val args = call.arguments
+    val key = listOf("path", "query", "title", "folder").firstOrNull { args[it] != null } ?: return ""
+    return (args[key] as? JsonPrimitive)?.contentOrNull.orEmpty().replace('\n', ' ')
+}
+
+/** The result of a tool, as a quiet line (or two) under the call: ✓ with what happened, ✕ with why not. */
+private fun toolResultLines(message: ChatMessage, plain: Boolean, width: Int): List<Line> {
+    val text = message.content.trim()
+    val failed = text.startsWith("Error:") || text.startsWith("The user denied")
+    val first = sanitizeForTerminal(text.lineSequence().firstOrNull().orEmpty())
+    val size = if (text.length > 80 || '\n' in text) "  (${text.length} characters)" else ""
+    val mark = if (plain) (if (failed) "x" else "ok") else if (failed) "✕" else "✓"
+    val body = "  ${if (plain) "->" else "↳"} $mark ${first.take((width - 8 - size.length).coerceAtLeast(10))}$size"
+    return listOf(Line(body.take(width), if (failed) Palette.Red else Palette.Muted), Line(""))
+}
+
+/** The lines of a change waiting for approval, as many as fit the panel. */
+private fun approvalLines(a: ChatSession.Approval): List<String> = a.lines.take(14)
+
+private val approvalActions = listOf(
+    ActionItem("y", "Allow", accent = Palette.Cta),
+    ActionItem("n", "Deny"),
+    ActionItem("a", "Always this session"),
+)
+
 /** A request to save the chat: what to save, and where to go afterwards (when it came from the leave question). */
 private data class SaveRequest(val after: Screen?, val lastAnswerOnly: Boolean = false)
 
 /** The whole conversation as Markdown: a heading per speaker. */
 private fun transcript(messages: List<ChatMessage>, model: String): String =
-    messages.joinToString("\n\n") {
+    messages.filter { it.role != "tool" && !(it.toolCalls.isNotEmpty() && it.content.isBlank()) }.joinToString("\n\n") {
         val attached = (it.imageNames + it.files.map { f -> f.name } + it.noteNames.map { n -> "[[${n.removeSuffix(".md")}]]" }).let { a -> if (a.isEmpty()) "" else "\n\n_Attached: ${a.joinToString(", ")}_" }
         val sources = if (it.sources.isEmpty()) "" else "\n\n_Sources: ${it.sources.joinToString(", ") { s -> "[[${s.removeSuffix(".md")}]]" }}_"
         "## ${if (it.role == "user") "You" else model}\n\n${it.content.trim()}$attached$sources"

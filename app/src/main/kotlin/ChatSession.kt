@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.arcana.brain.app.input.TextFieldState
+import com.arcana.brain.core.AppConfig
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.FileAttachment
@@ -13,8 +14,15 @@ import com.arcana.brain.core.ImageAttachment
 import com.arcana.brain.core.Prompts
 import com.arcana.brain.core.ReplyStats
 import com.arcana.brain.core.SessionKind
+import com.arcana.brain.core.ConfigStore
 import com.arcana.brain.core.StoredChat
+import com.arcana.brain.core.ToolBox
+import com.arcana.brain.core.ToolCall
+import com.arcana.brain.core.ToolRisk
 import com.arcana.brain.core.Vault
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * The conversation on the Chat screen. It lives here, not in the screen, so it survives switching to another screen, and
@@ -50,7 +58,73 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             onBusy = { busy -> app.busy = (app.busy + if (busy) 1 else -1).coerceAtLeast(0) },
             onUsage = { chunk -> app.recordUsage("Chat", chunk) },
             onComplete = { text, stats -> finishReply(text, stats) },
+            onToolRound = ::runTools,
         )
+    }
+
+    /** A change the model wants to make, waiting for the user's answer. */
+    class Approval(val tool: String, val title: String, val lines: List<String>) {
+        val answer = CompletableDeferred<ApprovalChoice>()
+    }
+
+    enum class ApprovalChoice { Allow, Deny, Always }
+
+    /** The tool call waiting for an answer (shown by Chat), or null. */
+    var approval by mutableStateOf<Approval?>(null)
+        private set
+
+    /** Tools the user allowed "always" for this session. */
+    private val alwaysAllowed = mutableSetOf<String>()
+    private var toolbox: ToolBox? = null
+
+    fun answer(choice: ApprovalChoice) {
+        approval?.answer?.complete(choice)
+    }
+
+    /** The tools for the current settings, or null when tools are off. */
+    fun toolboxFor(config: AppConfig): ToolBox? {
+        if (!config.toolsEnabled) return null
+        val folders = config.toolFolders.split(';').map { it.trim() }.filter { it.isNotEmpty() }.map { AppContext.expandHome(it) }
+        return ToolBox(
+            app.openVault().getOrNull(), folders,
+            backups = ConfigStore.defaultPath().resolveSibling("backups"),
+            outputFolder = config.outputFolder,
+            model = config.model,
+        )
+    }
+
+    /** Runs the tools the model asked for (asking the user first when needed) and returns the messages to continue with. */
+    private suspend fun runTools(text: String, calls: List<ToolCall>, stats: ReplyStats?): List<ChatMessage> {
+        val box = toolbox ?: return emptyList()
+        val added = ArrayList<ChatMessage>()
+        val request = ChatMessage.assistantCalls(text, calls, stats)
+        add(request)
+        added += request
+        for (call in calls) {
+            val spec = box.find(call.name)
+            val ask = spec != null && call.name !in alwaysAllowed && (spec.risk == ToolRisk.Write || !app.config.toolAutoRead)
+            var allowed = true
+            if (ask) {
+                val pending = Approval(call.name, "${call.name}  ${spec!!.summary(call.arguments)}", spec.preview(call.arguments))
+                approval = pending
+                val choice = try {
+                    pending.answer.await()
+                } finally {
+                    approval = null
+                }
+                if (choice == ApprovalChoice.Always) alwaysAllowed += call.name
+                allowed = choice != ApprovalChoice.Deny
+            }
+            val result = if (allowed) withContext(Dispatchers.IO) { box.execute(call) } else "The user denied this action. Do not try it again; ask what they want instead."
+            if (allowed && spec != null && !result.startsWith("Error:")) {
+                app.session.log(SessionKind.Tool, "${call.name} ${spec.summary(call.arguments)}")
+                if (spec.risk == ToolRisk.Write) app.brain.changed()
+            }
+            val message = ChatMessage.toolResult(call.name, result)
+            add(message)
+            added += message
+        }
+        return added
     }
 
     init {
@@ -74,12 +148,14 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         add(ChatMessage.user(body, sent.pictures, sent.notes, sent.files))
         app.session.log(SessionKind.Asked, body)
         val history = messages.toList()
-        gen.start {
+        val box = if (app.tools == false) null else toolboxFor(app.config)
+        toolbox = box
+        gen.start(tools = box?.definitions(), maxSteps = app.config.toolSteps) {
             val config = app.config
             val vault = app.openVault().getOrNull()
             val hits = if (config.chatUseVault && vault != null) vault.search(body, config.contextNotes, config.contextCharsPerNote) else null
             pendingSources = hits?.map { it.note.path }.orEmpty()
-            Prompts.chatMessages(config, history, hits, noteTexts(vault, history.takeLast(config.chatHistory)))
+            Prompts.chatMessages(config, history, hits, noteTexts(vault, history.takeLast(config.chatHistory)), tools = box != null)
         }
     }
 
