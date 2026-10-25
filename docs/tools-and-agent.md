@@ -76,7 +76,7 @@ folder?" prompt still appears). `plan`: `ToolBox(readOnly = true)` drops every `
 
 ## Asking, deleting, moving
 
-- `ask_user(question, options?, multiple?)` is answered by `ChatSession.askUser` (a `Question` with `options`, `picked`, `typing`): `1`-`9` choose (several: tick, Enter confirms), `t` types an open answer in the message field, `Esc` skips. The result is "The user chose: …" / "answered: …" / "skipped". It is offered even when tools are off (with `request_access`) and in plan mode.
+- `ask_user(question, options?, multiple?)` is answered by `ChatSession.askUser` (a `Question` with `options`, `picked`, `typing`): `1`-`9` choose (several: tick, Enter confirms), the last row ("type my own answer") becomes an inline text field inside the dialog (`Question.field`; `t` or ↓ moves to it, ↑ goes back, Enter sends), `Esc` skips. The result is "The user chose: …" / "answered: …" / "skipped". It is offered even when tools are off (with `request_access`) and in plan mode.
 - `delete_path` never erases: files and folders move to `<vault>/.trash` (inside the vault) or `<config>/trash` (elsewhere) under a timestamped name. `move_path` renames or moves and refuses to overwrite or to move a folder into itself. Allowed roots, the home folder and `.git`/`.obsidian` are never deleted or moved. Both specs have `alwaysAsk = true`: they ask in Auto mode too and offer no "always".
 
 ## Web (`fetch_url`)

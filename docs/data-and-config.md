@@ -40,7 +40,6 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `chatHistory` | 20 | latest messages sent as context |
 | `keepChats` / `chatsKept` | true / 50 | persist chats / how many to keep |
 | `chatUseVault` | false | answer from vault (also `/vault`) |
-| `confirmLeaveChat` | true | ask before leaving an unsaved chat |
 | `copyAs` | `markdown` | select-mode copy format: `markdown` / `plain` |
 | `inboxFolder` | `Inbox` | where unprocessed notes are |
 | `dailyFolder` / `dailyFormat` | `""` / `YYYY-MM-DD` | daily note fallback when Obsidian has no setting |

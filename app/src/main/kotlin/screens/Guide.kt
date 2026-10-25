@@ -157,14 +157,14 @@ Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use
 - Each step shows in the chat as `⚙ tool  what` and `↳ ✓ result`. It may take up to *Steps per question* rounds before it must answer.
 - **New folders:** when the model needs a folder that is not allowed yet (say `~/Desktop`), Arcana asks "Allow this folder?": `y` remembers it (see *Extra folders*), `n` refuses. Home itself, system folders and hidden folders such as `~/.ssh` are never offered.
 - **Modes** (`/mode` cycles them, or Settings → Tools → Mode): *Ask* (default) waits for your `y` on every change; *Auto* runs changes at once, with the old file always backed up (new folders still ask); *Plan* is read-only: Gemma investigates and writes a plan, then you switch to Ask or Auto and tell her to go ahead. The header shows `⚙ tools ask|auto|plan`.
-- **Questions, deleting and moving:** `ask_user` puts a question with numbered options to you in the chat (`1`-`9` choose, `t` type your own, `Esc` skip; quizzes work even with tools off). `delete_path` moves a file or folder to a trash folder (the vault's `.trash`, or `~/.config/arcana/trash`) and `move_path` renames or moves; both ask **every time, even in Auto mode**, and neither can be set to "always".
+- **Questions, deleting and moving:** `ask_user` puts a question with numbered options to you in the chat (`↑↓` and Enter or `1`-`9` choose; the last row, `t` or ↓ to it, is a text field inside the dialog for an answer of your own; `Esc` skips; quizzes work even with tools off). `delete_path` moves a file or folder to a trash folder (the vault's `.trash`, or `~/.config/arcana/trash`) and `move_path` renames or moves; both ask **every time, even in Auto mode**, and neither can be set to "always".
 - **Shell and web** (both off by default, in Settings → Tools): `run_command` runs a command after you press `y` (harmless ones like `git status` run at once; `sudo` and `rm -rf /` never); `fetch_url` reads a public web page after you approve its address (pages on your own computer or network are refused). If the model asks while they are off, a dialog offers to turn them on right there.
 - **Safety:** tools only touch your vault and the folders you allow in *Settings → Tools → Extra folders*; `..` and symlinks cannot escape them, and `.git` and `.obsidian` are never written. A file that is replaced or edited is backed up first (in `~/.config/arcana/backups`). Text in a note or file is only data: the model is never obliged to follow instructions found in it, and every change still needs your `y`.
 
 ## Sending things to the vault
 - `Ctrl+S` saves the chat as a new note (whole chat or just the last answer).
 - Palette or `/append`: add the last answer to an existing note. `/replace`: replace a note with it (the old text is kept in `.trash`).
-- Leaving a chat that is not saved to the vault asks first.
+- Chats are kept in the history automatically, so leaving a chat never asks (only with *Keep chats* off). **Ctrl+S "Save to vault"** turns the chat into a note.
 
 ## Scrolling and copying
 `↑` `↓` scroll while typing. `Esc` leaves the field: then `j` `k` scroll, `Space` pages, and `s` starts **select mode** (`Space` ticks, `c` copies, `b` copies only code). `Enter` goes back to typing.

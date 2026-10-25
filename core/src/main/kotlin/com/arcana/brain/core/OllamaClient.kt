@@ -91,6 +91,20 @@ data class ReplyStats(val promptTokens: Int, val completionTokens: Int, val tota
     val seconds: Double get() = totalMillis / 1000.0
 }
 
+/** An installed model: what it can do and how big it is, as Ollama reports it. */
+data class ModelDetails(val name: String, val sizeBytes: Long, val capabilities: List<String>, val contextLength: Int) {
+    /** `19 GB · tools · vision · thinking`, or just the size when Ollama named no capabilities. */
+    fun summary(): String {
+        val size = if (sizeBytes <= 0) "" else if (sizeBytes >= 1_000_000_000) "%.1f GB".format(sizeBytes / 1e9).replace(".0 GB", " GB") else "${sizeBytes / 1_000_000} MB"
+        val can = listOf("tools", "vision", "thinking").filter { it in capabilities }
+        return buildList {
+            if (size.isNotEmpty()) add(size)
+            addAll(can)
+            if (capabilities.isNotEmpty() && "tools" !in capabilities) add("no tools")
+        }.joinToString(" · ")
+    }
+}
+
 class OllamaException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 @Serializable
@@ -114,7 +128,7 @@ private data class WireShow(val capabilities: List<String> = emptyList(), @Seria
 private data class WireTags(val models: List<WireModel> = emptyList())
 
 @Serializable
-private data class WireModel(@SerialName("name") val name: String)
+private data class WireModel(@SerialName("name") val name: String, val size: Long = 0)
 
 object OllamaProtocol {
     private val json = Json { ignoreUnknownKeys = true }
@@ -155,6 +169,10 @@ object OllamaProtocol {
         json.decodeFromString<WireShow>(body).modelInfo.entries
             .firstOrNull { it.key.endsWith(".context_length") }?.value?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() }?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0
     }.getOrDefault(0)
+
+    /** Installed models with their size in bytes. */
+    fun parseModelSizes(body: String): List<Pair<String, Long>> =
+        runCatching { json.decodeFromString<WireTags>(body).models.map { it.name to it.size } }.getOrDefault(emptyList())
 
     fun parseModels(body: String): List<String> =
         json.decodeFromString<WireTags>(body).models.map { it.name }.sorted()
@@ -216,6 +234,22 @@ class OllamaClient(private val config: () -> AppConfig) {
         }
         if (response.statusCode() != 200) return@withContext emptyList<String>() to 0
         OllamaProtocol.parseCapabilities(response.body()) to OllamaProtocol.parseContextLength(response.body())
+    }
+
+    /** The installed models with what each can do (tools, vision, thinking) and its size, for choosing one; a model whose details cannot be read is still listed. */
+    suspend fun modelDetails(): List<ModelDetails> = withContext(Dispatchers.IO) {
+        val cfg = config()
+        val request = HttpRequest.newBuilder(endpoint(cfg, "/api/tags")).timeout(Duration.ofSeconds(5)).GET().build()
+        val response = try {
+            http.send(request, HttpResponse.BodyHandlers.ofString())
+        } catch (e: Exception) {
+            throw OllamaException("Cannot reach Ollama at ${cfg.ollamaUrl}: ${e.message}", e)
+        }
+        if (response.statusCode() != 200) throw OllamaException("Ollama returned HTTP ${response.statusCode()}")
+        OllamaProtocol.parseModelSizes(response.body()).map { (name, size) ->
+            val shown = runCatching { show(name) }.getOrNull()
+            ModelDetails(name, size, shown?.first.orEmpty(), shown?.second ?: 0)
+        }
     }
 
     suspend fun listModels(): List<String> = withContext(Dispatchers.IO) {

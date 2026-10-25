@@ -35,6 +35,13 @@ import java.nio.file.Path
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
+/** The window the gauge counts against: what was asked for, but never more than the model supports (when that is known). */
+internal fun effectiveContext(asked: Int, modelMax: Int): Int = when {
+    asked <= 0 -> modelMax
+    modelMax > 0 -> minOf(asked, modelMax)
+    else -> asked
+}
+
 /** How full the model's context was after the last reply (its prompt plus its answer) as a share and a `13.6k/131k` text; null before the first reply or when the size is unknown. */
 internal fun contextUsage(messages: List<ChatMessage>, limit: Int): Pair<Double, String>? {
     val stats = messages.mapNotNull { it.stats }.lastOrNull { it.promptTokens > 0 } ?: return null
@@ -70,7 +77,7 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
             if (memoryChars > 0) add(statusSegment("", "✎ memory ${UsageStats.compact(memoryChars.toLong())}", Palette.Green, 6))
             else add(statusSegment("", "✎ no ARCANA.md", Palette.Muted, 3))
         }
-        contextUsage(chat.messages, config.contextTokens.takeIf { it > 0 } ?: app.modelContext)?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
+        contextUsage(chat.messages, effectiveContext(config.contextTokens, app.modelContext))?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
         if (stats.isNotEmpty()) add(StatusSegment(listOf(StatusPart("↑${compact(stats.sumOf { it.promptTokens.toLong() })}", Palette.Blue), StatusPart(" ↓${compact(stats.sumOf { it.completionTokens.toLong() })}", Palette.Green)), 3))
         add(statusSegment("est.", priceText(cost), Palette.Orange, 7, bold = true))
         add(statusSegment("", "◷ ${spanText(System.currentTimeMillis() - app.sessionStart)}", Palette.Accent, 2))
@@ -84,16 +91,15 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
 /** The question and its options as one row each (what the panel shows and what its height is counted from). */
 private fun questionLines(q: ChatSession.Question, width: Int): List<String> {
     val text = wrap(sanitizeForTerminal(q.text), width).take(6)
-    if (q.typing) return text
     val options = q.options.mapIndexed { i, option ->
         val mark = if (q.multiple) (if (i in q.picked) "[x] " else "[ ] ") else ""
         (if (i == q.cursor) "▸ " else "  ") + "$mark${i + 1}  ${sanitizeForTerminal(option)}".take(width - 2)
     }
-    return text + options + ((if (q.cursor == q.options.size) "▸ " else "  ") + "✎  Type my own answer")
+    return text + options
 }
 
 private fun questionActions(q: ChatSession.Question) =
-    if (q.typing) listOf(ActionItem("Enter", "Send answer", accent = Palette.Cta), ActionItem("Esc", "Skip"))
+    if (q.typing) listOfNotNull(ActionItem("Enter", "Send answer", q.field.text.isNotBlank(), Palette.Cta), if (q.options.isNotEmpty()) ActionItem("↑", "Back to options") else null, ActionItem("Esc", "Skip"))
     else listOfNotNull(
         ActionItem("↑↓", "Move"),
         ActionItem("Enter", if (q.multiple) "Confirm" else "Choose", accent = Palette.Cta),
@@ -147,7 +153,8 @@ fun ChatScreen(app: AppContext) {
 
     fun toast(text: String, error: Boolean = false) = navigator.showToast(text, error)
 
-    val latestUnsaved by rememberUpdatedState(chat.unsaved && app.config.confirmLeaveChat)
+    // Chats are kept in the history automatically, so nothing is lost by leaving: ask only when they are not being kept
+    val latestUnsaved by rememberUpdatedState(chat.unsaved && !app.config.keepChats)
     DisposableEffect(navigator) {
         navigator.leaveGuard = { to ->
             if (latestUnsaved && to != Screen.Chat) {
@@ -364,7 +371,7 @@ fun ChatScreen(app: AppContext) {
             else -> true
         },
     )
-    if (question != null) Hints(*(if (question.typing) arrayOf("Enter  send the answer", "Esc  skip") else arrayOf("↑↓  move", if (question.multiple) "Space  tick" else "Enter  choose", *(if (question.multiple) arrayOf("Enter  confirm") else emptyArray()), "1-${question.options.size}  pick", "t  type my own", "Esc  skip")))
+    if (question != null) Hints(*(if (question.typing) arrayOf("Enter  send the answer", *(if (question.options.isNotEmpty()) arrayOf("↑  back to options") else emptyArray()), "Esc  skip") else arrayOf("↑↓  move", if (question.multiple) "Space  tick" else "Enter  choose", *(if (question.multiple) arrayOf("Enter  confirm") else emptyArray()), "1-${question.options.size}  pick", "t  type my own", "Esc  skip")))
     else if (approval != null) Hints("y  ${approval.yes.lowercase()}", "n  no", *(if (approval.always) arrayOf("a  always this session") else emptyArray())) else if (attachments.browsing) Hints(*attachBrowserHints(attachments).toTypedArray()) else when (mode) {
         ChatMode.Save -> Hints("Enter  save", "Tab  whole chat / last answer", "Esc  cancel")
         ChatMode.Leave -> Hints("w  save to vault", "Esc  leave chat", "any other key  stay")
@@ -388,10 +395,13 @@ fun ChatScreen(app: AppContext) {
         if (question != null) {
             // a question from the model owns the keys: digits pick, t types an answer, Esc skips; other keys (Ctrl+C, screen numbers) still work
             if (question.typing) {
+                // the last row is a text field inside the dialog: typed letters and digits go to it
                 return@KeyHandler when {
-                    key == Key.Escape -> { chat.answerQuestion(null); input.clear(); true }
-                    key == Key.Enter -> { input.text.trim().takeIf { it.isNotEmpty() }?.let { chat.answerQuestion(it); input.clear() }; true }
-                    else -> input.onKey(key)
+                    key == Key.Escape -> { chat.answerQuestion(null); true }
+                    key == Key.Enter -> { chat.activate(); true }
+                    key == Key.Up && question.options.isNotEmpty() -> { chat.move(-1); true }
+                    key == Key.Down && question.options.isNotEmpty() -> { chat.move(1); true }
+                    else -> question.field.onKey(key)
                 }
             }
             return@KeyHandler when {
@@ -400,7 +410,7 @@ fun ChatScreen(app: AppContext) {
                 key == Key.Enter -> { chat.activate(); true }
                 key.char == ' ' && question.multiple -> { chat.tickCurrent(); true }
                 key.char != null && key.char!!.isDigit() && key.char != '0' -> { chat.pick(key.char!! - '0'); true }
-                key.char == 't' || key.char == 'T' -> { question.typing = true; true }
+                key.char == 't' || key.char == 'T' -> { question.cursor = question.options.size; true }
                 key == Key.Escape -> { chat.answerQuestion(null); true }
                 else -> false
             }
@@ -548,7 +558,7 @@ fun ChatScreen(app: AppContext) {
                 VGap()
                 Panel("Leave this chat?", accent = Palette.Warn) {
                     Warning("This conversation (${chat.messages.size - chat.savedMessages} new messages) is not saved to your vault as a note.")
-                    Hint(if (app.config.keepChats) "It stays in the chat history either way: /history reopens it." else "Chats are not being kept, so it is gone once you leave.")
+                    Hint("Chats are not being kept (Settings → Console → Keep chats), so it is gone once you leave.")
                 }
                 ActionBar(listOf(ActionItem("w", "Save to vault first"), ActionItem("Esc", "Leave chat", accent = Palette.Red), ActionItem("any other key", "Stay", accent = Palette.Cta)))
             }
@@ -596,7 +606,12 @@ fun ChatScreen(app: AppContext) {
                 // read again after every message, so an edit of the file shows up
                 val memoryChars = remember(chat.messages.size, app.config.memoryEnabled, mode) { if (app.config.memoryEnabled) app.openVault().getOrNull()?.memory()?.length ?: 0 else 0 }
                 val count = chat.messages.size
-                ScreenHeader("Chat", "${chat.title} · ${if (count == 0) "empty" else "$count messages"}${if (chat.unsaved && count > 0) " · not saved to vault" else ""}")
+                ScreenHeader(
+                    "Chat",
+                    "${chat.title} · ${if (count == 0) "empty" else "$count messages"}" +
+                        (if (count > 0 && app.config.keepChats) " · kept in history" else if (count > 0) " · not kept" else "") +
+                        (if (chat.unsaved && count > 0) " · not in vault (Ctrl+S)" else ""),
+                )
                 // the status bar sits under the message field (above the buttons): one row more in the count below
                 val statusRows = if (rememberDensity().tiny) 0 else 1
                 VGap()
@@ -625,7 +640,8 @@ fun ChatScreen(app: AppContext) {
                     val pendingRow = chat.attachments.rows
                     val statusRow = if (gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled) 1 else 0
                     // what sits under the conversation: the message field, or the change waiting for an answer
-                    val below = (if (question != null) qLines.size + 3 + (if (question.typing) 2 + inputRows else 0) else if (approval != null) approvalLines(approval).size + 3 else 2 + inputRows + pendingRow) + statusRows + panelActionRows
+                    val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
+                    val below = (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval).size + 3 else 2 + inputRows + pendingRow) + statusRows + panelActionRows
                     ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below, actions = actions), output)
                     ReplyStatus(app, gen)
                 }
@@ -634,11 +650,13 @@ fun ChatScreen(app: AppContext) {
                     Panel("Question", accent = Palette.Cta) {
                         Label("? ${app.config.model} asks", color = Palette.Cta, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
                         qLines.forEach { l -> Label(l, color = if (l.startsWith("▸")) Palette.Cta else if (l.contains("[x]")) Palette.Green else Palette.Text) }
+                        // the last row: "type my own answer", which becomes a text field right here when it is selected
+                        Row {
+                            Label(if (question.typing) "▸ ✎  " else "  ✎  ", color = if (question.typing) Palette.Cta else Palette.Muted)
+                            if (question.typing) com.jakewharton.mosaic.ui.Box(com.jakewharton.mosaic.modifier.Modifier.weight(1f)) { TextValue(question.field, true, "Type your answer", 3) }
+                            else Label("Type my own answer", color = Palette.Muted)
+                        }
                         ActionBar(questionActions(question), panelWidth())
-                    }
-                    if (question.typing) {
-                        VGap()
-                        TextInput("Your answer", input, true, "Type your answer and press Enter", maxRows = maxInputRows())
                     }
                     if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars))
                 } else if (approval != null) {
@@ -753,7 +771,7 @@ private fun chatActions(browsing: Boolean, hasEntries: Boolean): List<ActionItem
             ActionItem("Enter", "Send"),
             ActionItem("@", "Note"),
             ActionItem("Ctrl+O", "Attach"),
-            ActionItem("Ctrl+S", "Save"),
+            ActionItem("Ctrl+S", "Save to vault"),
             ActionItem("Ctrl+P", "Commands", accent = Palette.Cta),
         )
     }

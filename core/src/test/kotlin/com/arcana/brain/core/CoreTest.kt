@@ -685,6 +685,16 @@ class CoreTest {
     }
 
     @Test
+    fun theModelListSaysWhatEachModelCanDo() {
+        val tags = """{"models":[{"name":"qwen3:30b","size":19000000000},{"name":"gemma4:latest","size":9500000000},{"name":"tiny","size":400000000}]}"""
+        assertEquals(listOf("qwen3:30b" to 19_000_000_000L, "gemma4:latest" to 9_500_000_000L, "tiny" to 400_000_000L), OllamaProtocol.parseModelSizes(tags))
+        assertEquals("19 GB · tools · thinking", ModelDetails("qwen3:30b", 19_000_000_000, listOf("completion", "tools", "thinking"), 40960).summary())
+        assertEquals("9.5 GB · tools · vision", ModelDetails("g", 9_500_000_000, listOf("tools", "vision"), 0).summary())
+        assertEquals("1.2 GB · no tools", ModelDetails("old", 1_200_000_000, listOf("completion"), 0).summary())
+        assertEquals("400 MB", ModelDetails("x", 400_000_000, emptyList(), 0).summary())
+    }
+
+    @Test
     fun aToolCallWrittenAsTextIsFoundOnlyAtTheEndOfAKnownTool() {
         val tools = setOf("fetch_url", "read_file", "grep_files", "ask_user")
         val screenshot = "I will use the fetch_url tool to read the content of the provided link.\n\nfetch_url(url=\"https://www.youtube.com/watch?v=9UMxZofMNbA\")"

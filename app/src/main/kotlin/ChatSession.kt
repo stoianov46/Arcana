@@ -91,10 +91,15 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         /** The answer as text for the model; null when the user skipped it. */
         val answer = CompletableDeferred<String?>()
         val picked = androidx.compose.runtime.mutableStateListOf<Int>()
-        var typing by mutableStateOf(options.isEmpty())
 
-        /** The highlighted row: an option, or the last row "type my own answer". */
+        /** The highlighted row: an option, or the last row, where the user types an answer of their own (right there, inside the dialog). */
         var cursor by androidx.compose.runtime.mutableIntStateOf(0)
+
+        /** What is typed on the last row. */
+        val field = com.arcana.brain.app.input.TextFieldState()
+
+        /** The cursor is on the text row (an open question has only that row). */
+        val typing: Boolean get() = cursor == options.size
     }
 
     var question by mutableStateOf<Question?>(null)
@@ -112,15 +117,14 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     fun move(delta: Int) {
         val q = question ?: return
-        if (!q.typing) q.cursor = (q.cursor + delta).mod(q.options.size + 1)
+        q.cursor = (q.cursor + delta).mod(q.options.size + 1)
     }
 
     /** Enter: the highlighted option is the answer (several may be chosen: the ticked ones, or this one when none is ticked); the last row opens the text field. */
     fun activate() {
         val q = question ?: return
-        if (q.typing) return
         when {
-            q.cursor == q.options.size -> q.typing = true
+            q.typing -> q.field.text.trim().takeIf { it.isNotEmpty() }?.let { answerQuestion(it) }
             !q.multiple -> answerQuestion(q.options[q.cursor])
             q.picked.isEmpty() -> answerQuestion(q.options[q.cursor])
             else -> confirmPicks()
@@ -138,9 +142,18 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         if (q.picked.isNotEmpty()) answerQuestion(q.picked.sorted().joinToString("; ") { q.options[it] })
     }
 
-    private suspend fun askUser(call: ToolCall): String {
+    /** The question text, whatever the model called it, or what it wrote next to the call; empty when it gave none. */
+    private fun questionText(call: ToolCall, beside: String): String {
         val args = call.arguments
-        val text = (args["question"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim().ifEmpty { "?" }
+        val named = listOf("question", "prompt", "text", "message", "title", "query", "ask").firstNotNullOfOrNull { key ->
+            (args[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()?.takeIf { it.isNotEmpty() }
+        }
+        return named ?: beside.trim().lines().lastOrNull { it.isNotBlank() }?.trim()?.take(300).orEmpty()
+    }
+
+    private suspend fun askUser(call: ToolCall, beside: String): String {
+        val args = call.arguments
+        val text = questionText(call, beside).ifEmpty { return "Error: ask_user needs the question itself. Call it again with question set to the text you want to ask, and options (2 to 5 short answers)." }
         val options = (args["options"] as? JsonArray)?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.let(::cleanOption)?.takeIf { s -> s.isNotEmpty() } }.orEmpty().take(9)
         val multiple = (args["multiple"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true" && options.size > 1
         val q = Question(text, options, multiple)
@@ -190,7 +203,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         for (call in calls) {
             if (call.name == ASK_USER || call.name == REQUEST_ACCESS || box == null) {
                 val message = ChatMessage.toolResult(call.name, when {
-                    call.name == ASK_USER -> askUser(call)
+                    call.name == ASK_USER -> askUser(call, text)
                     call.name == REQUEST_ACCESS -> requestAccess(call)
                     else -> "Error: tools are off. Call request_access to ask the user for them."
                 })

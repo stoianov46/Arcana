@@ -104,7 +104,7 @@ private val settings: List<Setting> = listOf(
             c.copy(temperature = t)
         },
     ),
-    choice(Group.Ollama, "Context window", "How many tokens of conversation the model may hold (num_ctx). Model default leaves Ollama's own setting; a larger window remembers more of a long chat or a big file but uses more memory and is slower. The Chat header meter counts against this, or against the model's maximum.", listOf("0" to "Model default", "8192" to "8k", "16384" to "16k", "32768" to "32k", "65536" to "64k", "131072" to "128k"), { it.contextTokens.toString() }, { c, v -> c.copy(contextTokens = v.toInt()) }),
+    choice(Group.Ollama, "Context window", "How many tokens of conversation the model may hold (num_ctx). Model default leaves Ollama's own setting. A larger window remembers more of a long chat or a big file, but its memory (the KV cache) grows with it and replies get slower: a 30B model at 128k needs roughly 12 GB more than at 8k. It can never exceed what the model was built for (the status bar shows that maximum; most models stop at 128k–256k, a million needs a special model and a lot of memory). The Chat status bar counts against this.", listOf("0" to "Model default", "8192" to "8k", "16384" to "16k", "32768" to "32k", "65536" to "64k", "131072" to "128k", "262144" to "256k", "524288" to "512k", "1048576" to "1M"), { it.contextTokens.toString() }, { c, v -> c.copy(contextTokens = v.toInt()) }),
     stepper(Group.Ollama, "Timeout", "How long to wait for a reply before giving up. ←/→ step by 15 s.", 5..3600, 15, { it.timeoutSeconds }, { c, n -> c.copy(timeoutSeconds = n) }, " s"),
 
     Setting(
@@ -134,10 +134,9 @@ private val settings: List<Setting> = listOf(
 
     toggle(Group.Console, "Answer from vault", "Chat searches your notes for each question and answers from what it finds, citing the notes. You can also switch this per chat with /vault.", { it.chatUseVault }, { c, v -> c.copy(chatUseVault = v) }),
     toggle(Group.Console, "Render Markdown", "On: headings, bullets and code are drawn as such. Off: the model's text exactly as written.", { it.renderMarkdown }, { c, v -> c.copy(renderMarkdown = v) }),
-    toggle(Group.Console, "Show thinking", "Show \"Gemma is thinking…\" while a reasoning model works before its first words.", { it.showThinking }, { c, v -> c.copy(showThinking = v) }),
+    toggle(Group.Console, "Show thinking", "Show \"<model> is thinking…\" while a reasoning model works before its first words.", { it.showThinking }, { c, v -> c.copy(showThinking = v) }),
     stepper(Group.Console, "Chat history", "How many of the latest messages Chat sends to the model as context. ←/→ step by 2.", 2..100, 2, { it.chatHistory }, { c, n -> c.copy(chatHistory = n) }),
     toggle(Group.Console, "Keep chats", "Save every chat to disk and reopen the last one when Arcana starts. Off: the chat lives only until you quit.", { it.keepChats }, { c, v -> c.copy(keepChats = v) }),
-    toggle(Group.Console, "Ask before leaving chat", "When a chat has not been saved to your vault, show a question first: save it, or press Esc again to leave.", { it.confirmLeaveChat }, { c, v -> c.copy(confirmLeaveChat = v) }),
     stepper(Group.Console, "Chats kept", "How many saved chats to keep; the least recently used are deleted. ←/→ step by 5.", 5..200, 5, { it.chatsKept }, { c, n -> c.copy(chatsKept = n) }),
     choice(Group.Console, "Copy as", "What select mode (s) puts on the clipboard. Markdown: as written. Plain text: markers removed.", listOf("markdown" to "Markdown", "plain" to "Plain text"), { it.copyAs }, { c, v -> c.copy(copyAs = v) }),
 
@@ -165,7 +164,7 @@ private const val CustomModel = "✎ Type a custom name…"
 /** What the screen is doing with the highlighted setting. */
 private sealed interface Editing {
     data class Typing(val setting: Setting, val editor: Editor.Text) : Editing
-    data class PickModel(val models: List<String>) : Editing
+    data class PickModel(val models: List<String>, val details: Map<String, String> = emptyMap()) : Editing
     data object PickTheme : Editing
     data class PickFolder(val browser: DirectoryPickerState) : Editing
     data object ConfirmReset : Editing
@@ -229,10 +228,11 @@ fun SettingsScreen(app: AppContext) {
             }
             Editor.Model -> scope.launch {
                 try {
-                    val models = app.client.listModels() + CustomModel
+                    val details = app.client.modelDetails()
+                    val models = details.map { it.name } + CustomModel
                     picker.reset()
                     picker.index = models.indexOf(app.config.model).coerceAtLeast(0)
-                    editing = Editing.PickModel(models)
+                    editing = Editing.PickModel(models, details.associate { it.name to it.summary() })
                 } catch (e: Exception) {
                     notice = Notice("${e.message} Type the model name instead.", isError = true)
                     field.set(app.config.model)
@@ -416,7 +416,7 @@ fun SettingsScreen(app: AppContext) {
                 ScreenHeader("Settings › Model", "Installed on ${app.config.ollamaUrl}")
                 VGap()
                 Panel("Models") {
-                    Picker(mode.models, picker, label = { it }, rows = bodyRows(extra = 5), icon = { if (it == CustomModel) "" else "◆" }, iconColor = { Palette.Accent }, meta = { if (it == app.config.model) "current" else "" }, metaColor = { Palette.Green })
+                    Picker(mode.models, picker, label = { it }, rows = bodyRows(extra = 5), icon = { if (it == CustomModel) "" else "◆" }, iconColor = { Palette.Accent }, meta = { (if (it == app.config.model) "current · " else "") + mode.details[it].orEmpty() }, metaColor = { if (it == app.config.model) Palette.Green else Palette.Muted })
                 }
             }
             Editing.PickTheme -> {

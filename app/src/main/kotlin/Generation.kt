@@ -205,5 +205,11 @@ internal fun announcesAction(reply: String): Boolean {
     val last = reply.trim().takeLast(500)
     // a real question ends a sentence with "?"; the "?" of a web address (watch?v=…) is not one
     if (last.isEmpty() || Regex("""\?(\s|$)""").containsMatchIn(last)) return false
-    return Regex("""(?i)\b(i will|i'll|will help me|i am going to|i'm going to|let me|next,? i|now,? i|first,? i)\b""").containsMatchIn(last)
+    // "I will read…", "Let me search…": a plan to act. "Let me know…", "I will be happy to…" are only manners and must not count.
+    return ANNOUNCEMENT.containsMatchIn(last)
 }
+
+private val ANNOUNCEMENT = Regex(
+    """(?i)\b(i will|i'll|will help me|i am going to|i'm going to|let me|next,? i|now,? i|first,? i)\s+(now\s+|first\s+|then\s+|also\s+|start\s+by\s+|begin\s+by\s+)?""" +
+        """(read|search|look|check|use|call|fetch|list|open|run|find|locate|analy[sz]e|examine|start|begin|try|grep|get|inspect|scan|review|execute|investigate|explore|retrieve|query)\b""",
+)

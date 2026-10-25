@@ -81,7 +81,7 @@ fun ReplyStatus(app: AppContext, gen: Generation) {
         GenState.Running -> Spinner {
             val seconds = (System.currentTimeMillis() - gen.startedAt) / 1000
             val what = when {
-                gen.thinking && app.config.showThinking -> "Gemma is thinking…"
+                gen.thinking && app.config.showThinking -> "${app.config.model.substringBefore(':').replaceFirstChar { it.uppercase() }} is thinking…"
                 gen.text.isEmpty() -> "Waiting for the model…"
                 else -> "Generating…"
             }

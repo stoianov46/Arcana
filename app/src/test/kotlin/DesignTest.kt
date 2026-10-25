@@ -332,6 +332,11 @@ class DesignTest {
         assertTrue(!announcesAction("The module has three layers. Here is the analysis."))
         assertTrue(!announcesAction("Which folder should I read? I will wait."))
         assertTrue(!announcesAction("I will read it if you confirm?"))
+        assertTrue(!announcesAction("All tools work in allowed folders.\n\nLet me know if you want to use a specific tool!"), "manners are not a plan")
+        assertTrue(!announcesAction("I will be happy to help. I'll let you know when it is done."))
+        assertTrue(announcesAction("The list is empty.\n\nThis will help me locate the definition."))
+        assertTrue(announcesAction("Now I will search the entire project structure."))
+        assertTrue(announcesAction("Let me check the folder first."))
         assertTrue(announcesAction("I will use the fetch_url tool on https://www.youtube.com/watch?v=9UMxZofMNbA"), "the ? of a web address is not a question")
     }
 
@@ -372,5 +377,28 @@ class DesignTest {
         assertEquals("<$0.01", com.arcana.brain.app.design.priceText(0.004))
         assertEquals("$12.40", com.arcana.brain.app.design.priceText(12.4))
         assertEquals(3.0 + 15.0 * 0.5, com.arcana.brain.core.UsageStats.estimatedCost(listOf(com.arcana.brain.core.UsageRecord(0, "Chat", "m", 1_000_000, 500_000, 1)), 3, 15), 1e-9)
+    }
+
+    @Test
+    fun codePanesAreClosedBoxesOfTheSameWidthOnEverySide() {
+        val code = "```json\n{\"tool_name\": \"search_notes\", \"a\": [1, 2, 3], \"long\": \"" + "x".repeat(70) + "\"}\n```"
+        for (plain in listOf(false, true)) {
+            val lines = com.arcana.brain.app.design.markdownLines(code, 48, plainGlyphs = plain).map { it.text }.dropLastWhile { it.isEmpty() }
+            assertTrue(lines.size >= 4, lines.toString())
+            assertTrue(lines.all { it.length == 48 }, "every row is 48 wide: " + lines.map { it.length })
+            val (tl, tr, bl, br, v) = if (plain) listOf('+', '+', '+', '+', '|') else listOf('╭', '╮', '╰', '╯', '│')
+            assertEquals(tl, lines.first().first()); assertEquals(tr, lines.first().last())
+            assertEquals(bl, lines.last().first()); assertEquals(br, lines.last().last())
+            assertTrue(lines.drop(1).dropLast(1).all { it.last() == v }, "right edge on every code row")
+        }
+    }
+
+    @Test
+    fun theContextGaugeNeverCountsAgainstMoreThanTheModelSupports() {
+        assertEquals(262_144, com.arcana.brain.app.screens.effectiveContext(0, 262_144))
+        assertEquals(32_768, com.arcana.brain.app.screens.effectiveContext(32_768, 262_144))
+        assertEquals(131_072, com.arcana.brain.app.screens.effectiveContext(1_048_576, 131_072))
+        assertEquals(65_536, com.arcana.brain.app.screens.effectiveContext(65_536, 0))
+        assertEquals(0, com.arcana.brain.app.screens.effectiveContext(0, 0))
     }
 }

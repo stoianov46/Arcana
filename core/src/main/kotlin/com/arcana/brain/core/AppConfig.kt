@@ -47,8 +47,6 @@ data class AppConfig(
     val keepChats: Boolean = true,
     /** Chat searches the vault for each question and answers from the notes it finds, citing them. */
     val chatUseVault: Boolean = false,
-    /** Warn before leaving a chat that has not been saved to the vault, with the chance to save it. */
-    val confirmLeaveChat: Boolean = true,
     /** The folder the image picker was last left in (empty = start at the home folder). */
     val lastPickerDir: String = "",
     /** How many chats are kept; the least recently used are deleted. */

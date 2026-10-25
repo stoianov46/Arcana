@@ -267,18 +267,19 @@ private fun renderCode(lang: String, lines: List<String>, w: Int): List<MdLine> 
     val language = lang.lowercase().ifEmpty { "text" }
     val out = ArrayList<MdLine>()
     val title = " $language "
-    out += MdLine(listOf(Run("╭─", Palette.ConsoleDim, bg), Run(title, Palette.Cta, bg, TextStyle.Bold), Run("─".repeat((w - title.length - 2).coerceAtLeast(0)), Palette.ConsoleDim, bg)), bg)
+    // a closed box: corners and a right edge, so the pane has the same frame on every side
+    out += MdLine(listOf(Run("╭─", Palette.ConsoleDim, bg), Run(title, Palette.Cta, bg, TextStyle.Bold), Run("─".repeat((w - title.length - 3).coerceAtLeast(0)) + "╮", Palette.ConsoleDim, bg)), bg)
     val digits = lines.size.toString().length.coerceAtLeast(2)
-    val room = (w - digits - 4).coerceAtLeast(4)
+    val room = (w - digits - 6).coerceAtLeast(4)
     lines.forEachIndexed { n, raw ->
         val expanded = raw.replace("\t", "    ")
         val chunks = expanded.chunked(room).ifEmpty { listOf("") }
         chunks.forEachIndexed { k, chunk ->
             val gutter = if (k == 0) (n + 1).toString().padStart(digits) else " ".repeat(digits)
-            out += MdLine(listOf(Run(" $gutter ", Palette.ConsoleDim, bg), Run("│ ", Palette.ConsoleDim, bg)) + highlightCode(chunk, language), bg)
+            out += MdLine(listOf(Run(" $gutter ", Palette.ConsoleDim, bg), Run("│ ", Palette.ConsoleDim, bg)) + highlightCode(chunk, language) + listOf(Run(" ".repeat(room - chunk.length) + " │", Palette.ConsoleDim, bg)), bg)
         }
     }
-    out += MdLine(listOf(Run("╰" + "─".repeat((w - 1).coerceAtLeast(0)), Palette.ConsoleDim, bg)), bg)
+    out += MdLine(listOf(Run("╰" + "─".repeat((w - 2).coerceAtLeast(0)) + "╯", Palette.ConsoleDim, bg)), bg)
     return out
 }
 

@@ -37,7 +37,7 @@ in a pseudo-terminal, feed keys, and read the screen through a terminal emulator
    - **Pause ~0.3 s between keys**: bursts under 20 ms are treated as a paste, so Tab/Enter get swallowed as text.
    - Long single writes can lose their start; type text in chunks.
    - Esc followed quickly by `[`/`O` is read as an escape sequence; wait after Esc.
-   - Palette/leave guards ask before navigating away from an unsaved chat or unapplied draft (answer `Esc`/`y`).
+   - Leaving AI notes with an unapplied draft asks first (answer `Esc`/`y`); Chat asks only when *Keep chats* is off.
 5. Useful keys: `1`-`9` screens, `Ctrl+P`=`\x10`, `Ctrl+N`=`\x0e`, `Ctrl+O`=`\x0f`, `Ctrl+C`=`\x03`, arrows `\x1b[A/B/C/D`, Enter `\r`.
 6. Real model checks need Ollama running with `gemma4:latest`; keep prompts short and deterministic ("Reply with exactly …").
    The screen dump shows text only (no colours); colour/style correctness is asserted in unit tests on `Run`s.

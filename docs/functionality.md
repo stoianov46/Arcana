@@ -39,7 +39,7 @@ links), *Top tags*. Right: *Jump back in* (Ask your brain, AI notes, this sessio
 - `/tools` toggles **tools** (see below). `Ctrl+S` saves the chat (or the last answer) as a vault note.
 - Replies stream; a footer line shows `✓ Done · time · ↑ prompt ↓ output tokens · tok/s`. `Esc` cancels a running reply.
 - Persistent chats: the last one reopens at start; `/new` starts a fresh one; `/history` lists saved chats.
-- Leaving a chat that was not saved to the vault asks first (save, or `Esc` again to leave).
+- Chats are kept in the history automatically (`ChatStore`, one JSON per chat), so leaving never asks; only with *Keep chats* off does Arcana ask before leaving a chat. **Ctrl+S "Save to vault"** turns a chat into a note.
 - Output is rendered Markdown (see [ui-internals.md](ui-internals.md)): boxed tables, highlighted code, coloured figures.
 - Select mode: ↑↓ move, Space ticks, `c` copies (Markdown or plain per Settings), `b` copies code/tables only.
 
