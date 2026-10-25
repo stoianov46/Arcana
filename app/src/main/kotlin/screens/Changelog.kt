@@ -24,7 +24,7 @@ private fun changePages() = listOf(
         "Latest", "The latest work",
         """
 # The latest work
-Built on 24–25 October 2026.
+Built on 24–25 October 2026. Last updated 25 October 2026.
 
 ## Usage became a dashboard
 - Five periods (session, today, 7 days, 30 days, all time) and three pages: **Overview**, **Breakdown**, **Recent replies**.
@@ -34,7 +34,7 @@ Built on 24–25 October 2026.
 ## Chat got better to type in
 - **Multi-line message field**: grows to a quarter of the screen with a **scrollbar**; `Alt+Enter`, or a `\` before Enter, starts a new line; Up/Down move between lines.
 - **Pasting long text works**: a paste that lost its beginning *or its middle* is typed back whole from the clipboard.
-- **Context meter** in the Chat header: `ctx ▰▰▱▱▱▱▱▱ 12% 13k/131k`, with a warning near 80%. Set the window in Settings → Ollama → *Context window*.
+- **Context gauge** in the Chat status bar (`ctx █░░░░░░░░░ 3% 3.9k/131k`, orange and red as it fills). Set the window in Settings → Ollama → *Context window*.
 - A reply that ended in a tool call shows a quiet `step` line, so only the final answer says **Done**.
 
 ## More tools
@@ -42,6 +42,7 @@ Built on 24–25 October 2026.
 - **`ask_user`**: the model can ask you a question with options (a quiz or a decision); **`delete_path`** and **`move_path`** always ask first, even in Auto mode, and a deleted item goes to a trash folder you can restore from.
 - **`fetch_url`** reads a public web page (HTML as readable text, JSON, PDF), off by default; every address asks first and is shown in full; localhost and your own network are refused, redirects are checked hop by hop.
 - **`grep_files`** (search inside files), **globs** in `find_files`, and **line ranges** in `read_file`.
+- **`current_time`**: the date and time in any time zone, so the model does not guess; chats also start with today's date.
 - Limits explain themselves: a dialog offers to turn tools on, leave plan mode, allow a folder, turn shell on or add more steps, right where the limit is hit.
 
 ## Chat details
@@ -59,13 +60,14 @@ Built on 24–25 October 2026.
 - Chat: type `/` for a menu of commands and tools (filter as you type, ↑↓ Tab/Enter).
 - Library: `r` **Rename** a note and the links to it are updated everywhere; `c` **Chat about it** continues with a note attached (a saved chat note carries its whole conversation).
 - This **Changelog** tab.
+- **Docs refreshed**: the `docs/` folder of the project, the in-app Guide, and two Arcana notes in the vault (a short LLM reference and a reference documentation note) now match what the app does.
 """.trimIndent(),
     ),
     ChangePage(
         "Tools", "Tools and the agent loop",
         """
 # Tools and the agent loop
-Gemma can act, not only talk: search your notes, read and edit files, run commands, with you in control.
+The model can act, not only talk: search your notes, read and edit files, ask you questions, run commands and read web pages, with you in control.
 
 ## The loop
 - The model asks for a tool, Arcana runs it and returns the result, and the model carries on, up to *Steps per question* rounds; at the limit a dialog offers more.
