@@ -10,17 +10,18 @@ app/build/install/arcana/bin/arcana        # or: make install, then "arcana"
 
 The loop it is built around: **capture** a thought from anywhere (`Ctrl+N` → today's daily note) → **see** how the vault is doing
 (Brain: notes, links, tags, inbox, islands, broken links, stale notes) → **think** (Chat: attach notes with `@`, pictures, PDFs and text files with `Ctrl+O` (also in AI notes and Capture),
-or answer from the vault with `/vault`; turn on `/tools` and it can also read and write your notes and files, asking before every change) → **shape** (AI notes: summarize, improve, translate, connect…) → **keep** (each session can be
+or answer from the vault with `/vault`; turn on `/tools` and it can search and read your notes and files, ask you questions, and (always after you confirm) change, move or delete them, run commands and read web pages; type `/` for the menu of commands and tools) → **shape** (AI notes: summarize, improve, translate, connect…) → **keep** (each session can be
 saved into the vault as a note of what you did and learned; Arcana offers it before you quit).
 
 Screens: Brain, Chat, Library (browse by inbox / no links / no tags / broken links / stale / tags, with links, backlinks and preview),
 Inbox (AI proposes a title, folder, tags and links for each new note; you review and apply, the original is always kept),
-AI notes, Session, Usage, Settings, Guide. `Ctrl+P` opens a command palette with every action.
+AI notes, Session, Usage (a dashboard of tokens, speed, estimated price and habits), Settings, Guide, Changelog. `Ctrl+P` opens a command palette with every action.
+The vault note `ARCANA.md` holds your standing instructions for the assistant; Arcana creates it the first time and adds it to every chat.
 Settings are stored in `~/.config/arcana/config.json` (override with `ARCANA_CONFIG`; `ARCANA_VAULT` sets the default vault path);
 chats, sessions and token usage live next to it. The `core` module holds the Ollama client, the vault and its index; `app` holds the
 Mosaic UI: `design/` is the design system, `navigation/` the sidebar shell, overlays (palette, capture) and footer, `screens/` one file per screen.
 
-Keys (same conventions as CosmoCLI): `1`-`6` switch screens, `?` shows the key map, `Ctrl+B` folds the sidebar,
+Keys (same conventions as CosmoCLI): `1`-`9` and `0` switch screens, `?` shows the key map, `Ctrl+B` folds the sidebar,
 `Ctrl+C` twice quits, `Esc` leaves editing and then goes Home.
 - Scrolling: `↑`/`↓` (or `k`/`j`) a line, `PgUp`/`PgDn` or `Space` a page, `g`/`G` top/latest.
 - Select mode (`s`): `↑`/`↓` move over blocks, `Space` ticks, `a` all, `c` copies, `b` copies code and tables only.

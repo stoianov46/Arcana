@@ -71,7 +71,7 @@ Gemma can act, not only talk: search your notes, read and edit files, run comman
 ## The tools
 - Notes: `search_notes`, `list_notes`, `read_note`, `create_note`, `append_to_note`.
 - Files: `list_dir` (also recursive), `find_files` (name or glob), `grep_files`, `read_file` (line ranges), `write_file`, `edit_file`, `delete_path`, `move_path`.
-- Questions: `ask_user`.
+- Questions: `ask_user`. Time: `current_time` (the system prompt also carries today's date).
 - Shell and web: `run_command`, `fetch_url`. Pseudo-tool: `request_access`, for a model that finds tools off.
 
 ## Path help for small models

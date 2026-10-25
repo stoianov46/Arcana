@@ -25,15 +25,15 @@ Arcana (Gradle multi-project)
  navigation/   Shell (layout, sidebar/top bar, footer, global keys)  Navigator (screens, overlays, guards, toasts)
         │                                │
         ▼                                ▼
- screens/      Home Chat Library Inbox Compose Session Usage Settings Guide     overlays: help, palette, capture
+ screens/      Home Chat Library Inbox Compose Session Usage Settings Guide Changelog     overlays: help, palette, capture
         │  use                           │ publish Hints / Commands / FocusMode to Navigator
         ▼
- design/       Theme(Palette) Panel Label Stack Picker FilePicker ScrollView Markdown Attachments TextInput …
+ design/       Theme(Palette) Panel Label Stack Picker FilePicker ScrollView Markdown Attachments TextInput StatusBar …
         │
  state holders (app/): AppContext ─ ChatSession ─ Generation ─ AppSession ─ BrainState
         │
         ▼
- core/         OllamaClient  Vault  VaultIndex  ChatStore  SessionStore  UsageStore  ConfigStore  Inbox  ToolBox
+ core/         OllamaClient  Vault  VaultIndex  ChatStore  SessionStore  UsageStore  ConfigStore  Inbox  ToolBox (Shell, Web)
         │
         ▼
  Ollama HTTP (localhost:11434)      vault folder (Markdown files)      ~/.config/arcana/*
@@ -48,7 +48,7 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 | `config` (+ `update(newConfig)`) | current `AppConfig`; `update` saves to disk, bumps `revision` when needed |
 | `client: OllamaClient` | reads `config` lazily (URL/model/temperature/timeout changes apply at once) |
 | `connection: Connection` | `Checking / Online(models) / ModelMissing(models) / Offline(error)`; refreshed by `refreshConnection()` |
-| `vision`, `tools: Boolean?` | model capabilities from `/api/show` (`null` = unknown) |
+| `vision`, `tools: Boolean?`, `modelContext` | model capabilities and maximum context from `/api/show` (`null`/0 = unknown) |
 | `usage`, `recordUsage(feature, chunk)` | token accounting (`UsageStore`, `usage.jsonl`) |
 | `session: AppSession` | the run's activity log and "needs saving" logic |
 | `brain: BrainState` | background-built `VaultIndex` + `BrainHealth`; `refresh()` / `changed()` |
@@ -66,8 +66,8 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 1. `Chat.kt` `send()` → `ChatSession.send(text)`.
 2. `attachments.drain()` → user `ChatMessage` (images, text files, `noteNames`) appended to `messages` and persisted.
 3. `Generation.start(tools, maxSteps) { prepare }` launches a coroutine on `app.scope`:
-   - `prepare()` (IO dispatcher): optional vault search (`/vault` mode), reads attached notes, builds
-     `Prompts.chatMessages(config, history, hits, noteTexts, tools)`.
+   - `prepare()` (IO dispatcher): optional vault search (`/vault` mode), reads attached notes and the `ARCANA.md` memory, builds
+     `Prompts.chatMessages(config, history, hits, noteTexts, tools, toolsNote, canRequestTools, memory)` (today's date, the tool cheat sheet).
    - `OllamaClient.chat(messages, json, tools)` streams NDJSON `ChatChunk`s; `text` state updates per chunk.
    - If chunks carry `tool_calls` and tools were offered: `ChatSession.runTools(...)` executes them (asking the user for
      writes), appends results, and the loop asks the model again (see [tools-and-agent.md](tools-and-agent.md)).

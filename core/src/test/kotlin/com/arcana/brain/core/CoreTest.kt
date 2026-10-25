@@ -685,6 +685,24 @@ class CoreTest {
     }
 
     @Test
+    fun theModelCanAskForTheTimeAndAlwaysKnowsTheDate() {
+        val root = Files.createTempDirectory("arcana-time")
+        val box = ToolBox(null, listOf(root), root.resolve("b"))
+        val now = box.execute(call("current_time"))
+        assertTrue(Regex("""\w+ \d+ \w+ \d{4}, \d\d:\d\d:\d\d \(.+, UTC[+-]\d\d:\d\d\); ISO \d{4}-\d\d-\d\dT.+; Unix \d+""").containsMatchIn(now), now)
+        val tokyo = box.execute(call("current_time", "timezone" to "Asia/Tokyo"))
+        assertTrue("Asia/Tokyo" in tokyo && "UTC+09:00" in tokyo, tokyo)
+        assertTrue("not a time zone" in box.execute(call("current_time", "timezone" to "Mars/Base")))
+        assertTrue("- current_time(timezone?)" in box.cheatSheet())
+        assertEquals("Sunday 25 October 2026, 21:07:45 (Europe/Kyiv, UTC+02:00); ISO 2026-10-25T21:07:45+02:00; Unix 1792955265",
+            describeNow(java.time.ZonedDateTime.of(2026, 10, 25, 21, 7, 45, 0, java.time.ZoneId.of("Europe/Kyiv"))))
+        val day = java.time.ZonedDateTime.of(2026, 10, 25, 9, 0, 0, 0, java.time.ZoneId.of("UTC"))
+        val system = Prompts.chatMessages(AppConfig(), listOf(ChatMessage.user("hi")), null, emptyMap(), today = day).first().content
+        assertTrue("Today is Sunday 25 October 2026" in system && "current_time" in system, system)
+        assertTrue("Today is" !in Prompts.chatMessages(AppConfig(), listOf(ChatMessage.user("hi")), null, emptyMap(), today = null).first().content)
+    }
+
+    @Test
     fun theModelListSaysWhatEachModelCanDo() {
         val tags = """{"models":[{"name":"qwen3:30b","size":19000000000},{"name":"gemma4:latest","size":9500000000},{"name":"tiny","size":400000000}]}"""
         assertEquals(listOf("qwen3:30b" to 19_000_000_000L, "gemma4:latest" to 9_500_000_000L, "tiny" to 400_000_000L), OllamaProtocol.parseModelSizes(tags))

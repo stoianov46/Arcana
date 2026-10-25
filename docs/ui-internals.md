@@ -61,8 +61,8 @@ then `renderMarkdown(blocks, width, entry, rich, plainGlyphs)` → `List<Line>` 
 
 `renderStyled` works line by line plus lookahead for structures:
 
-- **Code fences** → `renderCode`: title bar `╭─ lang ───`, line numbers, per-token colours (`highlightCode`: comments dim italic, strings green,
-  numbers orange, keywords purple bold, calls blue, Capitalised types cyan, JSON keys blue, `diff` lines green/red), bottom edge,
+- **Code fences** → `renderCode`: a closed box (`╭─ lang ───╮`, `│` on both sides of every row, `╰───╯`, every row exactly the width), line numbers, per-token colours (`highlightCode`: comments dim italic, strings green,
+  numbers orange, keywords purple bold, calls blue, Capitalised types cyan, JSON keys blue, `diff` lines green/red), closed bottom edge,
   whole block on `Palette.ConsoleCodeBg` via `MdLine.fill`.
 - **Tables** (`startsTable` → `renderTable`): box drawing (`╭ ┬ ╮ ├ ┼ ┤ ╰ ┴ ╯ │`), column widths from content, shrunk (widest first,
   min 3) and wrapped to fit the width; header row tinted by putting the background **on the runs** (not `fill`, which would run past the
@@ -87,3 +87,28 @@ override derived values. New roles must be added to `Colors` with a derivation s
 
 `Shell` animates the sidebar/top-bar logo while `app.busy > 0` (a counter incremented per running generation). `ReplyStatus`
 shows spinner/thinking/elapsed/tokens while generating; `replyFooter` prints the closing stats line.
+
+## Chat layout: what sits under the conversation
+
+Chat counts every row under the conversation by hand (`below`), then `outputRows(fixed = 3 + 2 + statusRow + below, actions)` gives the rest to the
+conversation. `below` is the sum of: the message field (`2 + inputRows + attachment rows`, `inputRows` up to a quarter of the screen, 3–8),
+the `/` menu rows (≤8, only while a message starts with `/`), the **status bar** row (`statusRows`, 0 when the density is `tiny`), and, for
+a dialog (approval or question), its panel instead of the field: `lines + 3` plus its button rows. **Dialog buttons live inside the panel**
+(`ActionBar(items, panelWidth())`), so their rows are counted with `breakIntoLines(items, panelWidth()).size + 1` and `actions = null` is
+passed to `outputRows`; the message field keeps its buttons below the status bar (`actions = chatActions(…)`). Add a row to any of these and
+add it to the count.
+
+## Status bar (`design/StatusBar.kt`)
+
+A reusable one-line summary: `StatusSegment(parts, priority)` (a part is coloured text, optionally bold or on a background), built with
+`statusSegment(label, value, color, priority)`, `pillSegment(text, background)`, `gaugeSegment(label, fraction, detail)` (green < 60 %,
+orange from 60 %, red from 85 %). `fitSegments(segments, width)` drops the lowest priority first (keeping the order) until the line fits;
+`StatusBar(segments)` draws it with `│` separators (`|` with plain glyphs); `StatusHeader(title, segments)` is a screen header with the bar
+under the title. Chat (`chatStatus`) and Usage use it; any screen can.
+
+## Scrollbars and scrolling text
+
+`WrappedText` (multi-row text fields) keeps its first visible row between frames so it scrolls only when the caret leaves the window, and
+draws a scrollbar in its last column when the text is taller than the window: a `█` thumb (as tall as the visible share, at the window's
+position) on a `│` track. `ScrollView` does the same for the conversation.
+

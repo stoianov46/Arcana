@@ -152,7 +152,7 @@ Talk to Gemma. The message field **always has the keyboard**: letters never act 
 
 ## Letting it act: tools
 Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use tools instead of only talking:
-- **Reading** (runs at once): `search_notes`, `list_notes`, `read_note`, `list_dir` (also recursive), `find_files` (by name or glob such as `**/*.kt`), `grep_files` (search *inside* files, with line numbers), `read_file` (text, code, JSON, PDF; long files in parts with a line range).
+- **Reading** (runs at once): `search_notes`, `list_notes`, `read_note`, `list_dir` (also recursive), `current_time` (the date and time, in any time zone), `find_files` (by name or glob such as `**/*.kt`), `grep_files` (search *inside* files, with line numbers), `read_file` (text, code, JSON, PDF; long files in parts with a line range).
 - **Changing** (always asks first): `create_note`, `append_to_note`, `write_file`, `edit_file`. A panel shows exactly what would change; `y` allows, `n` denies, `a` allows that tool for the rest of the session.
 - Each step shows in the chat as `⚙ tool  what` and `↳ ✓ result`. It may take up to *Steps per question* rounds before it must answer.
 - **New folders:** when the model needs a folder that is not allowed yet (say `~/Desktop`), Arcana asks "Allow this folder?": `y` remembers it (see *Extra folders*), `n` refuses. Home itself, system folders and hidden folders such as `~/.ssh` are never offered.

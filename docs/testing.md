@@ -10,9 +10,10 @@
 
 | Suite | Covers |
 |---|---|
-| `core/.../CoreTest.kt` | Ollama protocol (request/chunk/tool calls), vault CRUD/search/trash/replace, index (links, tags, orphans, code-block rules, health), daily notes + capture, inbox plan parse/apply, chat/session/usage stores, attachments (images, text, PDF built with PDFBox), tools (sandbox, symlink escape, backups, protected folders, edit uniqueness) |
-| `app/.../DesignTest.kt` | Markdown rendering (headings, lists, tables box/alignment/fit, figure + code highlighting, ASCII fallback), wrapping, scroll thumb, select mode (walk, tick, tall entries), picker filtering, reply footer, stty parsing |
+| `core/.../CoreTest.kt` | Ollama protocol (request/chunk/tool calls), vault CRUD/search/trash/replace, index (links, tags, orphans, code-block rules, health), daily notes + capture, inbox plan parse/apply, chat/session/usage stores, attachments (images, text, PDF built with PDFBox), tools (sandbox, symlink escape, backups, protected folders, edit uniqueness, grep/glob/line ranges, shell policy and runner, web policy and `fetchUrl` against a local server, delete/move, `ask_user` option cleaning, text-written calls, cheat sheet, `current_time`), memory file, note rename with link rewriting, usage insights, model list details |
+| `app/.../DesignTest.kt` | Markdown rendering (headings, lists, tables box/alignment/fit, closed code boxes, figure + code highlighting, ASCII fallback), wrapping, scroll thumb, select mode (walk, tick, tall entries), picker filtering, reply footer, stty parsing, status bar fitting and formats, axis labels, context gauge, the `/` menu and its badges, `announcesAction` |
 | `InputTest.kt` / `KeyMappingTest.kt` | text editing (caret, selection, word jumps), Cyrillic mapping, "no control uses z", non-Latin keys don't crash |
+| `PasteRepairTest.kt` | `KeyDispatcher`: a paste that lost its beginning or its middle is typed back whole from the clipboard |
 | `FilePickerState` tests (`FilePickerTest.kt`) | folder browsing, ticking, limits, hidden files |
 | `AppSessionTest.kt` | session logging/saving state |
 
@@ -39,7 +40,7 @@ in a pseudo-terminal, feed keys, and read the screen through a terminal emulator
    - Esc followed quickly by `[`/`O` is read as an escape sequence; wait after Esc.
    - Leaving AI notes with an unapplied draft asks first (answer `Esc`/`y`); Chat asks only when *Keep chats* is off.
 5. Useful keys: `1`-`9` screens, `Ctrl+P`=`\x10`, `Ctrl+N`=`\x0e`, `Ctrl+O`=`\x0f`, `Ctrl+C`=`\x03`, arrows `\x1b[A/B/C/D`, Enter `\r`.
-6. Real model checks need Ollama running with `gemma4:latest`; keep prompts short and deterministic ("Reply with exactly …").
+6. The helper is a small script (`drv.py`: `pty.fork`, `TIOCSWINSZ`, a `pyte.Screen`; `pip install --target <dir> pyte`) kept in the scratchpad, not in the repository. Real model checks need Ollama running with `gemma4:latest`; keep prompts short and deterministic ("Reply with exactly …").
    The screen dump shows text only (no colours); colour/style correctness is asserted in unit tests on `Run`s.
 
 Always remove test artifacts you created in the test vault (notes, attachments, daily note lines) afterwards.

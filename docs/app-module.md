@@ -1,7 +1,7 @@
 # `app` module reference
 
 Path: `app/src/main/kotlin/` (package `com.arcana.brain.app`; sub-packages `design`, `input`, `navigation`, `screens`).
-Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `FilePickerTest`, `AppSessionTest`).
+Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `FilePickerTest`, `AppSessionTest`, `PasteRepairTest`).
 
 ## Top-level state holders (package `com.arcana.brain.app`)
 
@@ -11,8 +11,8 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 | `AppContext.kt` | `AppContext` | the app-wide state; see [architecture.md](architecture.md) |
 | `AppSession.kt` | `AppSession` | the run's logged session: `events`, `log(kind, text, path?)` (persisted as it happens), `markSaved(path)`, `needsSaving`/`unsavedCount` (activity since the last save), `finish()`. Writing the summary note/log into the vault is done by `screens/Session.kt` |
 | `BrainState.kt` | `BrainState` | background `VaultIndex` (`index`, `reading`, `error`, `revision`); `changed()` (after vault writes) and `refresh()` |
-| `ChatSession.kt` | `ChatSession` | the persistent chat: `messages`, `input`, `attachments`, `send()`, `gen`, tool loop (`runTools`), approvals, history, `startNew/open/deleteCurrent`, `persist()` |
-| `Generation.kt` | `Generation`, `GenState`, `rememberGeneration` | one streamed model request (and the tool-use loop); observable `state/text/thinking/error/stats` |
+| `ChatSession.kt` | `ChatSession` | the persistent chat: `messages`, `input`, `attachments`, `send()`, `gen`, the tool loop (`runTools`), `Approval` dialogs (folder, shell, web, access, step limit, text calls, memory), `Question` (`ask_user`), `offerTools`, `offerMemory`, history, `startNew/open/deleteCurrent`, `persist()` |
+| `Generation.kt` | `Generation`, `GenState`, `rememberGeneration`, `announcesAction` | one streamed model request and the tool-use loop (text-written calls via `TextToolCalls`, the "keep going" nudge, `onStepLimit`, `useTools`); observable `state/text/thinking/error/stats` |
 | `Terminal.kt` | `TerminalSize`, `ResizeSignalGuard` | size from stty polling + SIGWINCH guard; `ARCANA_COLUMNS/ROWS` overrides |
 | `SystemOpen.kt` | `SystemOpen` | open files / `obsidian://` links with the OS opener |
 | `com/jakewharton/mosaic/compat.kt` | shadow of Mosaic's key mapping | fixes a crash on non-ASCII keys (Mosaic 0.18); copied from CosmoCLI. Do not delete |
@@ -23,7 +23,7 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 ## `navigation/`
 
 - `Navigator.kt`
-  - `Screen` enum (Home, Chat, Library, Inbox, Compose, Session, Usage, Settings, Guide) with `title`, `icon`, `group`
+  - `Screen` enum (Home, Chat, Library, Inbox, Compose, Session, Usage, Settings, Guide, Changelog) with `title`, `icon`, `group`
     (`ScreenGroup.Workspace`="BRAIN", `Account`="SYSTEM"); `ScreenOrder` applies the user's `tabOrder`; `SHORTCUT_KEYS="1234567890"`.
   - `Navigator` holds: `current`, `navigate(screen, force)`, `leaveGuard` (a screen may veto leaving), overlays
     (`helpOpen`, `paletteOpen`, `captureOpen`, `palette`, `captureField`), `toast`/`showToast`, `exitFlow`/`quitPending`,
@@ -42,14 +42,15 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 | File | Screen | Notable internals |
 |---|---|---|
 | `Home.kt` | Brain | two-column dashboard from `BrainHealth`; Enter jumps (Library filter / Chat / note) |
-| `Chat.kt` | Chat | `ChatMode` (Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear); `messageLines` renders messages incl. tool steps; approval panel; select mode via `OutputState`; slash commands |
-| `Library.kt` | Library | `LibraryMode` (List, Reading, ConfirmDelete); filters from `LibraryFilter`; preview pane; trash; open in Obsidian |
+| `Chat.kt` | Chat | `ChatMode` (Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave (only with Keep chats off), ConfirmClear); `messageLines` renders messages incl. tool steps; approval and question panels (buttons inside); the `/` menu (`SlashItem`, `slashMatches`, `slashState`); `chatStatus` + `contextUsage`; select mode via `OutputState` |
+| `Library.kt` | Library | `LibraryMode` (List, Reading, ConfirmDelete, Rename); filters from `LibraryFilter`; preview pane; trash; rename; chat about a note; open in Obsidian |
 | `Inbox.kt` | Inbox | `InboxMode`; `Analysis` (Ready/Failed); uses `InboxProcessing`; editable plan fields |
 | `Compose.kt` | AI notes (`NoteComposerScreen`) | `Task` enum, `Mode` (Start, PickSource, Input, Follow, Title, AppendPick, ConfirmReplace, ConfirmDiscard, Result); conversation + `drafts` stack for undo; attachments |
 | `Session.kt` | Session | `SessionMode` (Overview, Summary, ConfirmNew); exit flow |
-| `Usage.kt` | Usage | period switch, per-feature/day bars, clear history |
-| `Settings.kt` | Settings | declarative `settings` list (`Setting`, `choice`, `toggle`, `stepper`, `text`, `Editor.{Text,Model,Folder,Theme}`), tabs by `Group` |
-| `Guide.kt` | Guide | list of pages (Markdown strings) |
+| `Usage.kt` | Usage | dashboard: `Period` × `Page` (Overview, Breakdown, Recent); tiles, `ColumnChart`, insights, feature/model bars, hour strip, speed sparkline, recent table; `axisLabels`; `StatusHeader`; clear history |
+| `Changelog.kt` | Changelog | `changePages()`: hand-written pages (Latest, Tools, Chat, Brain, Interface, Start); same scroll/select view as Guide |
+| `Settings.kt` | Settings | declarative `settings` list (`Setting`, `choice`, `toggle`, `stepper`, `text`, `Editor.{Text,Model,Folder,Theme}`), tabs by `Group`; the model picker shows `ModelDetails` |
+| `Guide.kt` | Guide | 12 pages (Markdown strings) |
 | `Common.kt` | helpers | `bodyRows`, `outputRows(fixed, notice, actions)`, `panelWidth`, `outputWidth`, `WithVault`, `GenerationView`, `ReplyStatus`, `relativeTime`, `saveFailure` |
 | `AttachBrowser.kt` | shared | the full-screen file browser used by Chat, AI notes and Capture |
 
@@ -62,18 +63,20 @@ Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `
 |---|---|
 | `Theme.kt` | `ThemeSpec`, `Themes.all/byId`, `Colors`, `Palette` (live theme accessors: `Palette.Text/Accent/Cta/Green/Red/Console*/UserBg…`), `Dimens` |
 | `Layout.kt` | `Stack` (column that clips), `VGap`, `HGap`, `LocalContentWidth/Height/UiScale`, `rememberDensity()` (`inline` mode at small sizes) |
-| `Label.kt` | `Label` (single-style, clipped to its width; use instead of `Text`), `HBar`, `TailText`, `WrappedText`, `wrap`, `wrapRows` |
+| `Label.kt` | `Label` (single-style, clipped to its width; use instead of `Text`), `HBar`, `TailText`, `WrappedText` (wraps, scrolls with the caret, draws a scrollbar in its last column), `wrap`, `wrapRows` |
 | `Panel.kt` | `Panel(title, accent)`, `Card`, `ScreenHeader(title, subtitle)`, frame glyphs |
 | `Fields.kt` | `TextInput(label, field, focused, placeholder, maxRows, attachments)`, `LabeledField`, `InlineField`, `handleAttachmentKey` |
-| `Actions.kt` | `ActionItem`, `ActionBar`, `actionBarRows`, `Badge` |
+| `Actions.kt` | `ActionItem`, `ActionBar(items, width)`, `actionBarRows`, `breakIntoLines`, `Badge` |
+| `StatusBar.kt` | **reusable status line**: `StatusSegment`/`StatusPart`, `statusSegment`, `pillSegment`, `gaugeSegment`, `fitSegments` (drops the lowest priority first), `StatusBar`, `StatusHeader`, `spanText`, `priceText` |
+| `Shortcuts.kt` | `Shortcuts.label(text)`: the one place shortcut labels pass through (Ctrl chords) |
 | `Messages.kt` | `Notice`, `NoticeLine`, `Hint`, `Warning`, `Cta`, `Loading`, `Spinner` |
 | `Picker.kt` | `PickerState` + `Picker<T>`: `/` filters (any order of words), ↑↓, Enter |
 | `FilePicker.kt` | `FilePickerState`/`FilePicker`: folder browser returning files (tick with Space, Tab to attach) |
 | `DirectoryPicker.kt` | folder-only picker (vault path) |
 | `Attachments.kt` | `Attachments` state (pictures, files, notes, plain), `AttachmentLine`, `SentAttachments`, `attachBrowserHints` |
 | `ScrollView.kt` | `Line`, `OutputState` (scroll + select mode + copy), `ScrollView`, `ScrollBar`, `RunsRow` |
-| `Markdown.kt` | `parseMarkdown` (blocks), `renderMarkdown` (styled `Line`s), code highlighter, tables, `unmath`, `plainText`, `codeAndTables` |
-| `ReplyFooter.kt` | `replyFooter(stats, plain)`: `✓ Done · 6.4s · ↑ 293 ↓ 820 tokens · 101 tok/s` |
+| `Markdown.kt` | `parseMarkdown` (blocks), `renderMarkdown` (styled `Line`s), closed code boxes + highlighter, boxed tables, `unmath`, `plainText`, `codeAndTables` |
+| `ReplyFooter.kt` | `replyFooter(stats, plain, step)`: `✓ Done · 6.4s · ↑ 293 ↓ 820 tokens · 101 tok/s`, or a quiet `· step` for a round that ended in a tool call |
 | `Sanitize.kt` | `sanitizeForTerminal` (wide chars/emoji → one-cell lookalikes) |
 | `TabBar.kt` | `TabBar(tabs, current)` used by Settings |
 
@@ -81,9 +84,9 @@ Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `
 
 | File | Provides |
 |---|---|
-| `Key.kt` | `sealed interface Key` (`Up/Down/Enter/Escape/Tab/Backspace…`, `Text(char)`, plus app keys `Save` Ctrl+S, `Browse` Ctrl+O, `Palette` Ctrl+P, `Capture` Ctrl+N, `Skip` Ctrl+X); helpers `char`, `isUp/isDown` |
+| `Key.kt` | `sealed interface Key` (`Up/Down/Enter/Escape/Tab/Backspace…`, `Text(char)`, `PastedNewline` (Alt+Enter and pasted line breaks), plus app keys `Save` Ctrl+S, `Browse` Ctrl+O, `Palette` Ctrl+P, `Capture` Ctrl+N, `Skip` Ctrl+X); helpers `char`, `isUp/isDown` |
 | `KeyMapping.kt` | Mosaic `KeyEvent` → `Key` (handles lock bits, Kitty-style modifiers) |
-| `KeyDispatcher.kt` | dispatch order overlay → screen → global; **paste repair** (keys <20 ms apart are text); `Meta` sequences |
+| `KeyDispatcher.kt` | dispatch order overlay → screen → global; **paste repair** (keys <20 ms apart are text; a paste that lost its beginning or its middle is typed back whole from the clipboard); `Meta` sequences |
 | `MetaSequence.kt` | ESC-prefixed sequences (Alt+arrows, word jumps) |
 | `KeyboardLayout.kt` | Cyrillic letters mapped back to the QWERTY key in the same position so shortcuts work on any layout |
 | `TextEdit.kt` / `TextFieldState.kt` | caret, selection, word moves/deletes, line start/end, Ctrl+U; `TextFieldState` + `KeyHandler` composable |

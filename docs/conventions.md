@@ -5,13 +5,13 @@
 1. **Arcana is the control panel of the user's second brain.** UI/UX serves: capture → see → think → shape → keep. Don't turn it into a
    generic chat client.
 2. **Chat's message field always has the keyboard.** No letter shortcuts while typing; actions are Ctrl keys, `/commands`, `@`,
-   the palette. `Esc` leaves the field for browse/select.
+   the palette. `Esc` leaves the field for browse/select (while a reply runs, `Esc` cancels it and number keys switch screens only with an empty field). Shortcuts are Ctrl chords, never ⌘.
 3. **Do not reintroduce separate "Summarize" or "Ask" screens.** They were merged into AI notes (tasks) and Chat (`/vault`).
 4. **The sidebar stays** (number keys + palette) but must be informative: badges, auto-fold under 90 columns. Top bar / right sidebar are options.
 5. **Follow CosmoCLI** (`/Users/stoianovk/IDEA Projects/CosmoCLI`, sibling project) for design system, navigation, hotkeys, text editing,
    scrolling, select mode and settings groups. Before building input/scroll/key behaviour, look at its equivalent; port rather than reinvent.
 6. **Never bind `z`/`Z` as controls.**
-7. **Nothing destructive without a way back**: deletes go to `.trash`, replacements are backed up, tool writes need approval + backup.
+7. **Nothing destructive without a way back**: deletes go to `.trash` (tools: a trash folder), replacements are backed up, tool writes need approval + backup; shell, web, delete and move always ask.
 8. **Vault edits only via `Vault`** (path checks, unique names, frontmatter). Tools only inside allowed folders.
 9. **Every screen must work at 80×24.** Test narrow layouts; use `rememberDensity()` for compact variants.
 10. **Prompts live in `core` (`Prompts`, `TOOLS_PROMPT`)**, not in composables.
@@ -72,7 +72,7 @@ Add a `ThemeSpec` to `Themes.all` in `design/Theme.kt` with the required role co
 
 ## Known limitations / backlog
 
-- Tools: no shell yet; tool results are stored in full in chats; tools are not available in AI notes.
+- Tools: no `web_search` or `http_request`; tool results are stored in full in chats (shortened only when sent); tools are not available in AI notes; shell commands are not sandboxed by folder (only their working directory is).
 - Scanned PDFs have no text layer (rendering pages as pictures is not implemented).
 - Vault search is keyword-based (no embeddings).
 - The `utils/` template module is unused; it can be removed.

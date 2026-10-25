@@ -9,6 +9,8 @@
 | Sessions | `~/.config/arcana/sessions/<id>.json` | `StoredSession` JSON, written as events happen | `SessionStore` |
 | Token usage | `~/.config/arcana/usage.jsonl` | one `UsageRecord` per line | `UsageStore` |
 | Tool backups | `~/.config/arcana/backups/` | copies of replaced/edited files | `ToolBox` |
+| Tool trash | `~/.config/arcana/trash/` | files deleted by `delete_path` outside the vault (inside the vault: `<vault>/.trash`) | `ToolBox` |
+| Memory file | `<vault>/ARCANA.md` | Markdown, first 4,000 characters go to every chat | `Vault.memory/remember` |
 | Your notes | the vault folder (`vaultPath`) | Markdown | `Vault` |
 | Vault trash | `<vault>/.trash/` | Obsidian-compatible trash | `Vault.trash/replace`, inbox backups |
 | Attachments | `<vault>/<outputFolder>/attachments/` | copied pictures/files | `Vault.copyAttachment` |
@@ -36,7 +38,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `animateLogo` | true | colour sweep while generating |
 | `plainGlyphs` | false | ASCII-only output (screen readers) |
 | `renderMarkdown` | true | rich Markdown vs raw text |
-| `showThinking` | true | "Gemma is thinking…" status |
+| `showThinking` | true | "<model> is thinking…" status |
 | `chatHistory` | 20 | latest messages sent as context |
 | `keepChats` / `chatsKept` | true / 50 | persist chats / how many to keep |
 | `chatUseVault` | false | answer from vault (also `/vault`) |
@@ -46,10 +48,15 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `staleDays` | 90 | stale threshold |
 | `lastPickerDir` | `""` | last folder of the file browser |
 | `toolsEnabled` | false | tools in Chat |
+| `toolMode` | `ask` | `ask` / `auto` / `plan` |
+| `toolShell` / `toolWeb` | false / false | `run_command` / `fetch_url` may be used (each call still asks) |
+| `textCalls` | `auto` | a tool call written as text: `auto` runs it, `ask` shows it first, `off` leaves it |
 | `toolFolders` | `""` | extra folders for tools (`;`-separated) |
-| `toolMode` | `ask` | `ask` / `auto` / `plan` (see tools-and-agent.md) |
 | `toolAutoRead` | true | read-only tools run without asking |
-| `toolSteps` | 8 | max tool rounds per question |
+| `toolSteps` | 8 | max tool rounds per question (1–60); at the limit a dialog offers that many more |
+| `memoryEnabled` / `memoryOffered` | true / false | add `ARCANA.md` to every chat / already created or checked once (so a deleted file is not recreated) |
+| `contextTokens` | 0 | `num_ctx` to ask Ollama for (0 = Ollama's default); the Chat gauge counts against it, capped at the model's maximum |
+| `estPriceIn` / `estPriceOut` | 3 / 15 | US dollars per million prompt / reply tokens, only for the estimated price in the status bars |
 
 Adding a field: give it a default (old config files must still load), add a Settings row (see
 [conventions.md](conventions.md)), document it here.
@@ -63,8 +70,9 @@ Adding a field: give it a default (old config files must still load), add a Sett
 - Tags: `#tag` inline and `tags:` in frontmatter (list `[a, b]` or YAML `- a` lines).
 - Frontmatter written by Arcana: `created`, `generator: arcana`, `model`, `tags: [arcana]`. `Vault.replace` and
   `mergeFrontmatterTags` preserve existing frontmatter.
+- Renaming a note (Library `r`, `Vault.rename`) rewrites the links to it in other notes; `ARCANA.md` at the vault root is the memory file.
 - Daily notes: path from `.obsidian/daily-notes.json` (`folder`, `format`) else settings. Capture appends `- HH:mm text`.
-- Deletion is never permanent: `Vault.trash` → `.trash/`. Replacements/inbox processing back up originals into `.trash/`.
+- Deletion is never permanent: `Vault.trash` → `.trash/`; the `delete_path` tool moves to `.trash/` (vault) or `<config>/trash`. Replacements/inbox processing back up originals into `.trash/`.
 - Session summary notes and saved chats are normal notes created in `outputFolder`.
 
 ## Data shapes (persisted JSON)
@@ -72,5 +80,5 @@ Adding a field: give it a default (old config files must still load), add a Sett
 - `StoredChat { id, title, updated, model, messages: [ChatMessage] }`; `ChatMessage` fields as in
   [core-module.md](core-module.md) (images omitted on disk; `files`, `toolCalls`, `toolName` kept).
 - `StoredSession { id, started, ended?, savedAs?, events: [ { time, kind, text, path? } ] }`; `kind` ∈ `SessionKind`
-  (`asked, task, created, appended, replaced, deleted, saved, captured, processed, attached, tool, session`).
+  (`asked, task, created, appended, replaced, renamed, deleted, saved, captured, processed, attached, tool, session`).
 - `UsageRecord { time, feature, model, promptTokens, completionTokens, millis }`; `feature` ∈ `Chat`, `Generate` (AI notes), `Inbox`, `Session`

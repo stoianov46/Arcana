@@ -25,7 +25,7 @@ no marketing. Read this page, then open only the file you need.
 | [functionality.md](functionality.md) | know what every screen, key and feature does (user-visible behaviour) |
 | [core-module.md](core-module.md) | change Ollama/vault/index/session/chat-store/usage/inbox logic |
 | [app-module.md](app-module.md) | find the right file in the UI layer; state holders; navigation; design system; input |
-| [tools-and-agent.md](tools-and-agent.md) | work on the tool-calling loop, approvals, or add a tool |
+| [tools-and-agent.md](tools-and-agent.md) | work on the tool-calling loop, dialogs, shell/web/questions, or add a tool |
 | [data-and-config.md](data-and-config.md) | touch `config.json`, on-disk stores, vault conventions, frontmatter |
 | [ui-internals.md](ui-internals.md) | debug rendering: Mosaic quirks, row accounting, key dispatch, Markdown renderer |
 | [testing.md](testing.md) | run/add tests, drive the real app in a pty |
@@ -48,6 +48,8 @@ Apache PDFBox 3.0.4 for PDF text).
 Environment variables: `ARCANA_CONFIG` (config file path), `ARCANA_VAULT` (default vault path),
 `ARCANA_COLUMNS` / `ARCANA_ROWS` (force terminal size; diagnostics).
 
+Note: the vault note `ARCANA.md` (see [functionality.md](functionality.md)) is part of the product, not of this repository; a vault gets one automatically the first time Chat opens.
+
 ## Glossary
 
 | Term | Meaning |
@@ -59,6 +61,8 @@ Environment variables: `ARCANA_CONFIG` (config file path), `ARCANA_VAULT` (defau
 | Inbox | A vault folder (default `Inbox`) of unprocessed notes that AI can file |
 | Capture | `Ctrl+N`: append a timestamped line to today's daily note |
 | Palette | `Ctrl+P`: searchable list of every action |
-| Tools | Model-callable functions (read/write notes and files) with user approval for writes |
+| Tools | Model-callable functions: read/search notes and files, change or delete them, ask the user, run commands, read web pages; changes, commands and fetches need the user's confirmation |
+| Memory file | The vault note `ARCANA.md`: standing instructions and facts added to every chat |
+| Status bar | The reusable one-line summary (`design/StatusBar.kt`): model, context gauge, tokens, estimated price, time |
 | Overlay | Help / palette / capture drawn over the current screen without losing its state |
 | Entry | A selectable unit in select mode (a user message, or one Markdown block of a reply) |

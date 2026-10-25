@@ -8,24 +8,30 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | File | Contents |
 |---|---|
 | `AppConfig.kt` | `AppConfig` (all settings, `@Serializable`), `ConfigStore` (load/save JSON) |
-| `OllamaClient.kt` | `OllamaClient`, `OllamaProtocol`, `ChatMessage`, `ChatChunk`, `ReplyStats`, `OllamaException` |
-| `Vault.kt` | `Vault`, `Note`, `SearchHit`, `NoteTask`, `Prompts` (every prompt template), `VaultException` |
+| `OllamaClient.kt` | `OllamaClient`, `OllamaProtocol`, `ChatMessage`, `ChatChunk`, `ReplyStats`, `ModelDetails`, `OllamaException` |
+| `Vault.kt` | `Vault` (incl. `rename` with link rewriting, `memory`/`ensureMemory`/`remember` for `ARCANA.md`, `MEMORY_TEMPLATE`), `Note`, `SearchHit`, `NoteTask`, `Prompts` (every prompt template), `VaultException` |
 | `VaultIndex.kt` | `VaultIndex`, `NoteInfo`, `BrainHealth`, `DailyNotes`, `Vault.capture` |
 | `Inbox.kt` | `InboxProcessing` (prompt + parse), `InboxPlan`, `mergeFrontmatterTags`, `Vault.processInboxNote` |
 | `ChatStore.kt` | `ChatStore`, `StoredChat` (persistent chats as JSON files) |
 | `Session.kt` | `SessionKind`, `SessionEvent`, `StoredSession`, `SessionStore`, `SessionStats`, `SessionReport` |
-| `Usage.kt` | `UsageRecord`, `UsageStore` (JSONL), `UsageTotals`, `UsageStats` |
+| `Usage.kt` | `UsageRecord`, `UsageStore` (JSONL), `UsageTotals`, `UsageStats` (totals, `by`, `perDay`, `perHour`, `speedPerDay`, `insights`, `estimatedCost`, `since`, `compact`), `UsageInsights` |
 | `ImageFiles.kt` | picture rules + loading (`ImageAttachment`, base64) |
 | `TextFiles.kt` | text/PDF attachment rules + loading (`FileAttachment`, PDFBox extraction, `TextFiles.block`) |
-| `Tools.kt` | tool-calling types (`ToolCall`, `ToolSpec`, `ToolRisk`), `FileAccess` sandbox, `ToolBox` (all tools), `TOOLS_PROMPT` |
+| `Tools.kt` | tool-calling types (`ToolCall`, `ToolSpec`, `ToolRisk`), `FileAccess` sandbox, `ToolBox` (all tools, `cheatSheet`, `describe`), prompts (`TOOLS_PROMPT`, `REQUEST_ACCESS_PROMPT`, `NO_TOOLS_PROMPT`), `ask_user`/`request_access` definitions, `cleanOption`, `looksLikeToolTask`, `describeNow` |
+| `Shell.kt` | `ShellPolicy` (blocked / safe commands) and `runShell` (the `run_command` runner) |
+| `Web.kt` | `WebPolicy` (public addresses only), `fetchUrl` (manual redirects, size/time limits), `htmlToText` |
+| `TextToolCalls.kt` | `TextToolCalls.extract`: finds a tool call the model wrote as text at the end of a reply |
 
 ## `OllamaClient.kt`
 
 - `OllamaClient(config: () -> AppConfig)`: reads config on every call (settings changes apply immediately).
   - `chat(messages, jsonMode=false, tools: JsonArray?=null): Flow<ChatChunk>`: POST `/api/chat` with `stream=true`; parses NDJSON
     lines; throws `OllamaException` for connection errors / HTTP ≠ 200 / `error` field. Cancelling the collector cancels the request.
-  - `capabilities(model): List<String>` (`/api/show`: `completion`, `vision`, `tools`, `thinking`, …; empty when unknown).
-  - `listModels(): List<String>` (`/api/tags`).
+  - `show(model): Pair<capabilities, contextLength>` (`/api/show`: capabilities such as `completion`, `vision`, `tools`, `thinking`; the model's
+    maximum context from `model_info`); `capabilities(model)` is its first part. Empty/0 when unknown.
+  - `listModels(): List<String>` and `modelDetails(): List<ModelDetails>` (`/api/tags` + `show` per model: size, capabilities; `summary()` is
+    the `19 GB · tools · thinking` text of the model picker).
+  - `chatRequest` sends `options.temperature`, and `num_ctx` when `AppConfig.contextTokens > 0`.
 - `OllamaProtocol` (pure, unit-tested): `chatRequest(config, messages, jsonMode, tools)`, `parseChunk(line)`, `parseCapabilities`,
   `parseModels`. Messages are serialized with `ChatMessage.withFilesInlined()` (text files become part of `content`).
   Defaults are not encoded, so app-only fields (`imageNames`, `stats`, `noteNames`, `sources`) never reach Ollama when empty.
@@ -49,6 +55,7 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `read(note)` | UTF-8 text; path is checked to stay inside the root (`resolve`) |
 | `create(folder, title, body, model)` | writes `Title.md` (title sanitized, `Title 2.md` if taken) with frontmatter `created/generator: arcana/model/tags: [arcana]` |
 | `append(note, heading?, body)` | appends, optionally under `## heading` |
+| `rename(note, newTitle)` | renames the file in its folder and rewrites `[[links]]`/`![[embeds]]` (title and path style, alias and heading kept, code skipped, ambiguous titles not guessed); returns `RenameResult(path, linksUpdated, notesChanged)` |
 | `replace(note, body)` | replaces body keeping frontmatter; old file copied to `.trash` first; returns backup path |
 | `trash(note)` | moves to `<root>/.trash` (Obsidian's trash) with unique name |
 | `copyAttachment(folder, source)` | copies into `<folder or root>/attachments/`, unique name, returns the file name for `![[name]]` |
@@ -57,9 +64,9 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 Static helpers: `sanitizeTitle`, `splitFrontmatter(text) -> (frontmatter, body)`, `tokenize`.
 
 `Prompts` (all prompt text lives here): `summarize`, `ask`, `noteTask(config, NoteTask, title, text, input)`,
-`compose(config, request)`, `chatMessages(config, history, hits?, noteTexts, tools)`, `sessionSummary(config, activity, chats)`.
+`compose(config, request)`, `chatMessages(config, history, hits?, noteTexts, tools, toolsNote, canRequestTools, memory, today)`, `sessionSummary(config, activity, chats)`.
 `chatMessages` windows history to `config.chatHistory`, inlines attached notes into the user messages, wraps the latest
-question with vault excerpts when `hits != null`, and appends `TOOLS_PROMPT` to the system prompt when `tools` is true.
+question with vault excerpts when `hits != null`, shortens tool output older than the latest user message to 1,200 characters, and builds the system prompt: `systemPrompt` + today's date + (`TOOLS_PROMPT` + tool note | `REQUEST_ACCESS_PROMPT` | `NO_TOOLS_PROMPT`) + the `ARCANA.md` memory.
 
 ## `VaultIndex.kt`
 

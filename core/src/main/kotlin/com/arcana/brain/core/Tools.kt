@@ -111,6 +111,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         if (vault != null) addAll(vaultTools(vault))
         addAll(fileTools())
         add(askUserTool())
+        add(timeTool())
         add(shellTool())
         add(webTool())
     }.filter { !readOnly || it.risk == ToolRisk.Read }
@@ -390,6 +391,17 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
     private fun askUserTool() = ToolSpec(
         ASK_USER, ASK_USER_DESCRIPTION, ASK_USER_PARAMETERS, ToolRisk.Read, { it.str("question") },
     ) { throw IllegalArgumentException("ask_user is answered in the chat.") }
+
+    private fun timeTool() = ToolSpec(
+        "current_time", "Get the current date and time (and the weekday and time zone), here or in another time zone. Use it whenever the date or time matters; never guess it.",
+        schema("timezone" to ("string" to "Optional IANA time zone such as Europe/Kyiv or Asia/Tokyo; default: this computer's time zone")),
+        ToolRisk.Read, { it.str("timezone") },
+    ) { a ->
+        val zone = a.str("timezone").trim().takeIf { it.isNotEmpty() }?.let {
+            try { java.time.ZoneId.of(it) } catch (e: Exception) { throw IllegalArgumentException("\"$it\" is not a time zone name. Use a name like Europe/Kyiv, America/New_York or UTC.") }
+        } ?: java.time.ZoneId.systemDefault()
+        describeNow(java.time.ZonedDateTime.now(zone))
+    }
 
     private fun webTool() = ToolSpec(
         "fetch_url", "Read a public web page or document and get its text (HTML is reduced to readable text; JSON, text and PDF work too). Use it for documentation, articles and APIs the user points to or you need. The user approves each address. A long page is read in parts with offset.",
@@ -720,6 +732,12 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         private fun JsonObject.str(key: String): String = (this[key] as? JsonPrimitive)?.contentOrNull.orEmpty()
         private fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.let { it.intOrNull ?: it.contentOrNull?.toIntOrNull() }
     }
+}
+
+/** `Sunday 25 October 2026, 21:07:45 (Europe/Kyiv, UTC+03:00); ISO 2026-10-25T21:07:45+03:00; Unix 1792962465`. */
+fun describeNow(now: java.time.ZonedDateTime): String {
+    val day = now.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy, HH:mm:ss", java.util.Locale.ENGLISH))
+    return "$day (${now.zone}, UTC${now.offset.id.replace("Z", "+00:00")}); ISO ${now.format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)}; Unix ${now.toEpochSecond()}"
 }
 
 /** The word to put in the system prompt when tools are on, so the model knows what it can do and how to behave. */
