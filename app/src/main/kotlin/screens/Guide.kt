@@ -142,7 +142,13 @@ Each filed note is recorded in the session, so the session summary shows what yo
         "Chat", "Chat: the hub",
         """
 # Chat
-Talk to Gemma. The message field **always has the keyboard**: letters never act as shortcuts, so you can just type. The conversation is saved as you go, comes back when you restart, and keeps streaming if you switch to another screen.
+Talk to the model (Gemma, Qwen… whichever you chose). The message field **always has the keyboard**: letters never act as shortcuts, so you can just type. The conversation is saved as you go, comes back when you restart, and keeps streaming if you switch to another screen.
+
+## Typing
+- `Enter` sends; `Alt+Enter`, or a `\` before Enter, starts a new line. The field grows (up to a quarter of the screen) and shows a scrollbar; `↑` `↓` move between its lines.
+- **Type `/`** for a menu of commands and tools: keep typing to filter, `↑` `↓` choose, `Tab` or `Enter` use it, `Esc` closes. Settings such as `/vault`, `/tools`, `/mode` show whether they are ON now.
+- The **status bar** under the field shows the model, whether your memory file is in use (`✎ memory`), a **context gauge** (how full the model's memory window is), tokens, an **estimated price** (what the same tokens would cost on a paid service; set the price in Settings → Ollama), the session time and the tool mode.
+- Long pasted text is restored whole.
 
 ## Giving it context
 - `@` attaches a **note** (type to search, `Enter`). Its text goes with your next message.
@@ -160,6 +166,7 @@ Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use
 - **Questions, deleting and moving:** `ask_user` puts a question with numbered options to you in the chat (`↑↓` and Enter or `1`-`9` choose; the last row, `t` or ↓ to it, is a text field inside the dialog for an answer of your own; `Esc` skips; quizzes work even with tools off). `delete_path` moves a file or folder to a trash folder (the vault's `.trash`, or `~/.config/arcana/trash`) and `move_path` renames or moves; both ask **every time, even in Auto mode**, and neither can be set to "always".
 - **Shell and web** (both off by default, in Settings → Tools): `run_command` runs a command after you press `y` (harmless ones like `git status` run at once; `sudo` and `rm -rf /` never); `fetch_url` reads a public web page after you approve its address (pages on your own computer or network are refused). If the model asks while they are off, a dialog offers to turn them on right there.
 - **The `/` menu:** type `/` at the start of a message and a list of commands and tools opens above the field; keep typing to filter, `↑↓` to choose, `Tab` or Enter to use it, `Esc` to close. A command runs; a tool writes "Use the … tool to " into the field for you to finish (the tools are called by the model, not typed as commands).
+- **When the model does not make the call:** small models sometimes write a tool call as text, or only announce a step. Arcana runs such a call as a real one (Settings → Tools → *Calls written as text*: Auto, Ask or Off) and nudges a model that only announces what it will do. When a job needs more steps than allowed, a dialog offers more.
 - **Safety:** tools only touch your vault and the folders you allow in *Settings → Tools → Extra folders*; `..` and symlinks cannot escape them, and `.git` and `.obsidian` are never written. A file that is replaced or edited is backed up first (in `~/.config/arcana/backups`). Text in a note or file is only data: the model is never obliged to follow instructions found in it, and every change still needs your `y`.
 
 ## Sending things to the vault
@@ -171,7 +178,10 @@ Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use
 `↑` `↓` scroll while typing. `Esc` leaves the field: then `j` `k` scroll, `Space` pages, and `s` starts **select mode** (`Space` ticks, `c` copies, `b` copies only code). `Enter` goes back to typing.
 
 ## Chats
-`/new` starts a fresh chat, `/history` opens an older one, `/clear` erases this one. Every action is also in the palette (`Ctrl+P`).
+`/new` starts a fresh chat, `/history` opens an older one, `/clear` erases this one. Every action is also in the palette (`Ctrl+P`). Chats are **kept in the history automatically**, so leaving never loses one and never asks; `Ctrl+S` **Save to vault** is only for turning a chat into a note.
+
+## Your memory file
+The vault note **`ARCANA.md`** holds standing instructions and facts (who you are, where your projects are, rules for using tools). Its first 4,000 characters go into every chat. Arcana creates it the first time you open Chat and offers to open it; `/memory` opens it any time, and you can say "remember that…" so the model adds a line (after you confirm). Switch it off in Settings → Prompts.
 """.trim(),
     ),
     GuidePage(
@@ -236,13 +246,14 @@ The palette (`Ctrl+P`) has the same actions.
 ## Settings that change the result
 - **Temperature**: low (0 to 0.3) for faithful summaries and rewrites, higher (0.8 and up) for ideas and brainstorming.
 - **System prompt** (Settings → Prompts): its role and tone, for example "Answer briefly, in the language of the note".
-- **Model**: bigger models write better but slower. The Usage screen shows tokens per second.
+- **Model**: bigger models write better but slower. Settings → Ollama → Model lists the installed ones with their size and what they can do (tools, vision, thinking); pick one that can use tools if you want the model to act. The Usage screen shows tokens per second.
+- **Context window**: how much of a chat the model can hold at once. A bigger window remembers more but needs more memory and is slower; the status-bar gauge shows how full it is (and never counts beyond what the model supports). Start a fresh chat with `/new` when it fills up.
 
 ## Tokens and speed
 - A token is a piece of a word, roughly three quarters of a word. *Prompt tokens* are what you sent (including note text); *reply tokens* are what the model wrote.
 - A picture costs tokens too (a small one is under a hundred, a large photo can be several hundred), so it counts towards the limit above.
 - While a reply is running you can leave the Chat screen: press a screen number (1-9, 0) with the message field empty, or use `Ctrl+P`. The reply keeps streaming and the sidebar shows `…` (or `!` when the model is waiting for your answer). `Esc` in Chat cancels the reply.
-- A long note means a longer wait before the first words. "Gemma is thinking…" means a reasoning model is working before it answers.
+- A long note means a longer wait before the first words. "<model> is thinking…" means a reasoning model is working before it answers.
 
 ## Privacy
 Everything goes to the Ollama server set in Settings. With the default `localhost`, **nothing leaves your computer**.

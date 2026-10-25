@@ -44,6 +44,16 @@ Built on 24–25 October 2026.
 - **`grep_files`** (search inside files), **globs** in `find_files`, and **line ranges** in `read_file`.
 - Limits explain themselves: a dialog offers to turn tools on, leave plan mode, allow a folder, turn shell on or add more steps, right where the limit is hit.
 
+## Chat details
+- **Status bar** under the field, built from one reusable component: model, `✎ memory`, a coloured context gauge, tokens, estimated price, session time, tool mode.
+- **Memory file `ARCANA.md`** in the vault (created on first use, with rules for using tools) goes into every chat; `/memory` opens it; the model can `remember` lines. The system prompt also carries today's date and an exact list of the tools.
+- **Type `/`** for a menu of commands and tools, with ON/OFF badges for settings.
+- **`ask_user` dialogs**: ↑↓ + Enter, number keys, or a text field inside the dialog for your own answer; options are cleaned of `A)` and backticks. A missing question is recovered or re-asked.
+- Chats are **kept automatically**: leaving never asks (only with *Keep chats* off); the button says **Save to vault**.
+- Model picker shows **size and capabilities** for each installed model; the context window goes up to 1M and the gauge never counts beyond what the model supports.
+- A tool call written as text is run (or asked about); the "keep going" nudge no longer fires on "Let me know…"; while a reply runs, number keys switch screens and the sidebar shows `…` or `!`.
+- Dialog buttons sit inside the dialog; code blocks are closed boxes.
+
 ## Smaller things
 - Shortcuts stay **Ctrl** chords (Ctrl+P commands, Ctrl+N capture, Ctrl+O attach, Ctrl+S save…): ⌘ chords were tried and dropped because terminals and macOS claim them (Print, New window).
 - Chat: type `/` for a menu of commands and tools (filter as you type, ↑↓ Tab/Enter).
