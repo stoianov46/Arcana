@@ -27,6 +27,7 @@ import com.arcana.brain.core.TextFiles
 import com.arcana.brain.core.SessionKind
 import com.arcana.brain.core.StoredChat
 import com.arcana.brain.core.ToolCall
+import com.arcana.brain.core.AppConfig
 import com.arcana.brain.core.UsageStats
 import com.arcana.brain.core.Vault
 import com.arcana.brain.app.SystemOpen
@@ -40,6 +41,44 @@ internal fun effectiveContext(asked: Int, modelMax: Int): Int = when {
     asked <= 0 -> modelMax
     modelMax > 0 -> minOf(asked, modelMax)
     else -> asked
+}
+
+/** One entry of the menu that opens when a message starts with "/": a command, or a tool (which writes the start of a request for it). */
+internal class SlashItem(val name: String, val hint: String, val tool: Boolean)
+
+internal val SlashCommands = listOf(
+    SlashItem("/new", "Start a new chat", false),
+    SlashItem("/history", "Reopen an earlier chat", false),
+    SlashItem("/save", "Save this chat to the vault as a note", false),
+    SlashItem("/note", "Attach a note to your next message", false),
+    SlashItem("/image", "Attach a file or picture", false),
+    SlashItem("/vault", "Answer from your vault notes (toggle)", false),
+    SlashItem("/tools", "Let the model use tools (toggle)", false),
+    SlashItem("/mode", "Tools mode: ask, auto, plan (cycles)", false),
+    SlashItem("/memory", "Open ARCANA.md, your standing instructions", false),
+    SlashItem("/append", "Add the last answer to a note", false),
+    SlashItem("/replace", "Replace a note with the last answer", false),
+    SlashItem("/clear", "Erase this chat", false),
+)
+
+/** The current state of a setting-like command, as the badge shown next to it: text and colour; null for a command that is not a setting. */
+internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean?): Pair<String, com.jakewharton.mosaic.ui.Color>? = when (name) {
+    "/vault" -> if (config.chatUseVault) "ON" to Palette.Green else "OFF" to Palette.Dim
+    "/tools" -> when {
+        !config.toolsEnabled -> "OFF" to Palette.Dim
+        toolsSupported == false -> "NO SUPPORT" to Palette.Red
+        else -> "ON" to Palette.Green
+    }
+    "/mode" -> if (!config.toolsEnabled) "TOOLS OFF" to Palette.Dim else config.toolMode.uppercase() to when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }
+    "/memory" -> if (config.memoryEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
+    else -> null
+}
+
+/** The entries that fit what is typed after the slash: names that start with it first, then names that contain it. */
+internal fun slashMatches(items: List<SlashItem>, query: String): List<SlashItem> {
+    val q = query.trim().lowercase().removePrefix("/")
+    val names = { item: SlashItem -> item.name.lowercase().removePrefix("/") }
+    return items.filter { names(it).startsWith(q) } + items.filter { !names(it).startsWith(q) && q in names(it) }
 }
 
 /** How full the model's context was after the last reply (its prompt plus its answer) as a share and a `13.6k/131k` text; null before the first reply or when the size is unknown. */
@@ -319,7 +358,7 @@ fun ChatScreen(app: AppContext) {
             "/mode" -> cycleMode()
             "/append" -> openTargetPick(Target.Append)
             "/replace" -> openTargetPick(Target.Replace)
-            else -> toast("Unknown command. Try /new /history /clear /save /image /note /vault /tools /mode /memory /append /replace", error = true)
+            else -> toast("Unknown command. Type / to see the commands and tools", error = true)
         }
     }
 
@@ -358,6 +397,20 @@ fun ChatScreen(app: AppContext) {
         ),
     )
 
+    // typing "/" at the start of a message opens a menu of commands and tools (↑↓ choose, Tab or Enter use, Esc close)
+    val slashItems = remember(app.config.vaultPath) {
+        SlashCommands + (chat.toolboxFor(app.config.copy(toolsEnabled = true, toolMode = "ask"))?.specs.orEmpty())
+            .map { SlashItem(it.name, it.description.substringBefore(". ").substringBefore("\n").take(80).trimEnd('.'), true) }
+    }
+    val slashQuery = input.text.takeIf { mode == ChatMode.Chat && !browsing && chat.question == null && chat.approval == null && it.startsWith("/") && ' ' !in it && '\n' !in it }?.drop(1)
+    val slashMatches = if (slashQuery == null) emptyList() else slashMatches(slashItems, slashQuery).take(8)
+    var slashIndex by remember(slashQuery) { androidx.compose.runtime.mutableIntStateOf(0) }
+
+    fun useSlash(item: SlashItem) {
+        if (item.tool) input.set("Use the ${item.name} tool to ")
+        else { input.clear(); runCommand(item.name) }
+    }
+
     val attachments = chat.attachments
     val request = saving
     val leave = leaving
@@ -365,7 +418,8 @@ fun ChatScreen(app: AppContext) {
     val question = chat.question
     FocusMode(
         if (approval != null || question != null) true else when (mode) {
-            ChatMode.Chat -> if (attachments.browsing) attachments.filtering else !browsing
+            // while a reply runs and the field is empty, the number keys switch screens (the reply keeps going); the first letter typed brings the field back
+            ChatMode.Chat -> if (attachments.browsing) attachments.filtering else !browsing && !(gen.state == GenState.Running && input.text.isEmpty())
             ChatMode.History -> historyPicker.filtering
             ChatMode.PickNote, ChatMode.PickTarget -> notePicker.filtering
             else -> true
@@ -384,7 +438,8 @@ fun ChatScreen(app: AppContext) {
             output.selecting -> Hints("↑↓  move", "Space  tick", "c  copy", "b  code only", "Esc  leave")
             gen.state == GenState.Running -> Hints("Esc  cancel reply", "↑↓  scroll")
             browsing -> Hints("Enter  back to typing", "s  select & copy", "↑↓/Space  scroll", "1-9  screens")
-            else -> Hints("Enter  send", "Alt+Enter  new line", "@  note", "Ctrl+O  attach", "Ctrl+S  save", "↑↓  scroll", "Esc  browse")
+            slashMatches.isNotEmpty() -> Hints("↑↓  choose", "Tab/Enter  use", "Esc  close")
+            else -> Hints("Enter  send", "Alt+Enter  new line", "/  commands", "@  note", "Ctrl+O  attach", "Ctrl+S  save", "↑↓  scroll", "Esc  browse")
         }
     }
 
@@ -499,9 +554,15 @@ fun ChatScreen(app: AppContext) {
                 }
             }
             ChatMode.Chat -> when {
+                // a digit with an empty field during a reply is a screen number: leave it to the shell
+                gen.state == GenState.Running && input.text.isEmpty() && !browsing && key.char?.let { it in '0'..'9' } == true -> false
                 key == Key.Save -> { openSave(null); true }
                 key == Key.Browse -> { openAttach(); true }
                 output.selecting -> output.handle(key, entries, onNotice = { toast(it.text) })
+                slashMatches.isNotEmpty() && key == Key.Escape -> { input.clear(); true }
+                slashMatches.isNotEmpty() && key == Key.Up -> { slashIndex = (slashIndex - 1).mod(slashMatches.size); true }
+                slashMatches.isNotEmpty() && key == Key.Down -> { slashIndex = (slashIndex + 1).mod(slashMatches.size); true }
+                slashMatches.isNotEmpty() && (key == Key.Tab || key == Key.Enter) -> { useSlash(slashMatches[slashIndex.coerceIn(0, slashMatches.size - 1)]); true }
                 key == Key.Escape -> when {
                     gen.state == GenState.Running -> { gen.cancel(); true }
                     browsing -> { browsing = false; true }
@@ -641,7 +702,7 @@ fun ChatScreen(app: AppContext) {
                     val statusRow = if (gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled) 1 else 0
                     // what sits under the conversation: the message field, or the change waiting for an answer
                     val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
-                    val below = (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval).size + 3 else 2 + inputRows + pendingRow) + statusRows + panelActionRows
+                    val below = (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval).size + 3 else 2 + inputRows + pendingRow + slashMatches.size) + statusRows + panelActionRows
                     ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below, actions = actions), output)
                     ReplyStatus(app, gen)
                 }
@@ -670,6 +731,19 @@ fun ChatScreen(app: AppContext) {
                     if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars))
                 } else {
                     VGap()
+                    // the menu of commands and tools, just above the message field
+                    slashMatches.forEachIndexed { i, item ->
+                        val selected = i == slashIndex.coerceIn(0, slashMatches.size - 1)
+                        val bg = if (selected) Palette.SurfaceHigh else com.jakewharton.mosaic.ui.Color.Unspecified
+                        Row {
+                            Label(if (selected) "▸ " else "  ", color = Palette.Cta, background = bg)
+                            Label(fit((if (item.tool) "⚙ " else "") + item.name, 22), color = if (item.tool) Palette.Orange else Palette.Cta, background = bg, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
+                            val state = if (item.tool) null else slashState(item.name, app.config, app.tools)
+                            Label(" " + fit(item.hint, (LocalContentWidth.current - 28 - 12).coerceAtLeast(10)), color = if (selected) Palette.Text else Palette.Muted, background = bg)
+                            // the state of a setting, so it is clear whether it is on right now
+                            if (state != null) Label(" ${state.first} ", color = Palette.Background, background = state.second, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
+                        }
+                    }
                     TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = maxInputRows(), attachments = chat.attachments)
                     if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars))
                     ActionBar(chatActions(browsing, entries.isNotEmpty()))

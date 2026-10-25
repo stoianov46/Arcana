@@ -86,6 +86,10 @@ One line becomes `- HH:mm text` at the end of today's daily note. The daily note
 `.obsidian/daily-notes.json` when present, else Settings (`dailyFolder`, `dailyFormat`). `Ctrl+O` attaches any file(s): copied into
 `<outputFolder>/attachments/` and embedded as `![[name]]`.
 
+## The "/" menu in Chat
+
+A message that starts with `/` (no space yet) opens `slashMatches(SlashCommands + tool specs, typed)` above the field (≤8 rows, counted in `below`). ↑↓ choose, Tab/Enter use, Esc clears. A command runs through `runCommand`; a tool inserts "Use the <tool> tool to " (`useSlash`). Tools are not slash commands: the model calls them.
+
 ## Memory file (ARCANA.md)
 
 The vault note `ARCANA.md` (first 4,000 characters, no frontmatter) is added to every chat's system prompt (`Vault.memory()` → `Prompts.chatMessages(memory = …)`; Settings → Prompts → *Memory file*). `ChatSession.offerMemory()` runs when Chat opens: if the vault has no `ARCANA.md` and `memoryOffered` is false it creates one from `Vault.MEMORY_TEMPLATE` (rules for using tools, plus empty sections) and shows "Memory file created" with an offer to open it; the flag then stays true, so a file the user deletes comes back only through `/memory`. The `remember` tool appends to its "Remembered" section (always asks). `ToolBox.cheatSheet()` adds the real tool list to the same prompt.

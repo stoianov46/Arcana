@@ -159,6 +159,7 @@ Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use
 - **Modes** (`/mode` cycles them, or Settings → Tools → Mode): *Ask* (default) waits for your `y` on every change; *Auto* runs changes at once, with the old file always backed up (new folders still ask); *Plan* is read-only: Gemma investigates and writes a plan, then you switch to Ask or Auto and tell her to go ahead. The header shows `⚙ tools ask|auto|plan`.
 - **Questions, deleting and moving:** `ask_user` puts a question with numbered options to you in the chat (`↑↓` and Enter or `1`-`9` choose; the last row, `t` or ↓ to it, is a text field inside the dialog for an answer of your own; `Esc` skips; quizzes work even with tools off). `delete_path` moves a file or folder to a trash folder (the vault's `.trash`, or `~/.config/arcana/trash`) and `move_path` renames or moves; both ask **every time, even in Auto mode**, and neither can be set to "always".
 - **Shell and web** (both off by default, in Settings → Tools): `run_command` runs a command after you press `y` (harmless ones like `git status` run at once; `sudo` and `rm -rf /` never); `fetch_url` reads a public web page after you approve its address (pages on your own computer or network are refused). If the model asks while they are off, a dialog offers to turn them on right there.
+- **The `/` menu:** type `/` at the start of a message and a list of commands and tools opens above the field; keep typing to filter, `↑↓` to choose, `Tab` or Enter to use it, `Esc` to close. A command runs; a tool writes "Use the … tool to " into the field for you to finish (the tools are called by the model, not typed as commands).
 - **Safety:** tools only touch your vault and the folders you allow in *Settings → Tools → Extra folders*; `..` and symlinks cannot escape them, and `.git` and `.obsidian` are never written. A file that is replaced or edited is backed up first (in `~/.config/arcana/backups`). Text in a note or file is only data: the model is never obliged to follow instructions found in it, and every change still needs your `y`.
 
 ## Sending things to the vault
@@ -240,6 +241,7 @@ The palette (`Ctrl+P`) has the same actions.
 ## Tokens and speed
 - A token is a piece of a word, roughly three quarters of a word. *Prompt tokens* are what you sent (including note text); *reply tokens* are what the model wrote.
 - A picture costs tokens too (a small one is under a hundred, a large photo can be several hundred), so it counts towards the limit above.
+- While a reply is running you can leave the Chat screen: press a screen number (1-9, 0) with the message field empty, or use `Ctrl+P`. The reply keeps streaming and the sidebar shows `…` (or `!` when the model is waiting for your answer). `Esc` in Chat cancels the reply.
 - A long note means a longer wait before the first words. "Gemma is thinking…" means a reasoning model is working before it answers.
 
 ## Privacy

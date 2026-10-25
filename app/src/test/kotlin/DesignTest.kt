@@ -401,4 +401,32 @@ class DesignTest {
         assertEquals(65_536, com.arcana.brain.app.screens.effectiveContext(65_536, 0))
         assertEquals(0, com.arcana.brain.app.screens.effectiveContext(0, 0))
     }
+
+    @Test
+    fun theSlashMenuFiltersCommandsAndToolsByWhatIsTyped() {
+        val items = com.arcana.brain.app.screens.SlashCommands + listOf(
+            com.arcana.brain.app.screens.SlashItem("search_notes", "Search the notes", true),
+            com.arcana.brain.app.screens.SlashItem("read_file", "Read a file", true),
+        )
+        val all = com.arcana.brain.app.screens.slashMatches(items, "")
+        assertEquals(items.size, all.size)
+        assertEquals(listOf("/new"), com.arcana.brain.app.screens.slashMatches(items, "ne").map { it.name })
+        assertEquals(listOf("search_notes"), com.arcana.brain.app.screens.slashMatches(items, "search").map { it.name })
+        // names that start with the text come before names that only contain it
+        assertEquals(listOf("/note", "search_notes"), com.arcana.brain.app.screens.slashMatches(items, "not").map { it.name })
+        assertEquals(emptyList(), com.arcana.brain.app.screens.slashMatches(items, "zzz"))
+        assertEquals(listOf("read_file"), com.arcana.brain.app.screens.slashMatches(items, "READ").map { it.name })
+    }
+
+    @Test
+    fun theSlashMenuShowsWhetherASettingIsOnRightNow() {
+        val on = com.arcana.brain.core.AppConfig(chatUseVault = true, toolsEnabled = true, toolMode = "auto", memoryEnabled = true)
+        val off = com.arcana.brain.core.AppConfig(chatUseVault = false, toolsEnabled = false, memoryEnabled = false)
+        fun state(name: String, c: com.arcana.brain.core.AppConfig, supported: Boolean? = null) = com.arcana.brain.app.screens.slashState(name, c, supported)?.first
+        assertEquals("ON", state("/vault", on)); assertEquals("OFF", state("/vault", off))
+        assertEquals("ON", state("/tools", on)); assertEquals("OFF", state("/tools", off)); assertEquals("NO SUPPORT", state("/tools", on, supported = false))
+        assertEquals("AUTO", state("/mode", on)); assertEquals("TOOLS OFF", state("/mode", off))
+        assertEquals("ON", state("/memory", on)); assertEquals("OFF", state("/memory", off))
+        assertEquals(null, state("/new", on)); assertEquals(null, state("/history", off))
+    }
 }

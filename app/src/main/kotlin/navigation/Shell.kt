@@ -149,7 +149,12 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
         when (screen) {
             Screen.Inbox -> health?.inbox?.takeIf { it > 0 }?.let { it.toString() to Palette.Orange }
             Screen.Session -> if (app.session.needsSaving) "${app.session.unsavedCount}" to Palette.Warn else null
-            Screen.Chat -> if (app.chat.gen.state == com.arcana.brain.app.GenState.Running) "…" to Palette.Accent else null
+            // a dialog the model is waiting on (an approval, a question) must be seen from every screen: the reply cannot go on without an answer
+            Screen.Chat -> when {
+                app.chat.approval != null || app.chat.question != null -> "!" to Palette.Warn
+                app.chat.gen.state == com.arcana.brain.app.GenState.Running -> "…" to Palette.Accent
+                else -> null
+            }
             else -> null
         }
     }
