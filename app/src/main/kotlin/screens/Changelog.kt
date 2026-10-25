@@ -41,6 +41,7 @@ Built on 24–25 October 2026. Last updated 25 October 2026.
 - **`run_command`** (shell), off by default, every command asks first; harmless ones such as `git status` run at once; `sudo`, `rm -rf /` and similar are never run.
 - **`ask_user`**: the model can ask you a question with options (a quiz or a decision); **`delete_path`** and **`move_path`** always ask first, even in Auto mode, and a deleted item goes to a trash folder you can restore from.
 - **`fetch_url`** reads a public web page (HTML as readable text, JSON, PDF), off by default; every address asks first and is shown in full; localhost and your own network are refused, redirects are checked hop by hop.
+- **`web_search`**: the model can search the web (DuckDuckGo by default, no key; SearXNG or Brave in Settings → Tools). It asks before every search, shows what it sends, and reads a result with `fetch_url`.
 - **`grep_files`** (search inside files), **globs** in `find_files`, and **line ranges** in `read_file`.
 - **`current_time`**: the date and time in any time zone, so the model does not guess; chats also start with today's date.
 - Limits explain themselves: a dialog offers to turn tools on, leave plan mode, allow a folder, turn shell on or add more steps, right where the limit is hit.
@@ -84,7 +85,7 @@ The model can act, not only talk: search your notes, read and edit files, ask yo
 - Notes: `search_notes`, `list_notes`, `read_note`, `create_note`, `append_to_note`.
 - Files: `list_dir` (also recursive), `find_files` (name or glob), `grep_files`, `read_file` (line ranges), `write_file`, `edit_file`, `delete_path`, `move_path`.
 - Questions: `ask_user`. Time: `current_time` (the system prompt also carries today's date).
-- Shell and web: `run_command`, `fetch_url`. Pseudo-tool: `request_access`, for a model that finds tools off.
+- Shell and web: `run_command`, `fetch_url`, `web_search`. Pseudo-tool: `request_access`, for a model that finds tools off.
 
 ## Path help for small models
 - The model is told where the vault and your home are; a relative path that exists elsewhere in an allowed folder is found; a wrong path answers "Did you mean …?".

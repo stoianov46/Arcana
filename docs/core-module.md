@@ -20,6 +20,7 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `Tools.kt` | tool-calling types (`ToolCall`, `ToolSpec`, `ToolRisk`), `FileAccess` sandbox, `ToolBox` (all tools, `cheatSheet`, `describe`), prompts (`TOOLS_PROMPT`, `REQUEST_ACCESS_PROMPT`, `NO_TOOLS_PROMPT`), `ask_user`/`request_access` definitions, `cleanOption`, `looksLikeToolTask`, `describeNow` |
 | `Shell.kt` | `ShellPolicy` (blocked / safe commands) and `runShell` (the `run_command` runner) |
 | `Web.kt` | `WebPolicy` (public addresses only), `fetchUrl` (manual redirects, size/time limits), `htmlToText` |
+| `WebSearch.kt` | `WebSearch.search` with three backends (DuckDuckGo HTML, SearXNG JSON, Brave API), pure parsers, `format`; `SearchResult` |
 | `TextToolCalls.kt` | `TextToolCalls.extract`: finds a tool call the model wrote as text at the end of a reply |
 
 ## `OllamaClient.kt`

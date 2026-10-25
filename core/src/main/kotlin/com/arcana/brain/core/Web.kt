@@ -108,7 +108,7 @@ internal fun htmlToText(html: String): String {
     return if (title.isNullOrBlank()) s else "# $title\n\n$s"
 }
 
-private fun decodeEntities(text: String): String {
+internal fun decodeEntities(text: String): String {
     var s = text
     mapOf("&nbsp;" to " ", "&amp;" to "&", "&lt;" to "<", "&gt;" to ">", "&quot;" to "\"", "&#39;" to "'", "&apos;" to "'", "&mdash;" to "—", "&ndash;" to "–", "&hellip;" to "…", "&laquo;" to "«", "&raquo;" to "»")
         .forEach { (k, v) -> s = s.replace(k, v) }

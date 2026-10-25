@@ -190,6 +190,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             readOnly = config.toolMode == "plan",
             shell = config.toolShell,
             web = config.toolWeb,
+            searchBackend = config.searchBackend, searchUrl = config.searchUrl, searchKey = config.searchKey,
         )
     }
 
@@ -250,14 +251,14 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 }
             }
             // a web address: refuse the private ones before asking anything, and when web access is off ask for it here and now
-            val address = if (spec?.risk == ToolRisk.Web) (call.arguments["url"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim() else ""
+            val address = if (spec?.risk == ToolRisk.Web) (call.arguments[if (call.name == "web_search") "query" else "url"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim() else ""
             if (spec?.risk == ToolRisk.Web && refusal == null) {
-                val blocked = WebPolicy.refusal(address)
+                val blocked = if (call.name == "web_search") null else WebPolicy.refusal(address)
                 if (blocked != null) refusal = "Error: $blocked"
                 else if (!app.config.toolWeb && !folderDenied) {
                     val pending = Approval(
                         "web-on", address.chunked(76).first(),
-                        listOf("The model wants to read web pages.", "You approve every address before it is fetched; only public pages are reachable.", "Turn it off again in Settings → Tools → Web pages."),
+                        listOf("The model wants to search the web and read web pages.", "You approve every search and address before it is sent; only public pages are reachable.", "Turn it off again in Settings → Tools → Web pages."),
                         heading = "Turn on web pages?", icon = "↗", yes = "Turn on", always = false,
                     )
                     approval = pending
@@ -276,7 +277,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             if (ask && allowed) {
                 val shell = spec!!.risk == ToolRisk.Shell
                 val pending = if (shell) Approval(call.name, "run_command", spec.preview(call.arguments), heading = "Run this command?", icon = "$", yes = "Run", always = false)
-                else if (spec.risk == ToolRisk.Web) Approval(call.name, "fetch_url", spec.preview(call.arguments), heading = "Fetch this web page?", icon = "↗", yes = "Fetch", always = false)
+                else if (spec.risk == ToolRisk.Web) Approval(call.name, call.name, spec.preview(call.arguments), heading = if (call.name == "web_search") "Search the web?" else "Fetch this web page?", icon = "↗", yes = if (call.name == "web_search") "Search" else "Fetch", always = false)
                 else Approval(
                     call.name, "${call.name}  ${spec.summary(call.arguments)}", spec.preview(call.arguments),
                     heading = spec.confirmHeading ?: "Allow this change?", icon = if (spec.alwaysAsk) "!" else "⚙", always = !spec.alwaysAsk,

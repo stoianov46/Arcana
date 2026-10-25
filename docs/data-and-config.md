@@ -49,7 +49,10 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `lastPickerDir` | `""` | last folder of the file browser |
 | `toolsEnabled` | false | tools in Chat |
 | `toolMode` | `ask` | `ask` / `auto` / `plan` |
-| `toolShell` / `toolWeb` | false / false | `run_command` / `fetch_url` may be used (each call still asks) |
+| `toolShell` / `toolWeb` | false / false | `run_command` / `fetch_url` and `web_search` may be used (each call still asks) |
+| `searchBackend` | `duckduckgo` | `duckduckgo` / `searxng` / `brave`: where `web_search` looks |
+| `searchUrl` | `""` | address of the user's SearXNG server (used only by that backend) |
+| `searchKey` | `""` | Brave Search API key, stored in plain text in `config.json` (keep the file private); the Settings row shows only its last 4 characters |
 | `textCalls` | `auto` | a tool call written as text: `auto` runs it, `ask` shows it first, `off` leaves it |
 | `toolFolders` | `""` | extra folders for tools (`;`-separated) |
 | `toolAutoRead` | true | read-only tools run without asking |

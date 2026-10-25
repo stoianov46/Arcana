@@ -131,8 +131,8 @@ Tabs (groups) and rows:
 - **Vault**: Vault path (folder browser), Output folder, Context notes, Inbox folder, Daily notes folder/format, Stale after, Chars per note.
 - **Appearance**: Colour theme, Navigation (left/right/top), Sidebar (full/icons), Logo animation.
 - **Console**: Answer from vault, Render Markdown, Show thinking, Chat history, Keep chats, Chats kept, Copy as.
-- **Tools**: Tools in Chat, Extra folders, Shell commands, Calls written as text (auto/ask/off), Web pages, Mode (ask/auto/plan), Read
-  without asking, Steps per question (1–60).
+- **Tools**: Tools in Chat, Extra folders, Shell commands, Calls written as text (auto/ask/off), Search backend (DuckDuckGo/SearXNG/Brave),
+  Search address, Search API key, Web pages (search and fetch), Mode (ask/auto/plan), Read without asking, Steps per question (1–60).
 - **Prompts**: Memory file, System prompt, Summary prompt.
 - **Accessibility**: Interface scale, Screen-reader output. **Tabs**: order of the screens.
 

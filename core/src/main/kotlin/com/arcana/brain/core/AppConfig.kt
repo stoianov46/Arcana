@@ -68,6 +68,10 @@ data class AppConfig(
     val contextTokens: Int = 0,
     /** A tool call the model wrote as text instead of making it: "auto" runs it as a real call, "ask" shows it first, "off" leaves it as text. */
     val textCalls: String = "auto",
+    /** Where web_search looks: "duckduckgo" (no setup), "searxng" (a server the user runs, at [searchUrl]) or "brave" (needs [searchKey]). */
+    val searchBackend: String = "duckduckgo",
+    val searchUrl: String = "",
+    val searchKey: String = "",
     /** The model may ask to read web pages (fetch_url; every address asks first). Off by default. */
     val toolWeb: Boolean = false,
     /** The model may ask to run shell commands (every one needs approval). Off by default. */

@@ -59,6 +59,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `ask_user` | Read (answered by the chat) | `question`, `options?`, `multiple?` | see "Questions" below; offered even when tools are off |
 | `run_command` | Shell | `command`, `cwd?`, `timeout_seconds?` | off by default (`toolShell`); see "Shell" |
 | `fetch_url` | Web | `url`, `offset?` | off by default (`toolWeb`); see "Web" |
+| `web_search` | Web | `query`, `limit?` | same switch as `fetch_url`; see "Web"; returns title, address and snippet per result (≤10) |
 | `request_access` | pseudo-tool | `reason` | the only tool a model has when tools are off (plus `ask_user`); asks the user to turn tools on or leave plan mode |
 
 Allowed roots = vault root + `toolFolders` (`;`-separated, `~` expanded). Writes additionally refuse any path containing a `.git`
@@ -71,7 +72,7 @@ with `ToolBox.describe()` so small models neither forget nor invent tools.
 | Type | Role |
 |---|---|
 | `ToolCall(function: ToolFunction(name, arguments: JsonObject))` | what the model asked for (Ollama wire shape) |
-| `ToolRisk { Read, Write, Shell, Web }` | everything but `Read` needs approval |
+| `ToolRisk { Read, Write, Shell, Web }` | everything but `Read` needs approval; `Web` covers `fetch_url` and `web_search` |
 | `ToolSpec(name, description, parameters, risk, summary, preview, alwaysAsk, confirmHeading, run)` | one tool; `summary(args)` is the one-line subject shown in the chat, `preview(args)` the lines of the approval dialog (`+`/`-` for changes); `alwaysAsk` = asks in every mode and offers no "always" |
 | `FileAccess(roots)` | sandbox: `resolve(raw, base)` accepts absolute, `~/…` or relative-to-vault paths; a relative path that does not exist in the vault is looked for in the other roots; rejects anything whose **real path** (symlinks resolved) is outside the roots (`OutsideFoldersException`) |
 | `ToolBox(vault?, folders, backups, outputFolder, model, readOnly, shell, web)` | builds `specs`, `find`, `definitions()` (Ollama `tools` JSON), `execute(call)` (exceptions → `"Error: …"`), `folderToGrant(call)`, `allow(folder)`, `describe()`, `cheatSheet()`; `readOnly` (plan mode) keeps only `Read` specs |
@@ -139,7 +140,9 @@ user info, and the host must resolve to public addresses only (loopback, link-lo
 `0.0.0.0` are refused). `fetchUrl` follows redirects by hand (≤5) re-checking every hop; reads ≤2 MB; HTML → `htmlToText` (title,
 headings `#`, list items `-`, links `text (url)`, scripts/styles dropped), JSON/text as is, PDF through `TextFiles`; 20,000 characters per
 call, continue with `offset`. Every call asks ("Fetch this web page?", never "always": the address itself can carry data out); page text
-is untrusted data. Plan mode never offers it. There is no `web_search` yet (needs a backend).
+is untrusted data. Plan mode never offers it.
+
+`web_search` (core/WebSearch.kt) asks one of three backends (`AppConfig.searchBackend`): **duckduckgo** (default; the plain HTML page `html.duckduckgo.com/html/`, no key, parsed by `parseDuckDuckGo`; ads skipped, the `uddg=` redirect unwrapped; it can answer with a human check, which becomes an error telling the user to pick another backend), **searxng** (the user's own server at `searchUrl`, JSON API `…/search?q=…&format=json`; its address may be on the local network because the user configured it), **brave** (`api.search.brave.com`, header `X-Subscription-Token` from `searchKey`; the key is stored in `config.json`). Only the search words leave the computer. Every search asks ("Search the web?", never "always"; the dialog names the backend host). Results are formatted as a numbered list ending the hint "open one with fetch_url". The first call while `toolWeb` is off asks "Turn on web pages?" (one switch for both tools).
 
 ## Calls written as text
 
@@ -195,5 +198,5 @@ Brain/Library reread the vault.
 
 ## Planned / not done
 
-- `web_search` (needs a backend: API key, SearXNG or scraping) and an `http_request` tool (POST/headers) designed like `fetch_url`.
+- An `http_request` tool (POST/headers) designed like `fetch_url`; more search backends.
 - MCP client support (reuse the same loop/permission layer); per-folder read/write rights; tools in AI notes.

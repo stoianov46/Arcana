@@ -685,6 +685,48 @@ class CoreTest {
     }
 
     @Test
+    fun webSearchParsesAllThreeBackendsAndAsksBeforeEverySearch() {
+        val ddg = """<div class="results"><div class="result results_links"><h2 class="result__title"><a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa%3Fx%3D1&amp;rut=abc">Example <b>Domain</b> &amp; more</a></h2>
+            <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa">This domain is for use in <b>examples</b>.</a></div>
+            <div class="result result--ad"><a class="result__a" href="https://duckduckgo.com/y.js?ad=1">An ad</a><a class="result__snippet">ad text</a></div>
+            <div class="result"><a class="result__a" href="https://kotlinlang.org/docs">Kotlin docs</a><a class="result__snippet" href="x">Official <b>documentation</b></a></div></div>"""
+        val d = WebSearch.parseDuckDuckGo(ddg, 5)
+        assertEquals(listOf("Example Domain & more", "Kotlin docs"), d.map { it.title })
+        assertEquals("https://example.com/a?x=1", d[0].url)
+        assertEquals("This domain is for use in examples.", d[0].snippet)
+        assertEquals(1, WebSearch.parseDuckDuckGo(ddg, 1).size)
+        assertTrue(runCatching { WebSearch.parseDuckDuckGo("<html>Unfortunately, bots use DuckDuckGo too. anomaly-modal</html>", 5) }.exceptionOrNull()!!.message!!.contains("human check"))
+        val searx = WebSearch.parseSearx("""{"results":[{"title":"A","url":"https://a.dev","content":"about <b>a</b>"},{"url":"https://b.dev"},{"title":"no url"}]}""", 5)
+        assertEquals(listOf("A", "https://b.dev"), searx.map { it.title }); assertEquals("about a", searx[0].snippet)
+        val brave = WebSearch.parseBrave("""{"web":{"results":[{"title":"Brave <strong>hit</strong>","url":"https://c.dev","description":"desc"}]}}""", 5)
+        assertEquals("Brave hit", brave.single().title)
+        assertTrue(WebSearch.format("kotlin", "duckduckgo", d).contains("1. Example Domain & more\n   https://example.com/a?x=1\n   This domain"))
+        assertTrue(WebSearch.format("zzz", "brave", emptyList()).startsWith("No results"))
+        // a SearXNG server on the user's own network is reachable (they configured it); the tool asks before every search
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0)
+        server.createContext("/search") { ex ->
+            val body = """{"results":[{"title":"Hit for ${ex.requestURI.query.substringAfter("q=").substringBefore("&")}","url":"https://hit.dev","content":"snippet"}]}""".toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json"); ex.sendResponseHeaders(200, body.size.toLong()); ex.responseBody.use { it.write(body) }
+        }
+        server.start()
+        try {
+            val root = Files.createTempDirectory("arcana-search")
+            val box = ToolBox(null, listOf(root), root.resolve("b"), web = true, searchBackend = "searxng", searchUrl = "http://127.0.0.1:${server.address.port}")
+            val out = box.execute(call("web_search", "query" to "kotlin flow", "limit" to "3"))
+            assertTrue("1. Hit for kotlin+flow" in out && "https://hit.dev" in out, out)
+            val spec = box.find("web_search")!!
+            assertEquals(ToolRisk.Web, spec.risk)
+            assertTrue(spec.preview(call("web_search", "query" to "kotlin flow").arguments).any { "SearXNG" in it })
+            assertTrue("No SearXNG address" in ToolBox(null, listOf(root), root.resolve("b"), searchBackend = "searxng").execute(call("web_search", "query" to "x")))
+            assertTrue("No Brave Search API key" in ToolBox(null, listOf(root), root.resolve("b"), searchBackend = "brave").execute(call("web_search", "query" to "x")))
+            assertTrue("- web_search(query, limit?)" in box.cheatSheet())
+            assertTrue(ToolBox(null, listOf(root), root.resolve("b"), readOnly = true).find("web_search") == null)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
     fun theModelCanAskForTheTimeAndAlwaysKnowsTheDate() {
         val root = Files.createTempDirectory("arcana-time")
         val box = ToolBox(null, listOf(root), root.resolve("b"))
