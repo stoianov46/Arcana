@@ -816,6 +816,8 @@ class CoreTest {
         assertEquals("A", cleanOption("A"))
         assertEquals("A)", cleanOption("A) "), "an option that is only a label is kept as it is")
         assertEquals("Yes, please", cleanOption("Yes, please"))
+        assertEquals("search_notes", cleanOption("`search_notes`"))
+        assertEquals("list_dir", cleanOption("B) **list_dir**"))
         assertEquals("1999 was the year", cleanOption("1999 was the year"))
     }
 

@@ -90,7 +90,7 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
 
 /** The question and its options as one row each (what the panel shows and what its height is counted from). */
 private fun questionLines(q: ChatSession.Question, width: Int): List<String> {
-    val text = wrap(sanitizeForTerminal(q.text), width).take(6)
+    val text = wrap(sanitizeForTerminal(q.text).replace("`", ""), width).take(6)
     val options = q.options.mapIndexed { i, option ->
         val mark = if (q.multiple) (if (i in q.picked) "[x] " else "[ ] ") else ""
         (if (i == q.cursor) "▸ " else "  ") + "$mark${i + 1}  ${sanitizeForTerminal(option)}".take(width - 2)

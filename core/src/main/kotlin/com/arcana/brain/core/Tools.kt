@@ -744,9 +744,10 @@ const val ASK_USER = "ask_user"
 private val OPTION_LABEL = Regex("""^\s*(\(\s*[A-Za-z0-9]{1,2}\s*\)|[A-Za-z0-9]{1,2}\s*[).:])\s+""")
 
 /** An answer option without the "A)", "(b)", "1." or "C:" the model put in front of it: the panel numbers them itself. */
-fun cleanOption(option: String): String = option.trim().let { text -> OPTION_LABEL.replace(text, "").trim().ifEmpty { text } }
+fun cleanOption(option: String): String =
+    option.trim().let { text -> OPTION_LABEL.replace(text, "").trim().trim('`', '*').trim().ifEmpty { text } }
 
-const val ASK_USER_DESCRIPTION = "Ask the user a question (always set the question argument to the full text of the question) with a few answers to pick from (a quiz or a choice), or an open question when you give no options. " +
+const val ASK_USER_DESCRIPTION = "Ask the user a question with answer options (a quiz or a decision), or an open question without options. Always set question to the full text. " +
     "Use it when you need a decision or missing information instead of guessing, and for quizzes. The answer comes back as the result."
 
 val ASK_USER_PARAMETERS: JsonObject = buildJsonObject {
