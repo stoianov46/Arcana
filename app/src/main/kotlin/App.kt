@@ -9,6 +9,7 @@ import com.arcana.brain.app.navigation.Navigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.app.navigation.Shell
 import com.arcana.brain.app.screens.ChatScreen
+import com.arcana.brain.app.screens.ChangelogScreen
 import com.arcana.brain.app.screens.GuideScreen
 import com.arcana.brain.app.screens.HomeScreen
 import com.arcana.brain.app.screens.InboxScreen
@@ -70,6 +71,7 @@ private fun ArcanaApp(onQuit: () -> Unit) {
             Screen.Usage -> UsageScreen(app)
             Screen.Settings -> SettingsScreen(app)
             Screen.Guide -> GuideScreen(app)
+            Screen.Changelog -> ChangelogScreen(app)
         }
         }
     }

@@ -15,6 +15,7 @@ import com.arcana.brain.app.Connection
 import com.arcana.brain.app.ResizeSignalGuard
 import com.arcana.brain.app.TerminalSize
 import com.arcana.brain.app.design.Dimens
+import com.arcana.brain.app.design.Shortcuts
 import com.arcana.brain.core.UsageStats
 import com.arcana.brain.app.design.Label
 import com.arcana.brain.app.design.LocalContentHeight
@@ -156,9 +157,9 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
     val hint = when {
         navigator.quitPending -> quitPrompt(size.columns - app.badgeWidth() - 2, navigator.exitFlow)
         navigator.overlayOpen -> overlayHint(navigator)
-        navigator.actionBars > 0 -> "Ctrl+P  commands   Ctrl+N  capture   ?  keys"
+        navigator.actionBars > 0 -> Shortcuts.label("Ctrl+P  commands   Ctrl+N  capture   ?  keys")
         // the two global keys come first, so they are always seen
-        else -> "Ctrl+P  commands   Ctrl+N  capture   ${navigator.hint}"
+        else -> Shortcuts.label("Ctrl+P  commands   Ctrl+N  capture   ") + navigator.hint
     }
     val vPad = if (viewRows < 24) 0 else 1
 
@@ -293,7 +294,7 @@ private fun Sidebar(navigator: Navigator, width: Int, collapsed: Boolean, rows: 
             }
             if (roomy) VGap()
             Row(Modifier.fillMaxWidth()) {
-                Label(if (collapsed) "^B" else " Ctrl+B ", color = Palette.Background, background = Palette.Cta, textStyle = TextStyle.Bold)
+                Label(if (collapsed) "^B" else " ${Shortcuts.label("Ctrl+B")} ", color = Palette.Background, background = Palette.Cta, textStyle = TextStyle.Bold)
                 if (!collapsed) Label(" ‹ Fold", Modifier.weight(1f), color = Palette.Text, background = Palette.SurfaceHigh, fill = true)
             }
         }
@@ -372,7 +373,7 @@ private fun AppContext.badgeWidth(): Int = (if (sessionTokens > 0) " ⚡ ${Usage
 /** What the footer says while an overlay is open. */
 private fun overlayHint(navigator: Navigator): String = when {
     navigator.paletteOpen -> "↑↓  choose   Enter  run   Esc  close"
-    navigator.captureOpen -> "Enter  save the thought   Ctrl+O  attach a file   Esc  cancel"
+    navigator.captureOpen -> Shortcuts.label("Enter  save the thought   Ctrl+O  attach a file   Esc  cancel")
     else -> "any key  close"
 }
 
@@ -418,7 +419,7 @@ private fun KeyMap(title: String, screenHint: String) {
     val own = screenHint.split("   ").filter { it.isNotBlank() }.map { it.substringBefore("  ", "") to it.substringAfter("  ", it).trim() }
     val everywhere = listOf(
         "1-${Screen.sidebar.size}" to "switch screen",
-        "Ctrl+B" to "fold the sidebar",
+        Shortcuts.label("Ctrl+B") to "fold the sidebar",
         "Ctrl+C ×2" to "quit (the second press confirms)",
         "?" to "this key map",
         "Esc" to "leave editing, then back to Home",

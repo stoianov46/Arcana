@@ -110,7 +110,7 @@ fun PaletteOverlay(navigator: Navigator, commands: List<Command>) {
                 rows = (LocalContentHeight.current - 7).coerceAtLeast(3),
                 icon = { if (it.enabled) "›" else "×" },
                 iconColor = { Palette.Cta },
-                meta = { if (it.keys.isNotEmpty()) "${it.group}  ·  ${it.keys}" else it.group },
+                meta = { if (it.keys.isNotEmpty()) "${it.group}  ·  ${Shortcuts.label(it.keys)}" else it.group },
                 metaColor = { Palette.Muted },
                 placeholder = "Type to search commands",
                 emptyText = "No commands.",

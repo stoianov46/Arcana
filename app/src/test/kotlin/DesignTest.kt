@@ -248,14 +248,14 @@ class DesignTest {
         assertEquals(Screen.entries.toList(), Screen.ordered(emptyList()))
         val moved = Screen.ordered(listOf("Chat", "Home", "Settings", "Usage"))
         assertEquals(listOf(Screen.Chat, Screen.Home), moved.take(2))
-        assertEquals(listOf(Screen.Settings, Screen.Usage, Screen.Guide), moved.filter { it.group == Screen.Settings.group }, "the Account section keeps its own order")
+        assertEquals(listOf(Screen.Settings, Screen.Usage, Screen.Guide, Screen.Changelog), moved.filter { it.group == Screen.Settings.group }, "the Account section keeps its own order")
         assertEquals(Screen.entries.toSet(), moved.toSet(), "screens the list leaves out are slotted back in")
         // a name from another version, or a repeated one, is ignored
         assertEquals(Screen.entries.size, Screen.ordered(listOf("Gone", "Chat", "Chat")).size)
         // a section never splits, even from a hand-edited file: sections follow the order of their first tab
         val crossed = Screen.ordered(listOf("Settings", "Home", "Usage"))
-        assertEquals(listOf(Screen.Settings, Screen.Usage, Screen.Guide), crossed.take(3))
-        assertEquals(Screen.Home, crossed[3])
+        assertEquals(listOf(Screen.Settings, Screen.Usage, Screen.Guide, Screen.Changelog), crossed.take(4))
+        assertEquals(Screen.Home, crossed[4])
     }
 
     @Test
@@ -323,5 +323,54 @@ class DesignTest {
         assertEquals(listOf("Theme: Darcula", "Theme: Dark"), picker.visible(commands) { it })
         "x".forEach { picker.handle(t(it), commands) { x -> x } }
         assertEquals(emptyList(), picker.visible(commands) { it })
+    }
+
+    @Test
+    fun announcedStepsAreRecognisedButAnswersAreNot() {
+        assertTrue(announcesAction("I found the module.\n\nI will start with the documentation."))
+        assertTrue(announcesAction("Next, I will read the files."))
+        assertTrue(!announcesAction("The module has three layers. Here is the analysis."))
+        assertTrue(!announcesAction("Which folder should I read? I will wait."))
+        assertTrue(!announcesAction("I will read it if you confirm?"))
+        assertTrue(announcesAction("I will use the fetch_url tool on https://www.youtube.com/watch?v=9UMxZofMNbA"), "the ? of a web address is not a question")
+    }
+
+    @Test
+    fun chartAxisLabelsAreWholeAndDoNotCollide() {
+        val axis: (List<String>, Int) -> String = { labels, width -> com.arcana.brain.app.screens.axisLabels(labels, width) }
+        assertEquals("0 1 2 3 ", axis((0..3).map { it.toString() }, 2))
+        // two-digit labels in two-cell columns: every other label, each whole
+        assertEquals("10  12  ", axis(listOf("10", "11", "12", "13"), 2))
+        assertEquals("Mon Tue Wed ", axis(listOf("Mon", "Tue", "Wed"), 4))
+    }
+
+    @Test
+    fun contextMeterShowsHowFullTheWindowWas() {
+        val stats = com.arcana.brain.core.ReplyStats(promptTokens = 13_000, completionTokens = 600, totalMillis = 1000)
+        val messages = listOf(com.arcana.brain.core.ChatMessage.user("hi"), com.arcana.brain.core.ChatMessage.assistant("ok", stats))
+        val meter = com.arcana.brain.app.screens.contextMeter(messages, 131_072)
+        assertTrue("ctx ▰▱▱▱▱▱▱▱ 10% 13.6k/131k" in meter, meter)
+        assertEquals("", com.arcana.brain.app.screens.contextMeter(messages, 0))
+        assertEquals("", com.arcana.brain.app.screens.contextMeter(listOf(com.arcana.brain.core.ChatMessage.user("hi")), 8192))
+        assertTrue("nearly full" in com.arcana.brain.app.screens.contextMeter(messages, 16_000))
+    }
+
+    @Test
+    fun statusBarsDropTheLeastImportantSegmentsFirstAndFormatValues() {
+        fun seg(text: String, priority: Int) = com.arcana.brain.app.design.statusSegment("", text, com.arcana.brain.app.design.Palette.Text, priority)
+        val all = listOf(seg("model", 9), seg("title", 3), seg("ctx", 10), seg("time", 1), seg("price", 7))
+        val widths = all.sumOf { it.width } + 3 * 4
+        assertEquals(all.map { it.width }, com.arcana.brain.app.design.fitSegments(all, widths).map { it.width })
+        val narrow = com.arcana.brain.app.design.fitSegments(all, 5 + 5 + 3 + 3 + 3 + 3) // room for model, ctx and price only
+        assertEquals(listOf("model", "ctx", "price"), narrow.map { it.parts.joinToString("") { p -> p.text } })
+        assertEquals(1, com.arcana.brain.app.design.fitSegments(all, 1).size)
+        val gauge = com.arcana.brain.app.design.gaugeSegment("ctx", 0.11, "15k/131k")
+        assertEquals("ctx █░░░░░░░░░ 11% 15k/131k", gauge.parts.joinToString("") { it.text })
+        assertEquals("ctx ##-------- 25% x", com.arcana.brain.app.design.gaugeSegment("ctx", 0.25, "x", plain = true).parts.joinToString("") { it.text })
+        assertEquals("1h 02m", com.arcana.brain.app.design.spanText(3_720_000))
+        assertEquals("14m", com.arcana.brain.app.design.spanText(14 * 60_000L))
+        assertEquals("<$0.01", com.arcana.brain.app.design.priceText(0.004))
+        assertEquals("$12.40", com.arcana.brain.app.design.priceText(12.4))
+        assertEquals(3.0 + 15.0 * 0.5, com.arcana.brain.core.UsageStats.estimatedCost(listOf(com.arcana.brain.core.UsageRecord(0, "Chat", "m", 1_000_000, 500_000, 1)), 3, 15), 1e-9)
     }
 }

@@ -86,9 +86,21 @@ One line becomes `- HH:mm text` at the end of today's daily note. The daily note
 `.obsidian/daily-notes.json` when present, else Settings (`dailyFolder`, `dailyFormat`). `Ctrl+O` attaches any file(s): copied into
 `<outputFolder>/attachments/` and embedded as `![[name]]`.
 
+## Memory file (ARCANA.md)
+
+The vault note `ARCANA.md` (first 4,000 characters, no frontmatter) is added to every chat's system prompt (`Vault.memory()` → `Prompts.chatMessages(memory = …)`; Settings → Prompts → *Memory file*). `ChatSession.offerMemory()` runs when Chat opens: if the vault has no `ARCANA.md` and `memoryOffered` is false it creates one from `Vault.MEMORY_TEMPLATE` (rules for using tools, plus empty sections) and shows "Memory file created" with an offer to open it; the flag then stays true, so a file the user deletes comes back only through `/memory`. The `remember` tool appends to its "Remembered" section (always asks). `ToolBox.cheatSheet()` adds the real tool list to the same prompt.
+
+## Changelog (key 0)
+
+Six pages (`←→`) written by hand in `screens/Changelog.kt` (`changePages()`): Latest, Tools, Chat, Brain, Interface, Start. When something ships, add a bullet to the newest page.
+
+## Chat input and context
+
+The message field grows to a quarter of the screen (3–8 rows) with a scrollbar (`WrappedText`); `Alt+Enter` or `\` + Enter starts a new line; Up/Down move between lines. Pastes are repaired from the clipboard in `KeyDispatcher` (lost beginning or lost middle; `PasteRepairTest`). The Chat header shows a context meter (`contextMeter`): last prompt + reply tokens against `contextTokens` or the model's `context_length` from `/api/show`.
+
 ## Usage
 
-Tokens in/out per feature and per day from `usage.jsonl`, session total, speed.
+Dashboard over `usage.jsonl` (`screens/Usage.kt`, analytics in `core/Usage.kt`: `UsageStats.perHour/perDay/speedPerDay/insights`). Periods: session, today, 7 days, 30 days, all time (`←→`). Pages (`Tab`): Overview (totals tiles, column chart by hour/day, insights panel), Breakdown (by feature/model with share, hour heat strip, speed sparkline), Recent replies (table). Every panel states its row need and is dropped when the height cannot hold it (80×24 safe).
 
 ## Settings
 

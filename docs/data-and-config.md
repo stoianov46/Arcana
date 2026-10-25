@@ -48,6 +48,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `lastPickerDir` | `""` | last folder of the file browser |
 | `toolsEnabled` | false | tools in Chat |
 | `toolFolders` | `""` | extra folders for tools (`;`-separated) |
+| `toolMode` | `ask` | `ask` / `auto` / `plan` (see tools-and-agent.md) |
 | `toolAutoRead` | true | read-only tools run without asking |
 | `toolSteps` | 8 | max tool rounds per question |
 

@@ -108,7 +108,7 @@ private data class WireChunk(
 private data class WireMessage(val content: String = "", val thinking: String = "", @SerialName("tool_calls") val toolCalls: List<ToolCall> = emptyList())
 
 @Serializable
-private data class WireShow(val capabilities: List<String> = emptyList())
+private data class WireShow(val capabilities: List<String> = emptyList(), @SerialName("model_info") val modelInfo: JsonObject = JsonObject(emptyMap()))
 
 @Serializable
 private data class WireTags(val models: List<WireModel> = emptyList())
@@ -126,7 +126,10 @@ object OllamaProtocol {
         if (jsonMode) put("format", "json")
         if (tools != null && tools.isNotEmpty()) put("tools", tools)
         put("messages", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ChatMessage.serializer()), messages.map { it.withFilesInlined() }))
-        put("options", buildJsonObject { put("temperature", config.temperature) })
+        put("options", buildJsonObject {
+            put("temperature", config.temperature)
+            if (config.contextTokens > 0) put("num_ctx", config.contextTokens)
+        })
     }
 
     fun parseChunk(line: String): ChatChunk {
@@ -146,6 +149,12 @@ object OllamaProtocol {
 
     fun parseCapabilities(body: String): List<String> =
         runCatching { json.decodeFromString<WireShow>(body).capabilities }.getOrDefault(emptyList())
+
+    /** The longest context the model supports, from `model_info` (`<architecture>.context_length`); 0 when it does not say. */
+    fun parseContextLength(body: String): Int = runCatching {
+        json.decodeFromString<WireShow>(body).modelInfo.entries
+            .firstOrNull { it.key.endsWith(".context_length") }?.value?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() }?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0
+    }.getOrDefault(0)
 
     fun parseModels(body: String): List<String> =
         json.decodeFromString<WireTags>(body).models.map { it.name }.sorted()
@@ -189,7 +198,10 @@ class OllamaClient(private val config: () -> AppConfig) {
     }.flowOn(Dispatchers.IO)
 
     /** What the model can do, as Ollama reports it ("completion", "vision", "tools", "thinking"…); empty when it does not say. */
-    suspend fun capabilities(model: String): List<String> = withContext(Dispatchers.IO) {
+    suspend fun capabilities(model: String): List<String> = show(model).first
+
+    /** What the model can do, and how many tokens of context it supports (0 when unknown). */
+    suspend fun show(model: String): Pair<List<String>, Int> = withContext(Dispatchers.IO) {
         val cfg = config()
         val body = buildJsonObject { put("model", model) }.toString()
         val request = HttpRequest.newBuilder(endpoint(cfg, "/api/show"))
@@ -202,8 +214,8 @@ class OllamaClient(private val config: () -> AppConfig) {
         } catch (e: Exception) {
             throw OllamaException("Cannot reach Ollama at ${cfg.ollamaUrl}: ${e.message}", e)
         }
-        if (response.statusCode() != 200) return@withContext emptyList()
-        OllamaProtocol.parseCapabilities(response.body())
+        if (response.statusCode() != 200) return@withContext emptyList<String>() to 0
+        OllamaProtocol.parseCapabilities(response.body()) to OllamaProtocol.parseContextLength(response.body())
     }
 
     suspend fun listModels(): List<String> = withContext(Dispatchers.IO) {

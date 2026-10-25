@@ -112,6 +112,8 @@ Beside the list (or on `Enter` in a narrow window) you see the selected note: it
 
 ## Actions on the selected note
 - `a` **AI on this note**: opens AI notes with the note already chosen.
+- `r` **Rename**: type a new name (the note stays in its folder); the `[[links]]` to it in your other notes are rewritten, the way Obsidian does, and renaming back undoes it.
+- `c` **Chat about it**: starts a new chat with the note attached, so you can keep working on it by talking. A saved chat note works too: it carries the whole conversation, so the model picks up where it stopped.
 - `o` **Open in Obsidian**: jumps to the note in Obsidian itself.
 - `d` moves the note to the vault's `.trash` folder, after you confirm.
 """.trim(),
@@ -150,10 +152,14 @@ Talk to Gemma. The message field **always has the keyboard**: letters never act 
 
 ## Letting it act: tools
 Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use tools instead of only talking:
-- **Reading** (runs at once): `search_notes`, `list_notes`, `read_note`, `list_dir`, `read_file` (text, code, JSON, PDF).
+- **Reading** (runs at once): `search_notes`, `list_notes`, `read_note`, `list_dir` (also recursive), `find_files` (by name or glob such as `**/*.kt`), `grep_files` (search *inside* files, with line numbers), `read_file` (text, code, JSON, PDF; long files in parts with a line range).
 - **Changing** (always asks first): `create_note`, `append_to_note`, `write_file`, `edit_file`. A panel shows exactly what would change; `y` allows, `n` denies, `a` allows that tool for the rest of the session.
 - Each step shows in the chat as `⚙ tool  what` and `↳ ✓ result`. It may take up to *Steps per question* rounds before it must answer.
-- **Safety:** tools only touch your vault and the folders you add in *Settings → Tools → Extra folders*; `..` and symlinks cannot escape them, and `.git` and `.obsidian` are never written. A file that is replaced or edited is backed up first (in `~/.config/arcana/backups`). Text in a note or file is only data: the model is never obliged to follow instructions found in it, and every change still needs your `y`.
+- **New folders:** when the model needs a folder that is not allowed yet (say `~/Desktop`), Arcana asks "Allow this folder?": `y` remembers it (see *Extra folders*), `n` refuses. Home itself, system folders and hidden folders such as `~/.ssh` are never offered.
+- **Modes** (`/mode` cycles them, or Settings → Tools → Mode): *Ask* (default) waits for your `y` on every change; *Auto* runs changes at once, with the old file always backed up (new folders still ask); *Plan* is read-only: Gemma investigates and writes a plan, then you switch to Ask or Auto and tell her to go ahead. The header shows `⚙ tools ask|auto|plan`.
+- **Questions, deleting and moving:** `ask_user` puts a question with numbered options to you in the chat (`1`-`9` choose, `t` type your own, `Esc` skip; quizzes work even with tools off). `delete_path` moves a file or folder to a trash folder (the vault's `.trash`, or `~/.config/arcana/trash`) and `move_path` renames or moves; both ask **every time, even in Auto mode**, and neither can be set to "always".
+- **Shell and web** (both off by default, in Settings → Tools): `run_command` runs a command after you press `y` (harmless ones like `git status` run at once; `sudo` and `rm -rf /` never); `fetch_url` reads a public web page after you approve its address (pages on your own computer or network are refused). If the model asks while they are off, a dialog offers to turn them on right there.
+- **Safety:** tools only touch your vault and the folders you allow in *Settings → Tools → Extra folders*; `..` and symlinks cannot escape them, and `.git` and `.obsidian` are never written. A file that is replaced or edited is backed up first (in `~/.config/arcana/backups`). Text in a note or file is only data: the model is never obliged to follow instructions found in it, and every change still needs your `y`.
 
 ## Sending things to the vault
 - `Ctrl+S` saves the chat as a new note (whole chat or just the last answer).
@@ -298,7 +304,7 @@ Letters like `k` `j` `s` only act as keys when you are not typing in a field.
 # Usage, settings and troubleshooting
 
 ## Usage
-The **Usage** screen shows the tokens the model used: this session, today, the last 7 days, or all time, split by feature and model, with the speed. `←` `→` change the period. The footer also shows a running total. Everything is stored in `~/.config/arcana/usage.jsonl`.
+The **Usage** screen is a dashboard of what the model did, over this session, today, 7 days, 30 days or all time (`←` `→`). `Tab` switches page: **Overview** (totals, a chart of tokens by hour or day, and insights: busiest day, peak hour, streak, week on week, typical and slowest reply, context load), **Breakdown** (by feature and model with their share, when in the day you use it, speed trend) and **Recent replies** (a table of the latest ones with tokens, time and speed). Panels that do not fit a small terminal are left out. The footer also shows a running total. Everything is stored in `~/.config/arcana/usage.jsonl`.
 
 ## Make it yours (Settings)
 - **Appearance**: colour theme (Dark, Light, Soft, Darcula, Solarized, Nord), sidebar, logo animation.
@@ -359,7 +365,7 @@ fun GuideScreen(app: AppContext) {
         Panel(current.title) {
             val width = outputWidth()
             val lines = remember(current, width, app.config.plainGlyphs, Palette.themeId) {
-                renderMarkdown(parseMarkdown(current.markdown), width, plainGlyphs = app.config.plainGlyphs)
+                renderMarkdown(parseMarkdown(Shortcuts.label(current.markdown)), width, plainGlyphs = app.config.plainGlyphs)
             }
             output.copyPlain = app.config.copyAs == "plain"
             // header 3, the page tabs and their gaps 2, the panel's frame 2, and a notice row only while there is one

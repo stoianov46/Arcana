@@ -59,6 +59,23 @@ data class AppConfig(
     val toolFolders: String = "",
     /** Tools that only read run without asking; off asks about every call. Writes are always asked. */
     val toolAutoRead: Boolean = true,
+    /** What the same tokens would cost on a paid service, US dollars per million tokens: only for the "estimated price" in the status bars (local models cost nothing). */
+    val estPriceIn: Int = 3,
+    val estPriceOut: Int = 15,
+    /** Set once the memory file has been created or found, so a file the user deletes is not created again behind their back. */
+    val memoryOffered: Boolean = false,
+    /** The vault note ARCANA.md (standing instructions and facts) is added to every chat's system prompt. */
+    val memoryEnabled: Boolean = true,
+    /** Context window to ask Ollama for (num_ctx); 0 leaves Ollama's own default. Also the size the Chat context meter counts against when set. */
+    val contextTokens: Int = 0,
+    /** A tool call the model wrote as text instead of making it: "auto" runs it as a real call, "ask" shows it first, "off" leaves it as text. */
+    val textCalls: String = "auto",
+    /** The model may ask to read web pages (fetch_url; every address asks first). Off by default. */
+    val toolWeb: Boolean = false,
+    /** The model may ask to run shell commands (every one needs approval). Off by default. */
+    val toolShell: Boolean = false,
+    /** What tools may do: "ask" (changes wait for approval), "auto" (changes run at once, backed up) or "plan" (read-only, the model writes a plan). */
+    val toolMode: String = "ask",
     /** How many rounds of tool use one question may take before the model must answer. */
     val toolSteps: Int = 8,
     /** What select mode copies: "markdown" (as written) or "plain" (Markdown markers removed). */

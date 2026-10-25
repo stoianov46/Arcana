@@ -15,6 +15,7 @@ object SessionKind {
     const val Created = "created"
     const val Appended = "appended"
     const val Replaced = "replaced"
+    const val Renamed = "renamed"
     const val Deleted = "deleted"
     const val Saved = "saved"
     const val Captured = "captured"
@@ -96,7 +97,7 @@ object SessionReport {
         created = events.count { it.kind == SessionKind.Created || (it.kind == SessionKind.Saved && it.path != null) },
         captured = events.count { it.kind == SessionKind.Captured },
         filed = events.count { it.kind == SessionKind.Processed },
-        changed = events.count { it.kind == SessionKind.Appended || it.kind == SessionKind.Replaced },
+        changed = events.count { it.kind == SessionKind.Appended || it.kind == SessionKind.Replaced || it.kind == SessionKind.Renamed },
         deleted = events.count { it.kind == SessionKind.Deleted },
         pictures = events.count { it.kind == SessionKind.Attached },
     )
@@ -121,6 +122,7 @@ object SessionReport {
         SessionKind.Created -> "Created"
         SessionKind.Appended -> "Added to"
         SessionKind.Replaced -> "Replaced"
+        SessionKind.Renamed -> "Renamed"
         SessionKind.Deleted -> "Moved to trash"
         SessionKind.Saved -> "Saved"
         SessionKind.Captured -> "Captured"

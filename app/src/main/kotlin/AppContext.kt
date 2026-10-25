@@ -47,6 +47,10 @@ class AppContext(
     /** Whether the model can call tools (null = unknown). */
     var tools by mutableStateOf<Boolean?>(null)
         private set
+
+    /** The most tokens of context the model supports, as Ollama reports it; 0 when unknown. */
+    var modelContext by mutableStateOf(0)
+        private set
     val client = OllamaClient { config }
 
     /** The scope replies are generated in: the app's own, so a reply keeps streaming when you switch to another screen. */
@@ -100,7 +104,9 @@ class AppContext(
         } catch (e: Exception) {
             Connection.Offline(e.message ?: e.toString())
         }
-        val capabilities = if (connection is Connection.Online) runCatching { client.capabilities(config.model) }.getOrNull()?.takeIf { it.isNotEmpty() } else null
+        val shown = if (connection is Connection.Online) runCatching { client.show(config.model) }.getOrNull() else null
+        modelContext = shown?.second ?: 0
+        val capabilities = shown?.first?.takeIf { it.isNotEmpty() }
         vision = capabilities?.let { "vision" in it }
         tools = capabilities?.let { "tools" in it }
     }

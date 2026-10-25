@@ -10,6 +10,8 @@ fun KeyEvent.toKey(): Key? {
         fun move(m: Key) = if (shift) Key.Select(m) else m
         return when {
             alt && key == "Escape" -> Key.MetaPrefix
+            alt && key == "Enter" -> Key.PastedNewline // Alt+Enter: a line break in a field instead of sending
+            ctrl && key.equals("j", ignoreCase = true) -> Key.PastedNewline // Ctrl+J: the same, in every terminal
             alt && key == "Backspace" -> Key.DeleteWord
             ctrl && key.equals("w", ignoreCase = true) -> Key.DeleteWord
             alt && key == "b" -> Key.WordLeft // Alt+B / Alt+F: how many terminals send Option+←/→
@@ -42,7 +44,7 @@ fun KeyEvent.toKey(): Key? {
     fun move(m: Key) = if (shift) Key.Select(m) else m
     return when (key) {
         "Tab" -> if (shift) Key.BackTab else Key.Tab
-        "Enter" -> Key.Enter
+        "Enter" -> if (shift) Key.PastedNewline else Key.Enter // Shift+Enter (terminals that report it) is a line break
         "Escape" -> Key.Escape
         "Backspace" -> Key.Backspace
         "Delete" -> Key.Delete

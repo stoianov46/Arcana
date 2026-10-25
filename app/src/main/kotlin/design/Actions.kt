@@ -24,7 +24,7 @@ fun ActionBar(items: List<ActionItem>, width: Int = LocalContentWidth.current) {
         onDispose { navigator.actionBars-- }
     }
     if (!rememberDensity().tiny) VGap()
-    breakIntoLines(items, width).forEach { ActionLine(it) }
+    breakIntoLines(items.map { it.copy(key = Shortcuts.label(it.key)) }, width).forEach { ActionLine(it) }
 }
 
 private const val ButtonGap = 2
@@ -51,7 +51,7 @@ internal fun breakIntoLines(items: List<ActionItem>, width: Int): List<List<Acti
 
 /** How many rows an [ActionBar] of [items] takes (its buttons plus the blank row above), so a screen can give everything else the rest. */
 @Composable
-fun actionBarRows(items: List<ActionItem>): Int = breakIntoLines(items, LocalContentWidth.current).size + if (rememberDensity().tiny) 0 else 1
+fun actionBarRows(items: List<ActionItem>): Int = breakIntoLines(items.map { it.copy(key = Shortcuts.label(it.key)) }, LocalContentWidth.current).size + if (rememberDensity().tiny) 0 else 1
 
 @Composable
 private fun ActionLine(items: List<ActionItem>) {

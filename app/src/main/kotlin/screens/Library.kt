@@ -10,6 +10,7 @@ import com.arcana.brain.app.AppContext
 import com.arcana.brain.app.SystemOpen
 import com.arcana.brain.app.design.*
 import com.arcana.brain.app.input.Key
+import com.arcana.brain.app.input.TextFieldState
 import com.arcana.brain.app.input.KeyHandler
 import com.arcana.brain.app.input.char
 import com.arcana.brain.app.navigation.FocusMode
@@ -27,7 +28,7 @@ import com.jakewharton.mosaic.modifier.Modifier
 import com.jakewharton.mosaic.ui.Box
 import com.jakewharton.mosaic.ui.Row
 
-private enum class LibraryMode { List, Reading, ConfirmDelete }
+private enum class LibraryMode { List, Reading, ConfirmDelete, Rename }
 
 /** Notes in view [filter]; [tag] narrows the Tags view to one tag. */
 private fun notesFor(index: VaultIndex, filter: LibraryFilter, tag: String?, inbox: String, staleDays: Int): List<NoteInfo> = when (filter) {
@@ -52,6 +53,7 @@ fun LibraryScreen(app: AppContext) {
     val picker = remember { PickerState() }
     val tagPicker = remember { PickerState() }
     val preview = remember { OutputState() }
+    val renameField = remember { TextFieldState() }
     // A note the dashboard asked us to show: selected once, as soon as the index is there.
     var startNote by remember { mutableStateOf(navigator.libraryNote.also { navigator.libraryNote = null }) }
 
@@ -78,11 +80,12 @@ fun LibraryScreen(app: AppContext) {
     val current = if (showingTags) null else picker.selected(shown) { it.path }
     val wide = LocalContentWidth.current >= 96
 
-    FocusMode((mode == LibraryMode.List && (if (showingTags) tagPicker.filtering else picker.filtering)))
+    FocusMode(mode == LibraryMode.Rename || (mode == LibraryMode.List && (if (showingTags) tagPicker.filtering else picker.filtering)))
     when (mode) {
         LibraryMode.List -> if (picker.filtering || tagPicker.filtering) Hints("↑↓  move", "Enter  choose", "Esc  clear filter")
-        else Hints("↑↓  move", "←→  view", "Enter  read", "a  AI", "o  Obsidian", "d  trash", "/  filter")
-        LibraryMode.Reading -> Hints("↑↓/Space  scroll", "a  AI", "o  Obsidian", "Esc  back")
+        else Hints("↑↓  move", "←→  view", "Enter  read", "a  AI", "r  rename", "o  Obsidian", "d  trash", "/  filter")
+        LibraryMode.Reading -> Hints("↑↓/Space  scroll", "a  AI", "r  rename", "o  Obsidian", "Esc  back")
+        LibraryMode.Rename -> Hints("Enter  rename", "Esc  cancel")
         LibraryMode.ConfirmDelete -> Hints("y  move to trash", "any other key  keep")
     }
 
@@ -94,6 +97,34 @@ fun LibraryScreen(app: AppContext) {
     fun askAi(note: NoteInfo) {
         navigator.noteRequest = note.path
         navigator.navigate(Screen.Compose)
+    }
+
+    /** Continues with [note] as a chat: a fresh conversation with the note attached, so the model has read it (a saved chat note carries its whole transcript). */
+    fun chatAbout(note: NoteInfo) {
+        app.chat.startNew()
+        app.chat.attachments.notes += note.path
+        navigator.navigate(Screen.Chat)
+    }
+
+    fun startRename(note: NoteInfo) {
+        renameField.set(note.title)
+        mode = LibraryMode.Rename
+    }
+
+    fun renameNote(note: NoteInfo) {
+        val v = vault.getOrNull() ?: return
+        val name = renameField.text.trim()
+        if (name.isEmpty()) return navigator.showToast("Type the new name.", isError = true)
+        if (name == note.title) { mode = LibraryMode.List; return }
+        runCatching { v.rename(note.path, name) }
+            .onSuccess { result ->
+                app.session.log(SessionKind.Renamed, "${note.path} → ${result.path}" + if (result.linksUpdated > 0) " (${result.linksUpdated} links in ${result.notesChanged} notes updated)" else "", result.path)
+                app.brain.changed()
+                mode = LibraryMode.List
+                navigator.libraryNote = result.path
+                navigator.showToast("Renamed to ${result.path}" + if (result.linksUpdated > 0) " · ${result.linksUpdated} link${if (result.linksUpdated == 1) "" else "s"} in ${result.notesChanged} note${if (result.notesChanged == 1) "" else "s"} updated" else "")
+            }
+            .onFailure { navigator.showToast(it.message ?: "Could not rename.", isError = true) }
     }
 
     fun deleteNote(note: NoteInfo) {
@@ -114,10 +145,17 @@ fun LibraryScreen(app: AppContext) {
                 mode = LibraryMode.List
                 true
             }
+            LibraryMode.Rename -> when {
+                key == Key.Escape -> { mode = LibraryMode.List; true }
+                key == Key.Enter -> { current?.let { renameNote(it) }; true }
+                else -> renameField.onKey(key)
+            }
             LibraryMode.Reading -> when {
                 preview.handle(key) -> true
                 key == Key.Escape || key == Key.Enter || key == Key.Left -> { mode = LibraryMode.List; true }
                 key.char == 'a' -> { current?.let { askAi(it) }; true }
+                key.char == 'c' -> { current?.let { chatAbout(it) }; true }
+                key.char == 'r' -> { current?.let { startRename(it) }; true }
                 key.char == 'o' -> { current?.let { openInObsidian(it) }; true }
                 else -> false
             }
@@ -138,6 +176,8 @@ fun LibraryScreen(app: AppContext) {
                 key == Key.Enter -> { if (current != null) { preview.reset(); mode = LibraryMode.Reading }; true }
                 key == Key.Escape -> if (tag != null) { tag = null; picker.reset(); true } else false
                 key.char == 'a' -> { current?.let { askAi(it) }; true }
+                key.char == 'c' -> { current?.let { chatAbout(it) }; true }
+                key.char == 'r' -> { current?.let { startRename(it) }; true }
                 key.char == 'o' -> { current?.let { openInObsidian(it) }; true }
                 key.char == 'd' -> { if (current != null) mode = LibraryMode.ConfirmDelete; true }
                 key.char == 'p' && filter == LibraryFilter.Inbox -> { navigator.navigate(Screen.Inbox); true }
@@ -183,14 +223,17 @@ fun LibraryScreen(app: AppContext) {
             LibraryMode.List -> listOf(
                 ActionItem("Enter", "Read", current != null),
                 ActionItem("a", "AI on this note", current != null),
+                ActionItem("c", "Chat about it", current != null),
+                ActionItem("r", "Rename", current != null),
                 ActionItem("o", "Open in Obsidian", current != null),
                 ActionItem("d", "Trash", current != null, Palette.Red),
                 *(if (filter == LibraryFilter.Inbox) arrayOf(ActionItem("p", "Process inbox with AI", accent = Palette.Cta)) else emptyArray()),
                 ActionItem("←→", "View"),
                 ActionItem("/", "Filter"),
             )
-            LibraryMode.Reading -> listOf(ActionItem("↑↓", "Scroll"), ActionItem("a", "AI on this note"), ActionItem("o", "Open in Obsidian"), ActionItem("Esc", "Back", accent = Palette.Cta))
+            LibraryMode.Reading -> listOf(ActionItem("↑↓", "Scroll"), ActionItem("a", "AI on this note"), ActionItem("c", "Chat about it"), ActionItem("r", "Rename"), ActionItem("o", "Open in Obsidian"), ActionItem("Esc", "Back", accent = Palette.Cta))
             LibraryMode.ConfirmDelete -> listOf(ActionItem("y", "Move to trash", accent = Palette.Red), ActionItem("any other key", "Keep", accent = Palette.Cta))
+            LibraryMode.Rename -> listOf(ActionItem("Enter", "Rename", accent = Palette.Cta), ActionItem("Esc", "Cancel"))
         }
         // header 3 + tabs and gaps 3 + the panel frame 2 + the filter strip 1 over the list
         val listRows = outputRows(fixed = 3 + 3 + 2 + 1, actions = actions)
@@ -198,6 +241,12 @@ fun LibraryScreen(app: AppContext) {
         val width = LocalContentWidth.current
 
         when {
+            mode == LibraryMode.Rename && current != null -> Panel("Rename note", accent = Palette.Cta) {
+                val folder = current.path.substringBeforeLast('/', "")
+                Label("${if (folder.isEmpty()) "Vault root" else "$folder/"}  ·  ${current.path.substringAfterLast('/')}", color = Palette.Muted)
+                TextInput("New name", renameField, true, "Type the new name")
+                Hint("The note stays in its folder. Links to it in your other notes ([[${current.title}]]) are updated. Rename it back to undo.")
+            }
             mode == LibraryMode.ConfirmDelete -> Panel("Move to trash?", accent = Palette.Red) {
                 Warning("“${current?.title}” is moved to the vault's .trash folder. You can restore it from there or from Obsidian.")
             }

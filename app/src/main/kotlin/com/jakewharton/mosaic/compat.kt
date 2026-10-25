@@ -55,6 +55,8 @@ internal fun KeyboardEvent.toKeyEventOrNull(): KeyEvent? {
 			"ArrowRight" -> return KeyEvent("End", alt = false, ctrl = true, shift = shift)
 			"a", "A" -> return KeyEvent("a", alt = true, ctrl = false, shift = false)
 			"Backspace" -> return KeyEvent("Backspace", alt = true, ctrl = false, shift = false)
+			// Cmd+letter is the same command as Ctrl+letter (N capture, P commands, O attach, S save, B sidebar…); C stays the terminal's copy
+			else -> if (key.length == 1 && key[0].isLetter() && !key.equals("c", ignoreCase = true)) return KeyEvent(key.lowercase(), alt = false, ctrl = true, shift = shift)
 		}
 	}
 

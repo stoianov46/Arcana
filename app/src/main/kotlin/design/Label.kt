@@ -20,6 +20,9 @@ private class LabelState {
 
     /** Per drawn row, the columns to show as selected (reverse video), or null. */
     var selected: List<IntRange?> = emptyList()
+
+    /** Per drawn row of a [WrappedText] that scrolls, the scrollbar glyph for its last column ("█" thumb, "│" track); empty when everything fits. */
+    var bar: List<String> = emptyList()
 }
 
 /** Draws the selected columns of [line] on row [row] in reverse video, over what was already drawn. */
@@ -193,6 +196,7 @@ fun WrappedText(text: String, maxRows: Int, modifier: Modifier = Modifier, color
         content = {},
         modifier = modifier.drawBehind {
             state.lines.forEachIndexed { row, line -> drawText(row, 0, line, color); drawSelected(row, line, state.selected.getOrNull(row)) }
+            state.bar.forEachIndexed { row, glyph -> drawText(row, width - 1, glyph, if (glyph == "█") Palette.Accent else Palette.Dim) }
         },
         debugInfo = { "WrappedText" },
         measurePolicy = object : MeasurePolicy {
@@ -227,10 +231,13 @@ fun WrappedText(text: String, maxRows: Int, modifier: Modifier = Modifier, color
                         val a = (pos - row.start).coerceIn(0, raw.length)
                         sanitizeForTerminal(raw.substring(0, a)) + "▏" + sanitizeForTerminal(raw.substring(a))
                     } else sanitizeForTerminal(raw)
-                    val up = i == 0 && state.first > 0
-                    val down = i == shown - 1 && state.first + shown < rows.size
-                    val mark = when { up && down -> "↕"; up -> "↑"; down -> "↓"; else -> " " }
-                    body.take(w - 1).padEnd(w - 1) + mark
+                    body.take(w - 1).padEnd(w - 1) + " "
+                }
+                // A scrollbar in the last column: the thumb is as tall as the visible share of the text and sits where the window is.
+                state.bar = if (rows.size <= shown) emptyList() else {
+                    val thumb = (shown * shown / rows.size).coerceIn(1, shown)
+                    val top = if (rows.size == shown) 0 else ((state.first.toLong() * (shown - thumb) + (rows.size - shown) / 2) / (rows.size - shown)).toInt()
+                    (0 until shown).map { if (it in top until top + thumb) "█" else "│" }
                 }
                 return layout(w, shown) {}
             }

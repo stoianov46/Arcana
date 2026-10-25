@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import com.arcana.brain.core.ChatChunk
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ReplyStats
+import com.arcana.brain.core.TextToolCalls
 import com.arcana.brain.core.ToolCall
 import kotlinx.serialization.json.JsonArray
 import com.arcana.brain.core.OllamaClient
@@ -37,6 +38,12 @@ class Generation(
      * model is then asked again.
      */
     private val onToolRound: (suspend (String, List<ToolCall>, ReplyStats?) -> List<ChatMessage>)? = null,
+    /** Called when the step limit is reached while the model was still using tools; returns how many more steps the user allows (0 = none). */
+    private val onStepLimit: (suspend (Int) -> Int)? = null,
+    /** "auto", "ask" or "off": what to do with a tool call the model wrote as text (see [TextToolCalls]). */
+    private val textCalls: () -> String = { "auto" },
+    /** Asked in "ask" mode before such a call runs; false leaves the reply as plain text. */
+    private val confirmTextCalls: (suspend (List<ToolCall>) -> Boolean)? = null,
 ) {
     var state by mutableStateOf(GenState.Idle)
         private set
@@ -57,6 +64,10 @@ class Generation(
     var streamed by mutableIntStateOf(0)
         private set
     private var job: Job? = null
+    /** The tools offered each round; a tool round may replace them (the user just turned tools on). */
+    private var activeTools: JsonArray? = null
+
+    fun useTools(tools: JsonArray?) { activeTools = tools }
 
     /**
      * [prepare] runs off the UI thread first, so it can read files or search the vault. With [tools] the model may ask for
@@ -71,14 +82,20 @@ class Generation(
         startedAt = System.currentTimeMillis()
         thinking = false
         transition(GenState.Running)
+        activeTools = tools
         job = scope.launch {
             try {
                 var messages = withContext(Dispatchers.IO) { prepare() }
                 var step = 0
+                var limit = maxSteps
+                var nudges = 0
                 while (true) {
                     val buffer = StringBuilder()
                     val calls = ArrayList<ToolCall>()
-                    val offered = if (onToolRound != null && step < maxSteps) tools else null
+                    if (onToolRound != null && onStepLimit != null && activeTools != null && step > 0 && step >= limit) {
+                        limit += onStepLimit.invoke(step)
+                    }
+                    val offered = if (onToolRound != null && step < limit) activeTools else null
                     client.chat(messages, json, offered).collect { chunk ->
                         if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) onUsage(chunk)
                         if (chunk.content.isNotEmpty() || chunk.thinking.isNotEmpty()) streamed++
@@ -95,11 +112,26 @@ class Generation(
                             thinking = true
                         }
                     }
+                    // a call the model wrote as text instead of making it: run it as the real thing
+                    var roundText = buffer.toString().trim()
+                    if (calls.isEmpty() && onToolRound != null && offered != null && textCalls() != "off") {
+                        val names = offered.mapNotNull { ((it as? kotlinx.serialization.json.JsonObject)?.get("function") as? kotlinx.serialization.json.JsonObject)?.get("name")?.let { n -> (n as? kotlinx.serialization.json.JsonPrimitive)?.content } }.toSet()
+                        val (found, rest) = TextToolCalls.extract(buffer.toString(), names)
+                        if (found.isNotEmpty() && (textCalls() != "ask" || confirmTextCalls?.invoke(found) == true)) { calls += found; roundText = rest.trim() }
+                    }
                     if (calls.isNotEmpty() && onToolRound != null && offered != null) {
                         step++
                         val round = stats
-                        messages = messages + onToolRound.invoke(buffer.toString().trim(), calls.toList(), round)
+                        messages = messages + onToolRound.invoke(roundText, calls.toList(), round)
                         // the next round starts with a clean slate: what the model said before its tools is now in the chat
+                        text = ""
+                        stats = null
+                        continue
+                    }
+                    // the model said what it is about to do instead of doing it: the loop would end and wait for the user, so push it on
+                    if (calls.isEmpty() && onToolRound != null && offered != null && nudges < MAX_NUDGES && announcesAction(buffer.toString())) {
+                        nudges++
+                        messages = messages + onToolRound.invoke(buffer.toString().trim(), emptyList(), stats) + ChatMessage.user(NUDGE)
                         text = ""
                         stats = null
                         continue
@@ -163,4 +195,15 @@ fun rememberGeneration(app: AppContext, feature: String): Generation {
     // Leaving the screen cancels the reply, so the logo must not keep animating for it.
     DisposableEffect(generation) { onDispose { generation.cancel() } }
     return generation
+}
+
+private const val MAX_NUDGES = 2
+private const val NUDGE = "Continue now: call the tool you just described. Do not describe it again, and do not ask me to confirm."
+
+/** True when [reply] ends by announcing a next step ("Next, I will read …") rather than giving an answer or asking the user something. */
+internal fun announcesAction(reply: String): Boolean {
+    val last = reply.trim().takeLast(500)
+    // a real question ends a sentence with "?"; the "?" of a web address (watch?v=…) is not one
+    if (last.isEmpty() || Regex("""\?(\s|$)""").containsMatchIn(last)) return false
+    return Regex("""(?i)\b(i will|i'll|will help me|i am going to|i'm going to|let me|next,? i|now,? i|first,? i)\b""").containsMatchIn(last)
 }

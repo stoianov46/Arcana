@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.arcana.brain.app.design.Notice
+import com.arcana.brain.app.design.Shortcuts
 import com.arcana.brain.app.design.PickerState
 import com.arcana.brain.app.input.TextFieldState
 
@@ -29,6 +30,7 @@ enum class Screen(val title: String, val icon: String, val group: ScreenGroup = 
     Usage("Usage", "▥", ScreenGroup.Account),
     Settings("Settings", "✱", ScreenGroup.Account),
     Guide("Guide", "¶", ScreenGroup.Account),
+    Changelog("Changelog", "≡", ScreenGroup.Account),
     ;
 
     /** The key that opens this screen from anywhere. */
@@ -172,7 +174,7 @@ val LocalNavigator = compositionLocalOf<Navigator> { error("No Navigator provide
 @Composable
 fun Hints(vararg hints: String) {
     val navigator = LocalNavigator.current
-    val text = hints.joinToString("   ")
+    val text = Shortcuts.label(hints.joinToString("   "))
     SideEffect { navigator.hint = text }
     DisposableEffect(Unit) { onDispose { navigator.hint = "" } }
 }

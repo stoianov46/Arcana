@@ -111,7 +111,7 @@ class KeyDispatcher(
 
     /**
      * Called once a burst has delivered [REPAIR_WINDOW] keys. Mosaic keeps the LAST 64 events of a burst, so if the
-     * clipboard holds a long text whose end matches those keys exactly, the beginning was lost: take back what was
+     * clipboard holds a long text that contains those keys exactly (at its end: the beginning was lost; at its start: the middle was): take back what was
      * typed, type the whole clipboard in order, and swallow the events that keep arriving.
      */
     private fun repairPaste(): Boolean {
@@ -121,7 +121,11 @@ class KeyDispatcher(
         // The first keys of the burst may be strays (the head of the paste, which arrived on its own): skip up to a few.
         for (skip in 0..REPAIR_WINDOW - REPAIR_AFTER) {
             val probe = burstKeys.subList(skip, skip + REPAIR_AFTER)
-            val start = (first..text.size - REPAIR_AFTER).firstOrNull { text.subList(it, it + REPAIR_AFTER) == probe } ?: continue
+            // Usually the beginning was lost, so the keys match the clipboard's end. When the app was keeping up at first and fell behind
+            // later, the keys at the start of the burst are the clipboard's start and the middle is what went missing: look there too.
+            val start = (first..text.size - REPAIR_AFTER).firstOrNull { text.subList(it, it + REPAIR_AFTER) == probe }
+                ?: (0 until first.coerceAtMost(text.size - REPAIR_AFTER + 1)).firstOrNull { text.subList(it, it + REPAIR_AFTER) == probe }
+                ?: continue
             repeat(chain.size - 1) { deliver(Key.Backspace) } // everything of this paste typed so far; the current key is not delivered yet
             chain.clear()
             text.forEach { deliver(keyFor(it)) }

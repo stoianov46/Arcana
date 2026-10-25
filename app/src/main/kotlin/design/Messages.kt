@@ -33,7 +33,7 @@ fun Cta(text: String, modifier: Modifier = Modifier) =
 /** Hint: background information or a tip; nothing to do about it. */
 @Composable
 fun Hint(text: String, modifier: Modifier = Modifier) =
-    Label((if (LocalPlainGlyphs.current) "Note: " else "› ") + text, modifier, color = Palette.Hint, wrap = true)
+    Label((if (LocalPlainGlyphs.current) "Note: " else "› ") + Shortcuts.label(text), modifier, color = Palette.Hint, wrap = true)
 
 /** Warning: something is blocked, limited or needs care. */
 @Composable

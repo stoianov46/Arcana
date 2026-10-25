@@ -18,7 +18,18 @@ import com.arcana.brain.core.ConfigStore
 import com.arcana.brain.core.StoredChat
 import com.arcana.brain.core.ToolBox
 import com.arcana.brain.core.ToolCall
+import com.arcana.brain.core.ASK_USER
+import com.arcana.brain.core.ASK_USER_DEFINITION
+import com.arcana.brain.core.REQUEST_ACCESS
+import com.arcana.brain.core.looksLikeToolTask
+import kotlinx.coroutines.launch
+import com.arcana.brain.core.REQUEST_ACCESS_DEFINITION
+import com.arcana.brain.core.ShellPolicy
+import com.arcana.brain.core.cleanOption
+import com.arcana.brain.core.WebPolicy
 import com.arcana.brain.core.ToolRisk
+import kotlinx.coroutines.runInterruptible
+import kotlinx.serialization.json.JsonArray
 import com.arcana.brain.core.Vault
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -59,15 +70,88 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             onUsage = { chunk -> app.recordUsage("Chat", chunk) },
             onComplete = { text, stats -> finishReply(text, stats) },
             onToolRound = ::runTools,
+            onStepLimit = ::stepLimit,
+            textCalls = { app.config.textCalls },
+            confirmTextCalls = ::confirmTextCalls,
         )
     }
 
     /** A change the model wants to make, waiting for the user's answer. */
-    class Approval(val tool: String, val title: String, val lines: List<String>) {
+    class Approval(
+        val tool: String, val title: String, val lines: List<String>,
+        val heading: String = "Allow this change?", val icon: String = "⚙", val yes: String = "Allow", val always: Boolean = true,
+    ) {
         val answer = CompletableDeferred<ApprovalChoice>()
     }
 
     enum class ApprovalChoice { Allow, Deny, Always }
+
+    /** A question the model put to the user with ask_user: pick an option (or several), or type an answer. */
+    class Question(val text: String, val options: List<String>, val multiple: Boolean) {
+        /** The answer as text for the model; null when the user skipped it. */
+        val answer = CompletableDeferred<String?>()
+        val picked = androidx.compose.runtime.mutableStateListOf<Int>()
+        var typing by mutableStateOf(options.isEmpty())
+
+        /** The highlighted row: an option, or the last row "type my own answer". */
+        var cursor by androidx.compose.runtime.mutableIntStateOf(0)
+    }
+
+    var question by mutableStateOf<Question?>(null)
+        private set
+
+    fun answerQuestion(text: String?) { question?.answer?.complete(text) }
+
+    /** Option [number] (1-based): chosen at once, or ticked when several may be chosen. */
+    fun pick(number: Int) {
+        val q = question ?: return
+        if (q.typing || number !in 1..q.options.size) return
+        if (!q.multiple) return answerQuestion(q.options[number - 1])
+        if ((number - 1) in q.picked) q.picked.remove(number - 1) else q.picked.add(number - 1)
+    }
+
+    fun move(delta: Int) {
+        val q = question ?: return
+        if (!q.typing) q.cursor = (q.cursor + delta).mod(q.options.size + 1)
+    }
+
+    /** Enter: the highlighted option is the answer (several may be chosen: the ticked ones, or this one when none is ticked); the last row opens the text field. */
+    fun activate() {
+        val q = question ?: return
+        if (q.typing) return
+        when {
+            q.cursor == q.options.size -> q.typing = true
+            !q.multiple -> answerQuestion(q.options[q.cursor])
+            q.picked.isEmpty() -> answerQuestion(q.options[q.cursor])
+            else -> confirmPicks()
+        }
+    }
+
+    /** Space, when several may be chosen: tick or untick the highlighted option. */
+    fun tickCurrent() {
+        val q = question ?: return
+        if (q.multiple && q.cursor < q.options.size) pick(q.cursor + 1)
+    }
+
+    fun confirmPicks() {
+        val q = question ?: return
+        if (q.picked.isNotEmpty()) answerQuestion(q.picked.sorted().joinToString("; ") { q.options[it] })
+    }
+
+    private suspend fun askUser(call: ToolCall): String {
+        val args = call.arguments
+        val text = (args["question"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim().ifEmpty { "?" }
+        val options = (args["options"] as? JsonArray)?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.let(::cleanOption)?.takeIf { s -> s.isNotEmpty() } }.orEmpty().take(9)
+        val multiple = (args["multiple"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true" && options.size > 1
+        val q = Question(text, options, multiple)
+        question = q
+        val answer = try { q.answer.await() } finally { question = null }
+        return when {
+            answer == null -> "The user skipped the question. Carry on with your best judgement, or ask again in plain words."
+            options.isNotEmpty() && (answer in options || multiple) -> "The user chose: $answer"
+            else -> "The user answered: $answer"
+        }
+    }
 
     /** The tool call waiting for an answer (shown by Chat), or null. */
     var approval by mutableStateOf<Approval?>(null)
@@ -90,22 +174,100 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             backups = ConfigStore.defaultPath().resolveSibling("backups"),
             outputFolder = config.outputFolder,
             model = config.model,
+            readOnly = config.toolMode == "plan",
+            shell = config.toolShell,
+            web = config.toolWeb,
         )
     }
 
     /** Runs the tools the model asked for (asking the user first when needed) and returns the messages to continue with. */
     private suspend fun runTools(text: String, calls: List<ToolCall>, stats: ReplyStats?): List<ChatMessage> {
-        val box = toolbox ?: return emptyList()
+        val box = toolbox
         val added = ArrayList<ChatMessage>()
         val request = ChatMessage.assistantCalls(text, calls, stats)
         add(request)
         added += request
         for (call in calls) {
+            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || box == null) {
+                val message = ChatMessage.toolResult(call.name, when {
+                    call.name == ASK_USER -> askUser(call)
+                    call.name == REQUEST_ACCESS -> requestAccess(call)
+                    else -> "Error: tools are off. Call request_access to ask the user for them."
+                })
+                add(message)
+                added += message
+                continue
+            }
             val spec = box.find(call.name)
-            val ask = spec != null && call.name !in alwaysAllowed && (spec.risk == ToolRisk.Write || !app.config.toolAutoRead)
-            var allowed = true
-            if (ask) {
-                val pending = Approval(call.name, "${call.name}  ${spec!!.summary(call.arguments)}", spec.preview(call.arguments))
+            // a folder that is not allowed yet: ask the user, and when they agree remember it for good
+            val grant = box.folderToGrant(call)
+            var folderDenied = false
+            if (grant != null) {
+                val pending = Approval(
+                    "folder", "Allow Arcana to use this folder?",
+                    listOf("${grant}", "The model may read, and (with your approval each time) change, files inside it.", "You can remove it later in Settings → Tools → Extra folders."),
+                    heading = "Allow this folder?", icon = "▤",
+                )
+                approval = pending
+                val choice = try { pending.answer.await() } finally { approval = null }
+                if (choice == ApprovalChoice.Deny) {
+                    folderDenied = true
+                } else {
+                    box.allow(grant)
+                    val kept = app.config.toolFolders.split(';').map { it.trim() }.filter { it.isNotEmpty() }
+                    if (grant.toString() !in kept) app.update(app.config.copy(toolFolders = (kept + grant.toString()).joinToString(";")))
+                }
+            }
+            // a shell command: never run what is blocked, and when shell commands are off, ask for them here and now
+            val command = if (spec?.risk == ToolRisk.Shell) (call.arguments["command"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim() else ""
+            var refusal: String? = null
+            if (spec?.risk == ToolRisk.Shell) {
+                val blocked = ShellPolicy.blockedReason(command)
+                if (blocked != null) refusal = "Error: Arcana never runs this kind of command: $blocked."
+                else if (!app.config.toolShell && !folderDenied) {
+                    val pending = Approval(
+                        "shell-on", command,
+                        listOf("The model wants to run shell commands (builds, tests, git…).", "You still approve every single command before it runs.", "Turn it off again in Settings → Tools → Shell commands."),
+                        heading = "Turn on shell commands?", icon = "$", yes = "Turn on", always = false,
+                    )
+                    approval = pending
+                    val choice = try { pending.answer.await() } finally { approval = null }
+                    if (choice == ApprovalChoice.Deny) refusal = "The user did not allow shell commands. Do not ask again; tell them they can turn them on in Settings → Tools → Shell commands."
+                    else app.update(app.config.copy(toolShell = true))
+                }
+            }
+            // a web address: refuse the private ones before asking anything, and when web access is off ask for it here and now
+            val address = if (spec?.risk == ToolRisk.Web) (call.arguments["url"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim() else ""
+            if (spec?.risk == ToolRisk.Web && refusal == null) {
+                val blocked = WebPolicy.refusal(address)
+                if (blocked != null) refusal = "Error: $blocked"
+                else if (!app.config.toolWeb && !folderDenied) {
+                    val pending = Approval(
+                        "web-on", address.chunked(76).first(),
+                        listOf("The model wants to read web pages.", "You approve every address before it is fetched; only public pages are reachable.", "Turn it off again in Settings → Tools → Web pages."),
+                        heading = "Turn on web pages?", icon = "↗", yes = "Turn on", always = false,
+                    )
+                    approval = pending
+                    val choice = try { pending.answer.await() } finally { approval = null }
+                    if (choice == ApprovalChoice.Deny) refusal = "The user did not allow web access. Do not ask again; tell them they can turn it on in Settings → Tools → Web pages."
+                    else app.update(app.config.copy(toolWeb = true))
+                }
+            }
+            val ask = spec != null && refusal == null && call.name !in alwaysAllowed && when (spec.risk) {
+                ToolRisk.Write -> spec.alwaysAsk || app.config.toolMode != "auto" // deleting and moving ask even in Auto mode
+                ToolRisk.Read -> !app.config.toolAutoRead
+                ToolRisk.Shell -> !(app.config.toolAutoRead && ShellPolicy.isSafe(command)) // never "always": each command is looked at
+                ToolRisk.Web -> true // never "always": the address itself can carry data out
+            }
+            var allowed = !folderDenied && refusal == null
+            if (ask && allowed) {
+                val shell = spec!!.risk == ToolRisk.Shell
+                val pending = if (shell) Approval(call.name, "run_command", spec.preview(call.arguments), heading = "Run this command?", icon = "$", yes = "Run", always = false)
+                else if (spec.risk == ToolRisk.Web) Approval(call.name, "fetch_url", spec.preview(call.arguments), heading = "Fetch this web page?", icon = "↗", yes = "Fetch", always = false)
+                else Approval(
+                    call.name, "${call.name}  ${spec.summary(call.arguments)}", spec.preview(call.arguments),
+                    heading = spec.confirmHeading ?: "Allow this change?", icon = if (spec.alwaysAsk) "!" else "⚙", always = !spec.alwaysAsk,
+                )
                 approval = pending
                 val choice = try {
                     pending.answer.await()
@@ -115,16 +277,101 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 if (choice == ApprovalChoice.Always) alwaysAllowed += call.name
                 allowed = choice != ApprovalChoice.Deny
             }
-            val result = if (allowed) withContext(Dispatchers.IO) { box.execute(call) } else "The user denied this action. Do not try it again; ask what they want instead."
+            val result = when {
+                allowed -> runInterruptible(Dispatchers.IO) { box.execute(call) }
+                refusal != null -> refusal
+                else -> "The user denied this action. Do not try it again; ask what they want instead."
+            }
             if (allowed && spec != null && !result.startsWith("Error:")) {
                 app.session.log(SessionKind.Tool, "${call.name} ${spec.summary(call.arguments)}")
-                if (spec.risk == ToolRisk.Write) app.brain.changed()
+                if (spec.risk != ToolRisk.Read) app.brain.changed()
             }
             val message = ChatMessage.toolResult(call.name, result)
             add(message)
             added += message
         }
         return added
+    }
+
+    /**
+     * The first time Chat opens with a vault that has no ARCANA.md: create it (with rules for using tools) and offer to open it to fill in.
+     * A note that already exists is left alone, and a file the user deletes later is not created again (it comes back with /memory).
+     */
+    fun offerMemory() {
+        val config = app.config
+        if (!config.memoryEnabled || config.memoryOffered || approval != null) return
+        val vault = app.openVault().getOrNull() ?: return
+        val existed = java.nio.file.Files.exists(vault.root.resolve(Vault.MEMORY_FILE))
+        app.update(config.copy(memoryOffered = true))
+        if (existed) return
+        val file = runCatching { vault.ensureMemory() }.getOrNull() ?: return
+        app.scope.launch {
+            val pending = Approval(
+                "memory", "${Vault.MEMORY_FILE} is in your vault now",
+                listOf(
+                    "It is read in every chat and already holds rules that make the assistant use its tools.",
+                    "Add who you are, where your projects are, how you like answers. /memory opens it any time.",
+                ),
+                heading = "Memory file created", icon = "✎", yes = "Open it to fill in", always = false,
+            )
+            approval = pending
+            val choice = try { pending.answer.await() } finally { approval = null }
+            if (choice != ApprovalChoice.Deny) SystemOpen.open(file.toString())
+        }
+    }
+
+    /** The model found tools off (or plan mode on) and asked for what it needs: ask the user on the spot, and apply the answer at once. */
+    private suspend fun requestAccess(call: ToolCall): String {
+        val reason = (call.arguments["reason"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().ifBlank { "Work with your notes and files." }
+        if (!offerTools(reason)) return "The user did not allow it. Do not ask again; tell them they can turn tools on with /tools (or change the mode with /mode) and ask again."
+        val box = toolbox
+        gen.useTools(box?.definitions())
+        return "Done: tools are now on (${app.config.toolMode} mode). Carry on with the user's request using the tools. ${box?.describe().orEmpty()}"
+    }
+
+    /** Asks to turn tools on (or to leave plan mode); when the user agrees the settings change at once and [toolbox] is rebuilt. */
+    private suspend fun offerTools(reason: String): Boolean {
+        val off = !app.config.toolsEnabled
+        val pending = if (off) Approval(
+            "access", reason,
+            listOf("Searching and reading run at once; every change asks you first (Ask mode).", "Only your vault and the folders in Settings → Tools are reachable.", "Turn tools off again any time with /tools; switch mode with /mode."),
+            heading = "Turn on tools?", icon = "⚙", yes = "Turn on", always = false,
+        ) else Approval(
+            "access", reason,
+            listOf("Plan mode is read-only, so the model cannot make this change.", "Ask mode lets it try, and you approve every change before it happens.", "Switch back any time with /mode."),
+            heading = "Leave plan mode?", icon = "⚙", yes = "Switch to Ask mode", always = false,
+        )
+        approval = pending
+        val choice = try { pending.answer.await() } finally { approval = null }
+        if (choice == ApprovalChoice.Deny) return false
+        app.update(app.config.copy(toolsEnabled = true, toolMode = if (app.config.toolMode == "plan") "ask" else app.config.toolMode))
+        toolbox = toolboxFor(app.config)
+        return true
+    }
+
+    /** "Ask" mode for a call the model only wrote out as text: show it and let the user decide whether it runs. */
+    private suspend fun confirmTextCalls(calls: List<ToolCall>): Boolean {
+        val lines = calls.take(3).map { call -> "${call.name}  " + call.arguments.entries.joinToString(", ") { (k, v) -> "$k=${(v as? kotlinx.serialization.json.JsonPrimitive)?.content ?: v}" }.take(90) }
+        val pending = Approval(
+            "textcall", "The model wrote ${if (calls.size == 1) "a tool call" else "${calls.size} tool calls"} as text",
+            lines + listOf("It did not make a real call, so nothing has run. Run it as one?", "Change this in Settings → Tools → Calls written as text."),
+            heading = "Run this tool call?", icon = "⚙", yes = "Run it", always = false,
+        )
+        approval = pending
+        val choice = try { pending.answer.await() } finally { approval = null }
+        return choice != ApprovalChoice.Deny
+    }
+
+    /** The step limit was reached while the model still wanted tools: let the user decide whether it may go on. */
+    private suspend fun stepLimit(used: Int): Int {
+        val pending = Approval(
+            "steps", "The model has used $used steps and wants to continue.",
+            listOf("Allow ${app.config.toolSteps} more steps, or stop here and let it answer with what it has.", "Change the default in Settings → Tools → Steps per question."),
+            heading = "Step limit reached", icon = "⏱", yes = "${app.config.toolSteps} more steps", always = false,
+        )
+        approval = pending
+        val choice = try { pending.answer.await() } finally { approval = null }
+        return if (choice == ApprovalChoice.Deny) 0 else app.config.toolSteps
     }
 
     init {
@@ -147,15 +394,34 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }
         add(ChatMessage.user(body, sent.pictures, sent.notes, sent.files))
         app.session.log(SessionKind.Asked, body)
+        // a job that clearly needs file tools, with tools off: offer them now instead of letting the model say it cannot
+        if (!app.config.toolsEnabled && app.tools != false && !toolsDeclined && looksLikeToolTask(body)) {
+            app.scope.launch {
+                if (!offerTools("It looks like this needs your notes or files.")) toolsDeclined = true
+                ask(body)
+            }
+        } else ask(body)
+    }
+
+    private var toolsDeclined = false
+
+    private fun ask(body: String) {
         val history = messages.toList()
-        val box = if (app.tools == false) null else toolboxFor(app.config)
+        val modelCanUseTools = app.tools != false
+        val box = if (!modelCanUseTools) null else toolboxFor(app.config)
         toolbox = box
-        gen.start(tools = box?.definitions(), maxSteps = app.config.toolSteps) {
+        val canRequest = modelCanUseTools && box == null
+        val offered = when {
+            box == null -> if (canRequest) JsonArray(listOf(REQUEST_ACCESS_DEFINITION, ASK_USER_DEFINITION)) else null
+            app.config.toolMode == "plan" -> JsonArray(box.definitions() + REQUEST_ACCESS_DEFINITION)
+            else -> box.definitions()
+        }
+        gen.start(tools = offered, maxSteps = app.config.toolSteps) {
             val config = app.config
             val vault = app.openVault().getOrNull()
             val hits = if (config.chatUseVault && vault != null) vault.search(body, config.contextNotes, config.contextCharsPerNote) else null
             pendingSources = hits?.map { it.note.path }.orEmpty()
-            Prompts.chatMessages(config, history, hits, noteTexts(vault, history.takeLast(config.chatHistory)), tools = box != null)
+            Prompts.chatMessages(config, history, hits, noteTexts(vault, history.takeLast(config.chatHistory)), tools = box != null, toolsNote = box?.describe().orEmpty(), canRequestTools = canRequest, memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "")
         }
     }
 
@@ -175,6 +441,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** Starts an empty conversation. The old one stays saved and can be opened again from the history. */
     fun startNew() {
+        toolsDeclined = false
         messages.clear()
         input.clear()
         attachments.clear()
