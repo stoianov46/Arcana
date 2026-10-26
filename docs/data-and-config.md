@@ -57,6 +57,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `toolFolders` | `""` | extra folders for tools (`;`-separated) |
 | `toolAutoRead` | true | read-only tools run without asking |
 | `skillsEnabled` / `skillsFolder` | true / `Skills` | the model is told which skills exist and gets `use_skill`; the vault folder with one folder per skill |
+| `libraryTree` | true | the Library lists notes as a tree of folders that fold and unfold (false: one flat list with full paths) |
 | `toolSteps` | 8 | max tool rounds per question (1–60); at the limit a dialog offers that many more |
 | `memoryEnabled` / `memoryOffered` | true / false | add `ARCANA.md` to every chat / already created or checked once (so a deleted file is not recreated) |
 | `contextTokens` | 0 | `num_ctx` to ask Ollama for (0 = Ollama's default); the Chat gauge counts against it, capped at the model's maximum |
@@ -78,6 +79,7 @@ Adding a field: give it a default (old config files must still load), add a Sett
 - Daily notes: path from `.obsidian/daily-notes.json` (`folder`, `format`) else settings. Capture appends `- HH:mm text`.
 - Deletion is never permanent: `Vault.trash` → `.trash/`; the `delete_path` tool moves to `.trash/` (vault) or `<config>/trash`. Replacements/inbox processing back up originals into `.trash/`.
 - Session summary notes and saved chats are normal notes created in `outputFolder`.
+- Skills: `<skillsFolder>/<name>/<name>.skill.md` (+ `reference/`, `scripts/`); properties Arcana reads: `name`, `description`, `version`, `output`, `requires` (quoted list items); everything else is for people. A skill's results live outside it (`output:`, e.g. `Reports/<name>/`). `create_note` merges a `---` properties block at the top of its content with Arcana's own; `set_properties` changes properties in place. See [skills.md](skills.md).
 
 ## Data shapes (persisted JSON)
 

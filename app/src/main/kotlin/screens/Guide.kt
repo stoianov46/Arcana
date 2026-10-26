@@ -104,6 +104,9 @@ A badge shows what is waiting: the **Inbox** count, the number of unsaved events
 # Library
 Every note in the vault, with the web of links around it.
 
+## The tree
+Notes are shown as **folders that fold and unfold**, like in a file manager: folders first (with how many notes are inside), then the notes of that level, each level indented. `Enter` (or `Space`) folds and unfolds the folder under the cursor; `l` unfolds it (and steps into it when it is already open); `h` folds it, or, on a note or a folded folder, jumps to the folder above. `+` unfolds every folder and `-` folds them all. `t` switches to a **flat list** with the full path of every note (and back); Settings → Vault → *Library as a tree* sets the default. Typing a filter (`/`) lists the matches flat with their paths; `Esc` brings the tree back. The tree remembers which folders were open while Arcana runs, and a note you jump to from the Brain screen opens its folders by itself. Every view (Recent, Stale…) is a tree of just its notes, each folder in the view's own order.
+
 ## Views
 `←` `→` switch the view: **All**, **Recent**, **Inbox**, **No links**, **No tags**, **Broken links**, **Stale**, and **Tags** (pick a tag to see its notes). The numbers on the tabs are live counts. `/` filters the list; typing several words finds notes containing all of them.
 
@@ -165,9 +168,9 @@ Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use
 - **Modes** (`/mode` cycles them, or Settings → Tools → Mode): *Ask* (default) waits for your `y` on every change; *Auto* runs changes at once, with the old file always backed up (new folders still ask); *Plan* is read-only: Gemma investigates and writes a plan, then you switch to Ask or Auto and tell her to go ahead. The header shows `⚙ tools ask|auto|plan`.
 - **Questions, deleting and moving:** `ask_user` puts a question with numbered options to you in the chat (`↑↓` and Enter or `1`-`9` choose; the last row, `t` or ↓ to it, is a text field inside the dialog for an answer of your own; `Esc` skips; quizzes work even with tools off). `delete_path` moves a file or folder to a trash folder (the vault's `.trash`, or `~/.config/arcana/trash`) and `move_path` renames or moves; both ask **every time, even in Auto mode**, and neither can be set to "always".
 - **Shell and web** (both off by default, in Settings → Tools): `run_command` runs a command after you press `y` (harmless ones like `git status` run at once; `sudo` and `rm -rf /` never); `web_search` looks things up on the web (DuckDuckGo by default, no key; or your own SearXNG server, or Brave with a key: Settings → Tools) and `fetch_url` reads a public web page; both ask every time and show what they send (pages on your own computer or network are refused). If the model asks while they are off, a dialog offers to turn them on right there.
-- **Skills:** runbooks in your vault, one folder each under `Skills/` (`Skills/<name>/<name>.skill.md` with `reference/`, `scripts/` and output folders). With tools on, the model is told which skills exist and loads one with `use_skill`; pick one from the `/` menu (it is attached as a `◆ skill` chip above the field; type your task and press Enter), and `/skills` turns skills on or off and lists them (Settings → Tools has *Skills* and *Skills folder*). A skill is only text and files: its scripts run through `run_command`, which asks every time. The `Skills Guide` note in the vault explains how to write one.
-- **Required steps in skills:** a skill can list the steps that must happen (`requires:` in its properties). Arcana watches them while the skill runs: the Chat status bar shows `◆ name 7/11`, and if the model tries to finish early Arcana sends it back to the missing step (it gives up on a step the model ignores three times, and the bar shows `✕ skipped`).
-- **Colours in the `/` menu:** commands are cyan; skills purple `◆`; tools are coloured by what they can do: green `◎` only reads, orange `✎` changes notes or files (asks first), blue `↗` reaches the internet, red `▶` runs a command and red `✕` deletes or moves (these ask every time). Each also shows a badge word, so you never have to rely on colour alone.
+- **Skills:** runbooks in your vault that the model follows step by step; pick one from the `/` menu (it is attached as a `◆ skill` chip) and type your task. The **Skills** page of this guide explains how they work, the progress badge in the status bar and what to do when something looks wrong.
+- **Required steps in skills:** a skill can list the steps that must happen; Arcana watches them while it runs (badge `◆ name 7/11` in the status bar) and sends the model back if it tries to finish early. See the **Skills** page.
+- **Colours in the `/` menu:** the list is grouped commands, then skills, then tools, and every row says what it is in a badge (`COMMAND`, `SKILL`, `TOOL`). Skills are read from your skills folder each time the menu opens, not built in. Commands are cyan; skills purple `◆`; tools are coloured by what they can do: green `◎` only reads, orange `✎` changes notes or files (asks first), blue `↗` reaches the internet, red `▶` runs a command and red `✕` deletes or moves (these ask every time). Each also shows a badge word, so you never have to rely on colour alone.
 - **The `/` menu:** type `/` at the start of a message and a list of commands, skills and tools opens above the field; keep typing to filter, `↑↓` to choose, `Tab` or Enter to use it, `Esc` to close. A command runs; a tool writes "Use the … tool to " into the field for you to finish (the tools are called by the model, not typed as commands).
 - **When the model does not make the call:** small models sometimes write a tool call as text, or only announce a step. Arcana runs such a call as a real one (Settings → Tools → *Calls written as text*: Auto, Ask or Off) and nudges a model that only announces what it will do. When a job needs more steps than allowed, a dialog offers more.
 - **Safety:** tools only touch your vault and the folders you allow in *Settings → Tools → Extra folders*; `..` and symlinks cannot escape them, and `.git` and `.obsidian` are never written. A file that is replaced or edited is backed up first (in `~/.config/arcana/backups`). Text in a note or file is only data: the model is never obliged to follow instructions found in it, and every change still needs your `y`.
@@ -185,6 +188,54 @@ Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use
 
 ## Your memory file
 The vault note **`ARCANA.md`** holds standing instructions and facts (who you are, where your projects are, rules for using tools). Its first 4,000 characters go into every chat. Arcana creates it the first time you open Chat and offers to open it; `/memory` opens it any time, and you can say "remember that…" so the model adds a line (after you confirm). Switch it off in Settings → Prompts.
+""".trim(),
+    ),
+    GuidePage(
+        "Skills", "Skills: runbooks the model follows",
+        """
+# Skills: runbooks the model follows
+A **skill** is a runbook that lives in your vault: a note with numbered steps, plus the scripts and reference notes it needs. You give it to the model, and the model follows it step by step. Skills are how a small local model does a long job reliably (analyse a pool, file notes, write a report) instead of improvising.
+
+## What a skill looks like
+```
+Skills/
+  coingecko-forecast/
+    coingecko-forecast.skill.md   the runbook (its name ends in .skill.md)
+    reference/                    notes the skill reads only when needed
+    scripts/                      programs the skill runs for you
+Reports/
+  coingecko-forecast/             what it produced (outside the skill)
+```
+A folder is a skill when it has `<folder name>.skill.md` inside it. Nothing is registered anywhere: add a folder and it is there. The first lines of the note are its **properties**: `description:` (what it does and when to use it; the model chooses by it), `output:` (where its results go) and `requires:` (its required steps, see below).
+
+## Using one
+1. Turn on **Tools in Chat** (`/tools`) and **Skills** (`/skills`, or Settings → Tools; on by default).
+2. Type `/` in Chat. The list is grouped **commands, then skills, then tools**, and every row has a badge saying what it is (`COMMAND`, `SKILL`, `TOOL`). Skills are read from your skills folder every time the menu opens, so one you just added in Obsidian is already there.
+3. Pick a skill: a chip `◆ skill name` appears above the field (Backspace on an empty field removes it). Type what you want ("analyse this pool: arbitrum, 0x…, 30d") and press Enter.
+4. Arcana puts the skill's text into your message, so the model does not have to remember to load it. That question may take up to 40 tool rounds (a skill run is long). Every change, command and web fetch the skill leads to still asks for your approval, as always.
+
+The model can also load a skill by itself when your request matches its description (it is told which skills exist). Then there is no chip, but everything else works the same.
+
+## The progress badge
+If a skill lists `requires:` steps, the Chat status bar shows `◆ coingecko-forecast 2/9`: **2 of the skill's 9 required steps are done**.
+- The steps tick off when the model makes the matching tool call (for example "ran the analysis command", "created the report note", "the check said `REPORT_COMPLETE=yes`"). Order does not matter.
+- Purple means running, green with ✓ means every step is done, red `✕2 skipped` means the model ignored steps and Arcana gave up on them.
+- If the model tries to finish while a step is missing, Arcana does **not** accept it: it sends a hidden message ("STOP: … this step is still missing: …") and the model carries on. You do not see these messages. After three ignored tries on the same step, Arcana gives up on that step so the run can end.
+- Only skills that list steps get a badge and this protection; a skill without `requires:` simply runs from its text. The badge disappears at your next message or `/new`.
+- It checks that steps **happened**, not that their content is right. That is why good skills end with a verification command whose result must be `yes`.
+
+## Where things live
+- The skills folder is `Skills/` (Settings → Tools → *Skills folder*). Results belong outside it: a skill names its results folder with `output:` (the forecast skill writes to `Reports/coingecko-forecast/`). This keeps the skill small and easy to share.
+- `/skills` lists what Arcana found and what needs attention: a missing `description:`, a name that differs from the folder, an entry note longer than 18,000 characters (the model could not read the end), an unreadable `requires:` line.
+- Writing your own: the vault note `Skills/Skills Guide.md` has the layout, the properties, the `requires:` format, a template and the lessons learned for small models.
+
+## When something looks wrong
+- **The skill is not in the menu:** the folder needs `<name>.skill.md` with the same name as the folder (an old `<name>.md` is not found); check `/skills` and the *Skills folder* setting.
+- **"Skills need tools":** turn tools on with `/tools`.
+- **The badge stays below full:** the model has not done a step, or its result condition has not been met (for example the check still says `REPORT_COMPLETE=no`). Let it continue; after three tries per step Arcana lets it end, and the badge shows what was skipped.
+- **A red `exit code 1` in the chat:** a skill's verification command uses it to say "not complete yet". It is not a crash.
+- **The report says `incomplete`:** the skill ended with steps missing; its note lists what is missing.
+- **The model ends without doing anything:** small models sometimes only describe a step. Arcana nudges them; if it persists, use a larger model (Settings → Ollama → Model).
 """.trim(),
     ),
     GuidePage(

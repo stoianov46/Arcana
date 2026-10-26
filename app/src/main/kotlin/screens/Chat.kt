@@ -80,11 +80,12 @@ internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean
     else -> null
 }
 
-/** The entries that fit what is typed after the slash: names that start with it first, then names that contain it. */
+/** The entries that fit what is typed after the slash, grouped commands, skills, tools; in each group names that start with it first, then names that contain it. */
 internal fun slashMatches(items: List<SlashItem>, query: String): List<SlashItem> {
     val q = query.trim().lowercase().removePrefix("/")
     val names = { item: SlashItem -> item.name.lowercase().removePrefix("/") }
-    return items.filter { names(it).startsWith(q) } + items.filter { !names(it).startsWith(q) && q in names(it) }
+    // commands, then skills, then tools (so each kind sits together and is easy to tell apart); inside a kind the names that start with the text come first
+    return (items.filter { names(it).startsWith(q) } + items.filter { !names(it).startsWith(q) && q in names(it) }).sortedBy { it.kind.category.ordinal }
 }
 
 /** How full the model's context was after the last reply (its prompt plus its answer) as a share and a `13.6k/131k` text; null before the first reply or when the size is unknown. */
@@ -431,7 +432,9 @@ fun ChatScreen(app: AppContext) {
     )
 
     // typing "/" at the start of a message opens a menu of commands and tools (↑↓ choose, Tab or Enter use, Esc close)
-    val skillList = remember(app.config.vaultPath, app.config.skillsEnabled, app.config.skillsFolder, chat.messages.size) {
+    val slashQuery = input.text.takeIf { mode == ChatMode.Chat && !browsing && chat.question == null && chat.approval == null && it.startsWith("/") && ' ' !in it && '\n' !in it }?.drop(1)
+    // the skills are read from the vault folder (never hardcoded): when Chat opens, after each message, and again every time the menu opens, so one added in Obsidian shows up at once
+    val skillList = remember(app.config.vaultPath, app.config.skillsEnabled, app.config.skillsFolder, chat.messages.size, slashQuery != null) {
         val vault = app.openVault().getOrNull()
         if (vault == null || !app.config.skillsEnabled) emptyList() else Skills.discover(vault, app.config.skillsFolder)
     }
@@ -439,7 +442,6 @@ fun ChatScreen(app: AppContext) {
         SlashCommands + skillList.map { SlashItem("/" + it.name, it.description.ifEmpty { "(no description)" }.substringBefore(". ").take(80).trimEnd('.'), false, skill = true) } + (chat.toolboxFor(app.config.copy(toolsEnabled = true, toolMode = "ask"))?.specs.orEmpty())
             .map { SlashItem(it.name, it.description.substringBefore(". ").substringBefore("\n").take(80).trimEnd('.'), true, kind = SlashKind.forTool(it.name, it.risk)) }
     }
-    val slashQuery = input.text.takeIf { mode == ChatMode.Chat && !browsing && chat.question == null && chat.approval == null && it.startsWith("/") && ' ' !in it && '\n' !in it }?.drop(1)
     val slashMatches = if (slashQuery == null) emptyList() else slashMatches(slashItems, slashQuery).take(8)
     var slashIndex by remember(slashQuery) { androidx.compose.runtime.mutableIntStateOf(0) }
 
@@ -785,11 +787,13 @@ fun ChatScreen(app: AppContext) {
                             Label(if (selected) "▸ " else "  ", color = Palette.Cta, background = bg)
                             Label(fit(item.kind.glyph + item.name, 24), color = item.kind.color, background = bg, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
                             val state = if (item.tool || item.skill) null else slashState(item.name, app.config, app.tools)
-                            Label(" " + fit(item.hint, (LocalContentWidth.current - 30 - 12).coerceAtLeast(10)), color = if (selected) Palette.Text else Palette.Muted, background = bg)
-                            // the state of a setting, so it is clear whether it is on right now
+                            Label(" " + fit(item.hint, (LocalContentWidth.current - 30 - 12 - SlashCategory.WIDTH - 3).coerceAtLeast(10)), color = if (selected) Palette.Text else Palette.Muted, background = bg)
+                            // what the entry IS, in its own column so the kinds line up: COMMAND, SKILL or TOOL
+                            val category = item.kind.category
+                            Label(category.badge, color = Palette.Background, background = category.color, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
+                            // then, for a command that is a setting, whether it is on right now; for a tool, what it can do (READ, WRITE, SHELL, WEB…)
                             if (state != null) Label(" ${state.first} ", color = Palette.Background, background = state.second, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
-                            // what kind of entry it is (skill, or what a tool can do), in the colour of its name
-                            else item.kind.badge?.let { badge -> Label(" $badge ", color = Palette.Background, background = item.kind.color, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold) }
+                            else if (item.tool) item.kind.badge?.let { badge -> Label(" $badge ", color = Palette.Background, background = item.kind.color, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold) }
                         }
                     }
                     TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = maxInputRows(), attachments = chat.attachments)

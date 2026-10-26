@@ -15,6 +15,7 @@ no marketing. Read this page, then open only the file you need.
 - Single process, single window. State lives in Compose snapshot state held by `AppContext` (one instance per run).
 - Everything the user does ends up as: a vault file change, a chat file, a session event, a usage record, or config.
 - The LLM is only reached through `OllamaClient` (`/api/chat` streaming, `/api/show`, `/api/tags`).
+- **Skills** are plain Markdown + files in the vault, found by folder layout and enforced by the harness (`requires:`); read [skills.md](skills.md) before touching `Skills.kt`, `use_skill`, the gate or the Chat badge.
 - The product rules in [conventions.md](conventions.md) are binding (e.g. "Chat's field always has the keyboard").
 
 ## Map of these docs
@@ -26,6 +27,7 @@ no marketing. Read this page, then open only the file you need.
 | [core-module.md](core-module.md) | change Ollama/vault/index/session/chat-store/usage/inbox logic |
 | [app-module.md](app-module.md) | find the right file in the UI layer; state holders; navigation; design system; input |
 | [tools-and-agent.md](tools-and-agent.md) | work on the tool-calling loop, dialogs, shell/web/questions, or add a tool |
+| [skills.md](skills.md) | understand or change **skills** (vault runbooks), the `/` menu entries, the skill chip, the required-steps gate and its progress badge |
 | [data-and-config.md](data-and-config.md) | touch `config.json`, on-disk stores, vault conventions, frontmatter |
 | [ui-internals.md](ui-internals.md) | debug rendering: Mosaic quirks, row accounting, key dispatch, Markdown renderer |
 | [testing.md](testing.md) | run/add tests, drive the real app in a pty |
@@ -63,6 +65,9 @@ Note: the vault note `ARCANA.md` (see [functionality.md](functionality.md)) is p
 | Palette | `Ctrl+P`: searchable list of every action |
 | Tools | Model-callable functions: read/search notes and files, change or delete them, ask the user, run commands, read web pages; changes, commands and fetches need the user's confirmation |
 | Memory file | The vault note `ARCANA.md`: standing instructions and facts added to every chat |
+| Skill | A runbook in the vault (`Skills/<name>/<name>.skill.md` + `reference/` + `scripts/`) that a model follows step by step; see [skills.md](skills.md) |
+| Skill run / completion gate | One execution of a skill whose `requires:` steps Arcana ticks off; if the model tries to finish early the gate sends it back (badge `◆ name 7/11`) |
+| Skill chip | `◆ skill name` attached to a message (from the `/` menu or `@`): Arcana puts the skill's text into the message |
 | Status bar | The reusable one-line summary (`design/StatusBar.kt`): model, context gauge, tokens, estimated price, time |
 | Overlay | Help / palette / capture drawn over the current screen without losing its state |
 | Entry | A selectable unit in select mode (a user message, or one Markdown block of a reply) |

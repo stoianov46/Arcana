@@ -43,14 +43,15 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 |---|---|---|
 | `Home.kt` | Brain | two-column dashboard from `BrainHealth`; Enter jumps (Library filter / Chat / note) |
 | `Chat.kt` | Chat | `ChatMode` (Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave (only with Keep chats off), ConfirmClear); `messageLines` renders messages incl. tool steps; approval and question panels (buttons inside); the `/` menu (`SlashItem`, `slashMatches`, `slashState`); `chatStatus` + `contextUsage`; select mode via `OutputState` |
-| `Library.kt` | Library | `LibraryMode` (List, Reading, ConfirmDelete, Rename); filters from `LibraryFilter`; preview pane; trash; rename; chat about a note; open in Obsidian |
+| `LibraryTree.kt` | the Library's tree: `LibraryRow` (`Folder`/`Note` with depth), `libraryRows(notes, expanded)`, `ancestorsOf`, `allFolders` (pure, unit-tested) |
+| `Library.kt` | Library | tree or flat list (`AppConfig.libraryTree`, `AppContext.libraryExpanded`), `LibraryMode` (List, Reading, ConfirmDelete, Rename); filters from `LibraryFilter`; preview pane; trash; rename; chat about a note; open in Obsidian |
 | `Inbox.kt` | Inbox | `InboxMode`; `Analysis` (Ready/Failed); uses `InboxProcessing`; editable plan fields |
 | `Compose.kt` | AI notes (`NoteComposerScreen`) | `Task` enum, `Mode` (Start, PickSource, Input, Follow, Title, AppendPick, ConfirmReplace, ConfirmDiscard, Result); conversation + `drafts` stack for undo; attachments |
 | `Session.kt` | Session | `SessionMode` (Overview, Summary, ConfirmNew); exit flow |
 | `Usage.kt` | Usage | dashboard: `Period` × `Page` (Overview, Breakdown, Recent); tiles, `ColumnChart`, insights, feature/model bars, hour strip, speed sparkline, recent table; `axisLabels`; `StatusHeader`; clear history |
 | `Changelog.kt` | Changelog | `changePages()`: hand-written pages (Latest, Tools, Chat, Brain, Interface, Start); same scroll/select view as Guide |
 | `Settings.kt` | Settings | declarative `settings` list (`Setting`, `choice`, `toggle`, `stepper`, `text`, `Editor.{Text,Model,Folder,Theme}`), tabs by `Group`; the model picker shows `ModelDetails` |
-| `Guide.kt` | Guide | 12 pages (Markdown strings) |
+| `Guide.kt` | Guide | 13 pages (Markdown strings; incl. "Skills") |
 | `Common.kt` | helpers | `bodyRows`, `outputRows(fixed, notice, actions)`, `panelWidth`, `outputWidth`, `WithVault`, `GenerationView`, `ReplyStatus`, `relativeTime`, `saveFailure` |
 | `AttachBrowser.kt` | shared | the full-screen file browser used by Chat, AI notes and Capture |
 
@@ -67,11 +68,11 @@ Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `
 | `Panel.kt` | `Panel(title, accent)`, `Card`, `ScreenHeader(title, subtitle)`, frame glyphs |
 | `Fields.kt` | `TextInput(label, field, focused, placeholder, maxRows, attachments)`, `LabeledField`, `InlineField`, `handleAttachmentKey` |
 | `Actions.kt` | `ActionItem`, `ActionBar(items, width)`, `actionBarRows`, `breakIntoLines`, `Badge` |
-| `SlashKind.kt` | `SlashKind`: what a "/" menu entry is (Command, Skill, Read, Write, Shell, Danger, Web, Ask) with its `Palette` colour, glyph and badge word; `forTool(name, risk)` classifies a tool |
+| `SlashKind.kt` | `SlashKind` (+ `SlashCategory`: the COMMAND / SKILL / TOOL group and badge of every row): what a "/" menu entry is (Command, Skill, Read, Write, Shell, Danger, Web, Ask) with its `Palette` colour, glyph and badge word; `forTool(name, risk)` classifies a tool |
 | `StatusBar.kt` | **reusable status line**: `StatusSegment`/`StatusPart`, `statusSegment`, `pillSegment`, `gaugeSegment`, `fitSegments` (drops the lowest priority first), `StatusBar`, `StatusHeader`, `spanText`, `priceText` |
 | `Shortcuts.kt` | `Shortcuts.label(text)`: the one place shortcut labels pass through (Ctrl chords) |
 | `Messages.kt` | `Notice`, `NoticeLine`, `Hint`, `Warning`, `Cta`, `Loading`, `Spinner` |
-| `Picker.kt` | `PickerState` + `Picker<T>`: `/` filters (any order of words), ↑↓, Enter |
+| `Picker.kt` | `PickerState` + `Picker<T>`: `/` filters (any order of words), ↑↓, Enter; optional `icon`/`iconColor`/`meta`, and for trees `indent` (two spaces per level), `labelColor` and `total` (the count shown in the search strip) |
 | `FilePicker.kt` | `FilePickerState`/`FilePicker`: folder browser returning files (tick with Space, Tab to attach) |
 | `DirectoryPicker.kt` | folder-only picker (vault path) |
 | `Attachments.kt` | `Attachments` state (pictures, files, notes, plain), `AttachmentLine`, `SentAttachments`, `attachBrowserHints` |

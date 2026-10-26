@@ -422,6 +422,42 @@ class DesignTest {
     }
 
     @Test
+    fun theLibraryTreeShowsFoldersFirstAndOnlyOpenFoldersShowTheirNotes() {
+        fun note(path: String, modified: Long = 0) = com.arcana.brain.core.NoteInfo(path, modified, 10, emptySet(), emptySet(), emptySet())
+        val notes = listOf(note("Root.md", 9), note("Skills/a/one.md", 5), note("Skills/a/two.md", 4), note("Skills/Guide.md", 8), note("Projects/x.md", 7), note("inbox/n.md", 6))
+        fun describe(rows: List<com.arcana.brain.app.screens.LibraryRow>) = rows.map { r ->
+            when (r) {
+                is com.arcana.brain.app.screens.LibraryRow.Folder -> "${"  ".repeat(r.depth)}${if (r.expanded) "v" else ">"} ${r.name}/ (${r.notes})"
+                is com.arcana.brain.app.screens.LibraryRow.Note -> "${"  ".repeat(r.depth)}${r.info.title}"
+            }
+        }
+        // everything collapsed: folders A to Z (case-insensitive), then the notes of the root, with the number of notes below each folder
+        assertEquals(listOf("> inbox/ (1)", "> Projects/ (1)", "> Skills/ (3)", "Root"), describe(com.arcana.brain.app.screens.libraryRows(notes, emptySet())))
+        // opening a folder shows its subfolders first and then its notes in the view's own order; the others stay closed
+        assertEquals(
+            listOf("> inbox/ (1)", "> Projects/ (1)", "v Skills/ (3)", "  > a/ (2)", "  Guide", "Root"),
+            describe(com.arcana.brain.app.screens.libraryRows(notes, setOf("Skills"))),
+        )
+        assertEquals(
+            listOf("> inbox/ (1)", "> Projects/ (1)", "v Skills/ (3)", "  v a/ (2)", "    one", "    two", "  Guide", "Root"),
+            describe(com.arcana.brain.app.screens.libraryRows(notes, setOf("Skills", "Skills/a"))),
+        )
+        // a nested folder is hidden while its parent is closed, even if it is marked open
+        assertEquals(listOf("> inbox/ (1)", "> Projects/ (1)", "> Skills/ (3)", "Root"), describe(com.arcana.brain.app.screens.libraryRows(notes, setOf("Skills/a"))))
+        // the notes keep the order they came in (newest first here), not the alphabet
+        val newestFirst = listOf(note("d/old.md", 1), note("d/new.md", 5))
+        assertEquals(listOf("v d/ (2)", "  old", "  new"), describe(com.arcana.brain.app.screens.libraryRows(newestFirst, setOf("d"))))
+        // helpers: what must be open to see a note, and what "expand all" opens
+        assertEquals(listOf("Skills", "Skills/a"), com.arcana.brain.app.screens.ancestorsOf("Skills/a/one.md"))
+        assertEquals(emptyList(), com.arcana.brain.app.screens.ancestorsOf("Root.md"))
+        assertEquals(setOf("inbox", "Projects", "Skills", "Skills/a"), com.arcana.brain.app.screens.allFolders(notes))
+        assertEquals(emptyList(), com.arcana.brain.app.screens.libraryRows(emptyList(), emptySet()))
+        // folder rows know their subfolders
+        val skills = com.arcana.brain.app.screens.libraryRows(notes, emptySet()).filterIsInstance<com.arcana.brain.app.screens.LibraryRow.Folder>().first { it.name == "Skills" }
+        assertEquals(1, skills.folders)
+    }
+
+    @Test
     fun theSlashMenuSeparatesCommandsSkillsAndToolsByWhatTheyDo() {
         assertEquals(SlashKind.Read, SlashKind.forTool("search_notes", ToolRisk.Read))
         assertEquals(SlashKind.Read, SlashKind.forTool("current_time", ToolRisk.Read))
@@ -444,9 +480,39 @@ class DesignTest {
         assertTrue(withBadge.all { it.badge != null && it.glyph.isNotBlank() })
         assertEquals(withBadge.size, withBadge.map { it.glyph }.toSet().size)
         assertEquals(withBadge.size, withBadge.map { it.badge }.toSet().size)
+        // the group of every entry, named on its row: command, skill or tool
+        assertEquals(com.arcana.brain.app.design.SlashCategory.Command, SlashKind.Command.category)
+        assertEquals(com.arcana.brain.app.design.SlashCategory.Skill, SlashKind.Skill.category)
+        assertEquals(setOf(com.arcana.brain.app.design.SlashCategory.Tool), listOf(SlashKind.Read, SlashKind.Write, SlashKind.Shell, SlashKind.Danger, SlashKind.Web, SlashKind.Ask).map { it.category }.toSet())
+        // the three badges are the same width, so the column lines up, and differ in colour
+        val cats = com.arcana.brain.app.design.SlashCategory.entries
+        assertEquals(1, cats.map { it.badge.length }.toSet().size)
+        assertEquals(cats.size, cats.map { it.color }.toSet().size)
+        assertEquals(listOf("COMMAND", "SKILL", "TOOL"), cats.map { it.label })
         // and the colours: one hue per meaning (shell and delete share red on purpose: both are high risk)
         val hues = SlashKind.values().map { it.color }
         assertEquals(SlashKind.values().size - 1, hues.toSet().size)
+    }
+
+    @Test
+    fun theSlashMenuGroupsCommandsThenSkillsThenTools() {
+        val items = com.arcana.brain.app.screens.SlashCommands + listOf(
+            SlashItem("create_note", "Create a note", true, kind = SlashKind.Write),
+            SlashItem("/coingecko-forecast", "Pool analysis", false, skill = true),
+            SlashItem("current_time", "The time", true),
+        )
+        fun names(q: String) = com.arcana.brain.app.screens.slashMatches(items, q).map { it.name }
+        // "c": commands first (those starting with c, then those containing it), then the skill, then the tools, whatever matched best
+        val c = names("c")
+        assertEquals(listOf("command", "command"), c.take(2).map { if (it.startsWith("/")) "command" else "other" }.take(2))
+        assertTrue(c.indexOfLast { it.startsWith("/") && it != "/coingecko-forecast" } < c.indexOf("/coingecko-forecast"), "every command is listed before the skill: $c")
+        assertTrue(c.indexOf("/coingecko-forecast") < c.indexOf("create_note") && c.indexOf("create_note") < c.indexOf("current_time"), "the skill comes before the tools: $c")
+        // inside a group the names that start with the text still come first
+        assertEquals(listOf("/clear", "/replace"), names("c").filter { it in setOf("/clear", "/replace") })
+        // nothing typed: the declared order, which is already commands, skills, tools
+        val all = names("")
+        assertEquals(items.size, all.size)
+        assertEquals(all.sortedBy { n -> items.first { it.name == n }.kind.category.ordinal }, all)
     }
 
     @Test

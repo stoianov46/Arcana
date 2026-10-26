@@ -28,6 +28,14 @@ enum class SlashKind(val glyph: String, val badge: String?) {
     Web("↗ ", "WEB"),
     Ask("? ", "ASK");
 
+    /** The group the entry belongs to in the menu: a command of Arcana, a skill from the vault, or a tool the model uses. */
+    val category: SlashCategory
+        get() = when (this) {
+            Command -> SlashCategory.Command
+            Skill -> SlashCategory.Skill
+            else -> SlashCategory.Tool
+        }
+
     val color: Color
         get() = when (this) {
             Command -> Palette.Cta
@@ -49,5 +57,30 @@ enum class SlashKind(val glyph: String, val badge: String?) {
             risk == ToolRisk.Web -> Web
             else -> Read
         }
+    }
+}
+
+/**
+ * The three kinds of entry in Chat's "/" menu, named on every row (a fixed-width `COMMAND` / `SKILL` / `TOOL` badge) and used to group the
+ * list in this order. The kind says *what it is*; [SlashKind] says what a tool can do (its colour, glyph and risk badge).
+ */
+enum class SlashCategory(val label: String) {
+    Command("COMMAND"),
+    Skill("SKILL"),
+    Tool("TOOL");
+
+    val color: Color
+        get() = when (this) {
+            Command -> Palette.Cta
+            Skill -> Palette.Purple
+            Tool -> Palette.Muted
+        }
+
+    /** The badge text, padded so the badges of all rows line up. */
+    val badge: String get() = " ${label.padEnd(WIDTH)} "
+
+    companion object {
+        /** The longest label. */
+        val WIDTH = entries.maxOf { it.label.length }
     }
 }

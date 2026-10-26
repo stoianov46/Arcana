@@ -22,7 +22,7 @@
 - Match the surrounding code: comment density (KDoc on non-obvious classes/functions explaining *why*), naming, idiom.
 - Pure logic in `core` or in plain functions (testable); composables only compose and handle keys.
 - Settings, prompts and limits are named constants or config fields, not magic numbers in screens.
-- **Colour means something, and is never the only signal.** In the "/" menu (`SlashKind`): commands cyan, skills purple `◆`, read-only tools green `◎`, tools that change things orange `✎`, shell red `▶`, delete/move red `✕`, web blue `↗`, questions muted `?`; every kind except a plain command also shows a badge word (SKILL, READ, WRITE, SHELL, DELETE/MOVE, WEB, ASK) so the meaning survives a monochrome terminal. Reuse these roles for the same meanings elsewhere (green = safe/read, orange = changes, red = high risk, blue = leaves the computer) rather than inventing new ones.
+- **Colour means something, and is never the only signal.** In the "/" menu (`SlashKind`): commands cyan, skills purple `◆`, read-only tools green `◎`, tools that change things orange `✎`, shell red `▶`, delete/move red `✕`, web blue `↗`, questions muted `?`; the menu is grouped commands, skills, tools and every row carries a `SlashCategory` badge (COMMAND, SKILL, TOOL, a fixed-width column); every kind except a plain command also shows a badge word (SKILL, READ, WRITE, SHELL, DELETE/MOVE, WEB, ASK) so the meaning survives a monochrome terminal. Reuse these roles for the same meanings elsewhere (green = safe/read, orange = changes, red = high risk, blue = leaves the computer) rather than inventing new ones.
 - Use `Palette` roles, `Label`/`Stack`/`Panel`, `sanitizeForTerminal`; never raw `Text` for dynamic content.
 - Errors surfaced to the user are plain sentences ("Could not read the file."), via `Notice`/toast, never stack traces.
 - Blocking work in `Dispatchers.IO`; state mutation on the UI scope.
@@ -66,7 +66,12 @@ Create `val attachments = remember { app.attachments() }` (or `app.attachments(f
 4. Log to the session (`app.session.log(SessionKind.…)`); add a `SessionKind` + label if it is a new kind of activity.
 
 ### Add a tool
-See [tools-and-agent.md](tools-and-agent.md#how-to-add-a-tool).
+See [tools-and-agent.md](tools-and-agent.md#how-to-add-a-tool). A new tool also needs: a row in `Arcana LLM Reference.md` (vault), a `SlashKind.forTool` mapping if it is not Read/Write/Shell/Web, and its name in the Guide.
+
+### Change skills (`requires:`, the gate, the chip, the menu)
+Read [skills.md](skills.md) first. Keep `Skills.kt` pure (no UI): the gate's rules live in `SkillRun`, the app only feeds and asks it. Skill text must stay under
+`Skills.MAX_CHARS` (18,000, including its properties). A change here updates `docs/skills.md`, the Guide page "Skills", the Changelog, the vault notes
+`Skills/Skills Guide.md`, `Arcana/Arcana LLM Reference.md`, `Arcana/Arcana Reference Documentation.md`, and (when a model rule changes) `ARCANA.md` and `Vault.MEMORY_TEMPLATE`.
 
 ### Add a theme
 Add a `ThemeSpec` to `Themes.all` in `design/Theme.kt` with the required role colours; it appears in Settings and previews itself.

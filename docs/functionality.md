@@ -15,7 +15,7 @@ macOS claim them).
 | 6 | **Session** | what happened this run; save a summary note or log; new session |
 | 7 | **Usage** | dashboard of tokens, speed, estimated price, habits |
 | 8 | **Settings** | tabbed settings |
-| 9 | **Guide** | in-app tutorial pages (12) |
+| 9 | **Guide** | in-app tutorial pages (13, incl. Skills) |
 | 0 | **Changelog** | what has been built, by theme |
 
 Global keys: `Ctrl+P` command palette · `Ctrl+N` quick capture · `?` key map for the screen · `Ctrl+B` fold the sidebar ·
@@ -39,7 +39,7 @@ links), *Top tags*. Right: *Jump back in* (Ask your brain, AI notes, this sessio
 - **The "/" menu**: a message that starts with `/` (no space yet) opens `slashMatches(SlashCommands + tool specs, typed)` above the
   field (≤8 rows, counted in `below`): ↑↓ choose, Tab/Enter use, Esc clears. A command runs through `runCommand` (`/new /history /save
   /note /image /vault /tools /mode /memory /skills /append /replace /clear`); settings show an ON/OFF/mode badge (`slashState`); a tool inserts
-  "Use the <tool> tool to " (tools are called by the model, not typed); each entry is coloured by what it is (`SlashKind`: commands cyan, skills purple, read-only tools green, changing tools orange, shell/delete red, web blue) with a glyph and a badge word; each **skill** found in the vault is listed as `/<name>` and attaches
+  "Use the <tool> tool to " (tools are called by the model, not typed); the list is grouped commands, skills, tools (`slashMatches` sorts by `SlashCategory`) with a COMMAND / SKILL / TOOL badge per row, and the skills are scanned from the skills folder every time the menu opens (`Skills.discover`, never hardcoded); each entry is coloured by what it is (`SlashKind`: commands cyan, skills purple, read-only tools green, changing tools orange, shell/delete red, web blue) with a glyph and a badge word; each **skill** found in the vault is listed as `/<name>` and attaches
   it as a `◆ skill <name>` chip whose text is added to the message on send (see [tools-and-agent.md](tools-and-agent.md), "Skills").
 - `@` attaches a vault **note**; `Ctrl+O` attaches **files** (pictures ≤5/10 MB for a vision model, **PDFs** ≤20 MB, text files ≤5/2 MB).
   Backspace on an empty field removes the last attachment.
@@ -75,9 +75,18 @@ for using tools, plus empty sections) and shows "Memory file created" with an of
 deletes comes back only through `/memory`. The `remember` tool appends to its "Remembered" section (always asks). `ToolBox.cheatSheet()`
 adds the real tool list to the same prompt.
 
+## Skills
+
+A skill is a runbook in the vault (`Skills/<name>/<name>.skill.md`, plus `reference/` and `scripts/`; its results go to a folder it names with `output:`).
+Full explanation: [skills.md](skills.md). What the user sees and does:
+- **Find:** type `/` in Chat: skills are listed after the commands, before the tools (badge `SKILL`, name `◆ /name`, hint = the first sentence of `description:`); the folder is rescanned every time the menu opens. `/skills` toggles skills (Settings → Tools → *Skills*, *Skills folder*) and shows what was found and what needs attention.
+- **Use:** picking one attaches the chip `◆ skill name` (Backspace on an empty field removes it); type the task and send. Arcana adds the skill's text to the message, so the model need not call `use_skill`; that question may take up to 40 tool rounds. With tools off a toast says the skill cannot act.
+- **Progress:** if the skill lists `requires:`, the Chat status bar shows `◆ name 7/11` (purple running, green ✓ done, red ✕N skipped). If the model tries to finish with a step missing, Arcana sends it back (hidden message); after 3 ignored tries on one step it gives up on that step. Skills without `requires:` get no badge and no gate. The badge goes at your next message or `/new`.
+- Every change, command and fetch a skill leads to still asks for approval as usual.
+
 ## Library
 
-Views (←/→): All, Recent, Inbox, No links, No tags, Broken links, Stale, Tags. Left list + right preview (frontmatter, links, backlinks,
+Views (←/→): All, Recent, Inbox, No links, No tags, Broken links, Stale, Tags. The list is a **tree of folders** by default (`AppConfig.libraryTree`, `t` toggles, Settings → Vault → *Library as a tree*): `libraryRows(notes, expanded)` (`screens/LibraryTree.kt`) puts subfolders first (A to Z, case-insensitive) then the notes in the view's own order; a folder row shows `▸`/`▾` and how many notes are below it; only folders in `AppContext.libraryExpanded` list their children (the set survives leaving the screen, not a restart). `Enter`/`Space` fold or unfold (`Enter` on a note reads it), `l` unfolds or steps in, `h` folds or jumps to the parent folder, `+`/`-` unfold/fold all. While a filter is typed the matches are listed flat with their paths (`Esc` brings the tree back); the tag list is not a tree. The Brain screen's "open this note" unfolds the note's ancestors (`ancestorsOf`) and selects it; a highlighted folder shows its path, note and subfolder counts in the preview pane. Left list + right preview (frontmatter, links, backlinks,
 related notes). Keys: `Enter` read, `a` AI on this note (opens AI notes with the note preset), `c` **chat about it** (a new chat with the
 note attached; a saved chat note carries its whole transcript), `r` **rename** (a field with the current name; the note stays in its
 folder and the `[[links]]`/`![[embeds]]` to it in other notes are rewritten like Obsidian does, outside code; `Vault.rename`), `o` open in
@@ -142,5 +151,5 @@ Values apply immediately and persist to `config.json`. Themes: Dark, Light, Soft
 
 ## Guide
 
-`screens/Guide.kt` holds 12 pages (Markdown strings rendered by the same renderer). **When you change behaviour, update the matching Guide
+`screens/Guide.kt` holds 13 pages (Markdown strings rendered by the same renderer; the **Skills** page explains skills, the progress badge and troubleshooting for users). **When you change behaviour, update the matching Guide
 page, the Changelog page and this file.**

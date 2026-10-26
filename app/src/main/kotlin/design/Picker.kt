@@ -97,6 +97,11 @@ fun <T> Picker(
     iconColor: (T) -> Color = { Palette.Muted },
     meta: (T) -> String = { "" },
     metaColor: (T) -> Color = { Palette.Dim },
+    /** How many levels a row sits in (a tree): drawn as two spaces per level before the icon. */
+    indent: (T) -> Int = { 0 },
+    labelColor: (T) -> Color = { Palette.Text },
+    /** The number shown in the search strip when nothing is typed (default: the rows; a tree shows its notes, not its folders). */
+    total: Int = items.size,
     placeholder: String = "Press / to filter",
     emptyText: String = "Nothing here yet.",
 ) {
@@ -110,7 +115,7 @@ fun <T> Picker(
         Row(Modifier.fillMaxWidth().background(if (state.filtering) Palette.Focus else Palette.SurfaceHigh).padding(horizontal = 1)) {
             Label("⌕ ", color = if (state.filtering) Palette.Cta else Palette.Muted, textStyle = TextStyle.Bold)
             Row(Modifier.weight(1f)) { TextValue(state.filterField, state.filtering, placeholder) }
-            Label("  ${if (state.filter.isEmpty()) items.size else shown.size}${if (state.filter.isEmpty()) "" else "/${items.size}"}", color = Palette.Muted)
+            Label("  ${if (state.filter.isEmpty()) total else shown.size}${if (state.filter.isEmpty()) "" else "/${items.size}"}", color = Palette.Muted)
         }
         if (shown.isEmpty()) {
             Label(if (items.isEmpty()) emptyText else "No matches for “${state.filter}”.", color = Palette.Muted)
@@ -122,9 +127,11 @@ fun <T> Picker(
                         val bg = if (on) Palette.Selected else if ((first + i) % 2 == 0) Palette.EntryBg else Palette.Surface
                         Row(Modifier.fillMaxWidth().background(bg)) {
                             Label(if (on) "▌" else " ", color = Palette.Accent)
+                            val pad = indent(item)
+                            if (pad > 0) Label("  ".repeat(pad))
                             val glyph = icon(item)
                             if (glyph.isNotEmpty()) Label(" $glyph", color = iconColor(item))
-                            Label(" ${label(item)}", Modifier.weight(1f), color = Palette.Text, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
+                            Label(" ${label(item)}", Modifier.weight(1f), color = labelColor(item), textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
                             val extra = meta(item)
                             if (extra.isNotEmpty()) Label("  $extra ", color = metaColor(item))
                         }

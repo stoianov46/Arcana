@@ -84,6 +84,8 @@ data class AppConfig(
     val skillsEnabled: Boolean = true,
     /** The vault folder that holds one folder per skill. */
     val skillsFolder: String = "Skills",
+    /** The Library lists its notes as a tree of folders that fold and unfold (off: one flat list with the full paths). */
+    val libraryTree: Boolean = true,
     /** What select mode copies: "markdown" (as written) or "plain" (Markdown markers removed). */
     val copyAs: String = "markdown",
     val summaryPrompt: String = "Summarize the following note. Start with a one-sentence TL;DR, " +

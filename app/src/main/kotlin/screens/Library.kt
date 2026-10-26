@@ -62,14 +62,26 @@ fun LibraryScreen(app: AppContext) {
     val showingTags = filter == LibraryFilter.Tags && tag == null
     val shown = if (index == null) emptyList() else notesFor(index, filter, tag, inbox, staleDays)
     val tags = index?.tagCounts.orEmpty()
+    // The notes as a tree of folders (fold with Enter, h, l) unless the user chose the flat list, is typing a filter (matches are listed with their paths) or is in the tag list.
+    val tree = app.config.libraryTree && !showingTags && picker.filter.isEmpty()
+    val expanded = app.libraryExpanded
+    val rows: List<LibraryRow> = if (tree) libraryRows(shown, expanded) else shown.map { LibraryRow.Note(it, 0) }
+    val labelOf: (LibraryRow) -> String = { row ->
+        when (row) {
+            is LibraryRow.Folder -> row.name + "/"
+            is LibraryRow.Note -> if (tree) row.info.title else row.info.path
+        }
+    }
 
     // Select the note the dashboard pointed at; if the view does not contain it, show everything.
     val wanted = startNote
     if (wanted != null && index != null) {
-        val i = shown.indexOfFirst { it.path == wanted }
+        val i = rows.indexOfFirst { it is LibraryRow.Note && it.info.path == wanted }
         if (i >= 0) {
             picker.index = i
             startNote = null
+        } else if (tree && shown.any { it.path == wanted } && ancestorsOf(wanted).any { it !in expanded }) {
+            app.libraryExpanded = expanded + ancestorsOf(wanted) // unfold the folders above it; it is found on the next pass
         } else if (filter != LibraryFilter.All) {
             filter = LibraryFilter.All
         } else {
@@ -77,13 +89,16 @@ fun LibraryScreen(app: AppContext) {
         }
     }
 
-    val current = if (showingTags) null else picker.selected(shown) { it.path }
+    val currentRow = if (showingTags) null else picker.selected(rows, labelOf)
+    val current = (currentRow as? LibraryRow.Note)?.info
+    val folder = currentRow as? LibraryRow.Folder
     val wide = LocalContentWidth.current >= 96
 
     FocusMode(mode == LibraryMode.Rename || (mode == LibraryMode.List && (if (showingTags) tagPicker.filtering else picker.filtering)))
     when (mode) {
         LibraryMode.List -> if (picker.filtering || tagPicker.filtering) Hints("↑↓  move", "Enter  choose", "Esc  clear filter")
-        else Hints("↑↓  move", "←→  view", "Enter  read", "a  AI", "r  rename", "o  Obsidian", "d  trash", "/  filter")
+        else if (tree) Hints("↑↓  move", "Enter  open / fold", "h l  fold", "+ -  all", "t  flat list", "←→  view", "a  AI", "r  rename", "d  trash", "/  filter")
+        else Hints("↑↓  move", "←→  view", "Enter  read", "a  AI", "r  rename", "o  Obsidian", "d  trash", "t  tree", "/  filter")
         LibraryMode.Reading -> Hints("↑↓/Space  scroll", "a  AI", "r  rename", "o  Obsidian", "Esc  back")
         LibraryMode.Rename -> Hints("Enter  rename", "Esc  cancel")
         LibraryMode.ConfirmDelete -> Hints("y  move to trash", "any other key  keep")
@@ -138,6 +153,25 @@ fun LibraryScreen(app: AppContext) {
             .onFailure { navigator.showToast(it.message ?: "Could not delete.", isError = true) }
     }
 
+    fun setFolder(path: String, open: Boolean) {
+        app.libraryExpanded = if (open) app.libraryExpanded + path else app.libraryExpanded - path
+    }
+
+    /** h: fold the folder you are on; on a folded folder or a note, jump to the folder above. */
+    fun foldOrParent() {
+        if (folder != null && folder.expanded) return setFolder(folder.path, false)
+        val parent = if (folder != null) folder.path.substringBeforeLast('/', "") else current?.folder.orEmpty()
+        if (parent.isEmpty()) return
+        val at = rows.indexOfFirst { it is LibraryRow.Folder && it.path == parent }
+        if (at >= 0) picker.index = at
+    }
+
+    /** l: unfold the folder you are on; on an unfolded one, step into it. */
+    fun unfoldOrEnter() {
+        if (folder == null) return
+        if (!folder.expanded) setFolder(folder.path, true) else if (picker.index < rows.lastIndex) picker.index += 1
+    }
+
     KeyHandler { key ->
         when (mode) {
             LibraryMode.ConfirmDelete -> {
@@ -166,7 +200,13 @@ fun LibraryScreen(app: AppContext) {
                     key == Key.Left || key == Key.Right -> { filter = cycle(filter, if (key == Key.Right) 1 else -1); true }
                     else -> false
                 }
-                picker.handle(key, shown) { it.path } -> true
+                picker.handle(key, rows, label = labelOf) -> true
+                tree && folder != null && (key == Key.Enter || key.char == ' ') -> { setFolder(folder.path, !folder.expanded); true }
+                tree && key.char == 'l' -> { unfoldOrEnter(); true }
+                tree && key.char == 'h' -> { foldOrParent(); true }
+                tree && key.char == '+' -> { app.libraryExpanded = allFolders(shown); true }
+                tree && key.char == '-' -> { app.libraryExpanded = emptySet(); picker.index = 0; true }
+                key.char == 't' -> { app.update(app.config.copy(libraryTree = !app.config.libraryTree)); picker.index = 0; true }
                 key == Key.Left || key == Key.Right -> {
                     filter = cycle(filter, if (key == Key.Right) 1 else -1)
                     tag = null
@@ -211,7 +251,7 @@ fun LibraryScreen(app: AppContext) {
             }
             return@Stack
         }
-        ScreenHeader("Library", if (tag != null) "Notes tagged #$tag · Esc goes back to the tags" else "Every note, and the ones that need attention. ←/→ switches the view")
+        ScreenHeader("Library", if (tag != null) "Notes tagged #$tag · Esc goes back to the tags" else if (tree) "Your notes in their folders (Enter folds a folder). ←/→ switches the view" else "Every note, and the ones that need attention. ←/→ switches the view")
         VGap()
         TabBar(tabs, LibraryFilter.entries.indexOf(filter))
         VGap()
@@ -221,13 +261,15 @@ fun LibraryScreen(app: AppContext) {
         }
         val actions = when (mode) {
             LibraryMode.List -> listOf(
-                ActionItem("Enter", "Read", current != null),
+                ActionItem("Enter", if (folder != null) (if (folder.expanded) "Fold" else "Unfold") else "Read", current != null || folder != null),
                 ActionItem("a", "AI on this note", current != null),
                 ActionItem("c", "Chat about it", current != null),
                 ActionItem("r", "Rename", current != null),
                 ActionItem("o", "Open in Obsidian", current != null),
                 ActionItem("d", "Trash", current != null, Palette.Red),
                 *(if (filter == LibraryFilter.Inbox) arrayOf(ActionItem("p", "Process inbox with AI", accent = Palette.Cta)) else emptyArray()),
+                *(if (tree) arrayOf(ActionItem("h l", "Fold"), ActionItem("+ -", "All")) else emptyArray()),
+                *(if (!showingTags) arrayOf(ActionItem("t", if (app.config.libraryTree) "Flat list" else "Tree")) else emptyArray()),
                 ActionItem("←→", "View"),
                 ActionItem("/", "Filter"),
             )
@@ -258,7 +300,7 @@ fun LibraryScreen(app: AppContext) {
                     Box(Modifier.weight(0.42f)) {
                         CompositionLocalProvider(LocalContentWidth provides left) {
                             Panel(if (showingTags) "Tags" else "Notes · ${shown.size}", Modifier.height(listRows + 3), accent = if (mode == LibraryMode.List) Palette.Accent else Palette.Dim) {
-                                NoteList(showingTags, tags, tagPicker, shown, picker, listRows, filter)
+                                NoteList(showingTags, tags, tagPicker, shown, rows, labelOf, picker, listRows, filter)
                             }
                         }
                     }
@@ -266,13 +308,13 @@ fun LibraryScreen(app: AppContext) {
                     Box(Modifier.weight(0.58f)) {
                         CompositionLocalProvider(LocalContentWidth provides right) {
                             Panel(current?.title ?: "Preview", Modifier.height(listRows + 3), accent = if (mode == LibraryMode.Reading) Palette.Accent else Palette.Dim) {
-                                if (current == null) Hint("Choose a note to see its links and content.") else NotePreview(app, vault.getOrNull(), index, current, preview, previewRows)
+                                if (folder != null) FolderSummary(folder) else if (current == null) Hint("Choose a note to see its links and content.") else NotePreview(app, vault.getOrNull(), index, current, preview, previewRows)
                             }
                         }
                     }
                 }
             }
-            else -> Panel(if (showingTags) "Tags" else "Notes · ${shown.size}") { NoteList(showingTags, tags, tagPicker, shown, picker, listRows, filter) }
+            else -> Panel(if (showingTags) "Tags" else "Notes · ${shown.size}") { NoteList(showingTags, tags, tagPicker, shown, rows, labelOf, picker, listRows, filter) }
         }
         ActionBar(actions)
     }
@@ -281,23 +323,32 @@ fun LibraryScreen(app: AppContext) {
 private fun cycle(f: LibraryFilter, by: Int): LibraryFilter = LibraryFilter.entries[(f.ordinal + by).mod(LibraryFilter.entries.size)]
 
 @Composable
-private fun NoteList(showingTags: Boolean, tags: List<Pair<String, Int>>, tagPicker: PickerState, shown: List<NoteInfo>, picker: PickerState, rows: Int, filter: LibraryFilter) {
+private fun NoteList(
+    showingTags: Boolean, tags: List<Pair<String, Int>>, tagPicker: PickerState,
+    shown: List<NoteInfo>, rows: List<LibraryRow>, labelOf: (LibraryRow) -> String, picker: PickerState, rowCount: Int, filter: LibraryFilter,
+) {
     if (showingTags) {
-        Picker(tags, tagPicker, label = { it.first }, rows = rows, icon = { "#" }, iconColor = { Palette.Blue }, meta = { "${it.second} note${if (it.second == 1) "" else "s"}" }, emptyText = "No tags yet. Add #tags or a tags: line to your notes.", placeholder = "Press / to filter tags")
+        Picker(tags, tagPicker, label = { it.first }, rows = rowCount, icon = { "#" }, iconColor = { Palette.Blue }, meta = { "${it.second} note${if (it.second == 1) "" else "s"}" }, emptyText = "No tags yet. Add #tags or a tags: line to your notes.", placeholder = "Press / to filter tags")
     } else {
         Picker(
-            shown, picker,
-            label = { it.path },
-            rows = rows,
-            icon = { "▤" },
-            iconColor = { Palette.Accent },
-            meta = {
-                when (filter) {
-                    LibraryFilter.Stale -> relativeTime(it.modified)
-                    LibraryFilter.Broken -> "${it.unresolved.size} broken"
-                    else -> relativeTime(it.modified)
+            rows, picker,
+            label = labelOf,
+            rows = rowCount,
+            // a folder is a cyan ▸ (folded) or ▾ (unfolded) with its name; a note a purple ▤; folders and notes sit two spaces further in per level
+            icon = { row -> if (row is LibraryRow.Folder) (if (row.expanded) "▾" else "▸") else "▤" },
+            iconColor = { row -> if (row is LibraryRow.Folder) Palette.Cta else Palette.Accent },
+            labelColor = { row -> if (row is LibraryRow.Folder) Palette.Cta else Palette.Text },
+            indent = { it.depth },
+            meta = { row ->
+                when (row) {
+                    is LibraryRow.Folder -> "${row.notes} note${if (row.notes == 1) "" else "s"}"
+                    is LibraryRow.Note -> when (filter) {
+                        LibraryFilter.Broken -> "${row.info.unresolved.size} broken"
+                        else -> relativeTime(row.info.modified)
+                    }
                 }
             },
+            total = shown.size,
             emptyText = when (filter) {
                 LibraryFilter.Inbox -> "The inbox is empty."
                 LibraryFilter.Orphans -> "Every note is connected."
@@ -308,6 +359,15 @@ private fun NoteList(showingTags: Boolean, tags: List<Pair<String, Int>>, tagPic
             },
         )
     }
+}
+
+/** What the preview pane shows while a folder is highlighted: where it is and what is in it. */
+@Composable
+private fun FolderSummary(folder: LibraryRow.Folder) {
+    Label("▸ ${folder.path}/", color = Palette.Cta, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
+    Label("${folder.notes} note${if (folder.notes == 1) "" else "s"}" + if (folder.folders > 0) " in ${folder.folders} subfolder${if (folder.folders == 1) "" else "s"}" else "", color = Palette.Muted)
+    VGap()
+    Hint(if (folder.expanded) "Enter or h folds it, l steps into it. + unfolds every folder, - folds them all, t switches to a flat list." else "Enter or l unfolds it. + unfolds every folder, - folds them all, t switches to a flat list.")
 }
 
 /** A note laid out for reading: where it sits in the web of notes, then its text. */

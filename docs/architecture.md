@@ -75,6 +75,10 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 4. UI recomposes from `gen.text`, `gen.state`, `chat.messages`, `chat.approval`.
 5. Usage is recorded per finished round (`onUsage`), the session log gets `Asked` / `Tool` events.
 
+Skills hook into this path in three places (details in [skills.md](skills.md)): `ChatSession.noteTexts` loads an attached skill's text into the user message
+(`Prompts.chatMessages`); `runTools` feeds every tool call and result to the active `SkillRun`; and when the model answers without a tool call,
+`Generation` asks the **gate** (`skillRun?.nudge()`) and, if a required step is missing, continues the loop with a hidden STOP message instead of finishing.
+
 The generation lives in `ChatSession`, **not** in the Chat screen, so leaving the screen does not cancel it.
 Other screens (`Compose`, `Inbox`, `Session`) use `rememberGeneration(app, feature)` which cancels on leaving.
 
@@ -108,5 +112,6 @@ session-save flow when `AppSession.needsSaving`), the second quits. Quit = `sess
 | `sanitizeForTerminal` on all model text | emoji/CJK are 2 terminal cells but 1 Mosaic cell → broken frames |
 | Exact row accounting (`outputRows`) | output areas must fill the height exactly, no jumps or lost rows |
 | Vault index rebuilt in background, not on each frame | scanning hundreds of notes on UI thread would freeze typing |
+| Skills are vault files; required steps are enforced by the harness (`requires:` + gate), not only asked in text | small local models skip steps and ignore "all steps are required"; see [skills.md](skills.md) |
 | Tools write only inside allowed folders + approval | an LLM with file access must be sandboxed and supervised |
 | Mirror CosmoCLI (sibling project) for input/scroll/select/settings | its bugs were already fixed there ([conventions.md](conventions.md)) |

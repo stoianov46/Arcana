@@ -730,7 +730,7 @@ class CoreTest {
     fun skillsAreFoundLoadedAndOfferedToTheModel() {
         val root = Files.createTempDirectory("arcana-skills")
         fun file(path: String, text: String) { root.resolve(path).also { Files.createDirectories(it.parent) }.let { Files.writeString(it, text) } }
-        file("Skills/demo/demo.skill.md", "---\nname: demo\ndescription: \"Does the demo thing. Use it for demos.\"\nversion: 2\ntype: skill\n---\n\n# Demo\n\nStep 1: say hello.\n")
+        file("Skills/demo/demo.skill.md", "---\nname: demo\ndescription: \"Does the demo thing. Use it for demos.\"\nversion: 2\noutput: Reports/demo/\ntype: skill\n---\n\n# Demo\n\nStep 1: say hello.\n")
         file("Skills/demo/reference/Facts.md", "facts")
         file("Skills/demo/scripts/run.py", "print('hi')")
         file("Skills/demo/.hidden/x.md", "x")
@@ -746,6 +746,8 @@ class CoreTest {
         val demo = Skills.find(found, "/DEMO")!!
         assertEquals(listOf("reference/Facts.md", "reports/r1.md", "reports/r10.md", "reports/r11.md", "reports/r12.md", "reports/r2.md", "reports/r3.md", "reports/r4.md", "reports/r5.md", "reports/… 4 more (list the folder to see them)", "scripts/run.py"), demo.files)
         assertEquals("2", demo.version)
+        assertEquals("Reports/demo", demo.output, "the output folder, without the trailing slash")
+        assertEquals("", found.first { it.name == "broken" }.output)
         assertTrue(demo.problems.isEmpty(), demo.problems.toString())
         assertEquals("Skills/demo/demo.skill.md", demo.path)
         val broken = found.first { it.name == "broken" }
@@ -774,6 +776,7 @@ class CoreTest {
 
         val text = Skills.load(vault, demo)
         assertTrue(text.startsWith("SKILL demo v2\nFolder: ") && text.lineSequence().drop(1).first().endsWith("Skills/demo"), text)
+        assertTrue("Results go to (outside the skill): Reports/demo\n" in text && text.indexOf("Results go to") < text.indexOf("Files in the skill"), text)
         assertTrue("- Skills/demo/reference/Facts.md" in text && "- Skills/demo/scripts/run.py" in text && "Step 1: say hello." in text && "description:" !in text, text)
 
         val box = ToolBox(vault, emptyList(), root.resolve("b"), skillsFolder = "Skills")

@@ -5,20 +5,23 @@ import java.nio.file.Path
 import kotlin.io.path.relativeTo
 
 /**
- * One skill: a runbook in the vault that a model follows step by step, with the helper files it needs. It lives in its own folder,
+ * One skill: a runbook in the vault (the whole feature is explained in docs/skills.md) that a model follows step by step, with the helper files it needs. It lives in its own folder,
  * `<skills folder>/<name>/`, and its entry note has the folder's name and the double extension [Skills.ENTRY_SUFFIX]:
  * `<skills folder>/<name>/<name>.skill.md`. It stays a Markdown note (Obsidian only opens, links and shows properties of those), the
  * `.skill` part tells a skill from the documentation and scripts beside it, and the name is unique (not `SKILL.md`) so `[[links]]` and the graph work.
  *
  * @property path the entry note, relative to the vault
  * @property folder the skill's folder, relative to the vault
- * @property files everything else in the folder (notes, scripts, reports), relative to [folder]
+ * @property files everything else in the folder (reference notes, scripts…), relative to [folder]
+ * @property output where the skill puts its results (`output:` in its properties, a vault folder; blank = it does not say). Results belong
+ * outside the skill folder (for example `Reports/<name>`): a skill is stable instructions, results grow with every run.
  * @property problems what is wrong with it (empty when it is fine); a skill with problems is still listed so the user can fix it
  */
 class Skill(
     val name: String,
     val description: String,
     val version: String,
+    val output: String,
     val path: String,
     val folder: String,
     val files: List<String>,
@@ -70,7 +73,7 @@ object Skills {
             parseRequirements(text).second.forEach { problems += "requires: cannot read the line \"$it\" (write: tool ~ text in the call => text in the result x3 | label)" }
             if (text.length > MAX_CHARS) problems += "the entry note has ${text.length} characters; keep it under $MAX_CHARS or the model will not read the end (move detail into a reference/ note)"
             Skill(
-                name = dirName, description = description, version = meta["version"].orEmpty().trim(),
+                name = dirName, description = description, version = meta["version"].orEmpty().trim(), output = meta["output"].orEmpty().trim().trim('/'),
                 path = entry.relativeTo(vault.root).toString().replace('\\', '/'), folder = sub.relativeTo(vault.root).toString().replace('\\', '/'),
                 files = filesOf(sub, dirName), chars = text.length, problems = problems,
             )
@@ -129,7 +132,8 @@ object Skills {
         val body = Vault.splitFrontmatter(Files.readString(vault.root.resolve(skill.path))).second.trim()
         val abs = vault.root.resolve(skill.folder)
         val files = if (skill.files.isEmpty()) "(none)" else skill.files.joinToString("\n") { "- ${skill.folder}/$it" }
-        val head = "SKILL ${skill.name}${if (skill.version.isEmpty()) "" else " v${skill.version}"}\nFolder: $abs\nFiles in the skill (read a note with read_note, run a script with run_command using its full path):\n$files\n\n--- The skill's instructions: follow them step by step ---\n"
+        val results = if (skill.output.isEmpty()) "" else "Results go to (outside the skill): ${skill.output}\n"
+        val head = "SKILL ${skill.name}${if (skill.version.isEmpty()) "" else " v${skill.version}"}\nFolder: $abs\n${results}Files in the skill (read a note with read_note, run a script with run_command using its full path):\n$files\n\n--- The skill's instructions: follow them step by step ---\n"
         val text = head + body
         return if (text.length <= LOAD_LIMIT) text else text.take(LOAD_LIMIT) + "\n… (cut at $LOAD_LIMIT characters; the rest of the skill is in ${skill.path})"
     }
@@ -148,7 +152,7 @@ object Skills {
             }.toMap()
     }
 
-    /** The files of a skill's folder, at most [PER_FOLDER] per subfolder (a `reports/` folder only grows) and [FILE_LIMIT] in all. */
+    /** The files of a skill's folder, at most [PER_FOLDER] per subfolder and [FILE_LIMIT] in all (a skill that keeps its results inside its folder would otherwise list them all). */
     private fun filesOf(dir: Path, entryName: String): List<String> {
         val all = ArrayList<String>()
         try {
@@ -199,7 +203,7 @@ class Requirement(val tool: String, val contains: String, val expect: String, va
 }
 
 /**
- * The progress of one skill run: Arcana tells it every tool call and result ([observe]); when the model tries to finish with a step still
+ * The progress of one skill run (the completion gate; see docs/skills.md, section "Required steps and the progress badge"): Arcana tells it every tool call and result ([observe]); when the model tries to finish with a step still
  * missing, [nudge] gives the hidden message that sends it back (the first missing step, in the skill's order). A step the model ignores
  * [MAX_STRIKES] times is given up on ("skipped") so a stuck run still ends, and [summary] says what was left undone.
  */

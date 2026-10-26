@@ -59,7 +59,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `current_time` | Read | `timezone?` | date, weekday, time zone, ISO and Unix time (`describeNow`); also `Prompts.chatMessages(today = …)` puts only the **date** in the system prompt (a clock there would make the model re-read the whole chat every message) |
 | `elapsed_time` | Read | `from`, `to?` | time between two moments (default: until now): `total_work_time=5 min 12 s`, `seconds=312`, `from=`, `to=` (local ISO, so the model can copy them into properties); `from`/`to` accept ISO with an offset or `Z`, a local date-time (`T` or space; this computer's zone) or Unix seconds/ms (`parseMoment`, `describeDuration`, `describeElapsed`); error when the end is before the start; pairs with `current_time` for "how long did this take" (models cannot subtract clock times reliably) |
 | `wait` | Read | `seconds`, `reason?` | sleeps 1–`MAX_WAIT_SECONDS` (120) seconds on the IO thread, then returns "Waited N s." and the time (`describeNow`); for rate limits (CoinGecko allows only ~5–7 requests a minute): wait, then retry; longer waits = call again; `Esc` interrupts it; no approval |
-| `use_skill` | Read | `name` | **only offered when the vault has at least one skill** (`ToolBox.skills`, folder `AppConfig.skillsFolder`, switch `skillsEnabled`); returns `Skills.load`: folder, file list, entry-note text without properties, cut at 20,000 characters; allowed in plan mode; see "Skills" |
+| `use_skill` | Read | `name` | (see [skills.md](skills.md)) **only offered when the vault has at least one skill** (`ToolBox.skills`, folder `AppConfig.skillsFolder`, switch `skillsEnabled`); returns `Skills.load`: folder, file list, entry-note text without properties, cut at 20,000 characters; allowed in plan mode; see "Skills" |
 | `ask_user` | Read (answered by the chat) | `question`, `options?`, `multiple?` | see "Questions" below; offered even when tools are off |
 | `run_command` | Shell | `command`, `cwd?`, `timeout_seconds?` | off by default (`toolShell`); see "Shell" |
 | `fetch_url` | Web | `url`, `offset?` | off by default (`toolWeb`); see "Web" |
@@ -148,48 +148,22 @@ is untrusted data. Plan mode never offers it.
 
 `web_search` (core/WebSearch.kt) asks one of three backends (`AppConfig.searchBackend`): **duckduckgo** (default; the plain HTML page `html.duckduckgo.com/html/`, no key, parsed by `parseDuckDuckGo`; ads skipped, the `uddg=` redirect unwrapped; it can answer with a human check, which becomes an error telling the user to pick another backend), **searxng** (the user's own server at `searchUrl`, JSON API `…/search?q=…&format=json`; its address may be on the local network because the user configured it), **brave** (`api.search.brave.com`, header `X-Subscription-Token` from `searchKey`; the key is stored in `config.json`). Only the search words leave the computer. Every search asks ("Search the web?", never "always"; the dialog names the backend host). Results are formatted as a numbered list ending the hint "open one with fetch_url". The first call while `toolWeb` is off asks "Turn on web pages?" (one switch for both tools).
 
-## Skills (`core/Skills.kt`)
+## Skills (`core/Skills.kt`) — summary; the full explanation is in [skills.md](skills.md)
 
-A **skill** is a runbook in the vault that a model follows step by step, with its scripts and reference notes. Layout, one folder per skill
-below the skills folder (default `Skills`): `<skills folder>/<name>/<name>.skill.md` is the **entry note** (`Skills.ENTRY_SUFFIX`; folder name + `.skill.md`: still a Markdown note, which
-Obsidian needs for links, graph and properties, while `.skill` tells it from the documentation and scripts beside it; not `SKILL.md` because
-Obsidian links notes by file name and every skill needs a unique one); `reference/`, `scripts/` and output folders such as
-`reports/` sit beside it. A folder without that entry note is not a skill (an old-style `<name>.md` is not found); hidden folders and files are skipped.
-The first one is `Skills/coingecko-forecast/` (see the vault note `Skills/Skills Guide.md`, which is also the how-to-write-one guide).
+A **skill** is a runbook in the vault (`<skills folder>/<name>/<name>.skill.md` with `reference/` and `scripts/`; its results go to a separate folder
+named by `output:`). In the tool loop it shows up in four places:
 
-- `Skills.discover(vault, folder)` → `List<Skill>`: reads the properties of each entry note (`name`, `description`, `version`; `type`, `inputs`,
-  `needs` are for people), lists the files (≤8 per subfolder, ≤60 in all) and collects `problems`: no description, `name` that differs from
-  the folder, a folder name that is not lower-case words joined by `-`, an entry note above `Skills.MAX_CHARS` (18,000: `read_note` and
-  `use_skill` cut at 20,000, so the end of a longer skill would be lost). A skill with problems is still listed (the user can fix it).
-- `ToolBox(skillsFolder = …)` (blank = off; `ChatSession.toolboxFor` passes `config.skillsFolder` when `skillsEnabled`) discovers the skills when
-  it is built, which is for every message, so a skill added in Obsidian is there at once. With ≥1 skill: the `use_skill(name)` tool, and
-  `describe()` adds a SKILLS paragraph with the catalog (`Skills.catalog`: one `- name: description` line each) telling the model to call
-  `use_skill` first when the request matches or the user names one, then follow it exactly. No skills or the switch off: no tool, no paragraph.
-- `Skills.load` output: `SKILL <name> v<version>`, `Folder: <absolute path>`, the file list with vault-relative paths (read a note with
-  `read_note`, run a script with `run_command` and its full path), then the instructions.
-- **Chat:** `/skills` toggles `skillsEnabled` and toasts what was found (and the first problem of each skill that needs attention);
-  the `/` menu lists each skill as `/<name>` with its description (`SlashItem.skill`); picking one **attaches** it: its entry-note path goes into the
-  message's attached notes (`Attachments.notes`), so it shows as a chip `◆ skill <name>` above the field (`Skills.chipLabel`; Backspace on an empty
-  field removes it) and in the sent message, and `@` on an entry note does the same. On send, `ChatSession.noteTexts` loads an entry note with
-  `Skills.loadEntry` (folder, file list, instructions: what `use_skill` returns) and `Prompts.chatMessages` appends it as "SKILL “name”: … already
-  loaded, do not call use_skill", so the model needs no tool call (a toast warns when tools are off: the skill is delivered but cannot act). The list is rescanned when a message is added. **Settings → Tools:** *Skills* and *Skills folder*.
-- A skill is **only text and files**; nothing runs by itself. Its scripts go through `run_command`, which asks every time. Skill text, like any
-  note, is untrusted data in the same way notes are: the user wrote or approved it, and every change, command and fetch it leads to still asks.
-- **Step budget:** `Skills.stepsFor(history, config.toolSteps)`: when the latest message carries a skill chip the question may take at least `Skills.RUN_STEPS` (40) tool rounds (a full forecast run is about 16), so the "N more steps?" dialog does not interrupt it; a larger user setting wins.
-- **Completion gate (required steps).** A skill may declare `requires:` in its properties: a list of quoted items `"tool ~ text in the call => text in the result xN | label"`
-  (`Requirement.parse`; all parts but the tool are optional; `~` matches the call's arguments as JSON text, `=>` the result, `xN` a count, the label is what the
-  model is told). Example: `"run_command ~ check => REPORT_COMPLETE=yes | step 11: the check must say yes"`. `Skills.requirementsOf(vault, entryPath)` reads them;
-  an unreadable item shows up in the skill's `problems`. `SkillRun(name, requirements)` (core) is the progress of one run: `observe(tool, args, result)` ticks every
-  matching step off (steps are independent, so the order the model chooses is its own; a result condition means a failing `check` does not count), `nudge()`
-  returns the hidden message for the first missing step (`STOP: you have not finished the skill … This required step is still missing: …`) and counts a strike
-  against it; after `SkillRun.MAX_STRIKES` (3) the step is given up on (skipped) so a stuck run still ends; `summary()` says what was left undone.
-  `ChatSession` owns `skillRun`: a skill chip on a message (`ask`) or the model's `use_skill` call starts it, `runTools` feeds it every call and result, a new user
-  message or `/new` ends it. `Generation(gate = { skillRun?.nudge() })` asks the gate when the model is about to finish with a reply that has no tool call: a
-  message sends it back (the model's reply, if any, stays in the chat; the nudge is hidden like the "continue now" one; nudges are not tool rounds, so they do not use up
-  *Steps per question*). The Chat status bar shows `◆ <skill> 7/11` (purple while running, green `✓` when done, red `✕N skipped` when steps were given up on).
-  This is the harness-level guard (like a stop hook): a small model that skips a step in the text of the skill is still held to it. It checks that steps *happened*,
-  not that their content is right: pair it with a result condition (`=>`) or a verification command, as the forecast skill does with `check`.
-- Tests: `CoreTest.aSkillCanRequireStepsAndTheRunIsTracked` (grammar, properties, matching on arguments and results, counts, order of nudges, three strikes, summary); `CoreTest.skillsAreFoundLoadedAndOfferedToTheModel` (discovery, problems, per-folder cap, load, tool, catalog, plan mode, off states).
+- **`use_skill(name)`** (*Read*; only offered when the vault has ≥ 1 skill and skills are on): returns `Skills.load` (folder, results folder, file list, the entry note
+  without its properties, cut at 20,000 characters). `ToolBox.describe()` adds the catalog (`- name: description`) and tells the model to call it first when a request matches.
+- **A skill chip** on the user's message (`/` menu or `@`): the note is an attachment; `ChatSession.noteTexts` loads it with `Skills.loadEntry` and `Prompts.chatMessages`
+  appends it ("SKILL “name”: … already loaded, do not call use_skill"). `Skills.stepsFor` raises that question's tool-round limit to at least `RUN_STEPS` (40).
+- **The completion gate**: a skill's `requires:` list is tracked by a `SkillRun` that `runTools` feeds with every call and result; when the model answers without a tool
+  call while a step is missing, `Generation(gate = { skillRun?.nudge() })` sends it back with a hidden STOP message (3 strikes per step, then the step is skipped). The Chat
+  status bar shows `◆ <skill> 7/11`. Generic: only skills with a non-empty `requires:` get a run; the run ends at the next user message or `/new`.
+- **The "/" menu and `/skills`**: skills are scanned from the folder (never hardcoded) every time the menu opens; `/skills` toggles `skillsEnabled` and lists problems.
+
+Everything a skill then does goes through the normal tools and their approvals. Tests: `CoreTest.skillsAreFoundLoadedAndOfferedToTheModel`,
+`CoreTest.aSkillCanRequireStepsAndTheRunIsTracked`, `SkillGateTest` (the real loop against a fake Ollama server).
 
 ## Calls written as text
 

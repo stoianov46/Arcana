@@ -112,6 +112,7 @@ private val settings: List<Setting> = listOf(
         Group.Vault, "Vault path", "Your Obsidian vault folder. Enter opens a folder browser.",
         value = { it.vaultPath.ifEmpty { "(not set)" } }, editor = Editor.Folder,
     ),
+    toggle(Group.Vault, "Library as a tree", "The Library shows your notes as folders that fold and unfold (Enter or h / l). Off: one flat list with the full path of every note. You can also press t in the Library.", { it.libraryTree }, { c, v -> c.copy(libraryTree = v) }),
     text(Group.Vault, "Output folder", "Folder inside the vault where new notes go. Empty = the vault root.", { it.outputFolder }, { c, v -> c.copy(outputFolder = v.trim('/')) }, allowEmpty = true),
     stepper(Group.Vault, "Context notes", "How many notes Ask your vault sends to the model.", 1..20, 1, { it.contextNotes }, { c, n -> c.copy(contextNotes = n) }),
     text(Group.Vault, "Inbox folder", "Where new, unprocessed notes land. The Brain screen counts what is waiting there.", { it.inboxFolder }, { c, v -> c.copy(inboxFolder = v.trim('/')) }, allowEmpty = true),

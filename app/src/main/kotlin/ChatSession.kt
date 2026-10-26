@@ -503,6 +503,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     fun open(chat: StoredChat) {
+        skillRun = null // a run belongs to the conversation it started in (see docs/skills.md)
+        skillTick++
         messages.clear()
         messages += chat.messages
         attachments.clear()
