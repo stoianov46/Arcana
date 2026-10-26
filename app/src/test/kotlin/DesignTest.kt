@@ -11,6 +11,9 @@ import com.arcana.brain.app.design.scrollThumb
 import com.arcana.brain.app.design.replyFooter
 import com.arcana.brain.app.design.unmath
 import com.arcana.brain.core.ReplyStats
+import com.arcana.brain.core.ToolRisk
+import com.arcana.brain.app.design.SlashKind
+import com.arcana.brain.app.screens.SlashItem
 import com.arcana.brain.app.design.wrap
 import com.jakewharton.mosaic.ui.TextStyle
 import com.arcana.brain.app.input.Key
@@ -416,6 +419,34 @@ class DesignTest {
         assertEquals(listOf("/note", "search_notes"), com.arcana.brain.app.screens.slashMatches(items, "not").map { it.name })
         assertEquals(emptyList(), com.arcana.brain.app.screens.slashMatches(items, "zzz"))
         assertEquals(listOf("read_file"), com.arcana.brain.app.screens.slashMatches(items, "READ").map { it.name })
+    }
+
+    @Test
+    fun theSlashMenuSeparatesCommandsSkillsAndToolsByWhatTheyDo() {
+        assertEquals(SlashKind.Read, SlashKind.forTool("search_notes", ToolRisk.Read))
+        assertEquals(SlashKind.Read, SlashKind.forTool("current_time", ToolRisk.Read))
+        assertEquals(SlashKind.Read, SlashKind.forTool("use_skill", ToolRisk.Read))
+        assertEquals(SlashKind.Write, SlashKind.forTool("create_note", ToolRisk.Write))
+        assertEquals(SlashKind.Write, SlashKind.forTool("set_properties", ToolRisk.Write))
+        assertEquals(SlashKind.Write, SlashKind.forTool("remember", ToolRisk.Write), "remember changes a file but is not a delete")
+        assertEquals(SlashKind.Danger, SlashKind.forTool("delete_path", ToolRisk.Write))
+        assertEquals(SlashKind.Danger, SlashKind.forTool("move_path", ToolRisk.Write))
+        assertEquals(SlashKind.Shell, SlashKind.forTool("run_command", ToolRisk.Shell))
+        assertEquals(SlashKind.Web, SlashKind.forTool("fetch_url", ToolRisk.Web))
+        assertEquals(SlashKind.Web, SlashKind.forTool("web_search", ToolRisk.Web))
+        assertEquals(SlashKind.Ask, SlashKind.forTool("ask_user", ToolRisk.Read))
+        // the defaults of a menu entry: a command, a skill, a plain tool
+        assertEquals(SlashKind.Command, SlashItem("/new", "", false).kind)
+        assertEquals(SlashKind.Skill, SlashItem("/demo", "", false, skill = true).kind)
+        assertEquals(SlashKind.Read, SlashItem("read_file", "", true).kind)
+        // every kind except the plain command says what it is in words (the badge), and the glyph differs per kind, so colour is never the only signal
+        val withBadge = SlashKind.values().filter { it != SlashKind.Command }
+        assertTrue(withBadge.all { it.badge != null && it.glyph.isNotBlank() })
+        assertEquals(withBadge.size, withBadge.map { it.glyph }.toSet().size)
+        assertEquals(withBadge.size, withBadge.map { it.badge }.toSet().size)
+        // and the colours: one hue per meaning (shell and delete share red on purpose: both are high risk)
+        val hues = SlashKind.values().map { it.color }
+        assertEquals(SlashKind.values().size - 1, hues.toSet().size)
     }
 
     @Test

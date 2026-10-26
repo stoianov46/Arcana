@@ -16,7 +16,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
               │   no tool_calls? TextToolCalls.extract (call written as  │
               │     text at the end of the reply) → treated as a call    │
               │   still none, and the reply only announces a step        │
-              │     (announcesAction)? → hidden nudge, ≤2 per question   │
+              │     (announcesAction)? → hidden nudge, ≤2 in a row     │
               │   else finish (final reply, onComplete)                  │
               │   calls: ChatSession.runTools(text, calls, stats)        │
               │     add assistant(toolCalls) message to the chat         │
@@ -48,14 +48,18 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `find_files` | Read | `name?`, `glob?`, `path?` | by part of the name and/or a glob (`**/*.kt`; without a `/` it matches the file name); breadth-first, 20 levels, ≤40 hits, 25 s; no `path` = every allowed folder |
 | `grep_files` | Read | `pattern`, `path?`, `glob?` | regex (case-insensitive) inside text files: `file:line: text`, ≤60 hits; skips binary, PDFs, files over 2 MB |
 | `read_file` | Read | `path`, `start_line?`, `end_line?` | text, code, JSON, CSV…, PDF text layer; whole file cut at 20,000 chars; with a line range (≤400 lines) the lines come numbered with a pointer to the next range |
-| `create_note` | Write | `title`, `content`, `folder?` | `Vault.create` into `folder` or `outputFolder`; frontmatter with the configured model |
+| `create_note` | Write | `title`, `content`, `folder?` | `Vault.create` into `folder` or `outputFolder`; frontmatter with the configured model; a properties block at the top of `content` is **merged** with Arcana's (its keys win), never written as a second block |
 | `append_to_note` | Write | `path`, `content`, `heading?` | `Vault.append` |
+| `set_properties` | Write | `path`, `properties` | `Vault.setProperties`: one `key: value` per line (list values may continue on indented / `- item` lines); an existing key is replaced in place, a new one added, the rest and the text stay; a note without a block gets one; plan mode has no write tools, so none |
 | `remember` | Write, always asks | `text` | appends a line under "Remembered" in `ARCANA.md` |
 | `write_file` | Write | `path`, `content` | create or replace; **backup** of the old file; creates parent dirs |
 | `edit_file` | Write | `path`, `old`, `new` | `old` must occur exactly once; backup first |
 | `delete_path` | Write, always asks | `path` | never erases: moves to `<vault>/.trash` (inside the vault) or `<config>/trash`; allowed roots, home and `.git`/`.obsidian` are refused |
 | `move_path` | Write, always asks | `from`, `to` | rename/move; refuses to overwrite or to move a folder into itself; Obsidian links are not updated (Library rename does that) |
 | `current_time` | Read | `timezone?` | date, weekday, time zone, ISO and Unix time (`describeNow`); also `Prompts.chatMessages(today = …)` puts only the **date** in the system prompt (a clock there would make the model re-read the whole chat every message) |
+| `elapsed_time` | Read | `from`, `to?` | time between two moments (default: until now): `total_work_time=5 min 12 s`, `seconds=312`, `from=`, `to=` (local ISO, so the model can copy them into properties); `from`/`to` accept ISO with an offset or `Z`, a local date-time (`T` or space; this computer's zone) or Unix seconds/ms (`parseMoment`, `describeDuration`, `describeElapsed`); error when the end is before the start; pairs with `current_time` for "how long did this take" (models cannot subtract clock times reliably) |
+| `wait` | Read | `seconds`, `reason?` | sleeps 1–`MAX_WAIT_SECONDS` (120) seconds on the IO thread, then returns "Waited N s." and the time (`describeNow`); for rate limits (CoinGecko allows only ~5–7 requests a minute): wait, then retry; longer waits = call again; `Esc` interrupts it; no approval |
+| `use_skill` | Read | `name` | **only offered when the vault has at least one skill** (`ToolBox.skills`, folder `AppConfig.skillsFolder`, switch `skillsEnabled`); returns `Skills.load`: folder, file list, entry-note text without properties, cut at 20,000 characters; allowed in plan mode; see "Skills" |
 | `ask_user` | Read (answered by the chat) | `question`, `options?`, `multiple?` | see "Questions" below; offered even when tools are off |
 | `run_command` | Shell | `command`, `cwd?`, `timeout_seconds?` | off by default (`toolShell`); see "Shell" |
 | `fetch_url` | Web | `url`, `offset?` | off by default (`toolWeb`); see "Web" |
@@ -144,6 +148,49 @@ is untrusted data. Plan mode never offers it.
 
 `web_search` (core/WebSearch.kt) asks one of three backends (`AppConfig.searchBackend`): **duckduckgo** (default; the plain HTML page `html.duckduckgo.com/html/`, no key, parsed by `parseDuckDuckGo`; ads skipped, the `uddg=` redirect unwrapped; it can answer with a human check, which becomes an error telling the user to pick another backend), **searxng** (the user's own server at `searchUrl`, JSON API `…/search?q=…&format=json`; its address may be on the local network because the user configured it), **brave** (`api.search.brave.com`, header `X-Subscription-Token` from `searchKey`; the key is stored in `config.json`). Only the search words leave the computer. Every search asks ("Search the web?", never "always"; the dialog names the backend host). Results are formatted as a numbered list ending the hint "open one with fetch_url". The first call while `toolWeb` is off asks "Turn on web pages?" (one switch for both tools).
 
+## Skills (`core/Skills.kt`)
+
+A **skill** is a runbook in the vault that a model follows step by step, with its scripts and reference notes. Layout, one folder per skill
+below the skills folder (default `Skills`): `<skills folder>/<name>/<name>.skill.md` is the **entry note** (`Skills.ENTRY_SUFFIX`; folder name + `.skill.md`: still a Markdown note, which
+Obsidian needs for links, graph and properties, while `.skill` tells it from the documentation and scripts beside it; not `SKILL.md` because
+Obsidian links notes by file name and every skill needs a unique one); `reference/`, `scripts/` and output folders such as
+`reports/` sit beside it. A folder without that entry note is not a skill (an old-style `<name>.md` is not found); hidden folders and files are skipped.
+The first one is `Skills/coingecko-forecast/` (see the vault note `Skills/Skills Guide.md`, which is also the how-to-write-one guide).
+
+- `Skills.discover(vault, folder)` → `List<Skill>`: reads the properties of each entry note (`name`, `description`, `version`; `type`, `inputs`,
+  `needs` are for people), lists the files (≤8 per subfolder, ≤60 in all) and collects `problems`: no description, `name` that differs from
+  the folder, a folder name that is not lower-case words joined by `-`, an entry note above `Skills.MAX_CHARS` (18,000: `read_note` and
+  `use_skill` cut at 20,000, so the end of a longer skill would be lost). A skill with problems is still listed (the user can fix it).
+- `ToolBox(skillsFolder = …)` (blank = off; `ChatSession.toolboxFor` passes `config.skillsFolder` when `skillsEnabled`) discovers the skills when
+  it is built, which is for every message, so a skill added in Obsidian is there at once. With ≥1 skill: the `use_skill(name)` tool, and
+  `describe()` adds a SKILLS paragraph with the catalog (`Skills.catalog`: one `- name: description` line each) telling the model to call
+  `use_skill` first when the request matches or the user names one, then follow it exactly. No skills or the switch off: no tool, no paragraph.
+- `Skills.load` output: `SKILL <name> v<version>`, `Folder: <absolute path>`, the file list with vault-relative paths (read a note with
+  `read_note`, run a script with `run_command` and its full path), then the instructions.
+- **Chat:** `/skills` toggles `skillsEnabled` and toasts what was found (and the first problem of each skill that needs attention);
+  the `/` menu lists each skill as `/<name>` with its description (`SlashItem.skill`); picking one **attaches** it: its entry-note path goes into the
+  message's attached notes (`Attachments.notes`), so it shows as a chip `◆ skill <name>` above the field (`Skills.chipLabel`; Backspace on an empty
+  field removes it) and in the sent message, and `@` on an entry note does the same. On send, `ChatSession.noteTexts` loads an entry note with
+  `Skills.loadEntry` (folder, file list, instructions: what `use_skill` returns) and `Prompts.chatMessages` appends it as "SKILL “name”: … already
+  loaded, do not call use_skill", so the model needs no tool call (a toast warns when tools are off: the skill is delivered but cannot act). The list is rescanned when a message is added. **Settings → Tools:** *Skills* and *Skills folder*.
+- A skill is **only text and files**; nothing runs by itself. Its scripts go through `run_command`, which asks every time. Skill text, like any
+  note, is untrusted data in the same way notes are: the user wrote or approved it, and every change, command and fetch it leads to still asks.
+- **Step budget:** `Skills.stepsFor(history, config.toolSteps)`: when the latest message carries a skill chip the question may take at least `Skills.RUN_STEPS` (40) tool rounds (a full forecast run is about 16), so the "N more steps?" dialog does not interrupt it; a larger user setting wins.
+- **Completion gate (required steps).** A skill may declare `requires:` in its properties: a list of quoted items `"tool ~ text in the call => text in the result xN | label"`
+  (`Requirement.parse`; all parts but the tool are optional; `~` matches the call's arguments as JSON text, `=>` the result, `xN` a count, the label is what the
+  model is told). Example: `"run_command ~ check => REPORT_COMPLETE=yes | step 11: the check must say yes"`. `Skills.requirementsOf(vault, entryPath)` reads them;
+  an unreadable item shows up in the skill's `problems`. `SkillRun(name, requirements)` (core) is the progress of one run: `observe(tool, args, result)` ticks every
+  matching step off (steps are independent, so the order the model chooses is its own; a result condition means a failing `check` does not count), `nudge()`
+  returns the hidden message for the first missing step (`STOP: you have not finished the skill … This required step is still missing: …`) and counts a strike
+  against it; after `SkillRun.MAX_STRIKES` (3) the step is given up on (skipped) so a stuck run still ends; `summary()` says what was left undone.
+  `ChatSession` owns `skillRun`: a skill chip on a message (`ask`) or the model's `use_skill` call starts it, `runTools` feeds it every call and result, a new user
+  message or `/new` ends it. `Generation(gate = { skillRun?.nudge() })` asks the gate when the model is about to finish with a reply that has no tool call: a
+  message sends it back (the model's reply, if any, stays in the chat; the nudge is hidden like the "continue now" one; nudges are not tool rounds, so they do not use up
+  *Steps per question*). The Chat status bar shows `◆ <skill> 7/11` (purple while running, green `✓` when done, red `✕N skipped` when steps were given up on).
+  This is the harness-level guard (like a stop hook): a small model that skips a step in the text of the skill is still held to it. It checks that steps *happened*,
+  not that their content is right: pair it with a result condition (`=>`) or a verification command, as the forecast skill does with `check`.
+- Tests: `CoreTest.aSkillCanRequireStepsAndTheRunIsTracked` (grammar, properties, matching on arguments and results, counts, order of nudges, three strikes, summary); `CoreTest.skillsAreFoundLoadedAndOfferedToTheModel` (discovery, problems, per-folder cap, load, tool, catalog, plan mode, off states).
+
 ## Calls written as text
 
 Small models sometimes answer `fetch_url(url="…")` as plain text instead of a structured call, and the loop would end with nothing done.
@@ -152,18 +199,18 @@ Small models sometimes answer `fetch_url(url="…")` as plain text instead of a 
 real calls (approvals still apply), **ask** shows "Run this tool call?" first, **off** leaves the text.
 
 The "keep going" nudge (`announcesAction`): a reply that only announces a step ("I will read…", "Let me check…", "This will help me
-locate…") gets a hidden "continue now" message (≤2 per question). "Let me know…" and real questions (`?` followed by space/end, not the
+locate…") gets a hidden "continue now" message (≤2 **in a row**: the counter resets after every real tool call, because a long skill narrates before many of its steps; with a per-question limit the third narration ended a skill run before its analysis step). "Let me know…" and real questions (`?` followed by space/end, not the
 `?` of a URL) do not count.
 
 ## Memory file
 
 The vault note `ARCANA.md` is added to the system prompt (see [functionality.md](functionality.md)); the `remember` tool appends to it.
-The template holds eleven rules for using tools. `ToolBox.cheatSheet()` supplies the exact tool list, so the note needs no copy of it.
+The template holds fourteen rules for using tools. `ToolBox.cheatSheet()` supplies the exact tool list, so the note needs no copy of it.
 
 ## Rendering in chat (`screens/Chat.kt`)
 
 Assistant message with `toolCalls`: model name, optional text, then `⚙ <tool>  <summary>` per call (`callSummary`: command, url, question,
-from, path, query, pattern, name, glob, title, folder, reason). `role="tool"` message: `↳ ✓ <first line> (N characters)` or red `✕` for
+from, path, query, pattern, name, glob, title, folder, reason, seconds). `role="tool"` message: `↳ ✓ <first line> (N characters)` or red `✕` for
 `Error:` / denied / non-zero exit code / timeout. Tool messages are **not** select-mode entries, are skipped by "save chat" transcripts,
 and don't count as "last answer".
 
@@ -197,6 +244,8 @@ Brain/Library reread the vault.
 5. For a risky capability add a risk level and an explicit preview first.
 
 ## Planned / not done
+
+- A Skills screen (list with problems, open the entry note, create from a template); skill-level `needs` checks (warn when a needed tool is off).
 
 - An `http_request` tool (POST/headers) designed like `fetch_url`; more search backends.
 - MCP client support (reuse the same loop/permission layer); per-folder read/write rights; tools in AI notes.

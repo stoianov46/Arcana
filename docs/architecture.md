@@ -33,7 +33,7 @@ Arcana (Gradle multi-project)
  state holders (app/): AppContext ─ ChatSession ─ Generation ─ AppSession ─ BrainState
         │
         ▼
- core/         OllamaClient  Vault  VaultIndex  ChatStore  SessionStore  UsageStore  ConfigStore  Inbox  ToolBox (Shell, Web)
+ core/         OllamaClient  Vault  VaultIndex  ChatStore  SessionStore  UsageStore  ConfigStore  Inbox  ToolBox (Shell, Web), Skills
         │
         ▼
  Ollama HTTP (localhost:11434)      vault folder (Markdown files)      ~/.config/arcana/*

@@ -344,7 +344,7 @@ private fun Footer(app: AppContext, navigator: Navigator, hint: String, columns:
     val tokenBadge = if (tokens > 0) " ⚡ ${UsageStats.compact(tokens)} tok " else ""
     Row(Modifier.fillMaxWidth().background(Palette.SurfaceHigh)) {
         Label(badgeText, color = Palette.Background, background = badgeColor, textStyle = TextStyle.Bold)
-        if (tokenBadge.isNotEmpty()) Label(tokenBadge, color = Palette.Text, background = Palette.SurfaceHigh)
+        if (tokenBadge.isNotEmpty()) Label(tokenBadge, color = Palette.Background, background = Palette.Blue, textStyle = TextStyle.Bold) // a badge like the model pill; blue = tokens, as in the Chat status bar
         if (navigator.focusMode) Label(" ✎ EDITING  Esc ", color = Palette.Background, background = Palette.Editing, textStyle = TextStyle.Bold)
         val room = columns - badgeText.length - tokenBadge.length - (if (navigator.focusMode) 16 else 0) - 2
         val toast = navigator.toast

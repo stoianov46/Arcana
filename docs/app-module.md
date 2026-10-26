@@ -11,8 +11,8 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 | `AppContext.kt` | `AppContext` | the app-wide state; see [architecture.md](architecture.md) |
 | `AppSession.kt` | `AppSession` | the run's logged session: `events`, `log(kind, text, path?)` (persisted as it happens), `markSaved(path)`, `needsSaving`/`unsavedCount` (activity since the last save), `finish()`. Writing the summary note/log into the vault is done by `screens/Session.kt` |
 | `BrainState.kt` | `BrainState` | background `VaultIndex` (`index`, `reading`, `error`, `revision`); `changed()` (after vault writes) and `refresh()` |
-| `ChatSession.kt` | `ChatSession` | the persistent chat: `messages`, `input`, `attachments`, `send()`, `gen`, the tool loop (`runTools`), `Approval` dialogs (folder, shell, web, access, step limit, text calls, memory), `Question` (`ask_user`), `offerTools`, `offerMemory`, history, `startNew/open/deleteCurrent`, `persist()` |
-| `Generation.kt` | `Generation`, `GenState`, `rememberGeneration`, `announcesAction` | one streamed model request and the tool-use loop (text-written calls via `TextToolCalls`, the "keep going" nudge, `onStepLimit`, `useTools`); observable `state/text/thinking/error/stats` |
+| `ChatSession.kt` | `ChatSession` | the persistent chat: `messages`, `input`, `attachments`, `send()`, `gen`, the tool loop (`runTools`), `Approval` dialogs (folder, shell, web, access, step limit, text calls, memory), `skillRun`/`skillTick` (the active skill run: started by a skill chip or `use_skill`, fed every tool call and result by `runTools`, asked by the completion gate), `Question` (`ask_user`), `offerTools`, `offerMemory`, history, `startNew/open/deleteCurrent`, `persist()` |
+| `Generation.kt` | `Generation`, `GenState`, `rememberGeneration`, `announcesAction` | one streamed model request and the tool-use loop (text-written calls via `TextToolCalls`, the "keep going" nudge, `onStepLimit`, `useTools`); observable `state/text/thinking/error/stats`; `gate` (a skill run with a required step open sends the model back instead of letting it finish); `onLive` reports the reply tokens streaming right now (batches of `LIVE_BATCH` pieces) and takes them back when the request's exact counts arrive or it ends |
 | `Terminal.kt` | `TerminalSize`, `ResizeSignalGuard` | size from stty polling + SIGWINCH guard; `ARCANA_COLUMNS/ROWS` overrides |
 | `SystemOpen.kt` | `SystemOpen` | open files / `obsidian://` links with the OS opener |
 | `com/jakewharton/mosaic/compat.kt` | shadow of Mosaic's key mapping | fixes a crash on non-ASCII keys (Mosaic 0.18); copied from CosmoCLI. Do not delete |
@@ -32,7 +32,7 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
   - Screen-side API (composable effects): `Hints(vararg)` footer hints, `FocusMode(active)` (true while typing: global letter keys
     off), `Commands(list)` extra palette entries. `Command(label, group, keys, enabled, run)`.
 - `Shell.kt`: layout (left/right sidebar or `TopBar`), `Sidebar` with badges and an icon rail under 90 columns, the logo
-  animation (colour sweep while `app.busy > 0`), `Footer` with toast, global key map (`Ctrl+C` flow, `Ctrl+B`, number keys,
+  animation (colour sweep while `app.busy > 0`), `Footer` with toast and the session token badge (`⚡ N tok`, solid `Palette.Blue`, like the model pill), global key map (`Ctrl+C` flow, `Ctrl+B`, number keys,
   `?`), `LocalContentWidth/Height` providers. Dispatch order: overlay → screen `KeyHandler` → global.
 - `Overlays.kt`: `paletteCommands` (every screen jump, navigation position switches, session actions, quit, plus the screen's own
   `Commands`), `overlayKey` (keys while an overlay is open, incl. capture + capture attachments), `PaletteOverlay`, `CaptureOverlay`.
@@ -67,6 +67,7 @@ Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `
 | `Panel.kt` | `Panel(title, accent)`, `Card`, `ScreenHeader(title, subtitle)`, frame glyphs |
 | `Fields.kt` | `TextInput(label, field, focused, placeholder, maxRows, attachments)`, `LabeledField`, `InlineField`, `handleAttachmentKey` |
 | `Actions.kt` | `ActionItem`, `ActionBar(items, width)`, `actionBarRows`, `breakIntoLines`, `Badge` |
+| `SlashKind.kt` | `SlashKind`: what a "/" menu entry is (Command, Skill, Read, Write, Shell, Danger, Web, Ask) with its `Palette` colour, glyph and badge word; `forTool(name, risk)` classifies a tool |
 | `StatusBar.kt` | **reusable status line**: `StatusSegment`/`StatusPart`, `statusSegment`, `pillSegment`, `gaugeSegment`, `fitSegments` (drops the lowest priority first), `StatusBar`, `StatusHeader`, `spanText`, `priceText` |
 | `Shortcuts.kt` | `Shortcuts.label(text)`: the one place shortcut labels pass through (Ctrl chords) |
 | `Messages.kt` | `Notice`, `NoticeLine`, `Hint`, `Warning`, `Cta`, `Loading`, `Spinner` |

@@ -68,8 +68,19 @@ class AppContext(
     /** The map of the vault: links, tags and what needs attention. */
     val brain = BrainState(this)
 
-    /** Tokens used since Arcana started. */
-    val sessionTokens: Long get() = usage.filter { it.time >= sessionStart }.sumOf { it.totalTokens.toLong() }
+    /**
+     * Reply tokens streaming right now, counted by pieces (about one token each). Ollama reports exact counts only when a request
+     * ends, so the counters add this meanwhile and it is taken back when the exact figures are recorded (or the request ends).
+     */
+    var liveTokens by mutableIntStateOf(0)
+        private set
+
+    fun addLiveTokens(delta: Int) {
+        liveTokens = (liveTokens + delta).coerceAtLeast(0)
+    }
+
+    /** Tokens used since Arcana started (including the reply streaming right now, as an estimate until it ends). */
+    val sessionTokens: Long get() = usage.filter { it.time >= sessionStart }.sumOf { it.totalTokens.toLong() } + liveTokens
 
     /** Called when a reply finishes: keeps the tokens Ollama reported for it. */
     fun recordUsage(feature: String, chunk: ChatChunk) {

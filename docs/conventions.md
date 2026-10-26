@@ -4,7 +4,7 @@
 
 1. **Arcana is the control panel of the user's second brain.** UI/UX serves: capture → see → think → shape → keep. Don't turn it into a
    generic chat client.
-2. **Chat's message field always has the keyboard.** No letter shortcuts while typing; actions are Ctrl keys, `/commands`, `@`,
+2. **Chat opens unfocused; once you press `Enter` the message field has the keyboard.** (The Chat screen starts in browse mode so that opening the tab never drops you into editing; the screen state resets each time the tab is opened.) No letter shortcuts while typing; actions are Ctrl keys, `/commands`, `@`,
    the palette. `Esc` leaves the field for browse/select (while a reply runs, `Esc` cancels it and number keys switch screens only with an empty field). Shortcuts are Ctrl chords, never ⌘.
 3. **Do not reintroduce separate "Summarize" or "Ask" screens.** They were merged into AI notes (tasks) and Chat (`/vault`).
 4. **The sidebar stays** (number keys + palette) but must be informative: badges, auto-fold under 90 columns. Top bar / right sidebar are options.
@@ -22,6 +22,7 @@
 - Match the surrounding code: comment density (KDoc on non-obvious classes/functions explaining *why*), naming, idiom.
 - Pure logic in `core` or in plain functions (testable); composables only compose and handle keys.
 - Settings, prompts and limits are named constants or config fields, not magic numbers in screens.
+- **Colour means something, and is never the only signal.** In the "/" menu (`SlashKind`): commands cyan, skills purple `◆`, read-only tools green `◎`, tools that change things orange `✎`, shell red `▶`, delete/move red `✕`, web blue `↗`, questions muted `?`; every kind except a plain command also shows a badge word (SKILL, READ, WRITE, SHELL, DELETE/MOVE, WEB, ASK) so the meaning survives a monochrome terminal. Reuse these roles for the same meanings elsewhere (green = safe/read, orange = changes, red = high risk, blue = leaves the computer) rather than inventing new ones.
 - Use `Palette` roles, `Label`/`Stack`/`Panel`, `sanitizeForTerminal`; never raw `Text` for dynamic content.
 - Errors surfaced to the user are plain sentences ("Could not read the file."), via `Notice`/toast, never stack traces.
 - Blocking work in `Dispatchers.IO`; state mutation on the UI scope.
@@ -72,7 +73,7 @@ Add a `ThemeSpec` to `Themes.all` in `design/Theme.kt` with the required role co
 
 ## Known limitations / backlog
 
-- Tools: no `web_search` or `http_request`; tool results are stored in full in chats (shortened only when sent); tools are not available in AI notes; shell commands are not sandboxed by folder (only their working directory is).
+- Tools: no `http_request` (POST) tool; tool results are stored in full in chats (shortened only when sent); tools are not available in AI notes; shell commands are not sandboxed by folder (only their working directory is).
 - Scanned PDFs have no text layer (rendering pages as pictures is not implemented).
 - Vault search is keyword-based (no embeddings).
 - The `utils/` template module is unused; it can be removed.

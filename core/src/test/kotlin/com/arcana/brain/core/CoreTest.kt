@@ -727,6 +727,198 @@ class CoreTest {
     }
 
     @Test
+    fun skillsAreFoundLoadedAndOfferedToTheModel() {
+        val root = Files.createTempDirectory("arcana-skills")
+        fun file(path: String, text: String) { root.resolve(path).also { Files.createDirectories(it.parent) }.let { Files.writeString(it, text) } }
+        file("Skills/demo/demo.skill.md", "---\nname: demo\ndescription: \"Does the demo thing. Use it for demos.\"\nversion: 2\ntype: skill\n---\n\n# Demo\n\nStep 1: say hello.\n")
+        file("Skills/demo/reference/Facts.md", "facts")
+        file("Skills/demo/scripts/run.py", "print('hi')")
+        file("Skills/demo/.hidden/x.md", "x")
+        for (i in 1..12) file("Skills/demo/reports/r$i.md", "r")
+        file("Skills/broken/broken.skill.md", "---\nname: other\n---\n\n" + "x".repeat(Skills.MAX_CHARS + 10))
+        file("Skills/notaskill/readme.md", "no entry note named like the folder")
+        file("Skills/plain/plain.md", "---\ndescription: d\n---\nan old-style entry without .skill is not a skill")
+        file("Skills/Bad Name/Bad Name.skill.md", "---\ndescription: d\n---\nbody")
+        val vault = Vault(root)
+
+        val found = Skills.discover(vault, "Skills")
+        assertEquals(listOf("Bad Name", "broken", "demo"), found.map { it.name })
+        val demo = Skills.find(found, "/DEMO")!!
+        assertEquals(listOf("reference/Facts.md", "reports/r1.md", "reports/r10.md", "reports/r11.md", "reports/r12.md", "reports/r2.md", "reports/r3.md", "reports/r4.md", "reports/r5.md", "reports/… 4 more (list the folder to see them)", "scripts/run.py"), demo.files)
+        assertEquals("2", demo.version)
+        assertTrue(demo.problems.isEmpty(), demo.problems.toString())
+        assertEquals("Skills/demo/demo.skill.md", demo.path)
+        val broken = found.first { it.name == "broken" }
+        assertTrue(broken.problems.any { "description" in it } && broken.problems.any { "differs" in it } && broken.problems.any { "characters" in it }, broken.problems.toString())
+        assertTrue(found.first { it.name == "Bad Name" }.problems.any { "folder name" in it })
+        assertTrue(Skills.discover(vault, "Nothing").isEmpty() && Skills.discover(vault, "").isEmpty() && Skills.discover(vault, "../x").isEmpty())
+
+        assertTrue(Skills.isEntry("Skills/demo/demo.skill.md") && !Skills.isEntry("Skills/demo/reference/Facts.md") && !Skills.isEntry("Skills/plain/plain.md"))
+        assertEquals("demo", Skills.nameOfEntry("Skills/demo/demo.skill.md"))
+        assertEquals("◆ skill demo", Skills.chipLabel("Skills/demo/demo.skill.md"))
+        assertNull(Skills.chipLabel("Notes/Idea.md"))
+        assertEquals(Skills.load(vault, demo), Skills.loadEntry(vault, "Skills/demo/demo.skill.md"), "an attached entry note loads like use_skill")
+        assertNull(Skills.loadEntry(vault, "Skills/demo/reference/Facts.md"))
+        assertNull(Skills.loadEntry(vault, "Skills/ghost/ghost.skill.md"))
+        val prompt = Prompts.chatMessages(AppConfig(), listOf(ChatMessage.user("run it", notes = listOf("Skills/demo/demo.skill.md", "Skills/demo/reference/Facts.md"))), null,
+            mapOf("Skills/demo/demo.skill.md" to Skills.load(vault, demo), "Skills/demo/reference/Facts.md" to "facts"))
+        val sent = prompt.last().content
+        assertTrue("SKILL “demo”" in sent && "do not call use_skill" in sent && "Step 1: say hello." in sent && "Attached note “Facts”" in sent, sent)
+
+        val plainAsk = listOf(ChatMessage.user("hi"))
+        val skillAsk = listOf(ChatMessage.user("old", notes = listOf("Skills/demo/demo.skill.md")), ChatMessage.assistant("ok"), ChatMessage.user("run it", notes = listOf("Skills/demo/demo.skill.md")))
+        assertEquals(8, Skills.stepsFor(plainAsk, 8))
+        assertEquals(Skills.RUN_STEPS, Skills.stepsFor(skillAsk, 8), "a skill run gets room for its many steps")
+        assertEquals(60, Skills.stepsFor(skillAsk, 60), "a larger user setting wins")
+        assertEquals(8, Skills.stepsFor(skillAsk + ChatMessage.user("and now something else"), 8), "only the latest message counts")
+
+        val text = Skills.load(vault, demo)
+        assertTrue(text.startsWith("SKILL demo v2\nFolder: ") && text.lineSequence().drop(1).first().endsWith("Skills/demo"), text)
+        assertTrue("- Skills/demo/reference/Facts.md" in text && "- Skills/demo/scripts/run.py" in text && "Step 1: say hello." in text && "description:" !in text, text)
+
+        val box = ToolBox(vault, emptyList(), root.resolve("b"), skillsFolder = "Skills")
+        assertTrue("- use_skill(name)" in box.cheatSheet())
+        assertTrue("- demo: Does the demo thing" in box.describe() && "call use_skill" in box.describe(), box.describe())
+        assertTrue("Step 1: say hello." in box.execute(call("use_skill", "name" to "demo")))
+        assertTrue(box.execute(call("use_skill", "name" to "nope")).let { it.startsWith("Error: There is no skill called \"nope\"") && "demo" in it })
+        assertTrue(ToolBox(vault, emptyList(), root.resolve("b"), readOnly = true, skillsFolder = "Skills").find("use_skill") != null, "reading a skill is allowed in plan mode")
+        assertNull(ToolBox(vault, emptyList(), root.resolve("b")).find("use_skill"), "skills off: no tool")
+        assertNull(ToolBox(vault, emptyList(), root.resolve("b"), skillsFolder = "Empty").find("use_skill"), "no skills: no tool")
+        assertTrue("SKILLS" !in ToolBox(vault, emptyList(), root.resolve("b")).describe())
+    }
+
+    @Test
+    fun noteToolsCanSetPropertiesWithoutAFileSystemEdit() {
+        val root = Files.createTempDirectory("arcana-props")
+        val vault = Vault(root)
+        // a properties block in the content is merged with Arcana's own: one block, its keys win, nothing doubled
+        val given = "---\ntags: [forecast, defi]\nllm: \"qwen3:30b\"\nstatus: running\nrelated:\n  - \"[[a]]\"\n  - \"[[b]]\"\n---\n\n# Report\n\nbody\n"
+        val note = vault.create("Out", "Report one", given, "gemma4:latest")
+        val text = vault.read(note.path)
+        assertEquals(1, Regex("(?m)^---$").findAll(text.substringBefore("# Report")).count() / 2, text)
+        assertEquals(2, Regex("(?m)^---$").findAll(text.substringBefore("# Report")).count(), text)
+        assertTrue(text.startsWith("---\ncreated: ") && "generator: arcana\nmodel: gemma4:latest\ntags: [forecast, defi]\nllm: \"qwen3:30b\"\nstatus: running\nrelated:\n  - \"[[a]]\"\n  - \"[[b]]\"\n---\n\n# Report" in text, text)
+        assertTrue("tags: [arcana]" !in text)
+        // without a block it is as before
+        assertTrue("tags: [arcana]" in vault.read(vault.create("Out", "Plain", "just text", "m").path))
+
+        // set_properties: replaces a key, adds a new one, keeps the rest (and a list value), leaves the text alone
+        val box = ToolBox(vault, emptyList(), root.resolve("b"))
+        val out = box.execute(call("set_properties", "path" to note.path, "properties" to "status: done\nfinished: 2026-10-26T18:05:12\ntotal_work_time: 5 min 12 s"))
+        assertEquals("Set status, finished, total_work_time in ${note.path}", out)
+        val after = vault.read(note.path)
+        assertTrue("llm: \"qwen3:30b\"\nstatus: done\nrelated:" in after && "status: running" !in after, after) // replaced in place, order kept
+        assertTrue("related:\n  - \"[[a]]\"\n  - \"[[b]]\"" in after && "llm: \"qwen3:30b\"" in after && "total_work_time: 5 min 12 s\n---\n\n# Report\n\nbody" in after, after)
+        assertEquals(1, Regex("(?m)^status:").findAll(after).count())
+        // a note with no properties gets a block; bad input is an error the model can read
+        val bare = root.resolve("Bare.md").also { Files.writeString(it, "# Bare\n\ntext\n") }
+        assertEquals("Set a in Bare", box.execute(call("set_properties", "path" to "Bare", "properties" to "a: 1")))
+        assertEquals("---\na: 1\n---\n\n# Bare\n\ntext\n", Files.readString(bare))
+        assertTrue(box.execute(call("set_properties", "path" to "Bare", "properties" to "no colon here")).startsWith("Error: Give the properties as lines"))
+        assertEquals(ToolRisk.Write, box.find("set_properties")?.risk)
+        assertTrue("- set_properties(path, properties)" in box.cheatSheet())
+        assertTrue(ToolBox(vault, emptyList(), root.resolve("b"), readOnly = true).find("set_properties") == null, "plan mode cannot change properties")
+    }
+
+    @Test
+    fun theModelCanMeasureElapsedTimeWithoutDoingTheMath() {
+        assertEquals("0 s", describeDuration(0))
+        assertEquals("45 s", describeDuration(45))
+        assertEquals("5 min 12 s", describeDuration(312))
+        assertEquals("1 min 0 s", describeDuration(60))
+        assertEquals("1 h 2 min 3 s", describeDuration(3723))
+        assertEquals("1 h 0 min 0 s", describeDuration(3600))
+        assertEquals("2 d 3 h 4 min 5 s", describeDuration(2 * 86400 + 3 * 3600 + 4 * 60 + 5L))
+        val kyiv = java.time.ZoneId.of("Europe/Kyiv")
+        val start = parseMoment("2026-10-26T18:05:00", kyiv)
+        assertEquals(start, parseMoment("2026-10-26 18:05:00", kyiv))
+        assertEquals(start, parseMoment("2026-10-26T18:05:00+02:00"))
+        assertEquals(start, parseMoment("2026-10-26T16:05:00Z"))
+        assertEquals(start, parseMoment("${start.epochSecond}"))
+        assertEquals(start, parseMoment("${start.toEpochMilli()}"))
+        assertEquals("total_work_time=5 min 12 s\nseconds=312\nfrom=2026-10-26T18:05:00\nto=2026-10-26T18:10:12", describeElapsed(start, start.plusSeconds(312), kyiv))
+        assertTrue(runCatching { parseMoment("yesterday") }.exceptionOrNull()?.message!!.contains("is not a time"))
+        assertTrue(runCatching { describeElapsed(start.plusSeconds(5), start, kyiv) }.exceptionOrNull()?.message == "The end is before the start.")
+
+        val root = Files.createTempDirectory("arcana-elapsed")
+        val box = ToolBox(null, listOf(root), root.resolve("b"))
+        val now = java.time.ZonedDateTime.now().minusSeconds(75).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"))
+        val out = box.execute(call("elapsed_time", "from" to now))
+        assertTrue(Regex("""total_work_time=1 min \d+ s\nseconds=7\d\nfrom=$now\nto=\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d""").matches(out), out)
+        assertEquals("total_work_time=1 h 0 min 0 s\nseconds=3600\nfrom=2026-10-26T10:00:00\nto=2026-10-26T11:00:00",
+            box.execute(call("elapsed_time", "from" to "2026-10-26T10:00:00", "to" to "2026-10-26T11:00:00")))
+        assertTrue(box.execute(call("elapsed_time", "from" to "soon")).startsWith("Error: \"soon\" is not a time"))
+        assertEquals(ToolRisk.Read, box.find("elapsed_time")?.risk)
+        assertTrue("- elapsed_time(from, to?)" in box.cheatSheet(), box.cheatSheet())
+    }
+
+    @Test
+    fun aSkillCanRequireStepsAndTheRunIsTracked() {
+        // the grammar: tool ~ text in the call => text in the result xN | label
+        val r = Requirement.parse("run_command ~ check --note => REPORT_COMPLETE=yes | step 11: check")!!
+        assertEquals(listOf("run_command", "check --note", "REPORT_COMPLETE=yes", 1, "step 11: check"), listOf(r.tool, r.contains, r.expect, r.count, r.label))
+        val a = Requirement.parse("append_to_note x3")!!
+        assertEquals(listOf("append_to_note", "", "", 3, ""), listOf(a.tool, a.contains, a.expect, a.count, a.label))
+        assertEquals(1, Requirement.parse("create_note | step 6")!!.count)
+        assertNull(Requirement.parse("Run Command"), "a tool name is lower-case words with _")
+        assertNull(Requirement.parse("run_command ~"), "a ~ needs a text")
+        assertNull(Requirement.parse("run_command =>"), "a => needs a text")
+        assertEquals("a call of `run_command` whose command contains `snapshot`", Requirement.parse("run_command ~ snapshot")!!.describe())
+        assertTrue("3 times" in a.describe())
+
+        // read from a skill's properties (quoted list items, so the YAML stays valid), bad lines reported as problems
+        val root = Files.createTempDirectory("arcana-gate")
+        val dir = root.resolve("Skills/gated").also { Files.createDirectories(it) }
+        Files.writeString(dir.resolve("gated.skill.md"), "---\nname: gated\ndescription: d\nrequires:\n  - \"run_command ~ snapshot | step 4: snapshot\"\n  - \"append_to_note x2 | step 9: parts\"\n  - \"???\"\n  - \"run_command ~ check => REPORT_COMPLETE=yes | step 11: check\"\n---\n\nbody")
+        val vault = Vault(root)
+        val skill = Skills.discover(vault, "Skills").single()
+        assertTrue(skill.problems.single().contains("requires: cannot read the line \"???\""), skill.problems.toString())
+        val reqs = Skills.requirementsOf(vault, "Skills/gated/gated.skill.md")
+        assertEquals(listOf("run_command", "append_to_note", "run_command"), reqs.map { it.tool })
+        assertTrue(Skills.requirementsOf(vault, "Skills/gated/other.md").isEmpty() && Skills.requirementsOf(vault, "Nothing/x.skill.md").isEmpty())
+
+        // a run: only matching calls count; the result can matter; the first missing step is the one named
+        val run = SkillRun("gated", reqs)
+        assertEquals("0/3".replace("/", " of "), "${run.done} of ${run.total}")
+        assertTrue(run.nudge()!!.let { "step 4: snapshot" in it && "STOP" in it && "0 of 3" in it && "snapshot" in it }, "the first missing step comes first")
+        run.observe("run_command", "{command=python3 x.py snapshot --network eth}", "exit code 0")
+        run.observe("append_to_note", "{path=a}", "Added")
+        assertEquals(1, run.done)
+        assertTrue("step 9: parts" in run.nudge()!!, "append x2 is not done after one append")
+        run.observe("append_to_note", "{path=a}", "Added")
+        assertEquals(2, run.done)
+        run.observe("run_command", "{command=python3 x.py check --note n}", "exit code 1\nREPORT_COMPLETE=no")
+        assertEquals(2, run.done, "a check whose result says no does not count")
+        assertTrue(run.nudge()!!.contains("REPORT_COMPLETE=yes"))
+        run.observe("run_command", "{command=python3 x.py check --note n}", "exit code 0\nREPORT_COMPLETE=yes")
+        assertTrue(run.done == 3 && run.finished && run.nudge() == null && run.summary() == null)
+
+        // a step the model keeps ignoring is given up on after MAX_STRIKES, so a stuck run still ends; the summary says what was left
+        val stuck = SkillRun("gated", reqs)
+        stuck.observe("run_command", "{command=snapshot}", "ok")
+        repeat(SkillRun.MAX_STRIKES) { assertTrue(stuck.nudge()!!.contains("step 9: parts")) }
+        assertTrue(stuck.nudge()!!.contains("step 11: check"), "after the strikes the next missing step is asked for")
+        repeat(SkillRun.MAX_STRIKES - 1) { assertTrue(stuck.nudge()!!.contains("step 11: check")) }
+        assertNull(stuck.nudge())
+        assertTrue(stuck.finished && stuck.skippedCount == 2 && stuck.done == 1)
+        assertEquals("Skill gated: 1 of 3 required steps done; not done: step 9: parts; step 11: check.", stuck.summary())
+    }
+
+    @Test
+    fun theModelCanWaitOutARateLimit() {
+        val root = Files.createTempDirectory("arcana-wait")
+        val box = ToolBox(null, listOf(root), root.resolve("b"))
+        val started = System.currentTimeMillis()
+        val result = box.execute(call("wait", "seconds" to "1", "reason" to "rate limit"))
+        assertTrue(System.currentTimeMillis() - started >= 1000, "it really sleeps")
+        assertTrue(result.startsWith("Waited 1 s. ") && "ISO " in result, result)
+        assertTrue(box.execute(call("wait")).startsWith("Error: Say how many seconds"))
+        assertEquals(ToolRisk.Read, box.find("wait")?.risk, "waiting needs no approval")
+        assertTrue("- wait(seconds, reason?)" in box.cheatSheet(), box.cheatSheet())
+        assertEquals("30 s - rate limit", box.find("wait")?.summary?.invoke(call("wait", "seconds" to "30", "reason" to "rate limit").arguments))
+    }
+
+    @Test
     fun theModelCanAskForTheTimeAndAlwaysKnowsTheDate() {
         val root = Files.createTempDirectory("arcana-time")
         val box = ToolBox(null, listOf(root), root.resolve("b"))

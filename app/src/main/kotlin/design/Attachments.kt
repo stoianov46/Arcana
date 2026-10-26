@@ -9,6 +9,7 @@ import com.arcana.brain.app.input.Key
 import com.arcana.brain.core.FileAttachment
 import com.arcana.brain.core.ImageAttachment
 import com.arcana.brain.core.ImageFiles
+import com.arcana.brain.core.Skills
 import com.arcana.brain.core.TextFiles
 import java.nio.file.Files
 import java.nio.file.Path
@@ -162,7 +163,7 @@ class Attachments(
 @Composable
 fun AttachmentLine(attachments: Attachments) {
     if (attachments.isEmpty) return
-    val items = attachments.notes.map { "▤ ${it.substringAfterLast('/').removeSuffix(".md")}" } +
+    val items = attachments.notes.map { Skills.chipLabel(it) ?: "▤ ${it.substringAfterLast('/').removeSuffix(".md")}" } +
         attachments.pictures.map { "▣ ${sanitizeForTerminal(it.name)} (${ImageFiles.size(it.bytes)})" } +
         attachments.files.map { "❐ ${sanitizeForTerminal(it.name)}" } +
         attachments.plain.map { "❐ ${sanitizeForTerminal(it.fileName.toString())}" }

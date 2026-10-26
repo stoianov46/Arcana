@@ -17,6 +17,7 @@ import com.arcana.brain.app.navigation.FocusMode
 import com.arcana.brain.app.navigation.Hints
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.AppConfig
+import com.arcana.brain.core.Skills
 import com.jakewharton.mosaic.layout.background
 import com.jakewharton.mosaic.layout.fillMaxWidth
 import com.jakewharton.mosaic.modifier.Modifier
@@ -148,6 +149,8 @@ private val settings: List<Setting> = listOf(
     text(Group.Tools, "Search address", "The address of your SearXNG server, for example http://localhost:8080 (its settings must allow format json). Used only with the SearXNG backend.", { it.searchUrl }, { c, v -> c.copy(searchUrl = v.trim().trimEnd('/')) }, allowEmpty = true),
     Setting(Group.Tools, "Search API key", "Your Brave Search API key, used only with the Brave backend. It is stored in config.json on this computer, so keep that file private. Enter types a new key; an empty value removes it.", value = { if (it.searchKey.isEmpty()) "(not set)" else "(set, ends …${it.searchKey.takeLast(4)})" }, editor = Editor.Text { c, v -> c.copy(searchKey = v.trim()) }),
     toggle(Group.Tools, "Web pages", "Lets the model ask to search the web (web_search) and to read a public web page (documentation, articles, JSON). Every address waits for your y / n and is shown in full; pages on your own computer or network are never fetched, and what a page says is treated as text, not as instructions. Plan mode never offers it. Off by default.", { it.toolWeb }, { c, v -> c.copy(toolWeb = v) }),
+    toggle(Group.Tools, "Skills", "Skills are runbooks in your vault, one folder each (Skills/<name>/<name>.skill.md with its scripts and reference notes). On: the model is told which skills exist and can load one with use_skill, and Chat's / menu lists them. Needs Tools in Chat. Also /skills.", { it.skillsEnabled }, { c, v -> c.copy(skillsEnabled = v) }),
+    text(Group.Tools, "Skills folder", "The vault folder that holds one folder per skill. Default Skills.", { it.skillsFolder }, { c, v -> c.copy(skillsFolder = v.trim('/').ifEmpty { Skills.DEFAULT_FOLDER }) }),
     choice(Group.Tools, "Mode", "Ask: every change waits for your y / n. Auto: changes run at once (the old file is always backed up). Plan: read-only, the model investigates and writes a plan without changing anything. Also /mode in Chat.", listOf("ask" to "Ask", "auto" to "Auto", "plan" to "Plan"), { it.toolMode }, { c, v -> c.copy(toolMode = v) }),
     toggle(Group.Tools, "Read without asking", "On: searching and reading run at once. Off: every tool call waits for your y / n. Changes always ask.", { it.toolAutoRead }, { c, v -> c.copy(toolAutoRead = v) }),
     stepper(Group.Tools, "Steps per question", "How many rounds of tool use one question may take before the model has to answer. A round may read several files; raise this for big reviews.", 1..60, 1, { it.toolSteps }, { c, n -> c.copy(toolSteps = n) }),

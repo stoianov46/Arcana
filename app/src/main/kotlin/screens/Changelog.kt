@@ -24,7 +24,7 @@ private fun changePages() = listOf(
         "Latest", "The latest work",
         """
 # The latest work
-Built on 24–25 October 2026. Last updated 25 October 2026.
+Built on 24–25 October 2026. Last updated 26 October 2026.
 
 ## Usage became a dashboard
 - Five periods (session, today, 7 days, 30 days, all time) and three pages: **Overview**, **Breakdown**, **Recent replies**.
@@ -44,6 +44,15 @@ Built on 24–25 October 2026. Last updated 25 October 2026.
 - **`web_search`**: the model can search the web (DuckDuckGo by default, no key; SearXNG or Brave in Settings → Tools). It asks before every search, shows what it sends, and reads a result with `fetch_url`.
 - **`grep_files`** (search inside files), **globs** in `find_files`, and **line ranges** in `read_file`.
 - **`current_time`**: the date and time in any time zone, so the model does not guess; chats also start with today's date.
+- **Chat opens unfocused**: opening the Chat tab no longer drops you into editing; press `Enter` to start typing (`Esc` leaves the field again). `/new` still puts you straight into the field.
+- **Skills can require steps**: a skill lists its required steps (`requires:` in its properties) and Arcana watches them. If the model tries to finish with one still missing, Arcana sends it back with a hidden message naming the step (after three ignored tries on the same step it gives up on that one). Chat's status bar shows the progress, `◆ coingecko-forecast 7/11`, green when done and red when steps had to be skipped. The forecast skill uses it, including a check whose result must say `REPORT_COMPLETE=yes`.
+- **The `/` menu tells its entries apart**: commands are cyan, skills purple (`◆ SKILL`), read-only tools green (`◎ READ`), tools that change notes or files orange (`✎ WRITE`), shell red (`▶ SHELL`), delete and move red (`✕ DELETE/MOVE`), web blue (`↗ WEB`), questions muted (`? ASK`). A glyph and a badge word go with every colour, so it still reads in a plain terminal; the same colours mean the same things (green safe, orange changes, red high risk, blue leaves the computer) across Arcana.
+- **Token badge**: the session total in the bottom bar (`⚡ N tok`) is now a solid blue badge like the model pill, instead of plain text on the bar's background; blue is the token colour everywhere (`↑` in the Chat status bar too).
+- **Live token counters**: while a reply streams, the Chat bar's `↓` and the bottom `⚡ N tok` (and the estimated price) count the reply tokens as they arrive instead of jumping when the request ends. The figures are exact again as soon as Ollama reports them (it sends exact counts only at the end of a request, so `↑` prompt tokens still step once per model round).
+- **`elapsed_time`**: how much time passed since a moment (or between two), as `5 min 12 s` plus the exact end time, so a model measures a task without doing clock arithmetic (pairs with `current_time`).
+- **`set_properties`** and merged properties: `create_note` merges a properties block at the top of its content with Arcana's own instead of writing a second block, and `set_properties(path, properties)` changes properties of an existing note in place (a key is replaced or added, the text stays). Reports and similar notes no longer need `edit_file`.
+- **`wait`**: the model can pause 1–120 seconds (no approval, `Esc` stops it) to sit out a rate limit such as CoinGecko's 5–7 requests a minute, then retry. The system prompt tells the model to wait and retry on HTTP 429 instead of hammering a service.
+- **Skills**: a runbook in your vault that a model follows step by step, with its scripts and reference notes. One folder per skill (`Skills/<name>/<name>.skill.md`, plus `reference/`, `scripts/`, `reports/`). The model is told which skills exist and loads one with `use_skill`; type `/` in Chat to pick one (it is attached as a `◆ skill` chip and its text goes in with your message), `/skills` turns them on or off and lists what it found, and Settings → Tools has *Skills* and *Skills folder*. Arcana warns about a skill with no description or an entry note too long to be read in full (over 18,000 characters). The first skill, `coingecko-forecast` (pool analysis, forecast chart, liquidity-range study, verdict), and a `Skills Guide` note on writing skills are in the vault.
 - Limits explain themselves: a dialog offers to turn tools on, leave plan mode, allow a folder, turn shell on or add more steps, right where the limit is hit.
 
 ## Chat details
@@ -72,7 +81,7 @@ The model can act, not only talk: search your notes, read and edit files, ask yo
 
 ## The loop
 - The model asks for a tool, Arcana runs it and returns the result, and the model carries on, up to *Steps per question* rounds; at the limit a dialog offers more.
-- If a model announces a step ("Next I will read…") instead of doing it, Arcana nudges it on (twice at most).
+- If a model announces a step ("Next I will read…") instead of doing it, Arcana nudges it on (twice in a row at most: the count restarts after every real tool call, so long skill runs are not cut short). A message with a skill attached may take up to 40 tool rounds.
 - Old tool output is shortened when the history is sent, so a long job does not fill the context.
 
 ## Safety

@@ -28,6 +28,7 @@ import com.arcana.brain.core.SessionKind
 import com.arcana.brain.core.StoredChat
 import com.arcana.brain.core.ToolCall
 import com.arcana.brain.core.AppConfig
+import com.arcana.brain.core.Skills
 import com.arcana.brain.core.UsageStats
 import com.arcana.brain.core.Vault
 import com.arcana.brain.app.SystemOpen
@@ -44,7 +45,10 @@ internal fun effectiveContext(asked: Int, modelMax: Int): Int = when {
 }
 
 /** One entry of the menu that opens when a message starts with "/": a command, or a tool (which writes the start of a request for it). */
-internal class SlashItem(val name: String, val hint: String, val tool: Boolean)
+internal class SlashItem(
+    val name: String, val hint: String, val tool: Boolean, val skill: Boolean = false,
+    val kind: SlashKind = if (skill) SlashKind.Skill else if (tool) SlashKind.Read else SlashKind.Command,
+)
 
 internal val SlashCommands = listOf(
     SlashItem("/new", "Start a new chat", false),
@@ -56,6 +60,7 @@ internal val SlashCommands = listOf(
     SlashItem("/tools", "Let the model use tools (toggle)", false),
     SlashItem("/mode", "Tools mode: ask, auto, plan (cycles)", false),
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false),
+    SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
     SlashItem("/append", "Add the last answer to a note", false),
     SlashItem("/replace", "Replace a note with the last answer", false),
     SlashItem("/clear", "Erase this chat", false),
@@ -71,6 +76,7 @@ internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean
     }
     "/mode" -> if (!config.toolsEnabled) "TOOLS OFF" to Palette.Dim else config.toolMode.uppercase() to when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }
     "/memory" -> if (config.memoryEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
+    "/skills" -> if (config.skillsEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     else -> null
 }
 
@@ -106,7 +112,7 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
     val config = app.config
     val stats = chat.messages.mapNotNull { it.stats }
     val sessionRecords = UsageStats.since(app.usage.toList(), app.sessionStart)
-    val cost = UsageStats.estimatedCost(sessionRecords, config.estPriceIn, config.estPriceOut)
+    val cost = UsageStats.estimatedCost(sessionRecords, config.estPriceIn, config.estPriceOut) + app.liveTokens * config.estPriceOut / 1_000_000.0
     val compact = UsageStats::compact
     return buildList {
         add(pillSegment("◆ ${config.model}", Palette.Accent, 9))
@@ -117,9 +123,21 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
             else add(statusSegment("", "✎ no ARCANA.md", Palette.Muted, 3))
         }
         contextUsage(chat.messages, effectiveContext(config.contextTokens, app.modelContext))?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
-        if (stats.isNotEmpty()) add(StatusSegment(listOf(StatusPart("↑${compact(stats.sumOf { it.promptTokens.toLong() })}", Palette.Blue), StatusPart(" ↓${compact(stats.sumOf { it.completionTokens.toLong() })}", Palette.Green)), 3))
+        // ↑ (prompt) is exact and moves when a request ends; ↓ (reply) also counts the pieces streaming right now, until the exact figure replaces them
+        if (stats.isNotEmpty() || app.liveTokens > 0) add(StatusSegment(listOf(StatusPart("↑${compact(stats.sumOf { it.promptTokens.toLong() })}", Palette.Blue), StatusPart(" ↓${compact(stats.sumOf { it.completionTokens.toLong() } + app.liveTokens)}", Palette.Green)), 3))
         add(statusSegment("est.", priceText(cost), Palette.Orange, 7, bold = true))
         add(statusSegment("", "◷ ${spanText(System.currentTimeMillis() - app.sessionStart)}", Palette.Accent, 2))
+        // the skill being run: how many of its required steps are done (the gate sends the model back if it tries to finish early)
+        chat.skillTick
+        chat.skillRun?.let { run ->
+            val state = when {
+                run.finished && run.skippedCount > 0 -> Palette.Red
+                run.done == run.total -> Palette.Green
+                else -> Palette.Purple
+            }
+            val text = "◆ ${run.name} ${run.done}/${run.total}" + (if (run.skippedCount > 0) " ✕${run.skippedCount} skipped" else if (run.done == run.total) " ✓" else "")
+            add(pillSegment(text, state, 7))
+        }
         if (config.toolsEnabled) {
             if (app.tools == false) add(pillSegment("⚠ no tools", Palette.Red, 8))
             else add(pillSegment("⚙ ${config.toolMode}", when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }, 8))
@@ -181,8 +199,8 @@ fun ChatScreen(app: AppContext) {
     val notePicker = remember { PickerState() }
     val input = chat.input
     var mode by remember { mutableStateOf(ChatMode.Chat) }
-    // Esc leaves the message field: then j/k/g/s and the number keys are shortcuts, until Enter goes back to typing.
-    var browsing by remember { mutableStateOf(false) }
+    // Chat opens with the field NOT focused (browsing): j/k/g/s and the number keys are shortcuts until Enter starts typing; Esc leaves the field again.
+    var browsing by remember { mutableStateOf(true) }
     var past by remember { mutableStateOf<List<StoredChat>>(emptyList()) }
     var leaving by remember { mutableStateOf<Screen?>(null) }
     var saving by remember { mutableStateOf<SaveRequest?>(null) }
@@ -327,6 +345,19 @@ fun ChatScreen(app: AppContext) {
         }
     }
 
+    fun toggleSkills() {
+        val on = !app.config.skillsEnabled
+        app.update(app.config.copy(skillsEnabled = on))
+        if (!on) return toast("Skills are off: the model is not told about them.")
+        val vault = app.openVault().getOrNull() ?: return toast("Choose a vault first (Settings → Vault).", error = true)
+        val found = Skills.discover(vault, app.config.skillsFolder)
+        toast(when {
+            found.isEmpty() -> "Skills are on, but there are none in ${app.config.skillsFolder}/ yet (one folder per skill; see the Skills Guide note)."
+            !app.config.toolsEnabled -> "${found.size} skill(s): ${found.joinToString { it.name }}. Turn tools on (/tools) so the model can load them."
+            else -> "${found.size} skill(s): ${found.joinToString { Skills.summary(it) }}. Type / and pick one."
+        }, error = found.any { it.problems.isNotEmpty() })
+    }
+
     fun openMemory() {
         val vault = app.openVault().getOrNull() ?: return toast("Choose a vault first (Settings → Vault).", error = true)
         val file = runCatching { vault.ensureMemory() }.getOrElse { return toast("Could not create ${Vault.MEMORY_FILE}.", error = true) }
@@ -355,6 +386,7 @@ fun ChatScreen(app: AppContext) {
             "/vault" -> toggleVault()
             "/tools" -> toggleTools()
             "/memory" -> openMemory()
+            "/skills" -> toggleSkills()
             "/mode" -> cycleMode()
             "/append" -> openTargetPick(Target.Append)
             "/replace" -> openTargetPick(Target.Replace)
@@ -387,6 +419,7 @@ fun ChatScreen(app: AppContext) {
             Command("Attach a note…", "Chat", "@") { openNotePick() },
             Command("Attach a file or picture…", "Chat", "Ctrl+O") { openAttach() },
             Command("Memory file (ARCANA.md): open and edit", "Chat", "/memory") { openMemory() },
+            Command(if (app.config.skillsEnabled) "Skills: turn off" else "Skills: turn on (list them)", "Chat", "/skills") { toggleSkills() },
             Command("Tools mode: ${app.config.toolMode} → next (ask, auto, plan)", "Chat", "/mode", app.config.toolsEnabled) { cycleMode() },
             Command(if (app.config.toolsEnabled) "Tools: turn off" else "Tools: turn on (read and write notes and files)", "Chat", "/tools") { toggleTools() },
             Command(if (app.config.chatUseVault) "Answer from my vault: turn off" else "Answer from my vault: turn on", "Chat", "/vault") { toggleVault() },
@@ -398,16 +431,29 @@ fun ChatScreen(app: AppContext) {
     )
 
     // typing "/" at the start of a message opens a menu of commands and tools (↑↓ choose, Tab or Enter use, Esc close)
-    val slashItems = remember(app.config.vaultPath) {
-        SlashCommands + (chat.toolboxFor(app.config.copy(toolsEnabled = true, toolMode = "ask"))?.specs.orEmpty())
-            .map { SlashItem(it.name, it.description.substringBefore(". ").substringBefore("\n").take(80).trimEnd('.'), true) }
+    val skillList = remember(app.config.vaultPath, app.config.skillsEnabled, app.config.skillsFolder, chat.messages.size) {
+        val vault = app.openVault().getOrNull()
+        if (vault == null || !app.config.skillsEnabled) emptyList() else Skills.discover(vault, app.config.skillsFolder)
+    }
+    val slashItems = remember(app.config.vaultPath, skillList) {
+        SlashCommands + skillList.map { SlashItem("/" + it.name, it.description.ifEmpty { "(no description)" }.substringBefore(". ").take(80).trimEnd('.'), false, skill = true) } + (chat.toolboxFor(app.config.copy(toolsEnabled = true, toolMode = "ask"))?.specs.orEmpty())
+            .map { SlashItem(it.name, it.description.substringBefore(". ").substringBefore("\n").take(80).trimEnd('.'), true, kind = SlashKind.forTool(it.name, it.risk)) }
     }
     val slashQuery = input.text.takeIf { mode == ChatMode.Chat && !browsing && chat.question == null && chat.approval == null && it.startsWith("/") && ' ' !in it && '\n' !in it }?.drop(1)
     val slashMatches = if (slashQuery == null) emptyList() else slashMatches(slashItems, slashQuery).take(8)
     var slashIndex by remember(slashQuery) { androidx.compose.runtime.mutableIntStateOf(0) }
 
     fun useSlash(item: SlashItem) {
-        if (item.tool) input.set("Use the ${item.name} tool to ")
+        if (item.skill) {
+            // attaching is explicit: a chip above the field, and Arcana puts the skill's text into the message when it is sent (the model need not call use_skill)
+            val skill = skillList.firstOrNull { "/" + it.name == item.name }
+            input.clear()
+            if (skill == null) return toast("That skill is no longer in ${app.config.skillsFolder}/.", error = true)
+            if (skill.path !in chat.attachments.notes) chat.attachments.notes += skill.path
+            app.session.log(SessionKind.Attached, "Skill ${skill.name}", skill.path)
+            toast(if (app.config.toolsEnabled) "Skill ${skill.name} attached. Type what you want and press Enter (Backspace on an empty field removes it)."
+                else "Skill ${skill.name} attached, but tools are off, so it cannot act. Turn them on with /tools.", error = !app.config.toolsEnabled)
+        } else if (item.tool) input.set("Use the ${item.name} tool to ")
         else { input.clear(); runCommand(item.name) }
     }
 
@@ -437,7 +483,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.Chat -> when {
             output.selecting -> Hints("↑↓  move", "Space  tick", "c  copy", "b  code only", "Esc  leave")
             gen.state == GenState.Running -> Hints("Esc  cancel reply", "↑↓  scroll")
-            browsing -> Hints("Enter  back to typing", "s  select & copy", "↑↓/Space  scroll", "1-9  screens")
+            browsing -> Hints("Enter  type a message", "s  select & copy", "↑↓/Space  scroll", "1-9  screens")
             slashMatches.isNotEmpty() -> Hints("↑↓  choose", "Tab/Enter  use", "Esc  close")
             else -> Hints("Enter  send", "Alt+Enter  new line", "/  commands", "@  note", "Ctrl+O  attach", "Ctrl+S  save", "↑↓  scroll", "Esc  browse")
         }
@@ -680,7 +726,7 @@ fun ChatScreen(app: AppContext) {
                     val width = outputWidth()
                     val lines = buildList {
                         if (chat.messages.isEmpty() && gen.text.isEmpty()) {
-                            add(Line(Shortcuts.label("› Ask your second brain anything. @ attaches a note, Ctrl+O a file or picture, /vault makes answers come from your notes."), Palette.Hint))
+                            add(Line(Shortcuts.label("› Press Enter to start typing. Ask your second brain anything. @ attaches a note, Ctrl+O a file or picture, /vault makes answers come from your notes."), Palette.Hint))
                             add(Line(Shortcuts.label("› Ctrl+P lists every action. Esc leaves the field to scroll and copy."), Palette.Hint))
                             if (!app.config.toolsEnabled) add(Line("› Tools are off: type /tools so the model can read and write your notes and files (it asks before changing anything).", Palette.Hint))
                         }
@@ -737,11 +783,13 @@ fun ChatScreen(app: AppContext) {
                         val bg = if (selected) Palette.SurfaceHigh else com.jakewharton.mosaic.ui.Color.Unspecified
                         Row {
                             Label(if (selected) "▸ " else "  ", color = Palette.Cta, background = bg)
-                            Label(fit((if (item.tool) "⚙ " else "") + item.name, 22), color = if (item.tool) Palette.Orange else Palette.Cta, background = bg, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
-                            val state = if (item.tool) null else slashState(item.name, app.config, app.tools)
-                            Label(" " + fit(item.hint, (LocalContentWidth.current - 28 - 12).coerceAtLeast(10)), color = if (selected) Palette.Text else Palette.Muted, background = bg)
+                            Label(fit(item.kind.glyph + item.name, 24), color = item.kind.color, background = bg, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
+                            val state = if (item.tool || item.skill) null else slashState(item.name, app.config, app.tools)
+                            Label(" " + fit(item.hint, (LocalContentWidth.current - 30 - 12).coerceAtLeast(10)), color = if (selected) Palette.Text else Palette.Muted, background = bg)
                             // the state of a setting, so it is clear whether it is on right now
                             if (state != null) Label(" ${state.first} ", color = Palette.Background, background = state.second, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
+                            // what kind of entry it is (skill, or what a tool can do), in the colour of its name
+                            else item.kind.badge?.let { badge -> Label(" $badge ", color = Palette.Background, background = item.kind.color, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold) }
                         }
                     }
                     TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = maxInputRows(), attachments = chat.attachments)
@@ -764,7 +812,7 @@ private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, widt
             val band = Palette.UserBg
             add(Line("You", Palette.UserName, bold = true, background = band, entry = entry))
             wrap(sanitizeForTerminal(message.content), width).forEach { add(Line(it, Palette.UserText, background = band, entry = entry)) }
-            message.noteNames.forEach { add(Line("▤ ${sanitizeForTerminal(it.removeSuffix(".md"))}", Palette.UserName, background = band, entry = entry)) }
+            message.noteNames.forEach { add(Line(Skills.chipLabel(it)?.let { chip -> sanitizeForTerminal(chip) } ?: "▤ ${sanitizeForTerminal(it.removeSuffix(".md"))}", Palette.UserName, background = band, entry = entry)) }
             message.files.forEach { add(Line("❐ ${sanitizeForTerminal(it.name)}", Palette.UserName, background = band, entry = entry)) }
             message.imageNames.forEach { name ->
                 val kept = if (message.images.isEmpty()) " (picture not kept)" else ""
@@ -798,7 +846,7 @@ private fun entriesOf(m: ChatMessage): List<String> = when (m.role) {
 /** The one thing a tool call is about, for its line in the chat: its path, query or title. */
 private fun callSummary(call: ToolCall): String {
     val args = call.arguments
-    val key = listOf("command", "url", "question", "from", "path", "query", "pattern", "name", "glob", "title", "folder", "reason").filter { args[it] != null }
+    val key = listOf("command", "url", "question", "from", "path", "query", "pattern", "name", "glob", "title", "folder", "reason", "seconds").filter { args[it] != null }
     if (key.isEmpty()) return ""
     // a search names what it looks for and where; the others have one subject
     return key.take(2).joinToString("  ") { (args[it] as? JsonPrimitive)?.contentOrNull.orEmpty().replace('\n', ' ') }.trim()
@@ -839,7 +887,7 @@ private fun transcript(messages: List<ChatMessage>, model: String): String =
 /** The buttons under the message field. */
 private fun chatActions(browsing: Boolean, hasEntries: Boolean): List<ActionItem> =
     if (browsing) {
-        listOf(ActionItem("Enter", "Back to typing", accent = Palette.Cta), ActionItem("s", "Select & copy", hasEntries), ActionItem("↑↓", "Scroll"))
+        listOf(ActionItem("Enter", "Type a message", accent = Palette.Cta), ActionItem("s", "Select & copy", hasEntries), ActionItem("↑↓", "Scroll"))
     } else {
         listOf(
             ActionItem("Enter", "Send"),

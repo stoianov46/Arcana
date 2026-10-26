@@ -17,7 +17,8 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `Usage.kt` | `UsageRecord`, `UsageStore` (JSONL), `UsageTotals`, `UsageStats` (totals, `by`, `perDay`, `perHour`, `speedPerDay`, `insights`, `estimatedCost`, `since`, `compact`), `UsageInsights` |
 | `ImageFiles.kt` | picture rules + loading (`ImageAttachment`, base64) |
 | `TextFiles.kt` | text/PDF attachment rules + loading (`FileAttachment`, PDFBox extraction, `TextFiles.block`) |
-| `Tools.kt` | tool-calling types (`ToolCall`, `ToolSpec`, `ToolRisk`), `FileAccess` sandbox, `ToolBox` (all tools, `cheatSheet`, `describe`), prompts (`TOOLS_PROMPT`, `REQUEST_ACCESS_PROMPT`, `NO_TOOLS_PROMPT`), `ask_user`/`request_access` definitions, `cleanOption`, `looksLikeToolTask`, `describeNow` |
+| `Tools.kt` | tool-calling types (`ToolCall`, `ToolSpec`, `ToolRisk`), `FileAccess` sandbox, `ToolBox` (all tools, `cheatSheet`, `describe`), prompts (`TOOLS_PROMPT`, `REQUEST_ACCESS_PROMPT`, `NO_TOOLS_PROMPT`), `wait` (`MAX_WAIT_SECONDS`), `ask_user`/`request_access` definitions, `cleanOption`, `looksLikeToolTask`, `describeNow` |
+| `Skills.kt` | `Skill`, `Skills.discover` (one folder per skill, entry note `<name>.skill.md`, problems), `catalog`, `load`, `loadEntry`, `isEntry`, `chipLabel`, `find`, `summary`, `parseRequirements`/`requirementsOf`; `Requirement` and `SkillRun` (the completion gate's progress) |
 | `Shell.kt` | `ShellPolicy` (blocked / safe commands) and `runShell` (the `run_command` runner) |
 | `Web.kt` | `WebPolicy` (public addresses only), `fetchUrl` (manual redirects, size/time limits), `htmlToText` |
 | `WebSearch.kt` | `WebSearch.search` with three backends (DuckDuckGo HTML, SearXNG JSON, Brave API), pure parsers, `format`; `SearchResult` |

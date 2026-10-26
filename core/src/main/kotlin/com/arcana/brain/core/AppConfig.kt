@@ -80,6 +80,10 @@ data class AppConfig(
     val toolMode: String = "ask",
     /** How many rounds of tool use one question may take before the model must answer. */
     val toolSteps: Int = 8,
+    /** Skills (runbooks in the vault, see Skills.kt): the model gets a list of them and can load one with use_skill; Chat's "/" menu offers them. */
+    val skillsEnabled: Boolean = true,
+    /** The vault folder that holds one folder per skill. */
+    val skillsFolder: String = "Skills",
     /** What select mode copies: "markdown" (as written) or "plain" (Markdown markers removed). */
     val copyAs: String = "markdown",
     val summaryPrompt: String = "Summarize the following note. Start with a one-sentence TL;DR, " +

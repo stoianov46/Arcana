@@ -30,6 +30,8 @@ class Generation(
     private val client: OllamaClient,
     private val onBusy: (Boolean) -> Unit = {},
     private val onUsage: (ChatChunk) -> Unit = {},
+    /** Reports a change in the reply tokens streaming right now: positive as pieces arrive (about one token each), negative to take them back when the exact count arrives or the request ends. */
+    private val onLive: (Int) -> Unit = {},
     /** Called with the finished reply and its stats, right after it ends (not for a cancelled or failed one). */
     private val onComplete: (String, ReplyStats?) -> Unit = { _, _ -> },
     /**
@@ -44,6 +46,11 @@ class Generation(
     private val textCalls: () -> String = { "auto" },
     /** Asked in "ask" mode before such a call runs; false leaves the reply as plain text. */
     private val confirmTextCalls: (suspend (List<ToolCall>) -> Boolean)? = null,
+    /**
+     * Asked when the model is about to finish with a plain reply (no tool call): returns a message that sends it back to work (a skill still has
+     * a required step open), or null to let it finish. The message is hidden, like the "continue now" nudge; the owner limits how often.
+     */
+    private val gate: (() -> String?)? = null,
 ) {
     var state by mutableStateOf(GenState.Idle)
         private set
@@ -96,21 +103,36 @@ class Generation(
                         limit += onStepLimit.invoke(step)
                     }
                     val offered = if (onToolRound != null && step < limit) activeTools else null
-                    client.chat(messages, json, offered).collect { chunk ->
-                        if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) onUsage(chunk)
-                        if (chunk.content.isNotEmpty() || chunk.thinking.isNotEmpty()) streamed++
-                        calls += chunk.toolCalls
-                        if (chunk.done) {
-                            // Ollama's own counts when it sent them; otherwise what we measured ourselves
-                            stats = chunk.toStats() ?: ReplyStats(0, streamed, System.currentTimeMillis() - startedAt)
+                    var pieces = 0
+                    var liveAdded = 0
+                    try {
+                        client.chat(messages, json, offered).collect { chunk ->
+                            if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) {
+                                onUsage(chunk)
+                                // the exact figures are in now: take back the estimate that stood in for them
+                                if (liveAdded != 0) { onLive(-liveAdded); liveAdded = 0 }
+                            }
+                            if (chunk.content.isNotEmpty() || chunk.thinking.isNotEmpty()) {
+                                streamed++
+                                pieces++
+                                if (pieces - liveAdded >= LIVE_BATCH) { onLive(pieces - liveAdded); liveAdded = pieces }
+                            }
+                            calls += chunk.toolCalls
+                            if (chunk.done) {
+                                // Ollama's own counts when it sent them; otherwise what we measured ourselves
+                                stats = chunk.toStats() ?: ReplyStats(0, streamed, System.currentTimeMillis() - startedAt)
+                            }
+                            if (chunk.content.isNotEmpty()) {
+                                buffer.append(chunk.content)
+                                text = buffer.toString()
+                                thinking = false
+                            } else if (chunk.thinking.isNotEmpty()) {
+                                thinking = true
+                            }
                         }
-                        if (chunk.content.isNotEmpty()) {
-                            buffer.append(chunk.content)
-                            text = buffer.toString()
-                            thinking = false
-                        } else if (chunk.thinking.isNotEmpty()) {
-                            thinking = true
-                        }
+                    } finally {
+                        // a cancelled or failed request never gets exact figures: do not leave its estimate in the counters
+                        if (liveAdded != 0) onLive(-liveAdded)
                     }
                     // a call the model wrote as text instead of making it: run it as the real thing
                     var roundText = buffer.toString().trim()
@@ -121,6 +143,7 @@ class Generation(
                     }
                     if (calls.isNotEmpty() && onToolRound != null && offered != null) {
                         step++
+                        nudges = 0 // the limit is for announcements in a row: a long runbook narrates before many of its steps
                         val round = stats
                         messages = messages + onToolRound.invoke(roundText, calls.toList(), round)
                         // the next round starts with a clean slate: what the model said before its tools is now in the chat
@@ -135,6 +158,17 @@ class Generation(
                         text = ""
                         stats = null
                         continue
+                    }
+                    // a skill run with a required step still open: the reply is not accepted as the end, the model is told which step is missing
+                    if (calls.isEmpty() && onToolRound != null && offered != null && gate != null) {
+                        val push = gate.invoke()
+                        if (push != null) {
+                            val said = buffer.toString().trim()
+                            messages = messages + (if (said.isEmpty()) emptyList() else onToolRound.invoke(said, emptyList(), stats)) + ChatMessage.user(push)
+                            text = ""
+                            stats = null
+                            continue
+                        }
                     }
                     if (buffer.isBlank()) {
                         error = "The model returned an empty response."
@@ -190,6 +224,7 @@ fun rememberGeneration(app: AppContext, feature: String): Generation {
             scope, app.client,
             onBusy = { busy -> app.busy = (app.busy + if (busy) 1 else -1).coerceAtLeast(0) },
             onUsage = { chunk -> app.recordUsage(feature, chunk) },
+            onLive = { delta -> app.addLiveTokens(delta) },
         )
     }
     // Leaving the screen cancels the reply, so the logo must not keep animating for it.
@@ -197,7 +232,11 @@ fun rememberGeneration(app: AppContext, feature: String): Generation {
     return generation
 }
 
+/** How many announcements in a row (without a tool call in between) are pushed on before the reply is accepted as it is. */
 private const val MAX_NUDGES = 2
+
+/** The live token counters move in steps of this many streamed pieces (one recomposition per piece would be wasteful). */
+private const val LIVE_BATCH = 4
 private const val NUDGE = "Continue now: call the tool you just described. Do not describe it again, and do not ask me to confirm."
 
 /** True when [reply] ends by announcing a next step ("Next, I will read …") rather than giving an answer or asking the user something. */

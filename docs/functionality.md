@@ -31,24 +31,26 @@ links), *Top tags*. Right: *Jump back in* (Ask your brain, AI notes, this sessio
 
 ## Chat (hub)
 
-- The message field **always has the keyboard** (letters never trigger shortcuts). `Esc` leaves the field into "browse" mode (scroll,
-  `s` select & copy, `Enter` back to typing); while a reply runs `Esc` cancels it instead.
+- Chat **opens in browse mode** (field not focused: `j`/`k` scroll, `s` select & copy, digits switch screens); `Enter` starts typing and from then on the
+  field has the keyboard (letters never trigger shortcuts). `Esc` goes back to browse mode; while a reply runs `Esc` cancels it instead.
+  (`browsing` starts `true` and is local to the screen, so it resets whenever the tab is opened; `/new` puts the cursor in the field.)
 - **Multi-line field**: grows to a quarter of the screen (3–8 rows) with a scrollbar (`WrappedText`); `Alt+Enter`, or `\` then Enter,
   starts a new line; Up/Down move between lines. `Enter` sends. Long pastes are repaired from the clipboard (`KeyDispatcher`).
 - **The "/" menu**: a message that starts with `/` (no space yet) opens `slashMatches(SlashCommands + tool specs, typed)` above the
   field (≤8 rows, counted in `below`): ↑↓ choose, Tab/Enter use, Esc clears. A command runs through `runCommand` (`/new /history /save
-  /note /image /vault /tools /mode /memory /append /replace /clear`); settings show an ON/OFF/mode badge (`slashState`); a tool inserts
-  "Use the <tool> tool to " (tools are called by the model, not typed).
+  /note /image /vault /tools /mode /memory /skills /append /replace /clear`); settings show an ON/OFF/mode badge (`slashState`); a tool inserts
+  "Use the <tool> tool to " (tools are called by the model, not typed); each entry is coloured by what it is (`SlashKind`: commands cyan, skills purple, read-only tools green, changing tools orange, shell/delete red, web blue) with a glyph and a badge word; each **skill** found in the vault is listed as `/<name>` and attaches
+  it as a `◆ skill <name>` chip whose text is added to the message on send (see [tools-and-agent.md](tools-and-agent.md), "Skills").
 - `@` attaches a vault **note**; `Ctrl+O` attaches **files** (pictures ≤5/10 MB for a vision model, **PDFs** ≤20 MB, text files ≤5/2 MB).
   Backspace on an empty field removes the last attachment.
 - `/vault` toggles **answer from vault** (each question searches the vault; the reply lists `Sources` and cites `[[Note]]`).
-  `/tools` toggles tools, `/mode` cycles ask → auto → plan, `/memory` opens `ARCANA.md`.
+  `/tools` toggles tools, `/mode` cycles ask → auto → plan, `/memory` opens `ARCANA.md`, `/skills` toggles skills and lists them.
 - Replies stream; the footer shows `✓ Done · time · ↑ prompt ↓ output tokens · tok/s` (a round that ended in a tool call shows a quiet
   `· step` line). The "thinking" status names the model. A reply keeps running when you leave the screen: with an empty field the
   number keys (and `Ctrl+P`) switch screens.
 - **Status bar under the field** (`StatusBar(chatStatus(…))`): model pill, memory size (`✎ memory 2.3k`), context gauge (`ctx █░░ 3%
   3.9k/131k`: last prompt + reply against `contextTokens` or the model's `context_length`, never more than the model supports), tokens in
-  and out, estimated price (`est.`, from Settings → Ollama → Price per million tokens), session time, tool-mode pill. Least important
+  and out (`↓` and the bottom bar's `⚡ N tok` also count the reply tokens streaming right now via `AppContext.liveTokens`, replaced by Ollama's exact figures when the request ends; `↑` prompt tokens are exact and step once per model round), estimated price (`est.`, from Settings → Ollama → Price per million tokens), session time, tool-mode pill. Least important
   items drop first on a narrow terminal.
 - Chats are **kept automatically** (`ChatStore`, one JSON per chat; the latest reopens at start; `/history`). Leaving never asks (only
   with *Keep chats* off does Arcana ask). The header says `kept in history · not in vault (Ctrl+S)`; **Ctrl+S "Save to vault"** turns
@@ -68,7 +70,7 @@ Modes: ask / auto / plan. Shell commands and web pages are separate switches, of
 
 The vault note `ARCANA.md` (first 4,000 characters, no frontmatter) is added to every chat's system prompt (`Vault.memory()` →
 `Prompts.chatMessages(memory = …)`; Settings → Prompts → *Memory file*; the status bar shows `✎ memory`). `ChatSession.offerMemory()` runs
-when Chat opens: if the vault has no `ARCANA.md` and `memoryOffered` is false it creates one from `Vault.MEMORY_TEMPLATE` (eleven rules
+when Chat opens: if the vault has no `ARCANA.md` and `memoryOffered` is false it creates one from `Vault.MEMORY_TEMPLATE` (fourteen rules
 for using tools, plus empty sections) and shows "Memory file created" with an offer to open it; the flag then stays true, so a file the user
 deletes comes back only through `/memory`. The `remember` tool appends to its "Remembered" section (always asks). `ToolBox.cheatSheet()`
 adds the real tool list to the same prompt.

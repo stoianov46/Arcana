@@ -9,6 +9,9 @@ import com.arcana.brain.app.input.TextFieldState
 import com.arcana.brain.core.AppConfig
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ChatStore
+import com.arcana.brain.core.Requirement
+import com.arcana.brain.core.Skills
+import com.arcana.brain.core.SkillRun
 import com.arcana.brain.core.FileAttachment
 import com.arcana.brain.core.ImageAttachment
 import com.arcana.brain.core.Prompts
@@ -73,7 +76,24 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             onStepLimit = ::stepLimit,
             textCalls = { app.config.textCalls },
             confirmTextCalls = ::confirmTextCalls,
+            gate = { skillRun?.nudge() },
         )
+    }
+
+    /**
+     * The skill being run, with its required steps ticked off as the model does them (null when no skill with `requires:` is active). It is
+     * started by a skill chip on a message or by the model's `use_skill` call; the Chat status bar shows its progress (see [skillTick]).
+     */
+    var skillRun by androidx.compose.runtime.mutableStateOf<SkillRun?>(null)
+        private set
+
+    /** Changes whenever [skillRun] makes progress, so the status bar redraws. */
+    var skillTick by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+
+    private fun startSkillRun(name: String, requirements: List<Requirement>) {
+        skillRun = if (requirements.isEmpty()) null else SkillRun(name, requirements)
+        skillTick++
     }
 
     /** A change the model wants to make, waiting for the user's answer. */
@@ -191,6 +211,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             shell = config.toolShell,
             web = config.toolWeb,
             searchBackend = config.searchBackend, searchUrl = config.searchUrl, searchKey = config.searchKey,
+            skillsFolder = if (config.skillsEnabled) config.skillsFolder else "",
         )
     }
 
@@ -210,6 +231,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 })
                 add(message)
                 added += message
+                skillRun?.let { it.observe(call.name, call.arguments.toString(), message.content); skillTick++ }
                 continue
             }
             val spec = box.find(call.name)
@@ -303,6 +325,13 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val message = ChatMessage.toolResult(call.name, result)
             add(message)
             added += message
+            // the skill run: a skill the model loaded itself starts it; every call and result is ticked off against the required steps
+            if (call.name == "use_skill" && !result.startsWith("Error:")) {
+                val skill = Skills.find(box.skills, (call.arguments["name"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty())
+                val vault = app.openVault().getOrNull()
+                if (skill != null && vault != null && skillRun?.name != skill.name) startSkillRun(skill.name, Skills.requirementsOf(vault, skill.path))
+            }
+            skillRun?.let { it.observe(call.name, call.arguments.toString(), result); skillTick++ }
         }
         return added
     }
@@ -424,13 +453,20 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val modelCanUseTools = app.tools != false
         val box = if (!modelCanUseTools) null else toolboxFor(app.config)
         toolbox = box
+        // a new message of the user ends any earlier run (the gate must not drag an unrelated question back into an unfinished skill)...
+        if (skillRun != null) { skillRun = null; skillTick++ }
+        // ...and a skill chip on it starts a run of that skill (its required steps are then watched)
+        history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }?.let { entry ->
+            val vault = app.openVault().getOrNull()
+            if (vault != null) startSkillRun(Skills.nameOfEntry(entry), Skills.requirementsOf(vault, entry))
+        }
         val canRequest = modelCanUseTools && box == null
         val offered = when {
             box == null -> if (canRequest) JsonArray(listOf(REQUEST_ACCESS_DEFINITION, ASK_USER_DEFINITION)) else null
             app.config.toolMode == "plan" -> JsonArray(box.definitions() + REQUEST_ACCESS_DEFINITION)
             else -> box.definitions()
         }
-        gen.start(tools = offered, maxSteps = app.config.toolSteps) {
+        gen.start(tools = offered, maxSteps = Skills.stepsFor(history, app.config.toolSteps)) {
             val config = app.config
             val vault = app.openVault().getOrNull()
             val hits = if (config.chatUseVault && vault != null) vault.search(body, config.contextNotes, config.contextCharsPerNote) else null
@@ -443,7 +479,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private fun noteTexts(vault: Vault?, window: List<ChatMessage>): Map<String, String> {
         if (vault == null) return emptyMap()
         return window.flatMap { it.noteNames }.distinct().mapNotNull { path ->
-            runCatching { path to Vault.splitFrontmatter(vault.read(path)).second.take(MAX_NOTE_CHARS) }.getOrNull()
+            // a skill's entry note goes in as the skill loader gives it (folder, file list, instructions); any other note as its text
+            Skills.loadEntry(vault, path)?.let { path to it }
+                ?: runCatching { path to Vault.splitFrontmatter(vault.read(path)).second.take(MAX_NOTE_CHARS) }.getOrNull()
         }.toMap()
     }
 
@@ -455,6 +493,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** Starts an empty conversation. The old one stays saved and can be opened again from the history. */
     fun startNew() {
+        skillRun = null
         toolsDeclined = false
         messages.clear()
         input.clear()

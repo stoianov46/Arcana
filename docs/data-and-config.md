@@ -56,6 +56,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `textCalls` | `auto` | a tool call written as text: `auto` runs it, `ask` shows it first, `off` leaves it |
 | `toolFolders` | `""` | extra folders for tools (`;`-separated) |
 | `toolAutoRead` | true | read-only tools run without asking |
+| `skillsEnabled` / `skillsFolder` | true / `Skills` | the model is told which skills exist and gets `use_skill`; the vault folder with one folder per skill |
 | `toolSteps` | 8 | max tool rounds per question (1–60); at the limit a dialog offers that many more |
 | `memoryEnabled` / `memoryOffered` | true / false | add `ARCANA.md` to every chat / already created or checked once (so a deleted file is not recreated) |
 | `contextTokens` | 0 | `num_ctx` to ask Ollama for (0 = Ollama's default); the Chat gauge counts against it, capped at the model's maximum |
