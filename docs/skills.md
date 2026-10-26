@@ -171,6 +171,9 @@ loaded as text). Restoring an old chat starts no run.
 15. **A count step is satisfied by ANY matching call.** `append_to_note x3` is ticked by the three appends of the run, including unrelated later ones (links, an index line), so it cannot tell whether the analysis parts were appended. Bind each step to its content with `~`: `append_to_note ~ ## LP economics` ticks only when the call's content contains that heading (the forecast skill does this for its three parts).
 16. **Arcana cannot enforce an order, the skill's script can.** The gate is a finish-guard (it speaks only when the model tries to end) and steps are independent, so a model that keeps calling tools can skip a step unnoticed until the end. For must-be-in-order work let the script read the result (read-only) and refuse: `gt_forecast.py part --n N` withholds part N (red `exit code 1`, `STOP: part N-1 is NOT in the report note yet`) until the previous part is really in the note, and prints that part again.
 17. **Do not make an end-of-run question look like an input.** A skill that lists "tokens spent" in its input table and says "get every input" gets that question asked first (it happened with a small model). Name the inputs to ask at the start explicitly, and say which questions belong to the end.
+18. **A `=>` result condition is a substring match, so the success text must appear ONLY on success.** The forecast skill's first `check` printed "…until this check prints REPORT_COMPLETE=yes" in its *failure* message; that contained the very text the step waits for, so a failing check ticked the step and the gate stayed silent while the report was incomplete. Scripts used with `=>` must print the success token on success only (and never quote it in help, STOP or FIX text); test the failure output for it.
+19. **A path the model passes to a script may be wrong, and a script that silently skips its check hides it.** Gemma passed the note's title instead of its vault path; the script could not find the file and quietly turned its order check off. Scripts must resolve a path leniently (vault path, absolute path or bare title; titles contain dots, so never use `Path.suffix` on them), and **fail loudly and early** on a path that cannot be resolved (before any slow work).
+20. **A status written before the last check is stale.** A model fixed the report after two failed checks and wrote `status: incomplete` without checking again. Make the status checkable: the forecast skill's `check --final` compares the note's `status:` with its content (`FINAL_OK=yes`/`no`, with the exact `set_properties` call to fix it) and a `requires:` step demands `FINAL_OK=yes`; the skill says "run the check again after EVERY fix".
 
 ## 7a. Diagnosing a failed run (look at the calls, not at the model's explanation)
 
@@ -178,7 +181,7 @@ A small model that is asked "why did it fail?" **makes up a plausible reason** (
 "a loop"). Never rely on it. The truth is in the saved chat: `~/.config/arcana/chats/<id>.json` has every assistant `tool_calls` entry and every `tool` result in order.
 Compare the sequence of calls with the skill's steps (a strong model such as Qwen follows it exactly; a small one drops steps): which tool was called after which result,
 which result was a `STOP:` / `REPORT_COMPLETE=no`, and what came next. The report's own properties (`status`, `missing`) and the badge (`◆ name 7/11`, `✕ skipped`) say the same in short.
-Known small-model patterns: it does only the **last** of two instructions in one tool result; it asks end-of-run questions at the start; it ignores a failing verification; it
+Known small-model patterns: it does only the **last** of two instructions in one tool result; it fixes something and does **not** re-run the verification (so a status written from the earlier result is stale); it asks end-of-run questions at the start; it ignores a failing verification; it
 narrates instead of calling a tool; it rationalizes afterwards.
 
 ## 8. Code map
@@ -201,7 +204,7 @@ narrates instead of calling a tool; it rationalizes afterwards.
 It analyses one DeFi pool from the free GeckoTerminal API (candles, statistics, anomaly scan, backtested forecast with an ASCII and a Mermaid
 chart, a concentrated-liquidity range study, a verdict) and saves a report with note tools only. It shows every technique above: a script that
 does HTTP and math, outputs handed over in small parts (`part --n`), `NEXT:` lines in tool results, a `check` command whose result is a `requires:`
-condition, an order enforced by the script itself (`analyze --note …`, then `part --n` refuses to skip an append), content-bound `append_to_note ~ ## …` steps, `elapsed_time` for the total work time, `set_properties` for the final status, and `output:` for the results folder.
+condition (`check`: content, and `check --final`: that the `status:` property tells the truth about it), an order enforced by the script itself (`analyze --note …`, then `part --n` refuses to skip an append; the note may be given by path or just by title), content-bound `append_to_note ~ ## …` steps, `elapsed_time` for the total work time, `set_properties` for the final status, and `output:` for the results folder.
 
 ## 10. Changing the skills feature: checklist
 
