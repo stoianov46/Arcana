@@ -235,6 +235,7 @@ If a skill lists `requires:` steps, the Chat status bar shows `◆ coingecko-for
 - **The badge stays below full:** the model has not done a step, or its result condition has not been met (for example the check still says `REPORT_COMPLETE=no`). Let it continue; after three tries per step Arcana lets it end, and the badge shows what was skipped.
 - **A red `exit code 1` in the chat:** a skill's verification command uses it to say "not complete yet". It is not a crash.
 - **The report says `incomplete`:** the skill ended with steps missing; its note lists what is missing.
+- **You asked the model why a run failed and its answer sounds odd:** small models make up a reason (for example blaming a data limit). The badge (`◆ name 7/11`, `✕ skipped`) and the report's `status` / `missing` properties say what really happened; the chat file in `~/.config/arcana/chats/` has every tool call in order.
 - **The model ends without doing anything:** small models sometimes only describe a step. Arcana nudges them; if it persists, use a larger model (Settings → Ollama → Model).
 """.trim(),
     ),

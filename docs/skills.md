@@ -168,6 +168,18 @@ loaded as text). Restoring an old chat starts no run.
 12. **Tools off:** a skill chip still attaches (a toast warns), the text is delivered, but the model cannot act; skills need *Tools in Chat*.
 13. **Rate limits are the skill's problem.** The forecast skill's script waits between API calls and the model uses `wait` on HTTP 429; the CoinGecko free API allows only about 5–7 requests a minute.
 14. **Old chats:** a chat reopened from history has no run (the badge is empty) even if it contains a skill chip.
+15. **A count step is satisfied by ANY matching call.** `append_to_note x3` is ticked by the three appends of the run, including unrelated later ones (links, an index line), so it cannot tell whether the analysis parts were appended. Bind each step to its content with `~`: `append_to_note ~ ## LP economics` ticks only when the call's content contains that heading (the forecast skill does this for its three parts).
+16. **Arcana cannot enforce an order, the skill's script can.** The gate is a finish-guard (it speaks only when the model tries to end) and steps are independent, so a model that keeps calling tools can skip a step unnoticed until the end. For must-be-in-order work let the script read the result (read-only) and refuse: `gt_forecast.py part --n N` withholds part N (red `exit code 1`, `STOP: part N-1 is NOT in the report note yet`) until the previous part is really in the note, and prints that part again.
+17. **Do not make an end-of-run question look like an input.** A skill that lists "tokens spent" in its input table and says "get every input" gets that question asked first (it happened with a small model). Name the inputs to ask at the start explicitly, and say which questions belong to the end.
+
+## 7a. Diagnosing a failed run (look at the calls, not at the model's explanation)
+
+A small model that is asked "why did it fail?" **makes up a plausible reason** (a run that skipped two `append_to_note` calls was explained as "an API data limit" and
+"a loop"). Never rely on it. The truth is in the saved chat: `~/.config/arcana/chats/<id>.json` has every assistant `tool_calls` entry and every `tool` result in order.
+Compare the sequence of calls with the skill's steps (a strong model such as Qwen follows it exactly; a small one drops steps): which tool was called after which result,
+which result was a `STOP:` / `REPORT_COMPLETE=no`, and what came next. The report's own properties (`status`, `missing`) and the badge (`◆ name 7/11`, `✕ skipped`) say the same in short.
+Known small-model patterns: it does only the **last** of two instructions in one tool result; it asks end-of-run questions at the start; it ignores a failing verification; it
+narrates instead of calling a tool; it rationalizes afterwards.
 
 ## 8. Code map
 
@@ -189,7 +201,7 @@ loaded as text). Restoring an old chat starts no run.
 It analyses one DeFi pool from the free GeckoTerminal API (candles, statistics, anomaly scan, backtested forecast with an ASCII and a Mermaid
 chart, a concentrated-liquidity range study, a verdict) and saves a report with note tools only. It shows every technique above: a script that
 does HTTP and math, outputs handed over in small parts (`part --n`), `NEXT:` lines in tool results, a `check` command whose result is a `requires:`
-condition, `elapsed_time` for the total work time, `set_properties` for the final status, and `output:` for the results folder.
+condition, an order enforced by the script itself (`analyze --note …`, then `part --n` refuses to skip an append), content-bound `append_to_note ~ ## …` steps, `elapsed_time` for the total work time, `set_properties` for the final status, and `output:` for the results folder.
 
 ## 10. Changing the skills feature: checklist
 
