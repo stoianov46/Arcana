@@ -294,10 +294,10 @@ fun LibraryScreen(app: AppContext) {
             }
             mode == LibraryMode.Reading && current != null && !wide -> Panel(current.title) { NotePreview(app, vault.getOrNull(), index, current, preview, previewRows) }
             wide -> {
-                val left = ((width - 1) * 42 / 100).coerceAtLeast(30)
+                val left = ((width - 1) * 30 / 100).coerceAtLeast(28)
                 val right = (width - 1 - left).coerceAtLeast(30)
                 Row(Modifier.fillMaxWidth()) {
-                    Box(Modifier.weight(0.42f)) {
+                    Box(Modifier.weight(0.30f)) {
                         CompositionLocalProvider(LocalContentWidth provides left) {
                             Panel(if (showingTags) "Tags" else "Notes · ${shown.size}", Modifier.height(listRows + 3), accent = if (mode == LibraryMode.List) Palette.Accent else Palette.Dim) {
                                 NoteList(showingTags, tags, tagPicker, shown, rows, labelOf, picker, listRows, filter)
@@ -305,7 +305,7 @@ fun LibraryScreen(app: AppContext) {
                         }
                     }
                     HGap()
-                    Box(Modifier.weight(0.58f)) {
+                    Box(Modifier.weight(0.70f)) {
                         CompositionLocalProvider(LocalContentWidth provides right) {
                             Panel(current?.title ?: "Preview", Modifier.height(listRows + 3), accent = if (mode == LibraryMode.Reading) Palette.Accent else Palette.Dim) {
                                 if (folder != null) FolderSummary(folder) else if (current == null) Hint("Choose a note to see its links and content.") else NotePreview(app, vault.getOrNull(), index, current, preview, previewRows)
@@ -387,7 +387,7 @@ private fun NotePreview(app: AppContext, vault: Vault?, index: VaultIndex, note:
         names("← linked from", index.backlinksOf(note.path), Palette.Text)
         names("≈ related", index.related(note.path, 6), Palette.Muted)
         if (note.unresolved.isNotEmpty()) wrap("✕ broken: " + note.unresolved.joinToString(", "), width).forEach { out += Line(it, Palette.Red) }
-        out += Line("─".repeat(width.coerceAtMost(60)), Palette.Dim)
+        out += Line("─".repeat(width), Palette.Dim)
         val body = vault?.let { v -> runCatching { Vault.splitFrontmatter(v.read(note.path)).second }.getOrNull() }
         out += if (body == null) listOf(Line("The note could not be read.", Palette.Red))
         else renderMarkdown(parseMarkdown(body), width, rich = config.renderMarkdown, plainGlyphs = config.plainGlyphs)

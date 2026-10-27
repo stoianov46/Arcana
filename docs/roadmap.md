@@ -15,7 +15,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 | 11 | Console output fills the remaining chat height | needs repro (idle chat fills the height at 24, 40 and 60 rows; the gap may only show while a reply runs or an approval is open) |
 | 30 | Split the thinking process from the answer | todo |
 | 31 | Handle `The model returned an empty response`: one hidden retry before the error (not a setting yet) | done |
-| 33 | Library: narrower notes list, wider note content | todo |
+| 33 | Library: narrower notes list, wider note content (30 % / 70 %) | done |
 
 ## Phase 2: Safety and approval
 
