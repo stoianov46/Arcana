@@ -62,6 +62,20 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 | `capture(text, files)` | writes to today's daily note via `Vault.capture`, copies attached files |
 | `newSession()` | ends the session, starts fresh (empty chat, zero usage) without restarting |
 
+## Subsystems added around the chat loop
+
+| Subsystem | Where | One line |
+|---|---|---|
+| Compaction | `core/Compaction.kt`, `ChatSession.compact` / `autoCompactDue` | a summary message is inserted into the chat; `Compaction.forModel` decides what the model is sent; nothing is deleted |
+| Context window | `AppContext.loadedContext` (`/api/ps`), `effectiveContext`, `UsageStats.contextSize` | the gauge counts against what Ollama really loaded |
+| Pseudo-tools | `ChatSession.runTools`: `ask_user`, `request_access`, `request_mode`, `chat_stats` | answered by the chat, not by `ToolBox` |
+| Previews | `core/Diff.kt`, `ToolSpec.preview` | git-style diff in the approval panel |
+| Project context | `ToolBox(project = …)`, `AppConfig.projectFolder` | allowed root, relative base, instructions in the system prompt |
+| Tool usage | `core/ToolUsage.kt`, `AppContext.recordToolUse`, Usage → Tools | per-tool calls, result size, time |
+| Sounds | `core/Sound.kt`, a `snapshotFlow` in `Shell` | sounds for attention, done, failed |
+| Setup and CLI | `core/Bootstrap.kt`, `screens/Setup.kt`, `Cli.kt` | see [distribution.md](distribution.md) |
+| Storage | `core/Storage.kt`, Settings → Storage | size and clearing of Arcana's own files |
+
 ## Data flow of a chat question (the main path)
 
 1. `Chat.kt` `send()` → `ChatSession.send(text)`.
