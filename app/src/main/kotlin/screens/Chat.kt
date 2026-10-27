@@ -116,7 +116,8 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
     val cost = UsageStats.estimatedCost(sessionRecords, config.estPriceIn, config.estPriceOut) + app.liveTokens * config.estPriceOut / 1_000_000.0
     val compact = UsageStats::compact
     return buildList {
-        add(pillSegment("◆ ${config.model} (${config.temperature})", Palette.Accent, 9))
+        add(pillSegment("◆ ${config.model}", Palette.Accent, 9))
+        add(statusSegment("temperature", "°${config.temperature}", Palette.Accent, 6))
         if (config.chatUseVault) add(pillSegment("◉ vault", Palette.Cta, 6))
         // the memory file the assistant reads in every chat: shown, so you can see that it is in use (and how much room it takes)
         if (config.memoryEnabled) {
