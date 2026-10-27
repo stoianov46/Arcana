@@ -78,6 +78,8 @@ data class AppConfig(
     val searchBackend: String = "duckduckgo",
     val searchUrl: String = "",
     val searchKey: String = "",
+    /** The project the user works on: a folder that is allowed like the vault, where relative paths and commands start, and whose own instructions (ARCANA.md, CLAUDE.md or AGENTS.md) go to the model. Empty = none. */
+    val projectFolder: String = "",
     /** The model may ask to read web pages (fetch_url; every address asks first). Off by default. */
     val toolWeb: Boolean = false,
     /** The model may ask to run shell commands (every one needs approval). Off by default. */

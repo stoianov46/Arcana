@@ -209,6 +209,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         approval?.answer?.complete(choice)
     }
 
+    /** The project folder from Settings (a missing or non-folder path counts as none). */
+    fun projectFolder(config: AppConfig): java.nio.file.Path? =
+        config.projectFolder.trim().takeIf { it.isNotEmpty() }?.let { AppContext.expandHome(it) }?.takeIf { java.nio.file.Files.isDirectory(it) }
+
     /** The tools for the current settings, or null when tools are off. */
     fun toolboxFor(config: AppConfig): ToolBox? {
         if (!config.toolsEnabled) return null
@@ -217,6 +221,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             app.openVault().getOrNull(), folders,
             backups = ConfigStore.defaultPath().resolveSibling("backups"),
             outputFolder = config.outputFolder,
+            project = projectFolder(config),
             model = config.model,
             readOnly = config.toolMode == "plan",
             shell = config.toolShell,

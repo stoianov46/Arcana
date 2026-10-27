@@ -76,7 +76,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `web_search` | Web | `query`, `limit?` | same switch as `fetch_url`; see "Web"; returns title, address and snippet per result (≤10) |
 | `request_access` | pseudo-tool | `reason` | the only tool a model has when tools are off (plus `ask_user`); asks the user to turn tools on or leave plan mode |
 
-Allowed roots = vault root + `toolFolders` (`;`-separated, `~` expanded). Writes additionally refuse any path containing a `.git`
+Allowed roots = vault root + the **project folder** (`projectFolder`) + `toolFolders` (`;`-separated, `~` expanded). Writes additionally refuse any path containing a `.git`
 or `.obsidian` segment. Backups: `<config dir>/backups/<yyyyMMdd-HHmmss>-<name>` (suffix `.2`, `.3` on collision).
 `ToolBox.cheatSheet()` lists every tool with its exact parameter names (optional ones end in `?`); it goes into the system prompt
 with `ToolBox.describe()` so small models neither forget nor invent tools.
@@ -148,6 +148,10 @@ commands (pwd, date, whoami, uname, hostname, which, git status/log/diff/show/br
 on. Everything else shows "Run this command?" with the command, folder and timeout (never "always"). `runShell`: `/bin/sh -c`, stdin
 closed, stdout+stderr merged, output capped at 20,000 characters (start and end kept), 60 s default / 600 s max, the process tree is killed
 on timeout or cancel. `cwd` must be inside an allowed folder. Plan mode never offers it.
+
+## Project context (`projectFolder`)
+
+Settings → Tools → *Project folder* (`AppConfig.projectFolder`, `~` expanded; a path that is not a folder counts as none: `ChatSession.projectFolder`) makes `ToolBox(project = …)`: the folder is an allowed root, `base` (what a relative path and the default `cwd` of `run_command` / `git_*` mean) becomes the project instead of the vault (`relativeTo` rewrites the tool descriptions: "relative to the project folder"), and `describe()` adds `projectNote`: the path, the top level (≤40 entries, no hidden ones or `node_modules`/`build`/…) and the project's own instructions (the first of `PROJECT_FILES` = `ARCANA.md`, `CLAUDE.md`, `AGENTS.md`, ≤3,000 characters). The vault tools (`search_notes`, `create_note`…) keep working on the vault. The Chat status bar shows `▣ <folder name>`.
 
 ## Web (`fetch_url`)
 

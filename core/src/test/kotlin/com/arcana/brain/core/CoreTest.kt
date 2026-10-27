@@ -582,6 +582,32 @@ class CoreTest {
     }
 
     @Test
+    fun aProjectIsAllowedStartsRelativePathsThereAndPassesOnItsInstructions() {
+        val root = Files.createTempDirectory("arcana-project")
+        val vaultDir = Files.createDirectories(root.resolve("vault"))
+        val project = Files.createDirectories(root.resolve("shop"))
+        Files.writeString(project.resolve("index.html"), "<h1>hi</h1>\n")
+        Files.createDirectories(project.resolve("src")); Files.createDirectories(project.resolve("node_modules")); Files.createDirectories(project.resolve(".git"))
+        Files.writeString(project.resolve("CLAUDE.md"), "Use tabs. Run npm test before you finish.")
+        Files.writeString(vaultDir.resolve("note.md"), "vault note")
+        val box = ToolBox(Vault(vaultDir), emptyList(), root.resolve("b"), project = project)
+        // relative paths mean the project; the vault is still reachable by its absolute path
+        assertTrue("<h1>hi</h1>" in box.execute(call("read_file", "path" to "index.html")))
+        assertTrue("vault note" in box.execute(call("read_file", "path" to vaultDir.resolve("note.md").toString())))
+        assertTrue(box.folderToGrant(call("list_dir", "path" to project.toString())) == null, "the project is allowed without asking")
+        val describe = box.describe()
+        assertTrue("PROJECT:" in describe && project.toString() in describe && "index.html" in describe && "src/" in describe, describe)
+        assertTrue("node_modules" !in describe && ".git" !in describe, "noise and hidden entries are left out of the listing")
+        assertTrue("Use tabs. Run npm test" in describe && "(CLAUDE.md)" in describe, describe)
+        assertTrue("relative to the project folder" in box.cheatSheet() || "project folder" in box.find("read_file")!!.parameters.toString())
+        // ARCANA.md outranks CLAUDE.md; no project means no note and relative paths mean the vault
+        Files.writeString(project.resolve("ARCANA.md"), "Arcana rules")
+        assertTrue("Arcana rules" in box.describe() && "Use tabs" !in box.describe())
+        val plain = ToolBox(Vault(vaultDir), emptyList(), root.resolve("b"))
+        assertTrue("PROJECT:" !in plain.describe() && "vault note" in plain.execute(call("read_file", "path" to "note.md")))
+    }
+
+    @Test
     fun theMemoryFileCanLiveInsideTheVaultOrAnywhereOnTheComputer() {
         val root = Files.createTempDirectory("arcana-memloc")
         val vaultDir = Files.createDirectories(root.resolve("vault"))

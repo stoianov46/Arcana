@@ -145,6 +145,11 @@ private val settings: List<Setting> = listOf(
     choice(Group.Console, "Copy as", "What select mode (s) puts on the clipboard. Markdown: as written. Plain text: markers removed.", listOf("markdown" to "Markdown", "plain" to "Plain text"), { it.copyAs }, { c, v -> c.copy(copyAs = v) }),
 
     toggle(Group.Tools, "Tools in Chat", "Lets the model search, read and write your notes, and read and write files in the folders below. Every change asks you first. Needs a model with tool support (Gemma 4 has it). Also /tools in Chat.", { it.toolsEnabled }, { c, v -> c.copy(toolsEnabled = v) }),
+    text(Group.Tools, "Project folder", "A folder you are working on (a web project, a repository). The model is told about it, may read and (with your approval) change its files, relative paths and commands start there, and its own ARCANA.md / CLAUDE.md / AGENTS.md is passed on as instructions. Needs tools on. Empty = no project; the status bar shows ▣ and its name while one is set.", { it.projectFolder }, { c, v ->
+        val path = v.trim()
+        require(path.isEmpty() || java.nio.file.Files.isDirectory(AppContext.expandHome(path))) { "That folder does not exist" }
+        c.copy(projectFolder = path)
+    }, allowEmpty = true, emptyLabel = "(none)"),
     text(Group.Tools, "Extra folders", "Folders besides your vault that tools may use, separated by ;  For example ~/Documents/notes;~/Projects/app. Nothing outside the vault and these is ever touched.", { it.toolFolders }, { c, v -> c.copy(toolFolders = v.trim().trim(';')) }, allowEmpty = true),
     toggle(Group.Tools, "Shell commands", "Lets the model ask to run commands on this computer (build, test, git…). Every command still waits for your y / n, except harmless ones like git status; Plan mode never offers it. Commands run with your own rights and are NOT limited to the folders above, so read each one before you press y. Off by default.", { it.toolShell }, { c, v -> c.copy(toolShell = v) }),
     toggle(Group.Tools, "Run commands without asking", "On: shell commands run at once, without your y / n (the Chat status bar shows a red ▶ auto-run). Commands Arcana never runs (sudo, rm -rf /, formatting a disk…) are still refused. Needs Shell commands on. Use it for a trusted project and turn it off again.", { it.toolAutoShell }, { c, v -> c.copy(toolAutoShell = v) }),
