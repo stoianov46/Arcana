@@ -582,6 +582,35 @@ class CoreTest {
     }
 
     @Test
+    fun theMemoryFileCanLiveInsideTheVaultOrAnywhereOnTheComputer() {
+        val root = Files.createTempDirectory("arcana-memloc")
+        val vaultDir = Files.createDirectories(root.resolve("vault"))
+        // default: ARCANA.md at the vault root
+        assertEquals(vaultDir.toRealPath().resolve("ARCANA.md"), Vault(vaultDir).memoryFile().let { it.parent.toRealPath().resolve(it.fileName) })
+        // inside the vault, in a folder that does not exist yet
+        val inside = Vault(vaultDir, "Notes/Memory.md")
+        assertEquals("Memory.md", inside.memoryName())
+        inside.ensureMemory()
+        assertTrue(Files.isRegularFile(vaultDir.resolve("Notes/Memory.md")) && "Arcana memory" in inside.memory())
+        inside.remember("I like short answers")
+        assertTrue("- I like short answers" in inside.memory())
+        // anywhere on the computer, by absolute path
+        val outside = root.resolve("elsewhere/mem.md")
+        val far = Vault(vaultDir, outside.toString())
+        far.ensureMemory()
+        assertTrue(Files.isRegularFile(outside) && !Files.exists(vaultDir.resolve("ARCANA.md")))
+        far.remember("outside the vault")
+        assertTrue("outside the vault" in Files.readString(outside) && "outside the vault" in far.memory())
+        // a memory file without the "Remembered" section gets one
+        Files.writeString(outside, "# My rules\n\nBe brief.\n")
+        far.remember("also this")
+        assertEquals("# My rules\n\nBe brief.\n\n## Remembered\n\n- also this\n", Files.readString(outside))
+        // ~ is the home folder
+        assertEquals(java.nio.file.Path.of(System.getProperty("user.home"), "x/ARCANA.md"), Vault(vaultDir, "~/x/ARCANA.md").memoryFile())
+        assertEquals("", Vault(vaultDir, "Nope/Missing.md").memory())
+    }
+
+    @Test
     fun compactionPicksTheCutKeepsTheLastTurnsAndHidesTheRestOnlyFromTheModel() {
         fun u(n: Int) = ChatMessage.user("question $n")
         fun a(n: Int) = ChatMessage.assistant("answer $n")

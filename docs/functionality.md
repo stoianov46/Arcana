@@ -68,7 +68,7 @@ Modes: ask / auto / plan. Shell commands and web pages are separate switches, of
 
 ## Memory file (ARCANA.md)
 
-The vault note `ARCANA.md` (first 4,000 characters, no frontmatter) is added to every chat's system prompt (`Vault.memory()` →
+The memory file (by default the vault note `ARCANA.md`; **Settings → Prompts → Memory file path** can point it into another vault folder or anywhere on the computer, e.g. `~/Documents/arcana-memory.md`: `Vault.memoryFile()`, which `memory`, `ensureMemory` and `remember` all use; a missing folder is created) (first 4,000 characters, no frontmatter) is added to every chat's system prompt (`Vault.memory()` →
 `Prompts.chatMessages(memory = …)`; Settings → Prompts → *Memory file*; the status bar shows `✎ memory`). `ChatSession.offerMemory()` runs
 when Chat opens: if the vault has no `ARCANA.md` and `memoryOffered` is false it creates one from `Vault.MEMORY_TEMPLATE` (fourteen rules
 for using tools, plus empty sections) and shows "Memory file created" with an offer to open it; the flag then stays true, so a file the user

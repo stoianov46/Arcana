@@ -191,7 +191,7 @@ class AppContext(
     fun openVault(): Result<Vault> {
         val raw = config.vaultPath.trim()
         if (raw.isEmpty()) return Result.failure(VaultException("Vault path is not set. Open Settings and choose your vault folder."))
-        return runCatching { Vault(expandHome(raw)) }
+        return runCatching { Vault(expandHome(raw), config.memoryPath) }
     }
 
     companion object {

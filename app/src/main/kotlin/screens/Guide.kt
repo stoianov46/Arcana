@@ -194,7 +194,7 @@ Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use
 `/new` starts a fresh chat, `/history` opens an older one, `/clear` erases this one. Every action is also in the palette (`Ctrl+P`). Chats are **kept in the history automatically**, so leaving never loses one and never asks; `Ctrl+S` **Save to vault** is only for turning a chat into a note.
 
 ## Your memory file
-The vault note **`ARCANA.md`** holds standing instructions and facts (who you are, where your projects are, rules for using tools). Its first 4,000 characters go into every chat. Arcana creates it the first time you open Chat and offers to open it; `/memory` opens it any time, and you can say "remember that…" so the model adds a line (after you confirm). Switch it off in Settings → Prompts.
+The memory file, by default the vault note **`ARCANA.md`** (move it with *Settings → Prompts → Memory file path*: into a vault folder, or anywhere on your computer), holds standing instructions and facts (who you are, where your projects are, rules for using tools). Its first 4,000 characters go into every chat. Arcana creates it the first time you open Chat and offers to open it; `/memory` opens it any time, and you can say "remember that…" so the model adds a line (after you confirm). Switch it off in Settings → Prompts.
 """.trim(),
     ),
     GuidePage(

@@ -16,7 +16,11 @@ data class SearchHit(val note: Note, val score: Int, val excerpt: String)
 
 class VaultException(message: String) : Exception(message)
 
-class Vault(root: Path) {
+/**
+ * @param memoryPath where the memory file lives (see [memoryFile]): blank is [MEMORY_FILE] at the vault root, a relative path is inside the
+ * vault, `~/…` or an absolute path is anywhere on this computer.
+ */
+class Vault(root: Path, private val memoryPath: String = "") {
     val root: Path = root.toAbsolutePath().normalize()
 
     init {
@@ -33,11 +37,12 @@ class Vault(root: Path) {
     fun read(note: String): String = Files.readString(resolve(note))
 
     /**
-     * The user's standing instructions and facts, like a CLAUDE.md: the note [MEMORY_FILE] at the vault root. Its text (without
-     * frontmatter, at most [MEMORY_LIMIT] characters) goes into every chat's system prompt; empty when there is no such note.
+     * The user's standing instructions and facts, like a CLAUDE.md: the note [MEMORY_FILE] at the vault root, or wherever the memory path
+     * setting points ([memoryFile]). Its text (without frontmatter, at most [MEMORY_LIMIT] characters) goes into every chat's system prompt;
+     * empty when there is no such file.
      */
     fun memory(): String {
-        val text = runCatching { splitFrontmatter(Files.readString(root.resolve(MEMORY_FILE))).second.trim() }.getOrDefault("")
+        val text = runCatching { splitFrontmatter(Files.readString(memoryFile())).second.trim() }.getOrDefault("")
         return if (text.length > MEMORY_LIMIT) text.take(MEMORY_LIMIT) + "\n… (cut: the memory file is longer than $MEMORY_LIMIT characters)" else text
     }
 
@@ -79,10 +84,27 @@ class Vault(root: Path) {
         return RenameResult(root.relativize(to).toString().replace('\\', '/'), links, changed)
     }
 
-    /** The memory note's path; it is created from a short template when it does not exist yet. */
+    /** Where the memory file is: [MEMORY_FILE] at the vault root when the path is blank, inside the vault when it is relative, anywhere for `~/…` or an absolute path. */
+    fun memoryFile(): Path {
+        val raw = memoryPath.trim()
+        return when {
+            raw.isEmpty() -> root.resolve(MEMORY_FILE)
+            raw == "~" || raw.startsWith("~/") -> Path.of(System.getProperty("user.home"), raw.removePrefix("~").trimStart('/')).normalize()
+            Path.of(raw).isAbsolute -> Path.of(raw).normalize()
+            else -> root.resolve(raw).normalize()
+        }
+    }
+
+    /** The memory file's own name (`ARCANA.md`), for messages. */
+    fun memoryName(): String = memoryFile().fileName.toString()
+
+    /** The memory file's path; it (and its folder) is created from a short template when it does not exist yet. */
     fun ensureMemory(): Path {
-        val file = root.resolve(MEMORY_FILE)
-        if (!Files.exists(file)) Files.writeString(file, MEMORY_TEMPLATE)
+        val file = memoryFile()
+        if (!Files.exists(file)) {
+            file.parent?.let { Files.createDirectories(it) }
+            Files.writeString(file, MEMORY_TEMPLATE)
+        }
         return file
     }
 
@@ -90,13 +112,9 @@ class Vault(root: Path) {
     fun remember(text: String) {
         ensureMemory()
         val line = "- " + text.trim().replace(Regex("\\s*\\n\\s*"), " ")
-        val file = root.resolve(MEMORY_FILE)
+        val file = memoryFile()
         val existing = Files.readString(file)
-        if (existing.contains("## Remembered")) {
-            Files.writeString(file, existing.trimEnd() + "\n" + line + "\n")
-        } else {
-            append(MEMORY_FILE, "Remembered", line)
-        }
+        Files.writeString(file, existing.trimEnd() + (if (existing.contains("## Remembered")) "\n" else "\n\n## Remembered\n\n") + line + "\n")
     }
 
     fun create(folder: String, title: String, body: String, model: String): Note {

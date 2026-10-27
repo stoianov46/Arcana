@@ -44,7 +44,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 |---|---|---|
 | 29 | Context window consistent between Settings and Chat (`256k` everywhere); real window read from Ollama `/api/ps`; warning below 32k | done |
 | 8 | `/compact` and auto-compact of the context (`Compaction`; nothing is deleted, the model is sent from the latest summary) | done |
-| 7 | Memory file path configurable (vault or file system) | todo |
+| 7 | Memory file path configurable (`memoryPath`: vault-relative, `~/…` or absolute) | done |
 | 34 | Project context: a folder added to the system prompt, file tools scoped to it | todo |
 
 ## Phase 5: Attention and sound

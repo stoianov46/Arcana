@@ -361,13 +361,13 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val config = app.config
         if (!config.memoryEnabled || config.memoryOffered || approval != null) return
         val vault = app.openVault().getOrNull() ?: return
-        val existed = java.nio.file.Files.exists(vault.root.resolve(Vault.MEMORY_FILE))
+        val existed = java.nio.file.Files.exists(vault.memoryFile())
         app.update(config.copy(memoryOffered = true))
         if (existed) return
         val file = runCatching { vault.ensureMemory() }.getOrNull() ?: return
         app.scope.launch {
             val pending = Approval(
-                "memory", "${Vault.MEMORY_FILE} is in your vault now",
+                "memory", "${vault.memoryName()} was created${if (file.startsWith(vault.root)) " in your vault" else " at ${file.toString().replace(System.getProperty("user.home"), "~")}"}",
                 listOf(
                     "It is read in every chat and already holds rules that make the assistant use its tools.",
                     "Add who you are, where your projects are, how you like answers. /memory opens it any time.",

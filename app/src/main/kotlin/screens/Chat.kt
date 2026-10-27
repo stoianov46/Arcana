@@ -385,9 +385,9 @@ fun ChatScreen(app: AppContext) {
 
     fun openMemory() {
         val vault = app.openVault().getOrNull() ?: return toast("Choose a vault first (Settings → Vault).", error = true)
-        val file = runCatching { vault.ensureMemory() }.getOrElse { return toast("Could not create ${Vault.MEMORY_FILE}.", error = true) }
+        val file = runCatching { vault.ensureMemory() }.getOrElse { return toast("Could not create ${vault.memoryName()}.", error = true) }
         val opened = SystemOpen.open(file.toString())
-        toast(if (opened) "${Vault.MEMORY_FILE} opened in your editor. Save it; the next message uses it." else "Edit ${file} (it is read in every chat).")
+        toast(if (opened) "${vault.memoryName()} opened in your editor. Save it; the next message uses it." else "Edit ${file} (it is read in every chat).")
     }
 
     fun runCompact() {

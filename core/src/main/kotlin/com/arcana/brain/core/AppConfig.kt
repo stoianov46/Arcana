@@ -68,6 +68,8 @@ data class AppConfig(
     val memoryOffered: Boolean = false,
     /** The vault note ARCANA.md (standing instructions and facts) is added to every chat's system prompt. */
     val memoryEnabled: Boolean = true,
+    /** Where the memory file (ARCANA.md) lives: blank = `ARCANA.md` at the vault root; a relative path is inside the vault; `~/…` or an absolute path is anywhere on this computer. */
+    val memoryPath: String = "",
     /** Context window to ask Ollama for (num_ctx); 0 leaves Ollama's own default. Also the size the Chat context meter counts against when set. */
     val contextTokens: Int = 0,
     /** A tool call the model wrote as text instead of making it: "auto" runs it as a real call, "ask" shows it first, "off" leaves it as text. */

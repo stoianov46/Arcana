@@ -79,10 +79,10 @@ private fun stepper(group: Group, label: String, help: String, range: IntRange, 
         },
     )
 
-private fun text(group: Group, label: String, help: String, get: (AppConfig) -> String, set: (AppConfig, String) -> AppConfig, allowEmpty: Boolean = false) =
+private fun text(group: Group, label: String, help: String, get: (AppConfig) -> String, set: (AppConfig, String) -> AppConfig, allowEmpty: Boolean = false, emptyLabel: String = "(none)") =
     Setting(
         group, label, help,
-        value = { get(it).ifEmpty { "(none)" } },
+        value = { get(it).ifEmpty { emptyLabel } },
         editor = Editor.Text { c, v ->
             require(allowEmpty || v.isNotBlank()) { "$label cannot be empty" }
             set(c, v.trim())
@@ -161,6 +161,12 @@ private val settings: List<Setting> = listOf(
 
     stepper(Group.Ollama, "Price: prompt tokens", "Only for the estimated price in the status bars: what a million prompt tokens would cost on a paid service, in US dollars. Local models cost nothing; this shows what the same work would cost elsewhere.", 0..200, 1, { it.estPriceIn }, { c, n -> c.copy(estPriceIn = n) }, " $/M"),
     stepper(Group.Ollama, "Price: reply tokens", "The same for a million reply tokens (they usually cost more).", 0..400, 1, { it.estPriceOut }, { c, n -> c.copy(estPriceOut = n) }, " $/M"),
+    text(Group.Prompts, "Memory file path", "Where the memory file is. Empty = ARCANA.md at the vault root. A path inside the vault (Notes/Memory.md) or anywhere on this computer (~/Documents/arcana-memory.md); a missing file is created from the template the first time you open it with /memory. The Memory file switch below turns its use on or off.", { it.memoryPath }, { c, v ->
+        val path = v.trim()
+        require(path.isEmpty() || path.startsWith("/") || path.startsWith("~/") || ".." !in path.split('/')) { "A path inside the vault cannot contain .." }
+        require(path.isEmpty() || !path.endsWith("/")) { "Give the file, not a folder (…/ARCANA.md)" }
+        c.copy(memoryPath = path)
+    }, allowEmpty = true, emptyLabel = "(ARCANA.md at the vault root)"),
     toggle(Group.Prompts, "Memory file", "Adds your vault note ARCANA.md (at the vault root; standing instructions and facts, like a CLAUDE.md) to every chat, up to 4,000 characters. Its text is not shown here: it is sent with each message, and the Chat status bar shows ✎ memory while it is in use. /memory in Chat opens it, and creates it from a template the first time. It counts against the context window.", { it.memoryEnabled }, { c, v -> c.copy(memoryEnabled = v) }),
     text(Group.Prompts, "System prompt", "Tells the model who it is. Sent with every request.", { it.systemPrompt }, { c, v -> c.copy(systemPrompt = v) }),
     text(Group.Prompts, "Summary prompt", "The instruction used by Summarize.", { it.summaryPrompt }, { c, v -> c.copy(summaryPrompt = v) }),
