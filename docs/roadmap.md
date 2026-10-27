@@ -12,7 +12,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 | 27 | Show the original model name in the thinking line (and anywhere else a prettified name appears) | done |
 | 17 | Chat labels `◆ model` and a user glyph; per-family icon set in the design system (`ModelIcon`) | done |
 | 9 | Cancel a reply with `Esc` twice instead of once (no misclicks) | done |
-| 11 | Console output fills the remaining chat height | needs repro (idle chat fills the height at 24, 40 and 60 rows; the gap may only show while a reply runs or an approval is open) |
+| 11 | Console output fills the remaining chat height | needs repro: the conversation panel fills the height in every state tried (idle, a 150-message chat, running reply, approval dialog, question dialog, finished reply) at 24, 30, 36, 40 and 60 rows and after resizing the terminal live. If it still happens, send the terminal size, the Settings → Appearance → Interface scale value and what the screen looked like |
 | 30 | Split the thinking process from the answer (`ChatMessage.thinking`, setting *Thinking in Chat*) | done |
 | 31 | Handle `The model returned an empty response`: one hidden retry before the error (not a setting yet) | done |
 | 33 | Library: narrower notes list, wider note content (30 % / 70 %) | done |
