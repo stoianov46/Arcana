@@ -78,6 +78,8 @@ data class AppConfig(
     val searchBackend: String = "duckduckgo",
     val searchUrl: String = "",
     val searchKey: String = "",
+    /** The first-run setup (vault, memory file, skills) was finished or skipped; it opens by itself only until then. */
+    val setupDone: Boolean = false,
     /** Sounds for what happens in Chat (see [SoundChoices] for the ids): when the model waits for you, when a reply finishes, when it fails. All off by default. */
     val soundAttention: String = "off",
     val soundDone: String = "off",

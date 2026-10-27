@@ -582,6 +582,48 @@ class CoreTest {
     }
 
     @Test
+    fun theSetupCreatesWhatIsMissingAndNeverTouchesWhatIsThere() {
+        val root = Files.createTempDirectory("arcana-setup")
+        val vaultDir = Files.createDirectories(root.resolve("vault"))
+        val vault = Vault(vaultDir)
+        val config = AppConfig(outputFolder = "Arcana")
+        assertTrue(Bootstrap.items(vault, config).none { it.done }, "an empty vault has none of it")
+        // the user's own memory file stays exactly as it is
+        Files.writeString(vaultDir.resolve("ARCANA.md"), "my own rules")
+        val made = Bootstrap.create(vault, config, Bootstrap.items(vault, config).map { it.id }.toSet())
+        assertEquals("my own rules", Files.readString(vaultDir.resolve("ARCANA.md")))
+        assertEquals(listOf("Skills/", "Skills/Skills Guide.md", "Skills/decompose/decompose.skill.md", "Arcana/"), made)
+        assertTrue(Bootstrap.items(vault, config).all { it.done })
+        assertEquals(emptyList(), Bootstrap.create(vault, config, Bootstrap.items(vault, config).map { it.id }.toSet()), "a second run creates nothing")
+        // only what was asked for
+        val other = Vault(Files.createDirectories(root.resolve("v2")))
+        assertEquals(listOf("ARCANA.md"), Bootstrap.create(other, AppConfig(), setOf(Bootstrap.MEMORY)))
+        assertTrue("Arcana memory" in Files.readString(root.resolve("v2/ARCANA.md")) && !Files.exists(root.resolve("v2/Skills")))
+        // a custom skills folder is honoured
+        val third = Vault(Files.createDirectories(root.resolve("v3")))
+        Bootstrap.create(third, AppConfig(skillsFolder = "Runbooks"), setOf(Bootstrap.STARTER_SKILLS))
+        assertTrue(Files.exists(root.resolve("v3/Runbooks/decompose/decompose.skill.md")))
+    }
+
+    @Test
+    fun theStarterSkillsAreRealSkillsWithoutProblems() {
+        val root = Files.createTempDirectory("arcana-starter")
+        val vault = Vault(Files.createDirectories(root.resolve("vault")))
+        Bootstrap.create(vault, AppConfig(), setOf(Bootstrap.SKILLS_GUIDE, Bootstrap.STARTER_SKILLS))
+        val found = Skills.discover(vault, "Skills")
+        assertEquals(listOf("decompose"), found.map { it.name }, "the guide is a note, not a skill")
+        val skill = found.single()
+        assertTrue(skill.description.isNotBlank() && skill.problems.isEmpty(), skill.problems.toString())
+        val steps = Skills.requirementsOf(vault, skill.path)
+        assertEquals(listOf("ask_user", "create_note"), steps.map { it.tool })
+        assertTrue(Files.readString(vault.root.resolve(skill.path)).length < 18_000)
+        // the tools the skill names are real ones
+        val box = ToolBox(vault, emptyList(), root.resolve("b"))
+        val real = box.specs.map { it.name } + listOf("ask_user")
+        assertTrue(StarterSkills.all.single().text.substringAfter("needs: [").substringBefore("]").split(",").map { it.trim() }.all { it in real })
+    }
+
+    @Test
     fun soundsAreChosenByIdAndPlayedAsBellSystemSoundOrFile() {
         assertEquals("Off", SoundChoices.label("off")); assertEquals("System · Hero", SoundChoices.label("sys:Hero")); assertEquals("Terminal bell × 3", SoundChoices.label("bell3"))
         assertTrue(SoundChoices.isValid("sys:Glass") && SoundChoices.isValid("file") && !SoundChoices.isValid("sys:Nope") && !SoundChoices.isValid("loud"))

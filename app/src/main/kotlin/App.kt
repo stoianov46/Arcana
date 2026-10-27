@@ -17,14 +17,18 @@ import com.arcana.brain.app.screens.LibraryScreen
 import com.arcana.brain.app.screens.NoteComposerScreen
 import com.arcana.brain.app.screens.SessionScreen
 import com.arcana.brain.app.screens.SettingsScreen
+import com.arcana.brain.app.screens.SetupScreen
 import com.arcana.brain.app.screens.UsageScreen
 import com.jakewharton.mosaic.runMosaic
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlin.system.exitProcess
 
-fun main() {
+fun main(args: Array<String>) {
+    // `arcana --init <vault>` and `--help` need no screen
+    Cli.run(args)?.let { exitProcess(it) }
     val quit = CompletableDeferred<Unit>()
     // Mosaic renders inline; start from a clean screen so the frame never scrolls and old output does not show through.
     print("\u001b[2J\u001b[H")
@@ -61,7 +65,7 @@ private fun ArcanaApp(onQuit: () -> Unit) {
     Shell(app, navigator, onQuit = onQuit) { screen ->
         // A new session rebuilds every screen from scratch (their local state, drafts, filters).
         androidx.compose.runtime.key(app.revision) {
-        when (screen) {
+        if (app.setupOpen) SetupScreen(app) else when (screen) {
             Screen.Home -> HomeScreen(app)
             Screen.Chat -> ChatScreen(app)
             Screen.Library -> LibraryScreen(app)

@@ -98,6 +98,9 @@ class AppContext(
         liveTokens = (liveTokens + delta).coerceAtLeast(0)
     }
 
+    /** True while the setup wizard is showing: on the first start (no vault chosen and setup not finished), or from the palette. */
+    var setupOpen by mutableStateOf(config.vaultPath.isBlank() && !config.setupDone)
+
     /** The Library folders that are unfolded (vault-relative paths); kept while Arcana runs, so leaving the Library and coming back keeps the tree as it was. */
     var libraryExpanded by mutableStateOf<Set<String>>(emptySet())
 

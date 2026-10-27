@@ -9,6 +9,10 @@ This is the one document that explains the whole feature. Code: `core/Skills.kt`
 For people writing skills there is also the vault note `Skills/Skills Guide.md`; for the model, `Arcana/Arcana LLM Reference.md`;
 for users, the in-app Guide page "Skills".
 
+## Starter skills
+
+`Bootstrap` (first-run setup, palette "Set up the vault", `arcana --init`) puts `Skills/Skills Guide.md` and the starter skills from `core/StarterSkills.kt` into a vault, never over an existing file: today `decompose` (a todo list becomes a plan: analyze → `ask_user` quiz → plan note → one item at a time; it requires the `ask_user` and `create_note` steps). `CoreTest.theStarterSkillsAreRealSkillsWithoutProblems` keeps them valid (found, described, steps parsed, under 18,000 characters, `needs:` are real tools).
+
 ## 1. Why it is built this way
 
 | Decision | Reason |

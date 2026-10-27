@@ -12,6 +12,7 @@ import java.time.LocalDate
 fun paletteCommands(app: AppContext, navigator: Navigator, onQuit: () -> Unit): List<Command> = buildList {
     addAll(navigator.screenCommands)
     add(Command("Capture a thought", "Brain", "Ctrl+N") { navigator.openCapture() })
+    add(Command("Set up the vault: memory file, skills…", "Brain") { app.setupOpen = true })
     add(Command("Process the inbox with AI", "Brain") { navigator.navigate(Screen.Inbox) })
     add(Command("Refresh the vault index", "Brain") { app.brain.changed(); navigator.showToast("Reading the vault again…") })
     LibraryFilter.entries.filter { it != LibraryFilter.Tags }.forEach { f ->
