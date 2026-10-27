@@ -30,7 +30,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 
 | # | Task | Status |
 |---|---|---|
-| 12 | `cat` tool | todo |
+| 12 | `cat` tool | done |
 | 32 | Git tools for the model (`git_diff` done; status, log, writes behind approval remain) | partial |
 | 13 | Document `fetch_url` vs `http_request`; add or update | todo |
 | 3 | Tags | todo |

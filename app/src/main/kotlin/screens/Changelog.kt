@@ -38,6 +38,7 @@ Built on 24–25 October 2026. Last updated 26 October 2026.
 - A reply that ended in a tool call shows a quiet `step` line, so only the final answer says **Done**.
 
 ## More tools
+- **`cat`**: prints a file with line numbers (like `cat -n`), the way small models expect from a shell; it shares `read_file`'s limits. `git_diff` on a folder that is not allowed yet now asks "Allow this folder?" like `run_command` does.
 - **Save to vault can overwrite**: in the `Ctrl+S` dialog, `Ctrl+O` lets you pick a note that already exists and replace it with the whole chat (or the last answer). You confirm first, and the old text is kept in the vault's `.trash`.
 - **`request_mode`**: the model can ask to switch the tool mode (Ask, Auto or Plan) with a reason, for example Auto before a long series of edits or Plan to investigate first. You are always asked ("Switch to Auto mode?"); a refusal keeps the current mode.
 - **Auto-run for shell commands**: Settings → Tools → *Run commands without asking* (or `/autorun` in Chat) lets commands run without your `y`. A red `▶ auto-run` pill in the Chat status bar says it is on; `sudo`, `rm -rf /` and the like are still refused.

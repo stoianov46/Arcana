@@ -134,9 +134,9 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
      * (a home folder, `/etc`, `~/.ssh`…).
      */
     fun folderToGrant(call: ToolCall): Path? {
-        if (call.name !in FILE_TOOLS && call.name != "run_command") return null
+        if (call.name !in FILE_TOOLS && call.name != "run_command" && call.name != "git_diff") return null
         // a move names two places; the first one that is outside the allowed folders is the one to offer
-        val keys = when (call.name) { "run_command" -> listOf("cwd"); "move_path" -> listOf("from", "to"); else -> listOf("path") }
+        val keys = when (call.name) { "run_command", "git_diff" -> listOf("cwd"); "move_path" -> listOf("from", "to"); else -> listOf("path") }
         var target: Path? = null
         for (key in keys) {
             val raw = (call.arguments[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: continue
@@ -557,6 +557,34 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         }
     }
 
+    /** Reads the file named by `path` (whole, or `start_line`..`end_line` numbered); what `read_file` and `cat` return. */
+    private fun readFile(a: JsonObject): String {
+        val file = access.resolve(a.str("path"), base)
+        requireExists(a.str("path"), file)
+        require(Files.isRegularFile(file)) { "${a.str("path")} is a folder, not a file. Use list_dir for folders." }
+        val from = a.int("start_line")
+        val to = a.int("end_line")
+        return if (TextFiles.isPdf(file)) {
+            require(Files.size(file) <= TextFiles.MAX_PDF_BYTES) { "The PDF is too large." }
+            cut(TextFiles.load(file).text)
+        } else if (from != null || to != null) {
+            require(Files.size(file) <= TextFiles.MAX_FILE_BYTES) { "The file is larger than ${TextFiles.MAX_FILE_BYTES / (1024 * 1024)} MB." }
+            val lines = Files.readAllLines(file)
+            val first = (from ?: 1).coerceAtLeast(1)
+            require(first <= lines.size) { "${a.str("path")} has only ${lines.size} lines." }
+            val last = minOf(to ?: (first + RANGE_LINES - 1), first + RANGE_LINES - 1, lines.size)
+            val width = last.toString().length
+            lines.subList(first - 1, last).withIndex().joinToString("\n") { (i, l) -> "${(first + i).toString().padStart(width)} | $l" } +
+                if (last < lines.size) "\n… (${lines.size - last} more lines; continue with start_line=${last + 1})" else "\n(end of file, ${lines.size} lines)"
+        } else {
+            require(Files.size(file) <= TextFiles.MAX_FILE_BYTES) { "The file is larger than ${TextFiles.MAX_FILE_BYTES / (1024 * 1024)} MB." }
+            val text = TextFiles.load(file).text
+            if (text.length > READ_LIMIT) {
+                text.take(READ_LIMIT) + "\n… (cut after $READ_LIMIT characters; the file has more. Read the rest with start_line / end_line)"
+            } else text
+        }
+    }
+
     private fun fileTools(): List<ToolSpec> = listOf(
         ToolSpec(
             "list_dir", "List the files and folders in a directory. Folders end with /. With recursive=true it lists everything below it as a tree of paths, which is how to see a whole module or project.",
@@ -639,32 +667,12 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
                 required = listOf("path"),
             ),
             ToolRisk.Read, { a -> a.str("path") + (if (a.int("start_line") != null || a.int("end_line") != null) "  lines ${a.int("start_line") ?: 1}-${a.int("end_line") ?: "…"}" else "") },
-        ) { a ->
-            val file = access.resolve(a.str("path"), base)
-            requireExists(a.str("path"), file)
-            require(Files.isRegularFile(file)) { "${a.str("path")} is a folder, not a file. Use list_dir for folders." }
-            val from = a.int("start_line")
-            val to = a.int("end_line")
-            if (TextFiles.isPdf(file)) {
-                require(Files.size(file) <= TextFiles.MAX_PDF_BYTES) { "The PDF is too large." }
-                cut(TextFiles.load(file).text)
-            } else if (from != null || to != null) {
-                require(Files.size(file) <= TextFiles.MAX_FILE_BYTES) { "The file is larger than ${TextFiles.MAX_FILE_BYTES / (1024 * 1024)} MB." }
-                val lines = Files.readAllLines(file)
-                val first = (from ?: 1).coerceAtLeast(1)
-                require(first <= lines.size) { "${a.str("path")} has only ${lines.size} lines." }
-                val last = minOf(to ?: (first + RANGE_LINES - 1), first + RANGE_LINES - 1, lines.size)
-                val width = last.toString().length
-                lines.subList(first - 1, last).withIndex().joinToString("\n") { (i, l) -> "${(first + i).toString().padStart(width)} | $l" } +
-                    if (last < lines.size) "\n… (${lines.size - last} more lines; continue with start_line=${last + 1})" else "\n(end of file, ${lines.size} lines)"
-            } else {
-                require(Files.size(file) <= TextFiles.MAX_FILE_BYTES) { "The file is larger than ${TextFiles.MAX_FILE_BYTES / (1024 * 1024)} MB." }
-                val text = TextFiles.load(file).text
-                if (text.length > READ_LIMIT) {
-                    text.take(READ_LIMIT) + "\n… (cut after $READ_LIMIT characters; the file has more. Read the rest with start_line / end_line)"
-                } else text
-            }
-        },
+        ) { a -> readFile(a) },
+        ToolSpec(
+            "cat", "Print a text file with line numbers, like the shell's `cat -n`: the whole file when it is short, else the first part with a note on where to continue (use read_file with start_line / end_line for the rest). Same files and limits as read_file.",
+            schema("path" to ("string" to "File: absolute, ~/…, or relative to the vault"), required = listOf("path")),
+            ToolRisk.Read, { it.str("path") },
+        ) { a -> readFile(buildJsonObject { put("path", a.str("path")); put("start_line", 1) }) },
         ToolSpec(
             "write_file", "Create a text file, or replace an existing one completely. The old version of a replaced file is kept as a backup.",
             schema(
@@ -848,7 +856,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         const val MAX_DIFF_LINES = 60
         const val MAX_DIFF_BYTES = 500_000L
         val PROTECTED = setOf(".git", ".obsidian")
-        private val FILE_TOOLS = setOf("list_dir", "find_files", "grep_files", "read_file", "write_file", "edit_file", "delete_path", "move_path")
+        private val FILE_TOOLS = setOf("list_dir", "find_files", "grep_files", "read_file", "cat", "write_file", "edit_file", "delete_path", "move_path")
 
         private fun schema(vararg props: Pair<String, Pair<String, String>>, required: List<String> = emptyList()): JsonObject = buildJsonObject {
             put("type", "object")

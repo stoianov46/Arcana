@@ -582,6 +582,21 @@ class CoreTest {
     }
 
     @Test
+    fun catPrintsAFileWithLineNumbersLikeReadFile() {
+        val root = Files.createTempDirectory("arcana-cat")
+        val vaultDir = Files.createDirectories(root.resolve("vault"))
+        Files.writeString(vaultDir.resolve("a.txt"), "alpha\nbeta\n")
+        val box = ToolBox(Vault(vaultDir), emptyList(), root.resolve("b"))
+        assertTrue(box.find("cat")!!.risk == ToolRisk.Read)
+        val out = box.execute(call("cat", "path" to "a.txt"))
+        assertTrue("1 | alpha" in out && "2 | beta" in out && "end of file" in out, out)
+        assertTrue(box.execute(call("cat", "path" to "missing.txt")).startsWith("Error:"))
+        assertTrue(box.execute(call("cat", "path" to ".")).startsWith("Error:"))
+        assertTrue("outside the folders" in box.execute(call("cat", "path" to "/etc/hosts")))
+        assertTrue(box.folderToGrant(call("git_diff", "cwd" to Files.createTempDirectory("arcana-elsewhere").toString())) != null)
+    }
+
+    @Test
     fun requestModeIsOfferedAndExplainedToTheModel() {
         val definition = REQUEST_MODE_DEFINITION.toString()
         assertTrue(REQUEST_MODE == "request_mode" && TOOL_MODES == listOf("ask", "auto", "plan"))
