@@ -78,6 +78,8 @@ data class AppConfig(
     val toolWeb: Boolean = false,
     /** The model may ask to run shell commands (every one needs approval). Off by default. */
     val toolShell: Boolean = false,
+    /** Shell commands run without asking (those [ShellPolicy] refuses never run). Off by default; the Chat status bar shows `▶ auto-run` while it is on. */
+    val toolAutoShell: Boolean = false,
     /** What tools may do: "ask" (changes wait for approval), "auto" (changes run at once, backed up) or "plan" (read-only, the model writes a plan). */
     val toolMode: String = "ask",
     /** How many rounds of tool use one question may take before the model must answer. */

@@ -50,6 +50,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `lastPickerDir` | `""` | last folder of the file browser |
 | `toolsEnabled` | false | tools in Chat |
 | `toolMode` | `ask` | `ask` / `auto` / `plan` |
+| `toolAutoShell` | false | shell commands run without asking (`/autorun`, Settings → Tools); `ShellPolicy.blockedReason` still refuses; Chat status bar shows red `▶ auto-run` |
 | `toolShell` / `toolWeb` | false / false | `run_command` / `fetch_url` and `web_search` may be used (each call still asks) |
 | `searchBackend` | `duckduckgo` | `duckduckgo` / `searxng` / `brave`: where `web_search` looks |
 | `searchUrl` | `""` | address of the user's SearXNG server (used only by that backend) |

@@ -523,6 +523,8 @@ class DesignTest {
         assertEquals("ON", state("/vault", on)); assertEquals("OFF", state("/vault", off))
         assertEquals("ON", state("/tools", on)); assertEquals("OFF", state("/tools", off)); assertEquals("NO SUPPORT", state("/tools", on, supported = false))
         assertEquals("AUTO", state("/mode", on)); assertEquals("TOOLS OFF", state("/mode", off))
+        assertEquals("SHELL OFF", state("/autorun", on))
+        assertEquals("ON", state("/autorun", on.copy(toolShell = true, toolAutoShell = true))); assertEquals("OFF", state("/autorun", on.copy(toolShell = true)))
         assertEquals("ON", state("/memory", on)); assertEquals("OFF", state("/memory", off))
         assertEquals(null, state("/new", on)); assertEquals(null, state("/history", off))
     }

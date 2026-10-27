@@ -22,7 +22,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 | # | Task | Status |
 |---|---|---|
 | 18 | Diff preview with approve/reject before a file or note edit (`Diff`; `edit_file` and `write_file` over an existing file) | done |
-| 2 | Auto-approve for commands: setting and indicator on the main screen | todo |
+| 2 | Auto-approve for commands: setting, `/autorun`, red `▶ auto-run` pill in the Chat status bar | done |
 | 10 | Tool for the model to request a mode change (ask → auto → plan) | todo |
 | 1 | Ctrl+S "Save to vault" that overwrites an existing note via the file picker | todo |
 

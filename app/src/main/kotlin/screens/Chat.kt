@@ -59,6 +59,7 @@ internal val SlashCommands = listOf(
     SlashItem("/vault", "Answer from your vault notes (toggle)", false),
     SlashItem("/tools", "Let the model use tools (toggle)", false),
     SlashItem("/mode", "Tools mode: ask, auto, plan (cycles)", false),
+    SlashItem("/autorun", "Run shell commands without asking (toggle)", false),
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false),
     SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
     SlashItem("/append", "Add the last answer to a note", false),
@@ -75,6 +76,7 @@ internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean
         else -> "ON" to Palette.Green
     }
     "/mode" -> if (!config.toolsEnabled) "TOOLS OFF" to Palette.Dim else config.toolMode.uppercase() to when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }
+    "/autorun" -> if (!config.toolShell) "SHELL OFF" to Palette.Dim else if (config.toolAutoShell) "ON" to Palette.Red else "OFF" to Palette.Dim
     "/memory" -> if (config.memoryEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/skills" -> if (config.skillsEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     else -> null
@@ -143,6 +145,8 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         if (config.toolsEnabled) {
             if (app.tools == false) add(pillSegment("⚠ no tools", Palette.Red, 8))
             else add(pillSegment("⚙ ${config.toolMode}", when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }, 8))
+            // commands run without asking: said loudly, in the colour of high risk
+            if (config.toolShell && config.toolAutoShell && config.toolMode != "plan") add(pillSegment(if (plain) "! auto-run" else "▶ auto-run", Palette.Red, 9))
         }
     }
 }
@@ -367,6 +371,13 @@ fun ChatScreen(app: AppContext) {
         toast(if (opened) "${Vault.MEMORY_FILE} opened in your editor. Save it; the next message uses it." else "Edit ${file} (it is read in every chat).")
     }
 
+    fun toggleAutoRun() {
+        if (!app.config.toolShell) return toast("Shell commands are off. Turn them on in Settings → Tools first.", error = true)
+        val on = !app.config.toolAutoShell
+        app.update(app.config.copy(toolAutoShell = on))
+        toast(if (on) "Auto-run: shell commands now run WITHOUT asking (sudo, rm -rf / and the like are still refused)." else "Commands ask before they run again.", error = on)
+    }
+
     fun cycleMode() {
         val next = when (app.config.toolMode) { "ask" -> "auto"; "auto" -> "plan"; else -> "ask" }
         app.update(app.config.copy(toolMode = next))
@@ -390,6 +401,7 @@ fun ChatScreen(app: AppContext) {
             "/memory" -> openMemory()
             "/skills" -> toggleSkills()
             "/mode" -> cycleMode()
+            "/autorun" -> toggleAutoRun()
             "/append" -> openTargetPick(Target.Append)
             "/replace" -> openTargetPick(Target.Replace)
             else -> toast("Unknown command. Type / to see the commands and tools", error = true)
@@ -423,6 +435,7 @@ fun ChatScreen(app: AppContext) {
             Command("Memory file (ARCANA.md): open and edit", "Chat", "/memory") { openMemory() },
             Command(if (app.config.skillsEnabled) "Skills: turn off" else "Skills: turn on (list them)", "Chat", "/skills") { toggleSkills() },
             Command("Tools mode: ${app.config.toolMode} → next (ask, auto, plan)", "Chat", "/mode", app.config.toolsEnabled) { cycleMode() },
+            Command(if (app.config.toolAutoShell) "Shell commands: ask before running again" else "Shell commands: run without asking", "Chat", "/autorun", app.config.toolsEnabled && app.config.toolShell) { toggleAutoRun() },
             Command(if (app.config.toolsEnabled) "Tools: turn off" else "Tools: turn on (read and write notes and files)", "Chat", "/tools") { toggleTools() },
             Command(if (app.config.chatUseVault) "Answer from my vault: turn off" else "Answer from my vault: turn on", "Chat", "/vault") { toggleVault() },
             Command("Select & copy", "Chat", "Esc then s", entries.isNotEmpty()) { browsing = true; output.beginSelect { toast(it.text) } },

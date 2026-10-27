@@ -133,6 +133,8 @@ gets an error telling it to call again. Offered in plan mode and when tools are 
 
 ## Shell (`run_command`)
 
+`toolAutoShell` (`/autorun`, Settings → Tools → *Run commands without asking*) skips the approval of every command; blocked ones are refused before the approval step, so they still never run. The Chat status bar shows a red `▶ auto-run` pill while it is on (and not in Plan mode).
+
 `ToolRisk.Shell`, off by default (`toolShell`; the first call asks "Turn on shell commands?"). `ShellPolicy` (core/Shell.kt):
 `blockedReason` refuses sudo, `rm -r` on `/ ~ * ..`, disk formatting, fork bombs and download-into-shell; `isSafe` lets only single simple
 commands (pwd, date, whoami, uname, hostname, which, git status/log/diff/show/branch/…) run without a prompt when *Read without asking* is
