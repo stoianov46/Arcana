@@ -23,6 +23,7 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `ChatStats.kt` | `CHAT_STATS`, `CHAT_STATS_DEFINITION`, `ChatStats.describe(...)`: the text the `chat_stats` pseudo-tool returns |
 | `ToolUsage.kt` | `ToolUseRecord` (time, tool, millis, `ok`/`error`/`denied`, result chars → `approxTokens` = chars/4), `ToolUseStore` (`tool-usage.jsonl` next to the settings), `ToolStats.by/since` → `ToolTotals` |
 | `Compaction.kt` | `Compaction`: `MARK`, `isSummary`, `summaryMessage`, `forModel` (from the latest summary on), `cutPoint` (the user's last 2 turns stay; ≥4 older messages), `toSummarize`, `transcript` (tool results cut to 400 characters, ≤30,000 characters) and `INSTRUCTIONS` for the summarizer; the summary is inserted into the chat, nothing is deleted |
+| `Sound.kt` | `ChatSoundEvent` (Attention, Done, Failed), `SoundChoices` (ids, labels, `suggested`), `SoundPlayer` / `CommandSoundPlayer` (`afplay` or the terminal bell), `Sounds.notify(config, event, onChatScreen)` |
 | `Diff.kt` | `Diff.unified(old, new, context)`: a git-style line diff (`@@ -a,b +c,d @@` hunks, `  ` context, `- ` removed, `+ ` added; common start and end cut off first, an LCS for the middle, big middles shown as one replacement); used by the change previews |
 | `Shell.kt` | `ShellPolicy` (blocked / safe commands) and `runShell` (the `run_command` runner) |
 | `Web.kt` | `WebPolicy` (public addresses only), `fetchUrl` (manual redirects, size/time limits), `htmlToText` |

@@ -78,6 +78,16 @@ data class AppConfig(
     val searchBackend: String = "duckduckgo",
     val searchUrl: String = "",
     val searchKey: String = "",
+    /** Sounds for what happens in Chat (see [SoundChoices] for the ids): when the model waits for you, when a reply finishes, when it fails. All off by default. */
+    val soundAttention: String = "off",
+    val soundDone: String = "off",
+    val soundFailed: String = "off",
+    /** Volume of system and file sounds (the terminal bell has none), in percent. */
+    val soundVolume: Int = 80,
+    /** The sound file used by the choice "Your own file" (.wav, .aiff, .mp3). */
+    val soundFile: String = "",
+    /** "away": a sound plays only while another screen than Chat is showing; "always": also while you look at Chat. */
+    val soundWhere: String = "away",
     /** The project the user works on: a folder that is allowed like the vault, where relative paths and commands start, and whose own instructions (ARCANA.md, CLAUDE.md or AGENTS.md) go to the model. Empty = none. */
     val projectFolder: String = "",
     /** The model may ask to read web pages (fetch_url; every address asks first). Off by default. */

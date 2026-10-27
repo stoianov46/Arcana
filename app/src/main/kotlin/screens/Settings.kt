@@ -29,7 +29,7 @@ import java.nio.file.Path
 import kotlinx.coroutines.launch
 
 private enum class Group(val title: String) {
-    Ollama("Ollama"), Vault("Vault"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Accessibility("Accessibility"), Tabs("Tabs"),
+    Ollama("Ollama"), Vault("Vault"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Sounds("Sounds"), Accessibility("Accessibility"), Tabs("Tabs"),
 }
 
 /** How Enter edits a setting that is not simply stepped with ←/→. */
@@ -88,6 +88,19 @@ private fun text(group: Group, label: String, help: String, get: (AppConfig) -> 
             set(c, v.trim())
         },
     )
+
+/** Plays [choice] at once, so a sound is heard as it is chosen. */
+private fun hear(config: AppConfig, choice: String) = com.arcana.brain.core.Sounds.player.play(choice, config.soundVolume, config.soundFile, null)
+
+private val soundOptions = com.arcana.brain.core.SoundChoices.ids.map { it to com.arcana.brain.core.SoundChoices.label(it) }
+
+private fun soundSetting(label: String, help: String, event: com.arcana.brain.core.ChatSoundEvent, get: (AppConfig) -> String, set: (AppConfig, String) -> AppConfig) =
+    choice(Group.Sounds, label, "$help ←/→ chooses and plays it. Off by default; the terminal bell is the fallback where system sounds do not exist (not macOS).", soundOptions, get) { c, v ->
+        // leaving "off" forwards lands on this event's own suggested sound, so one key press already gives something sensible
+        val next = if (get(c) == com.arcana.brain.core.SoundChoices.OFF && v == com.arcana.brain.core.SoundChoices.system.first().let { "sys:$it" }) com.arcana.brain.core.SoundChoices.suggested(event) else v
+        hear(c, next)
+        set(c, next)
+    }
 
 private val settings: List<Setting> = listOf(
     text(Group.Ollama, "Ollama URL", "Where the Ollama server listens.", { it.ollamaUrl }, { c, v ->
@@ -176,6 +189,19 @@ private val settings: List<Setting> = listOf(
     text(Group.Prompts, "System prompt", "Tells the model who it is. Sent with every request.", { it.systemPrompt }, { c, v -> c.copy(systemPrompt = v) }),
     text(Group.Prompts, "Summary prompt", "The instruction used by Summarize.", { it.summaryPrompt }, { c, v -> c.copy(summaryPrompt = v) }),
 
+    soundSetting("Needs you", "Plays when the model waits for you: an approval or a question.", com.arcana.brain.core.ChatSoundEvent.Attention, { it.soundAttention }, { c, v -> c.copy(soundAttention = v) }),
+    soundSetting("Reply finished", "Plays when a reply, with all its tool steps, is finished.", com.arcana.brain.core.ChatSoundEvent.Done, { it.soundDone }, { c, v -> c.copy(soundDone = v) }),
+    soundSetting("Reply failed", "Plays when a reply ends with an error.", com.arcana.brain.core.ChatSoundEvent.Failed, { it.soundFailed }, { c, v -> c.copy(soundFailed = v) }),
+    choice(Group.Sounds, "Play when", "Away: only while another screen than Chat is showing (you are not looking at the reply). Always: also while you are in Chat.", listOf("away" to "Away from Chat", "always" to "Always"), { it.soundWhere }, { c, v -> c.copy(soundWhere = v) }),
+    stepper(Group.Sounds, "Volume", "Volume of system sounds and your own file, in percent (the terminal bell has none). ←/→ step by 10 and play a sample.", 0..100, 10, { it.soundVolume }, { c, n ->
+        val next = c.copy(soundVolume = n)
+        hear(next, listOf(c.soundDone, c.soundAttention, c.soundFailed).firstOrNull { it != com.arcana.brain.core.SoundChoices.OFF } ?: "sys:Pop")
+        next
+    }, " %"),
+    text(Group.Sounds, "Your own sound", "A sound file (.wav, .aiff, .mp3) for the choice “Your own file”; ~ is your home folder. macOS plays it with afplay.", { it.soundFile }, { c, v ->
+        require(v.isBlank() || java.io.File(v.trim().let { p -> if (p.startsWith("~/")) System.getProperty("user.home") + p.removePrefix("~") else p }).isFile) { "That file does not exist" }
+        c.copy(soundFile = v.trim())
+    }, allowEmpty = true),
     choice(Group.Accessibility, "Interface scale", "A terminal sets its own font size, so this is the layout density: Spacious keeps the roomy screens for longer, Compact packs more in. Change your terminal's font size for bigger text.", listOf("compact" to "Compact", "normal" to "Normal", "spacious" to "Spacious"), { it.uiScale }, { c, v -> c.copy(uiScale = v) }),
     toggle(Group.Accessibility, "Screen-reader output", "Drops decorative symbols (▌ ✓ ✕ → • and the rounded frames) in favour of plain words and ASCII that read cleanly in a screen reader.", { it.plainGlyphs }, { c, v -> c.copy(plainGlyphs = v) }),
 )

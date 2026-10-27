@@ -147,6 +147,7 @@ Tabs (groups) and rows:
   Timeout, Price for prompt/reply tokens (only for the estimated price).
 - **Vault**: Vault path (folder browser), Output folder, Context notes, Inbox folder, Daily notes folder/format, Stale after, Chars per note.
 - **Appearance**: Colour theme, Navigation (left/right/top), Sidebar (full/icons), Logo animation.
+- **Sounds** (all off by default; `core/Sound.kt`): *Needs you* (an approval or a question waits), *Reply finished*, *Reply failed*: each ←/→ over Off, macOS system sounds, terminal bells × 1–5 and *Your own file* (and plays the choice as you step); *Play when* (`soundWhere`: `away` = only while another screen than Chat is showing, `always`), *Volume*, *Your own sound* (a file path). `Shell` watches `app.chat.approval / question / gen.state` with `snapshotFlow` and calls `Sounds.notify`; `CommandSoundPlayer` plays through `afplay` on macOS and falls back to the terminal bell. The Chat tab itself shows `!` (an approval) or `?` (a question), pulsing, from every screen.
 - **Console**: Answer from vault, Render Markdown, Show thinking, Chat history, Keep chats, Chats kept, Copy as.
 - **Tools**: Tools in Chat, Extra folders, Shell commands, Calls written as text (auto/ask/off), Search backend (DuckDuckGo/SearXNG/Brave),
   Search address, Search API key, Web pages (search and fetch), Mode (ask/auto/plan), Read without asking, Steps per question (1–60).

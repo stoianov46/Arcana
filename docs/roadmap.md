@@ -51,9 +51,9 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 
 | # | Task | Status |
 |---|---|---|
-| 22 | Attention icon on the Chat tab when a job needs `ask_user`, approval or a tool | todo |
-| 23 | Sound signals as in CosmoCLI | todo |
-| 20 | Sound support (setting) | todo |
+| 22 | Attention icon on the Chat tab: pulsing `!` (approval) or `?` (question) from every screen | done |
+| 23 | Sound signals as in CosmoCLI (same choice ids, `afplay`, bell fallback) | done |
+| 20 | Sound support: Settings → Sounds (all off by default) | done |
 
 ## Phase 6: Onboarding and distribution
 

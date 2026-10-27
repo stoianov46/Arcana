@@ -145,13 +145,34 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
     val topBar = nav == "top"
     val sidebarWidth = if (topBar) 0 else if (collapsed) 7 else (size.columns / 5).coerceIn(18, Dimens.SidebarWidth)
     val health = remember(app.brain.index, app.config.inboxFolder, app.config.staleDays) { app.brain.index?.health(app.config.inboxFolder, app.config.staleDays) }
+    // what the Chat tab says while it waits for you: pulsing, so it is seen from any other screen
+    val waitingFor = if (app.chat.approval != null) "!" else if (app.chat.question != null) "?" else null
+    var pulse by remember { mutableStateOf(false) }
+    LaunchedEffect(waitingFor) {
+        pulse = false
+        while (waitingFor != null) { kotlinx.coroutines.delay(500); pulse = !pulse }
+    }
+    // sounds for what happens in Chat (all off until chosen in Settings → Sounds): a dialog waits for you, a reply finishes or fails
+    LaunchedEffect(Unit) {
+        var waiting = false
+        var last = app.chat.gen.state
+        androidx.compose.runtime.snapshotFlow { Triple(app.chat.approval != null || app.chat.question != null, app.chat.gen.state, navigator.current == Screen.Chat) }.collect { (attention, state, onChat) ->
+            if (attention && !waiting) com.arcana.brain.core.Sounds.notify(app.config, com.arcana.brain.core.ChatSoundEvent.Attention, onChat)
+            waiting = attention
+            if (state != last) {
+                if (last == com.arcana.brain.app.GenState.Running && state == com.arcana.brain.app.GenState.Done) com.arcana.brain.core.Sounds.notify(app.config, com.arcana.brain.core.ChatSoundEvent.Done, onChat)
+                if (last == com.arcana.brain.app.GenState.Running && state == com.arcana.brain.app.GenState.Failed) com.arcana.brain.core.Sounds.notify(app.config, com.arcana.brain.core.ChatSoundEvent.Failed, onChat)
+                last = state
+            }
+        }
+    }
     val badge: (Screen) -> Pair<String, Color>? = { screen ->
         when (screen) {
             Screen.Inbox -> health?.inbox?.takeIf { it > 0 }?.let { it.toString() to Palette.Orange }
             Screen.Session -> if (app.session.needsSaving) "${app.session.unsavedCount}" to Palette.Warn else null
             // a dialog the model is waiting on (an approval, a question) must be seen from every screen: the reply cannot go on without an answer
             Screen.Chat -> when {
-                app.chat.approval != null || app.chat.question != null -> "!" to Palette.Warn
+                waitingFor != null -> waitingFor to (if (pulse) Palette.Orange else Palette.Warn)
                 app.chat.gen.state == com.arcana.brain.app.GenState.Running -> "…" to Palette.Accent
                 else -> null
             }
