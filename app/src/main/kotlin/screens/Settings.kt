@@ -28,8 +28,11 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.launch
 
+/** Backups and trash are pruned by age: what is older than this many days. */
+private const val PRUNE_DAYS = 30
+
 private enum class Group(val title: String) {
-    Ollama("Ollama"), Vault("Vault"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Sounds("Sounds"), Accessibility("Accessibility"), Tabs("Tabs"),
+    Ollama("Ollama"), Vault("Vault"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Sounds("Sounds"), Storage("Storage"), Accessibility("Accessibility"), Tabs("Tabs"),
 }
 
 /** How Enter edits a setting that is not simply stepped with ←/→. */
@@ -39,6 +42,8 @@ private sealed interface Editor {
     data object Model : Editor
     data object Folder : Editor
     data object Theme : Editor
+    /** Enter asks to clear the files of one [com.arcana.brain.core.Storage] area. */
+    class Clear(val area: String) : Editor
 }
 
 private class Setting(
@@ -101,6 +106,25 @@ private fun soundSetting(label: String, help: String, event: com.arcana.brain.co
         hear(c, next)
         set(c, next)
     }
+
+/** The folder that holds Arcana's own files (`config.json` and the rest). */
+private fun storageRoot(): Path = com.arcana.brain.core.ConfigStore.defaultPath().toAbsolutePath().parent
+
+/** The storage areas as they are now: the vault's own `.trash` is among them when a vault is set. */
+private fun storageAreas(config: AppConfig): List<com.arcana.brain.core.StorageArea> =
+    com.arcana.brain.core.Storage.areas(storageRoot(), config.vaultPath.trim().takeIf { it.isNotEmpty() }?.let { AppContext.expandHome(it) }?.takeIf { Files.isDirectory(it) })
+
+private fun storageSetting(id: String): Setting {
+    val template = com.arcana.brain.core.Storage.areas(Path.of("."), Path.of(".")).first { it.id == id }
+    return Setting(
+        Group.Storage, template.title, "${template.detail.replaceFirstChar { it.uppercase() }}. Enter clears it after you confirm. Nothing here is your notes or your settings.",
+        value = { c ->
+            val area = storageAreas(c).firstOrNull { it.id == id }
+            if (area == null) "(no vault)" else com.arcana.brain.core.Storage.use(area).let { if (it.files == 0) "empty" else "${it.files} file${if (it.files == 1) "" else "s"} · ${com.arcana.brain.core.Storage.size(it.bytes)}" }
+        },
+        editor = Editor.Clear(id),
+    )
+}
 
 private val settings: List<Setting> = listOf(
     text(Group.Ollama, "Ollama URL", "Where the Ollama server listens.", { it.ollamaUrl }, { c, v ->
@@ -202,6 +226,13 @@ private val settings: List<Setting> = listOf(
         require(v.isBlank() || java.io.File(v.trim().let { p -> if (p.startsWith("~/")) System.getProperty("user.home") + p.removePrefix("~") else p }).isFile) { "That file does not exist" }
         c.copy(soundFile = v.trim())
     }, allowEmpty = true),
+    storageSetting(com.arcana.brain.core.Storage.BACKUPS),
+    storageSetting(com.arcana.brain.core.Storage.TRASH),
+    storageSetting(com.arcana.brain.core.Storage.VAULT_TRASH),
+    storageSetting(com.arcana.brain.core.Storage.CHATS),
+    storageSetting(com.arcana.brain.core.Storage.SESSIONS),
+    storageSetting(com.arcana.brain.core.Storage.USAGE),
+    storageSetting(com.arcana.brain.core.Storage.TOOL_USAGE),
     choice(Group.Accessibility, "Interface scale", "A terminal sets its own font size, so this is the layout density: Spacious keeps the roomy screens for longer, Compact packs more in. Change your terminal's font size for bigger text.", listOf("compact" to "Compact", "normal" to "Normal", "spacious" to "Spacious"), { it.uiScale }, { c, v -> c.copy(uiScale = v) }),
     toggle(Group.Accessibility, "Screen-reader output", "Drops decorative symbols (▌ ✓ ✕ → • and the rounded frames) in favour of plain words and ASCII that read cleanly in a screen reader.", { it.plainGlyphs }, { c, v -> c.copy(plainGlyphs = v) }),
 )
@@ -215,6 +246,7 @@ private sealed interface Editing {
     data object PickTheme : Editing
     data class PickFolder(val browser: DirectoryPickerState) : Editing
     data object ConfirmReset : Editing
+    data class ConfirmClear(val areaId: String) : Editing
 }
 
 /** What Ollama really runs the model with, next to the setting that asks for it: the number that counts, and a warning when it is small. */
@@ -300,6 +332,12 @@ fun SettingsScreen(app: AppContext) {
                     editing = Editing.Typing(setting, Editor.Text { c, v -> require(v.isNotBlank()) { "Model name cannot be empty" }; c.copy(model = v.trim()) })
                 }
             }
+            is Editor.Clear -> {
+                val area = storageAreas(app.config).firstOrNull { it.id == editor.area }
+                if (area == null) notice = Notice("Choose a vault first (Settings → Vault).", isError = true)
+                else if (com.arcana.brain.core.Storage.use(area).files == 0) notice = Notice("${area.title} is already empty.")
+                else editing = Editing.ConfirmClear(area.id)
+            }
             null -> setting.step?.let { changed(it(app.config, 1), setting.label) }
         }
     }
@@ -366,6 +404,7 @@ fun SettingsScreen(app: AppContext) {
         is Editing.PickFolder ->
             if (mode.browser.filtering) Hints("↑↓  move", "Enter  open", "Esc  clear filter") else Hints("Space  use folder", "Enter  open", "←  up", "/  filter", "Esc  cancel")
         Editing.ConfirmReset -> Hints("y  reset all", "any other key  keep")
+        is Editing.ConfirmClear -> storageAreas(app.config).firstOrNull { it.id == mode.areaId }?.let { if (it.prunable) Hints("y  clear what is older than $PRUNE_DAYS days", "a  clear everything", "any other key  keep") else Hints("y  clear it", "any other key  keep") } ?: Hints("any other key  back")
     }
 
     KeyHandler { key ->
@@ -410,6 +449,16 @@ fun SettingsScreen(app: AppContext) {
                     // Everything goes back to the built-in defaults except where the vault is.
                     app.update(AppConfig(vaultPath = app.config.vaultPath))
                     notice = Notice("All options reset to the built-in defaults")
+                }
+                editing = null
+                true
+            }
+            is Editing.ConfirmClear -> {
+                val area = storageAreas(app.config).firstOrNull { it.id == mode.areaId }
+                val days = if (key.char == 'y' || key.char == 'Y') (if (area?.prunable == true) PRUNE_DAYS else 0) else if (area?.prunable == true && (key.char == 'a' || key.char == 'A')) 0 else -1
+                if (area != null && days >= 0) {
+                    val removed = app.clearStorage(area, days)
+                    notice = Notice("${area.title}: $removed file${if (removed == 1) "" else "s"} removed")
                 }
                 editing = null
                 true
@@ -500,6 +549,23 @@ fun SettingsScreen(app: AppContext) {
                     NoticeLine(notice)
                 }
                 ActionBar(DirectoryPickerState.actions(mode.browser))
+            }
+            is Editing.ConfirmClear -> {
+                val area = storageAreas(app.config).firstOrNull { it.id == mode.areaId }
+                ScreenHeader("Settings › Storage", area?.title ?: "Storage")
+                VGap()
+                Panel("Clear ${area?.title ?: "this"}?", accent = Palette.Red) {
+                    if (area != null) {
+                        val all = com.arcana.brain.core.Storage.use(area)
+                        Warning("${area.detail.replaceFirstChar { it.uppercase() }}: ${all.files} file${if (all.files == 1) "" else "s"}, ${com.arcana.brain.core.Storage.size(all.bytes)} in ${area.path.toString().replace(System.getProperty("user.home"), "~")}. This cannot be undone.")
+                        if (area.prunable) {
+                            val old = com.arcana.brain.core.Storage.clearable(area, PRUNE_DAYS)
+                            Hint("y removes only what is older than $PRUNE_DAYS days (${old.files} file${if (old.files == 1) "" else "s"}, ${com.arcana.brain.core.Storage.size(old.bytes)}); a removes everything.")
+                        }
+                    }
+                }
+                ActionBar(if (area?.prunable == true) listOf(ActionItem("y", "Older than $PRUNE_DAYS days", accent = Palette.Red), ActionItem("a", "Everything", accent = Palette.Red), ActionItem("any other key", "Keep", accent = Palette.Cta))
+                    else listOf(ActionItem("y", "Clear it", accent = Palette.Red), ActionItem("any other key", "Keep", accent = Palette.Cta)))
             }
             Editing.ConfirmReset -> {
                 ScreenHeader("Settings", "Reset every option")

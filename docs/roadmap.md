@@ -62,7 +62,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 | 19 | First-run setup wizard: vault, `ARCANA.md` from the template, Skills folder, output folder (`SetupScreen`, `Bootstrap`) | done |
 | 5 | Starter skills shipped with the setup (`StarterSkills`) | done |
 | 21 | Decomposition skill as in CosmoCLI: `decompose` (quiz with `ask_user`, plan note, one item at a time) | done |
-| 25 | Manage Arcana's cache and tmp files in Settings | todo |
+| 25 | Manage Arcana's own files in Settings → Storage (size per area, clear, prune backups and trash by age) | done |
 | 26 | Distributable build (`make dist` → arcana.zip) with a configurable init: the wizard, or `arcana --init <vault> [--skip …]` | done |
 | 16 | Oracul concept (needs a design discussion first) | todo |
 

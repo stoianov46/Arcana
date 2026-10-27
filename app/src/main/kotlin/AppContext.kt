@@ -114,6 +114,16 @@ class AppContext(
         runCatching { usageStore.append(record) }
     }
 
+    /** Clears the files of a [com.arcana.brain.core.StorageArea] (only those older than [olderThanDays] when it is above 0) and what is kept in memory for it; returns how many files went. */
+    fun clearStorage(area: com.arcana.brain.core.StorageArea, olderThanDays: Int = 0): Int {
+        val removed = runCatching { com.arcana.brain.core.Storage.clear(area, olderThanDays) }.getOrDefault(0)
+        when (area.id) {
+            com.arcana.brain.core.Storage.USAGE -> usage.clear()
+            com.arcana.brain.core.Storage.TOOL_USAGE -> toolUsage.clear()
+        }
+        return removed
+    }
+
     fun clearUsage() {
         usage.clear()
         runCatching { usageStore.clear() }
