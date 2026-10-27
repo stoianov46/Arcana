@@ -64,6 +64,12 @@ class Generation(
     var error by mutableStateOf<String?>(null)
         private set
 
+    /** What the model thought during the round that just ended; [takeThinking] hands it to whoever records the round, once. */
+    private var roundThinking = ""
+
+    /** The thoughts of the round that just ended (kept apart from the answer), cleared by reading them. */
+    fun takeThinking(): String = roundThinking.also { roundThinking = "" }
+
     /** Tokens and timing of the finished reply (null until it ends, or when nothing was reported). */
     var stats by mutableStateOf<ReplyStats?>(null)
         private set
@@ -102,6 +108,7 @@ class Generation(
                 var emptyRetries = 0
                 while (true) {
                     val buffer = StringBuilder()
+                    val thoughts = StringBuilder()
                     val calls = ArrayList<ToolCall>()
                     if (onToolRound != null && onStepLimit != null && activeTools != null && step > 0 && step >= limit) {
                         limit += onStepLimit.invoke(step)
@@ -130,14 +137,17 @@ class Generation(
                                 buffer.append(chunk.content)
                                 text = buffer.toString()
                                 thinking = false
-                            } else if (chunk.thinking.isNotEmpty()) {
-                                thinking = true
+                            }
+                            if (chunk.thinking.isNotEmpty()) {
+                                if (thoughts.length < MAX_THINKING_CHARS) thoughts.append(chunk.thinking)
+                                if (chunk.content.isEmpty()) thinking = true
                             }
                         }
                     } finally {
                         // a cancelled or failed request never gets exact figures: do not leave its estimate in the counters
                         if (liveAdded != 0) onLive(-liveAdded)
                     }
+                    roundThinking = thoughts.toString().trim()
                     // a call the model wrote as text instead of making it: run it as the real thing
                     var roundText = buffer.toString().trim()
                     if (calls.isEmpty() && onToolRound != null && offered != null && textCalls() != "off") {
@@ -261,6 +271,9 @@ fun rememberGeneration(app: AppContext, feature: String): Generation {
 
 /** How many announcements in a row (without a tool call in between) are pushed on before the reply is accepted as it is. */
 private const val MAX_NUDGES = 2
+
+/** The most thinking text kept for one reply; a reasoning model can write far more than anyone reads. */
+private const val MAX_THINKING_CHARS = 20_000
 
 /** How often an empty reply is answered with [EMPTY_NUDGE] before it counts as an error. */
 private const val MAX_EMPTY_RETRIES = 1

@@ -13,7 +13,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 | 17 | Chat labels `◆ model` and a user glyph; per-family icon set in the design system (`ModelIcon`) | done |
 | 9 | Cancel a reply with `Esc` twice instead of once (no misclicks) | done |
 | 11 | Console output fills the remaining chat height | needs repro (idle chat fills the height at 24, 40 and 60 rows; the gap may only show while a reply runs or an approval is open) |
-| 30 | Split the thinking process from the answer | todo |
+| 30 | Split the thinking process from the answer (`ChatMessage.thinking`, setting *Thinking in Chat*) | done |
 | 31 | Handle `The model returned an empty response`: one hidden retry before the error (not a setting yet) | done |
 | 33 | Library: narrower notes list, wider note content (30 % / 70 %) | done |
 

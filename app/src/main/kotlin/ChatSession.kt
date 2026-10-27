@@ -219,7 +219,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private suspend fun runTools(text: String, calls: List<ToolCall>, stats: ReplyStats?): List<ChatMessage> {
         val box = toolbox
         val added = ArrayList<ChatMessage>()
-        val request = ChatMessage.assistantCalls(text, calls, stats)
+        val request = ChatMessage.assistantCalls(text, calls, stats, gen.takeThinking())
         add(request)
         added += request
         for (call in calls) {
@@ -486,7 +486,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     private fun finishReply(text: String, stats: ReplyStats?) {
-        add(ChatMessage.assistant(text, stats, pendingSources))
+        add(ChatMessage.assistant(text, stats, pendingSources, gen.takeThinking()))
         pendingSources = emptyList()
         gen.consume()
     }

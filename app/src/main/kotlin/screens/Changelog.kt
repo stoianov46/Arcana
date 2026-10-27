@@ -38,6 +38,7 @@ Built on 24–25 October 2026. Last updated 26 October 2026.
 - A reply that ended in a tool call shows a quiet `step` line, so only the final answer says **Done**.
 
 ## More tools
+- **Thinking is kept apart from the answer**: what a reasoning model thinks is stored with its reply and shown as a dim `◌ thinking · 412 words` line above the answer (Settings → Console → *Thinking in Chat*: Summary, Full or Hidden). It is never copied with the answer and never sent back to the model.
 - **Library gives the note more room**: the notes list takes 30 % of the width (it was 42 %) and the note preview the rest, with the divider line under its header running the whole width.
 - **Who is speaking**: in Chat, replies are labelled `◆ qwen3:30b` and your messages `● You`; the glyph follows the model family (`◆` gemma, `◈` qwen, `▲` llama, `◐` mistral, `◇` phi, `◉` deepseek, …) and the status bar uses it too. The name is always exactly what Ollama calls the model.
 - **Empty replies get a second chance**: a model that answers with nothing (after a tool result or a finished skill) is asked once more, out of sight, for a short answer; only a second empty reply shows "The model returned an empty response."

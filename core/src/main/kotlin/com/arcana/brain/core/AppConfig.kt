@@ -34,6 +34,8 @@ data class AppConfig(
     val renderMarkdown: Boolean = true,
     /** Show "<model> is thinking…" while a reasoning model works before its first words. */
     val showThinking: Boolean = true,
+    /** How a reasoning model's thoughts show in Chat: "hidden", "summary" (one line with the length) or "full" (the whole text, dimmed, before the answer). */
+    val thinkingView: String = "summary",
     /** How many of the latest chat messages are sent to the model as context. */
     val chatHistory: Int = 20,
     /** Chats are saved to disk and the last one is reopened when Arcana starts. */

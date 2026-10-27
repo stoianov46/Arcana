@@ -77,6 +77,31 @@ class SkillGateTest {
     }
 
     @Test
+    fun thinkingIsKeptApartFromTheAnswerAndNeverSentBack() {
+        val bodies = CopyOnWriteArrayList<String>()
+        val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0)
+        server.createContext("/api/chat") { exchange ->
+            bodies += exchange.requestBody.readBytes().decodeToString()
+            val bytes = ("""{"message":{"role":"assistant","content":"","thinking":"Let me "},"done":false}""" + "\n" +
+                """{"message":{"role":"assistant","content":"","thinking":"think."},"done":false}""" + "\n" +
+                """{"message":{"role":"assistant","content":"Answer."},"done":true,"prompt_eval_count":1,"eval_count":1}""" + "\n").toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            val (gen, completed) = runLoop(server, null, CopyOnWriteArrayList())
+            assertEquals("Answer.", completed())
+            assertEquals("Let me think.", gen.takeThinking())
+            assertEquals("", gen.takeThinking(), "reading it clears it")
+            val request = com.arcana.brain.core.OllamaProtocol.chatRequest(AppConfig(), listOf(ChatMessage.assistant("Answer.", thinking = "secret thoughts")))
+            assertTrue("secret thoughts" !in request.toString())
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
     fun anEmptyReplyIsAskedAgainOnceBeforeItIsAnError() {
         val bodies = CopyOnWriteArrayList<String>()
         val server = fakeOllama(listOf(reply(""), reply("Here is the summary.")), bodies)

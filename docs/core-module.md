@@ -37,7 +37,7 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 - `OllamaProtocol` (pure, unit-tested): `chatRequest(config, messages, jsonMode, tools)`, `parseChunk(line)`, `parseCapabilities`,
   `parseModels`. Messages are serialized with `ChatMessage.withFilesInlined()` (text files become part of `content`).
   Defaults are not encoded, so app-only fields (`imageNames`, `stats`, `noteNames`, `sources`) never reach Ollama when empty.
-- `ChatMessage(role, content, images(base64), imageNames, stats, noteNames, sources, files, toolCalls, toolName)`:
+- `ChatMessage(role, content, images(base64), imageNames, stats, noteNames, sources, files, toolCalls, toolName, thinking)`:
   - roles: `system | user | assistant | tool`.
   - `images` are kept in memory only; stored chats use `withoutImageData()`.
   - `noteNames` are vault paths whose text is read **at send time** (so changed notes are seen as they are).

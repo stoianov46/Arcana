@@ -536,4 +536,14 @@ class DesignTest {
         assertEquals("* qwen3:30b", com.arcana.brain.app.design.ModelIcon.label("qwen3:30b", plain = true))
         assertEquals("●", com.arcana.brain.app.design.ModelIcon.user())
     }
+
+    @Test
+    fun thinkingLinesFollowTheViewAndStayOutOfSelection() {
+        val text = "first second\nthird"
+        assertTrue(com.arcana.brain.app.screens.thinkingLines(text, "hidden", false, 40).isEmpty())
+        assertTrue(com.arcana.brain.app.screens.thinkingLines("  ", "full", false, 40).isEmpty())
+        assertEquals(listOf("◌ thinking · 3 words"), com.arcana.brain.app.screens.thinkingLines(text, "summary", false, 40).map { it.text })
+        val full = com.arcana.brain.app.screens.thinkingLines(text, "full", false, 40)
+        assertTrue(full.size > 2 && full.all { it.entry < 0 })
+    }
 }

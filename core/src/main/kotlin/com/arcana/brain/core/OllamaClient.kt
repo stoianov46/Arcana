@@ -43,15 +43,17 @@ data class ChatMessage(
     @SerialName("tool_calls") val toolCalls: List<ToolCall> = emptyList(),
     /** For a `tool` message: the tool whose result [content] is. */
     @SerialName("tool_name") val toolName: String? = null,
+    /** For a reply: what a reasoning model thought before it answered. Kept with the chat to be shown; never sent back to the model. */
+    val thinking: String = "",
 ) {
     companion object {
         fun system(content: String) = ChatMessage("system", content)
         fun user(content: String, images: List<ImageAttachment> = emptyList(), notes: List<String> = emptyList(), files: List<FileAttachment> = emptyList()) =
             ChatMessage("user", content, images.map { it.base64 }, images.map { it.name }, noteNames = notes, files = files)
-        fun assistant(content: String, stats: ReplyStats? = null, sources: List<String> = emptyList()) =
-            ChatMessage("assistant", content, stats = stats, sources = sources)
-        fun assistantCalls(content: String, calls: List<ToolCall>, stats: ReplyStats? = null) =
-            ChatMessage("assistant", content, stats = stats, toolCalls = calls)
+        fun assistant(content: String, stats: ReplyStats? = null, sources: List<String> = emptyList(), thinking: String = "") =
+            ChatMessage("assistant", content, stats = stats, sources = sources, thinking = thinking)
+        fun assistantCalls(content: String, calls: List<ToolCall>, stats: ReplyStats? = null, thinking: String = "") =
+            ChatMessage("assistant", content, stats = stats, toolCalls = calls, thinking = thinking)
         fun toolResult(name: String, content: String) = ChatMessage("tool", content, toolName = name)
     }
 
@@ -139,7 +141,7 @@ object OllamaProtocol {
         put("stream", true)
         if (jsonMode) put("format", "json")
         if (tools != null && tools.isNotEmpty()) put("tools", tools)
-        put("messages", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ChatMessage.serializer()), messages.map { it.withFilesInlined() }))
+        put("messages", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ChatMessage.serializer()), messages.map { it.withFilesInlined().copy(thinking = "") }))
         put("options", buildJsonObject {
             put("temperature", config.temperature)
             if (config.contextTokens > 0) put("num_ctx", config.contextTokens)

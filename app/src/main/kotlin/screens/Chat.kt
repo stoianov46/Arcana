@@ -826,6 +826,7 @@ private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, widt
             add(Line("", background = band, entry = entry))
         } else {
             add(Line(ModelIcon.label(config.model, config.plainGlyphs), Palette.Accent, bold = true, entry = entry))
+            addAll(thinkingLines(message.thinking, config.thinkingView, config.plainGlyphs, width))
             addAll(renderMarkdown(parseMarkdown(message.content), width, entry = { entry + it }, rich = config.renderMarkdown, plainGlyphs = config.plainGlyphs))
             // the tools it asked for, one line each
             message.toolCalls.forEach { call -> add(Line("${if (config.plainGlyphs) "[tool]" else "⚙"} ${call.name}  ${sanitizeForTerminal(callSummary(call))}".take(width), Palette.ConsoleTool, bold = true)) }
@@ -839,6 +840,20 @@ private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, widt
         // the gap after a message belongs to no entry, so the cursor never rests on it
         add(Line(""))
     }
+}
+
+/**
+ * What a reasoning model thought, kept apart from its answer: nothing ([view] "hidden"), one dim line with the length ("summary"), or all of it,
+ * dimmed, under a header ("full"). These lines belong to no select entry, so copying takes only the answer.
+ */
+internal fun thinkingLines(thinking: String, view: String, plain: Boolean, width: Int): List<Line> {
+    val text = thinking.trim()
+    if (text.isEmpty() || view == "hidden") return emptyList()
+    val words = text.split(Regex("\\s+")).size
+    val mark = if (plain) "..." else "◌"
+    val header = "$mark thinking · $words ${if (words == 1) "word" else "words"}"
+    if (view != "full") return listOf(Line(header, Palette.ConsoleDim))
+    return listOf(Line(header, Palette.ConsoleDim, bold = true)) + wrap(sanitizeForTerminal(text), (width - 2).coerceAtLeast(10)).map { Line("  $it", Palette.ConsoleDim) } + Line("")
 }
 
 /** What select mode can pick in [m]: your message as one entry, a reply as its Markdown blocks, tool results as none. */
