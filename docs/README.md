@@ -27,6 +27,7 @@ no marketing. Read this page, then open only the file you need.
 | [core-module.md](core-module.md) | change Ollama/vault/index/session/chat-store/usage/inbox logic |
 | [app-module.md](app-module.md) | find the right file in the UI layer; state holders; navigation; design system; input |
 | [tools-and-agent.md](tools-and-agent.md) | work on the tool-calling loop, dialogs, shell/web/questions, or add a tool |
+| [roadmap.md](roadmap.md) | see the TODO list by phase and what is done; update it with every piece of work |
 | [skills.md](skills.md) | understand or change **skills** (vault runbooks), the `/` menu entries, the skill chip, the required-steps gate and its progress badge |
 | [data-and-config.md](data-and-config.md) | touch `config.json`, on-disk stores, vault conventions, frontmatter |
 | [ui-internals.md](ui-internals.md) | debug rendering: Mosaic quirks, row accounting, key dispatch, Markdown renderer |
