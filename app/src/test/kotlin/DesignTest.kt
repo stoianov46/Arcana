@@ -526,4 +526,14 @@ class DesignTest {
         assertEquals("ON", state("/memory", on)); assertEquals("OFF", state("/memory", off))
         assertEquals(null, state("/new", on)); assertEquals(null, state("/history", off))
     }
+
+    @Test
+    fun modelIconsFollowTheFamilyAndKeepTheRealName() {
+        assertEquals("◈ qwen3:30b", com.arcana.brain.app.design.ModelIcon.label("qwen3:30b"))
+        assertEquals("◆ gemma4:12b", com.arcana.brain.app.design.ModelIcon.label("gemma4:12b"))
+        assertEquals("▲ hf.co/x/Llama3:8b", com.arcana.brain.app.design.ModelIcon.label("hf.co/x/Llama3:8b"))
+        assertEquals("◆ something-new", com.arcana.brain.app.design.ModelIcon.label("something-new"))
+        assertEquals("* qwen3:30b", com.arcana.brain.app.design.ModelIcon.label("qwen3:30b", plain = true))
+        assertEquals("●", com.arcana.brain.app.design.ModelIcon.user())
+    }
 }

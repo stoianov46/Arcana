@@ -68,6 +68,7 @@ Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `
 | `Panel.kt` | `Panel(title, accent)`, `Card`, `ScreenHeader(title, subtitle)`, frame glyphs |
 | `Fields.kt` | `TextInput(label, field, focused, placeholder, maxRows, attachments)`, `LabeledField`, `InlineField`, `handleAttachmentKey` |
 | `Actions.kt` | `ActionItem`, `ActionBar(items, width)`, `actionBarRows`, `breakIntoLines`, `Badge` |
+| `ModelIcon.kt` | `ModelIcon` (`of`, `label`, `user`): the glyph before a model name by family (`◆` gemma, `◈` qwen, `▲` llama…; default `◆`, ASCII `*` in plain mode); the name itself is always Ollama's own. Used by the Chat labels and status bar; add a family to `FAMILIES` |
 | `SlashKind.kt` | `SlashKind` (+ `SlashCategory`: the COMMAND / SKILL / TOOL group and badge of every row): what a "/" menu entry is (Command, Skill, Read, Write, Shell, Danger, Web, Ask) with its `Palette` colour, glyph and badge word; `forTool(name, risk)` classifies a tool |
 | `StatusBar.kt` | **reusable status line**: `StatusSegment`/`StatusPart`, `statusSegment`, `pillSegment`, `gaugeSegment`, `fitSegments` (drops the lowest priority first), `StatusBar`, `StatusHeader`, `spanText`, `priceText` |
 | `Shortcuts.kt` | `Shortcuts.label(text)`: the one place shortcut labels pass through (Ctrl chords) |

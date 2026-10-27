@@ -10,7 +10,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 | # | Task | Status |
 |---|---|---|
 | 27 | Show the original model name in the thinking line (and anywhere else a prettified name appears) | done |
-| 17 | Chat labels `◆ model` and a user glyph; per-family icon set in the design system | todo |
+| 17 | Chat labels `◆ model` and a user glyph; per-family icon set in the design system (`ModelIcon`) | done |
 | 9 | Cancel a reply with `Esc` twice instead of once (no misclicks) | done |
 | 11 | Console output fills the remaining chat height | needs repro (idle chat fills the height at 24, 40 and 60 rows; the gap may only show while a reply runs or an approval is open) |
 | 30 | Split the thinking process from the answer | todo |

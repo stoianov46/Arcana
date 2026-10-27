@@ -116,7 +116,7 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
     val cost = UsageStats.estimatedCost(sessionRecords, config.estPriceIn, config.estPriceOut) + app.liveTokens * config.estPriceOut / 1_000_000.0
     val compact = UsageStats::compact
     return buildList {
-        add(pillSegment("◆ ${config.model}", Palette.Accent, 9))
+        add(pillSegment(ModelIcon.label(config.model, plain), Palette.Accent, 9))
         add(statusSegment("temperature", "°${config.temperature}", Palette.Accent, 6))
         if (config.chatUseVault) add(pillSegment("◉ vault", Palette.Cta, 6))
         // the memory file the assistant reads in every chat: shown, so you can see that it is in use (and how much room it takes)
@@ -815,7 +815,7 @@ private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, widt
         if (user) {
             // Your messages sit on an amber band, so they stand apart from the model's answers.
             val band = Palette.UserBg
-            add(Line("You", Palette.UserName, bold = true, background = band, entry = entry))
+            add(Line("${ModelIcon.user(config.plainGlyphs)} You", Palette.UserName, bold = true, background = band, entry = entry))
             wrap(sanitizeForTerminal(message.content), width).forEach { add(Line(it, Palette.UserText, background = band, entry = entry)) }
             message.noteNames.forEach { add(Line(Skills.chipLabel(it)?.let { chip -> sanitizeForTerminal(chip) } ?: "▤ ${sanitizeForTerminal(it.removeSuffix(".md"))}", Palette.UserName, background = band, entry = entry)) }
             message.files.forEach { add(Line("❐ ${sanitizeForTerminal(it.name)}", Palette.UserName, background = band, entry = entry)) }
@@ -825,7 +825,7 @@ private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, widt
             }
             add(Line("", background = band, entry = entry))
         } else {
-            add(Line(config.model, Palette.Accent, bold = true, entry = entry))
+            add(Line(ModelIcon.label(config.model, config.plainGlyphs), Palette.Accent, bold = true, entry = entry))
             addAll(renderMarkdown(parseMarkdown(message.content), width, entry = { entry + it }, rich = config.renderMarkdown, plainGlyphs = config.plainGlyphs))
             // the tools it asked for, one line each
             message.toolCalls.forEach { call -> add(Line("${if (config.plainGlyphs) "[tool]" else "⚙"} ${call.name}  ${sanitizeForTerminal(callSummary(call))}".take(width), Palette.ConsoleTool, bold = true)) }
