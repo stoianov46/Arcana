@@ -27,6 +27,9 @@ import com.arcana.brain.core.REQUEST_ACCESS
 import com.arcana.brain.core.looksLikeToolTask
 import kotlinx.coroutines.launch
 import com.arcana.brain.core.REQUEST_ACCESS_DEFINITION
+import com.arcana.brain.core.REQUEST_MODE
+import com.arcana.brain.core.REQUEST_MODE_DEFINITION
+import com.arcana.brain.core.TOOL_MODES
 import com.arcana.brain.core.ShellPolicy
 import com.arcana.brain.core.cleanOption
 import com.arcana.brain.core.WebPolicy
@@ -217,16 +220,18 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** Runs the tools the model asked for (asking the user first when needed) and returns the messages to continue with. */
     private suspend fun runTools(text: String, calls: List<ToolCall>, stats: ReplyStats?): List<ChatMessage> {
-        val box = toolbox
         val added = ArrayList<ChatMessage>()
         val request = ChatMessage.assistantCalls(text, calls, stats, gen.takeThinking())
         add(request)
         added += request
         for (call in calls) {
-            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || box == null) {
+            // read again for every call: an earlier call of this round may have switched the mode, which rebuilds the toolbox
+            val box = toolbox
+            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || box == null) {
                 val message = ChatMessage.toolResult(call.name, when {
                     call.name == ASK_USER -> askUser(call, text)
                     call.name == REQUEST_ACCESS -> requestAccess(call)
+                    call.name == REQUEST_MODE -> requestMode(call)
                     else -> "Error: tools are off. Call request_access to ask the user for them."
                 })
                 add(message)
@@ -372,6 +377,34 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         return "Done: tools are now on (${app.config.toolMode} mode). Carry on with the user's request using the tools. ${box?.describe().orEmpty()}"
     }
 
+    /** What the model is offered when it has a toolbox: the tools, a way to ask for another mode, and (in plan mode) a way to ask to leave it. */
+    private fun definitionsFor(box: ToolBox): JsonArray =
+        JsonArray(box.definitions() + REQUEST_MODE_DEFINITION + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
+
+    /** The model asks to switch the tool mode: the user always decides; when they agree the mode, the toolbox and the model's tools change at once. */
+    private suspend fun requestMode(call: ToolCall): String {
+        val mode = (call.arguments["mode"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim().lowercase()
+        val reason = (call.arguments["reason"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().ifBlank { "No reason given." }
+        if (mode !in TOOL_MODES) return "Error: mode must be one of ${TOOL_MODES.joinToString()}, not \"$mode\"."
+        if (mode == app.config.toolMode) return "Already in $mode mode; nothing to change."
+        val pending = Approval(
+            "mode", reason,
+            listOf(when (mode) {
+                "auto" -> "Auto: changes run at once, without asking; replaced files are backed up. Deleting and moving still ask."
+                "plan" -> "Plan: read-only. The model investigates and writes a plan; nothing is changed."
+                else -> "Ask: every change waits for your y / n."
+            }, "Now: ${app.config.toolMode}. Switch back any time with /mode."),
+            heading = "Switch to ${mode.replaceFirstChar { it.uppercase() }} mode?", icon = "⚙", yes = "Switch to ${mode.replaceFirstChar { it.uppercase() }}", always = false,
+        )
+        approval = pending
+        val choice = try { pending.answer.await() } finally { approval = null }
+        if (choice == ApprovalChoice.Deny) return "The user did not allow the switch; you stay in ${app.config.toolMode} mode. Do not ask again; carry on in this mode or tell them what you need."
+        app.update(app.config.copy(toolMode = mode))
+        val box = toolboxFor(app.config).also { toolbox = it }
+        gen.useTools(box?.let { definitionsFor(it) })
+        return "Done: now in $mode mode. ${box?.describe().orEmpty()}"
+    }
+
     /** Asks to turn tools on (or to leave plan mode); when the user agrees the settings change at once and [toolbox] is rebuilt. */
     private suspend fun offerTools(reason: String): Boolean {
         val off = !app.config.toolsEnabled
@@ -463,8 +496,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val canRequest = modelCanUseTools && box == null
         val offered = when {
             box == null -> if (canRequest) JsonArray(listOf(REQUEST_ACCESS_DEFINITION, ASK_USER_DEFINITION)) else null
-            app.config.toolMode == "plan" -> JsonArray(box.definitions() + REQUEST_ACCESS_DEFINITION)
-            else -> box.definitions()
+            else -> definitionsFor(box)
         }
         gen.start(tools = offered, maxSteps = Skills.stepsFor(history, app.config.toolSteps)) {
             val config = app.config

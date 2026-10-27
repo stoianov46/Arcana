@@ -908,7 +908,7 @@ private fun approvalMax(): Int = (LocalContentHeight.current / 3).coerceIn(8, 24
 
 private fun approvalActions(a: ChatSession.Approval) = listOfNotNull(
     ActionItem("y", a.yes, accent = Palette.Cta),
-    ActionItem("n", if (a.tool == "access" || a.tool == "steps" || a.tool == "memory") "Not now" else "Deny"),
+    ActionItem("n", if (a.tool == "access" || a.tool == "steps" || a.tool == "memory" || a.tool == "mode") "Not now" else "Deny"),
     if (a.always) ActionItem("a", "Always this session") else null,
 )
 

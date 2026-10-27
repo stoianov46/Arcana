@@ -23,7 +23,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 |---|---|---|
 | 18 | Diff preview with approve/reject before a file or note edit (`Diff`; `edit_file` and `write_file` over an existing file) | done |
 | 2 | Auto-approve for commands: setting, `/autorun`, red `▶ auto-run` pill in the Chat status bar | done |
-| 10 | Tool for the model to request a mode change (ask → auto → plan) | todo |
+| 10 | Tool for the model to request a mode change (`request_mode`, always asks the user) | done |
 | 1 | Ctrl+S "Save to vault" that overwrites an existing note via the file picker | todo |
 
 ## Phase 3: LLM tools

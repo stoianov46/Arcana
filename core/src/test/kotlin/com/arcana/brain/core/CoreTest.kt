@@ -582,6 +582,17 @@ class CoreTest {
     }
 
     @Test
+    fun requestModeIsOfferedAndExplainedToTheModel() {
+        val definition = REQUEST_MODE_DEFINITION.toString()
+        assertTrue(REQUEST_MODE == "request_mode" && TOOL_MODES == listOf("ask", "auto", "plan"))
+        assertTrue(TOOL_MODES.all { "\"$it\"" in definition }, definition)
+        val root = Files.createTempDirectory("arcana-mode")
+        val box = ToolBox(Vault(Files.createDirectories(root.resolve("vault"))), emptyList(), root.resolve("b"))
+        assertTrue("request_mode" in box.describe())
+        assertTrue(box.find("request_mode") == null, "a pseudo-tool: the chat answers it, the toolbox has no spec")
+    }
+
+    @Test
     fun diffShowsHunksWithContextAndLineNumbers() {
         assertTrue(Diff.unified("a\nb", "a\nb").isEmpty())
         val old = (1..10).joinToString("\n") { "line $it" }

@@ -38,6 +38,7 @@ Built on 24–25 October 2026. Last updated 26 October 2026.
 - A reply that ended in a tool call shows a quiet `step` line, so only the final answer says **Done**.
 
 ## More tools
+- **`request_mode`**: the model can ask to switch the tool mode (Ask, Auto or Plan) with a reason, for example Auto before a long series of edits or Plan to investigate first. You are always asked ("Switch to Auto mode?"); a refusal keeps the current mode.
 - **Auto-run for shell commands**: Settings → Tools → *Run commands without asking* (or `/autorun` in Chat) lets commands run without your `y`. A red `▶ auto-run` pill in the Chat status bar says it is on; `sudo`, `rm -rf /` and the like are still refused.
 - **Changes show as a diff before you allow them**: when the model wants to `edit_file` or overwrite a file with `write_file`, the approval panel shows what would really change, like `git diff` (`@@ -3,5 +3,5 @@`, two lines of context, red `-` and green `+` lines), not just the new text. A long diff is cut to fit the screen with a "… N more lines" note; a file that is not text or is over 500 KB falls back to the plain preview.
 - **Thinking is kept apart from the answer**: what a reasoning model thinks is stored with its reply and shown as a dim `◌ thinking · 412 words` line above the answer (Settings → Console → *Thinking in Chat*: Summary, Full or Hidden). It is never copied with the answer and never sent back to the model.
