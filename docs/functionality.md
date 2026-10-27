@@ -53,7 +53,7 @@ links), *Top tags*. Right: *Jump back in* (Ask your brain, AI notes, this sessio
   and out (`↓` and the bottom bar's `⚡ N tok` also count the reply tokens streaming right now via `AppContext.liveTokens`, replaced by Ollama's exact figures when the request ends; `↑` prompt tokens are exact and step once per model round), estimated price (`est.`, from Settings → Ollama → Price per million tokens), session time, tool-mode pill. Least important
   items drop first on a narrow terminal.
 - Chats are **kept automatically** (`ChatStore`, one JSON per chat; the latest reopens at start; `/history`). Leaving never asks (only
-  with *Keep chats* off does Arcana ask). The header says `kept in history · not in vault (Ctrl+S)`; **Ctrl+S "Save to vault"** turns
+  with *Keep chats* off does Arcana ask). The header says `kept in history · not in vault (Ctrl+S)`; **Ctrl+S "Save to vault"** (in its dialog **Ctrl+O** picks an existing note to overwrite with the whole chat or the last answer: `overwriting` → the `PickTarget` picker → `ConfirmReplace` → `Vault.replace`, which backs the old text up) turns
   the chat (or the last answer) into a note. `/append` and `/replace` use the last answer.
 - Output is rendered Markdown (see [ui-internals.md](ui-internals.md)): boxed tables, closed code boxes with line numbers and
   highlighting, coloured figures. Select mode: ↑↓ move, Space ticks, `c` copies (Markdown or plain per Settings), `b` code/tables only.

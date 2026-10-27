@@ -213,6 +213,8 @@ fun ChatScreen(app: AppContext) {
     val saveTitle = remember { TextFieldState() }
     var target by remember { mutableStateOf(Target.Append) }
     var replaceTarget by remember { mutableStateOf<String?>(null) }
+    // set while the Save dialog is picking an existing note to overwrite with the chat (or its last answer) instead of creating a new one
+    var overwriting by remember { mutableStateOf<SaveRequest?>(null) }
 
     fun toast(text: String, error: Boolean = false) = navigator.showToast(text, error)
 
@@ -318,7 +320,8 @@ fun ChatScreen(app: AppContext) {
     }
 
     fun applyToNote(path: String) {
-        val answer = lastAnswer ?: return
+        val whole = overwriting
+        val answer = (if (whole == null) lastAnswer else if (whole.lastAnswerOnly) lastAnswer else transcript(chat.messages, app.config.model)) ?: return
         val result = runCatching {
             val vault = app.openVault().getOrThrow()
             when (target) {
@@ -330,8 +333,11 @@ fun ChatScreen(app: AppContext) {
             app.session.log(if (target == Target.Append) SessionKind.Appended else SessionKind.Replaced, "Chat answer → ${path.removeSuffix(".md")}", path)
             app.brain.changed()
             toast(it)
+            // the chat is in the vault now, so leaving it does not ask again
+            if (whole != null) { chat.savedMessages = chat.messages.size; saving = null; whole.after?.let { next -> navigator.navigate(next, force = true) } }
         }.onFailure { toast(it.message ?: "Could not write to the note.", error = true) }
         replaceTarget = null
+        overwriting = null
         mode = ChatMode.Chat
     }
 
@@ -489,7 +495,7 @@ fun ChatScreen(app: AppContext) {
     )
     if (question != null) Hints(*(if (question.typing) arrayOf("Enter  send the answer", *(if (question.options.isNotEmpty()) arrayOf("↑  back to options") else emptyArray()), "Esc  skip") else arrayOf("↑↓  move", if (question.multiple) "Space  tick" else "Enter  choose", *(if (question.multiple) arrayOf("Enter  confirm") else emptyArray()), "1-${question.options.size}  pick", "t  type my own", "Esc  skip")))
     else if (approval != null) Hints("y  ${approval.yes.lowercase()}", "n  no", *(if (approval.always) arrayOf("a  always this session") else emptyArray())) else if (attachments.browsing) Hints(*attachBrowserHints(attachments).toTypedArray()) else when (mode) {
-        ChatMode.Save -> Hints("Enter  save", "Tab  whole chat / last answer", "Esc  cancel")
+        ChatMode.Save -> Hints("Enter  save", "Tab  whole chat / last answer", "Ctrl+O  overwrite a note", "Esc  cancel")
         ChatMode.Leave -> Hints("w  save to vault", "Esc  leave chat", "any other key  stay")
         ChatMode.ConfirmClear -> Hints("y  erase this chat", "any other key  keep")
         ChatMode.ConfirmReplace -> Hints("y  replace", "any other key  keep the note")
@@ -547,6 +553,12 @@ fun ChatScreen(app: AppContext) {
                 key == Key.Escape -> { saving = null; mode = ChatMode.Chat; true }
                 key == Key.Enter -> { if (saveTitle.text.isNotBlank()) request?.let { doSave(it) }; true }
                 key == Key.Tab -> { saving = request?.copy(lastAnswerOnly = !request.lastAnswerOnly); true }
+                // Ctrl+O: overwrite a note that is already in the vault instead of creating a new one
+                key == Key.Browse -> {
+                    if (request?.lastAnswerOnly == true && lastAnswer == null) toast("There is no answer to save yet.", error = true)
+                    else { target = Target.Replace; overwriting = request; notePicker.reset(); notePicker.startFiltering(); mode = ChatMode.PickTarget }
+                    true
+                }
                 else -> saveTitle.onKey(key)
             }
             ChatMode.Leave -> {
@@ -568,7 +580,7 @@ fun ChatScreen(app: AppContext) {
                 true
             }
             ChatMode.ConfirmReplace -> {
-                if (key.char == 'y' || key.char == 'Y') replaceTarget?.let { applyToNote(it) } else { replaceTarget = null; mode = ChatMode.Chat }
+                if (key.char == 'y' || key.char == 'Y') replaceTarget?.let { applyToNote(it) } else { replaceTarget = null; overwriting = null; saving = null; mode = ChatMode.Chat }
                 true
             }
             ChatMode.History -> when {
@@ -589,7 +601,7 @@ fun ChatScreen(app: AppContext) {
             ChatMode.PickNote, ChatMode.PickTarget -> {
                 val choices = noteChoices()
                 when {
-                    key == Key.Escape -> { mode = ChatMode.Chat; true }
+                    key == Key.Escape -> { mode = if (overwriting != null) ChatMode.Save else ChatMode.Chat; overwriting = null; true }
                     key == Key.Enter -> {
                         val picked = notePicker.selected(choices) { it.path }
                         if (picked == null) {
@@ -672,6 +684,7 @@ fun ChatScreen(app: AppContext) {
                     listOf(
                         ActionItem("Enter", "Save note", saveTitle.text.isNotBlank()),
                         ActionItem("Tab", if (request?.lastAnswerOnly == true) "Save the whole chat" else "Save last answer only"),
+                        ActionItem("Ctrl+O", "Overwrite a note…"),
                         ActionItem("Esc", "Cancel", accent = Palette.Cta),
                     ),
                 )
@@ -696,8 +709,8 @@ fun ChatScreen(app: AppContext) {
             ChatMode.ConfirmReplace -> {
                 ScreenHeader("Chat", "Replace “${replaceTarget}”")
                 VGap()
-                Panel("Replace this note with the last answer?", accent = Palette.Orange) {
-                    Warning("The text of the note is replaced by the answer. Its frontmatter is kept, and the old text is saved first in the vault's .trash folder.")
+                Panel("Replace this note with ${if (overwriting == null || overwriting?.lastAnswerOnly == true) "the last answer" else "this chat"}?", accent = Palette.Orange) {
+                    Warning("The text of the note is replaced by ${if (overwriting == null || overwriting?.lastAnswerOnly == true) "the answer" else "the chat"}. Its frontmatter is kept, and the old text is saved first in the vault's .trash folder.")
                 }
                 ActionBar(listOf(ActionItem("y", "Replace note", accent = Palette.Orange), ActionItem("any other key", "Keep the note", accent = Palette.Cta)))
             }
@@ -717,8 +730,8 @@ fun ChatScreen(app: AppContext) {
             }
             ChatMode.PickNote, ChatMode.PickTarget -> {
                 ScreenHeader(
-                    if (mode == ChatMode.PickNote) "Attach a note" else "${target.verb} a note",
-                    if (mode == ChatMode.PickNote) "Its text goes to the model with your next message" else if (target == Target.Append) "The last answer is added to the end of the note you choose" else "The text of the note you choose is replaced by the last answer (the old text is kept in .trash)",
+                    if (mode == ChatMode.PickNote) "Attach a note" else if (overwriting != null) "Overwrite a note" else "${target.verb} a note",
+                    if (mode == ChatMode.PickNote) "Its text goes to the model with your next message" else if (overwriting != null) "The text of the note you choose is replaced by ${if (overwriting?.lastAnswerOnly == true) "the last answer" else "this whole chat"} (the old text is kept in .trash)" else if (target == Target.Append) "The last answer is added to the end of the note you choose" else "The text of the note you choose is replaced by the last answer (the old text is kept in .trash)",
                 )
                 VGap()
                 Panel("Notes") {

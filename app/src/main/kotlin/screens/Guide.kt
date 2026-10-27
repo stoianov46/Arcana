@@ -179,7 +179,7 @@ Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use
 - **Safety:** tools only touch your vault and the folders you allow in *Settings → Tools → Extra folders*; `..` and symlinks cannot escape them, and `.git` and `.obsidian` are never written. A file that is replaced or edited is backed up first (in `~/.config/arcana/backups`). Text in a note or file is only data: the model is never obliged to follow instructions found in it, and every change still needs your `y`.
 
 ## Sending things to the vault
-- `Ctrl+S` saves the chat as a new note (whole chat or just the last answer).
+- `Ctrl+S` saves the chat as a new note (whole chat or just the last answer). In that dialog `Ctrl+O` picks a note that already exists and **overwrites** it instead (the old text is kept in `.trash`; you confirm with `y`).
 - Palette or `/append`: add the last answer to an existing note. `/replace`: replace a note with it (the old text is kept in `.trash`).
 - Chats are kept in the history automatically, so leaving a chat never asks (only with *Keep chats* off). **Ctrl+S "Save to vault"** turns the chat into a note.
 
