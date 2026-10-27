@@ -388,6 +388,28 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
             "Set ${keys.joinToString()} in ${a.str("path")}"
         },
         ToolSpec(
+            "add_tags", "Add tags to an existing note (in its properties). The tags it already has stay, so this is safer than set_properties for tags. Reuse the tags the vault already has (see list_tags) before inventing new ones.",
+            schema(
+                "path" to ("string" to "Path of the note inside the vault"),
+                "tags" to ("string" to "The tags, separated by commas or spaces, with or without #, for example: project, ai"),
+                required = listOf("path", "tags"),
+            ),
+            ToolRisk.Write, { it.str("path") },
+            { a -> listOf("Add tags to ${a.str("path")}") + tagList(a.str("tags")).map { "+ #$it" } },
+        ) { a ->
+            val tags = vault.addTags(notePath(a.str("path")), tagList(a.str("tags")))
+            "Tags of ${a.str("path")} are now: ${tags.joinToString { "#$it" }}"
+        },
+        ToolSpec(
+            "list_tags", "List the tags used in the vault with how many notes have each, the most used first. Look here before tagging, to reuse a tag instead of inventing a new one.",
+            schema("limit" to ("integer" to "How many tags (default 50, at most 200)")),
+            ToolRisk.Read, { "" },
+        ) { a ->
+            val counts = VaultIndex.build(vault).tagCounts
+            if (counts.isEmpty()) "The vault has no tags yet."
+            else "${counts.size} tags:\n" + counts.take((a.int("limit") ?: 50).coerceIn(1, 200)).joinToString("\n") { (tag, n) -> "#$tag  ($n)" }
+        },
+        ToolSpec(
             "remember", "Add one line to the user's memory file (ARCANA.md): a lasting fact or preference that every future chat should know. Use it only when the user asks you to remember something. The user confirms each line.",
             schema("text" to ("string" to "One short sentence to remember"), required = listOf("text")),
             ToolRisk.Write, { it.str("text") },
@@ -816,6 +838,9 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
             "Moved ${a.str("from")} to ${a.str("to")}."
         },
     )
+
+    /** `project, #ai data` as the tags `project`, `ai`, `data`. */
+    private fun tagList(text: String): List<String> = text.split(Regex("[,\\s]+")).map { VaultIndex.cleanTag(it) }.filter { it.isNotEmpty() }
 
     /** The text of the file at [raw] for a preview: null when it is missing, a folder, too big or not text. */
     private fun currentText(raw: String): String? = runCatching {

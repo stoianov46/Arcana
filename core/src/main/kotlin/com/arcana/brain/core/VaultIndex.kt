@@ -140,14 +140,27 @@ class VaultIndex(val notes: List<NoteInfo>) {
             )
         }
 
-        /** The tags listed in a frontmatter block: `tags: [a, b]`, `tags: a, b` or a `- a` list. */
+        /** A frontmatter line that starts the tags: `tags:` or `tag:`, in any case. */
+        fun isTagKey(line: String): Boolean = TagKey.containsMatchIn(line)
+        private val TagKey = Regex("""^\s*tags?\s*:""", RegexOption.IGNORE_CASE)
+
+        /** A tag as Obsidian spells it: no `#`, no quotes or `[[ ]]`, no spaces (they become `-`). */
+        fun cleanTag(raw: String): String = raw.trim().trim('"', '\'').removePrefix("[[").removeSuffix("]]").trim().removePrefix("#").trim().replace(Regex("\\s+"), "-")
+
+        /**
+         * The tags listed in a frontmatter block, however they are written: `tags: [a, b]`, `tags: a, b`, `tags: a b`, `tags: #a #b`, a `- a`
+         * list, and the same under `tag:` or `Tags:`. Several such keys all count.
+         */
         fun frontmatterTags(front: String): List<String> {
             val lines = front.lines()
-            val i = lines.indexOfFirst { it.trimStart().startsWith("tags:") || it.trimStart().startsWith("tag:") }
-            if (i < 0) return emptyList()
-            val inline = lines[i].substringAfter(':').trim().trim('[', ']')
-            val listed = if (inline.isNotEmpty()) inline.split(',') else lines.drop(i + 1).takeWhile { it.trimStart().startsWith("-") && it.trim() != "---" }.map { it.trimStart().removePrefix("-") }
-            return listed.map { it.trim().trim('"', '\'').removePrefix("#") }.filter { it.isNotEmpty() }
+            val out = ArrayList<String>()
+            lines.forEachIndexed { i, line ->
+                if (!isTagKey(line)) return@forEachIndexed
+                val inline = line.substringAfter(':').trim().trim('[', ']')
+                if (inline.isNotEmpty()) out += inline.replace("[[", "").replace("]]", "").split(Regex("[,\\s]+"))
+                else out += lines.drop(i + 1).takeWhile { it.trimStart().startsWith("-") && it.trim() != "---" }.map { it.trimStart().removePrefix("-") }
+            }
+            return out.map { cleanTag(it) }.filter { it.isNotEmpty() }
         }
     }
 }

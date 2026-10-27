@@ -38,6 +38,7 @@ Built on 24–25 October 2026. Last updated 26 October 2026.
 - A reply that ended in a tool call shows a quiet `step` line, so only the final answer says **Done**.
 
 ## More tools
+- **Tags**: new tools `add_tags` (adds tags to a note and keeps its own; asks first) and `list_tags` (the vault's tags with counts, so the model reuses them). The Library's **Tags** tab now also finds tags an agent wrote as `tags: a b`, `tags: #a #b`, `tag: a` or `Tags: [a]`, which used to be missed or counted as one odd tag.
 - **Wrong tool names get a hint**: when a model calls a tool Arcana does not have (`http_request`, `curl`, `ls`, `grep`, `head`…) the error now says which tool does that job (`fetch_url` is GET only; a POST goes through `curl` in `run_command`), so it stops retrying the same name.
 - **`cat`**: prints a file with line numbers (like `cat -n`), the way small models expect from a shell; it shares `read_file`'s limits. `git_diff` on a folder that is not allowed yet now asks "Allow this folder?" like `run_command` does.
 - **Save to vault can overwrite**: in the `Ctrl+S` dialog, `Ctrl+O` lets you pick a note that already exists and replace it with the whole chat (or the last answer). You confirm first, and the old text is kept in the vault's `.trash`.

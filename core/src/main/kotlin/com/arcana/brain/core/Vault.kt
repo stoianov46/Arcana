@@ -131,6 +131,19 @@ class Vault(root: Path) {
         return updates.keys.toList()
     }
 
+    /**
+     * Adds [tags] to the tags of [note] (the existing ones stay; a note with no properties block gets one). Returns all the note's tags now.
+     * Unlike [setProperties], which replaces a key, this is safe to call without knowing what is there.
+     */
+    fun addTags(note: String, tags: List<String>): List<String> {
+        val clean = tags.map { VaultIndex.cleanTag(it) }.filter { it.isNotEmpty() }
+        if (clean.isEmpty()) throw VaultException("Give at least one tag, for example: project, ai.")
+        val file = resolve(note)
+        val (block, rest) = splitFrontmatter(Files.readString(file))
+        Files.writeString(file, mergeFrontmatterTags(block, clean) + rest)
+        return VaultIndex.frontmatterTags(mergeFrontmatterTags(block, clean))
+    }
+
     /** Adds [body] to the end of [note], under a `## [heading]` line unless [heading] is null. */
     fun append(note: String, heading: String?, body: String) {
         val file = resolve(note)

@@ -582,6 +582,33 @@ class CoreTest {
     }
 
     @Test
+    fun tagsWrittenAnyWayAreFoundAndAgentTagsStayNextToArcanas() {
+        fun tags(front: String) = VaultIndex.frontmatterTags("---\n$front\n---\n\n")
+        assertEquals(listOf("project", "ai"), tags("tags: project ai"))
+        assertEquals(listOf("project", "ai"), tags("tags: #project #ai"))
+        assertEquals(listOf("a", "b"), tags("Tags: [a, b]"))
+        assertEquals(listOf("a", "b"), tags("tag: a\ntags:\n  - b"))
+        assertEquals(listOf("my-tag"), tags("tags:\n  - my tag"))
+        val root = Files.createTempDirectory("arcana-tags")
+        val vault = Vault(Files.createDirectories(root.resolve("vault")))
+        // a note the agent wrote with a `tag:` line is found in the index (next to Arcana's own `arcana` tag)
+        val note = vault.create("", "N", "---\ntag: project ai\n---\nbody", "m")
+        assertEquals(setOf("arcana", "project", "ai"), VaultIndex.build(vault).notes.single().tags)
+        // addTags merges every tag line into one and keeps what was there
+        assertEquals(listOf("arcana", "project", "ai", "extra"), vault.addTags(note.path, listOf("#extra", "ai")))
+        assertEquals(1, Regex("(?im)^tags?:").findAll(vault.read(note.path)).count(), "one tags line, not two")
+        assertTrue("body" in vault.read(note.path))
+        val bare = vault.create("", "Bare", "just text", "m")
+        vault.append(bare.path, null, "more")
+        val box = ToolBox(vault, emptyList(), root.resolve("b"))
+        assertTrue(box.execute(call("add_tags", "path" to bare.path, "tags" to "x, #y z")).endsWith("#arcana, #x, #y, #z"))
+        val listed = box.execute(call("list_tags"))
+        assertTrue(listed.startsWith("7 tags") && "#ai  (1)" in listed, listed)
+        assertTrue(box.execute(call("add_tags", "path" to bare.path, "tags" to " , ")).startsWith("Error:"))
+        assertTrue(box.find("list_tags")!!.risk == ToolRisk.Read && box.find("add_tags")!!.risk == ToolRisk.Write)
+    }
+
+    @Test
     fun aToolThatDoesNotExistGetsAHintAtTheRightOne() {
         val root = Files.createTempDirectory("arcana-hint")
         val box = ToolBox(Vault(Files.createDirectories(root.resolve("vault"))), emptyList(), root.resolve("b"))
