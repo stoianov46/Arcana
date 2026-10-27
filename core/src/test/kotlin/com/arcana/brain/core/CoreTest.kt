@@ -582,6 +582,16 @@ class CoreTest {
     }
 
     @Test
+    fun aToolThatDoesNotExistGetsAHintAtTheRightOne() {
+        val root = Files.createTempDirectory("arcana-hint")
+        val box = ToolBox(Vault(Files.createDirectories(root.resolve("vault"))), emptyList(), root.resolve("b"))
+        val http = box.execute(call("http_request", "url" to "https://example.com"))
+        assertTrue(http.startsWith("Error: there is no tool called http_request") && "fetch_url" in http && "run_command" in http, http)
+        assertTrue("grep_files" in box.execute(call("grep")))
+        assertTrue(box.execute(call("something_else")).endsWith("."))
+    }
+
+    @Test
     fun catPrintsAFileWithLineNumbersLikeReadFile() {
         val root = Files.createTempDirectory("arcana-cat")
         val vaultDir = Files.createDirectories(root.resolve("vault"))

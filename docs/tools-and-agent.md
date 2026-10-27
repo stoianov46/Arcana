@@ -146,6 +146,8 @@ on timeout or cancel. `cwd` must be inside an allowed folder. Plan mode never of
 
 ## Web (`fetch_url`)
 
+There is **no `http_request` tool**: `fetch_url` is GET only (no POST, no headers, no keys). A model that calls `http_request`, `curl` and similar gets "there is no tool called …" plus a hint (`wrongNameHint`: use `fetch_url` / `web_search`, or `curl` through `run_command`). Add a real one only with the same checks as `fetch_url` (see the last section).
+
 `ToolRisk.Web`, off by default (`toolWeb`; first call asks "Turn on web pages?"). `WebPolicy.refusal` (core/Web.kt): http/https only, no
 user info, and the host must resolve to public addresses only (loopback, link-local, site-local, 100.64/10, fc00::/7, multicast and
 `0.0.0.0` are refused). `fetchUrl` follows redirects by hand (≤5) re-checking every hop; reads ≤2 MB; HTML → `htmlToText` (title,

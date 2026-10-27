@@ -78,7 +78,7 @@ Add a `ThemeSpec` to `Themes.all` in `design/Theme.kt` with the required role co
 
 ## Known limitations / backlog
 
-- Tools: no `http_request` (POST) tool; tool results are stored in full in chats (shortened only when sent); tools are not available in AI notes; shell commands are not sandboxed by folder (only their working directory is).
+- Tools: no `http_request` (POST) tool (a model that calls it, or `curl`, `ls`, `grep`…, gets an error with a hint at the right tool: `ToolBox.wrongNameHint`); tool results are stored in full in chats (shortened only when sent); tools are not available in AI notes; shell commands are not sandboxed by folder (only their working directory is).
 - Scanned PDFs have no text layer (rendering pages as pictures is not implemented).
 - Vault search is keyword-based (no embeddings).
 - The `utils/` template module is unused; it can be removed.

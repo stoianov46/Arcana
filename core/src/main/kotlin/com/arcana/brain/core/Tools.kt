@@ -311,12 +311,24 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
 
     /** Runs [call]; an unknown tool, bad arguments or a failure come back as text starting with "Error:". */
     fun execute(call: ToolCall): String {
-        val spec = find(call.name) ?: return "Error: there is no tool called ${call.name}. Available: ${specs.joinToString { it.name }}."
+        val spec = find(call.name) ?: return "Error: there is no tool called ${call.name}. Available: ${specs.joinToString { it.name }}." + wrongNameHint(call.name)
         return try {
             spec.run(call.arguments)
         } catch (e: Exception) {
             "Error: ${e.message ?: e.javaClass.simpleName}"
         }
+    }
+
+    /** Models often reach for tools of other systems; say which of ours does the job (or that nothing does), so they do not try again. */
+    private fun wrongNameHint(name: String): String = when {
+        Regex("(?i)http|curl|wget|fetch|browse|open_url|web_get|get_url|download").containsMatchIn(name) ->
+            " Arcana has no $name. To read a public web page use fetch_url (GET only, no POST or headers); to search the web use web_search. " +
+                "For a POST or an API call with headers, run curl with run_command (the user approves it)."
+        Regex("(?i)^(ls|dir|tree)$").matches(name) -> " Use list_dir."
+        Regex("(?i)^(head|tail|type|more|less|read|open)$").matches(name) -> " Use read_file, or cat to print a file."
+        Regex("(?i)^(grep|rg|search)$").matches(name) -> " Use grep_files to search inside files, or search_notes for the vault."
+        Regex("(?i)^(find|locate)$").matches(name) -> " Use find_files."
+        else -> ""
     }
 
     // ----- vault -----
