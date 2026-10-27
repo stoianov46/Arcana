@@ -28,8 +28,11 @@ import com.arcana.brain.core.REQUEST_ACCESS
 import com.arcana.brain.core.looksLikeToolTask
 import kotlinx.coroutines.launch
 import com.arcana.brain.core.REQUEST_ACCESS_DEFINITION
+import com.arcana.brain.app.screens.contextUsage
 import com.arcana.brain.app.screens.effectiveContext
 import com.arcana.brain.core.CHAT_STATS
+import com.arcana.brain.core.Compaction
+import com.arcana.brain.core.UsageStats
 import com.arcana.brain.core.CHAT_STATS_DEFINITION
 import com.arcana.brain.core.ChatStats
 import com.arcana.brain.core.REQUEST_MODE
@@ -490,6 +493,48 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     private var toolsDeclined = false
 
+    /** True while a summary is being written (compacting runs apart from replies). */
+    var compacting by mutableStateOf(false)
+        private set
+
+    /**
+     * Compacts the chat: the model summarizes everything before the user's last [Compaction.KEEP_USER_TURNS] turns, and the summary is
+     * inserted at that point. Nothing is removed from the chat; the model just stops being sent what is above the summary.
+     * Returns what to tell the user; throws with a message when it cannot be done (too short, empty summary, no model).
+     */
+    suspend fun compact(): String {
+        check(!compacting) { "Already compacting." }
+        val all = messages.toList()
+        val cut = Compaction.cutPoint(all) ?: error("The chat is too short to compact: your last ${Compaction.KEEP_USER_TURNS} messages stay as they are, and there must be a few messages before them.")
+        val part = Compaction.toSummarize(all, cut)
+        compacting = true
+        try {
+            val text = StringBuilder()
+            app.client.chat(listOf(ChatMessage.system(Compaction.INSTRUCTIONS), ChatMessage.user(Compaction.transcript(part)))).collect { chunk ->
+                text.append(chunk.content)
+                if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) app.recordUsage("Compact", chunk)
+            }
+            val summary = text.toString().trim()
+            require(summary.isNotEmpty()) { "The model returned an empty summary; nothing was changed." }
+            // the chat may have grown while the model wrote (the cut is counted from the start, so it is still the right place)
+            val at = cut.coerceAtMost(messages.size)
+            messages.add(at, Compaction.summaryMessage(summary))
+            if (savedMessages >= at) savedMessages++
+            persist()
+            return "Compacted ${part.size} messages into a summary of about ${UsageStats.compact(((summary.length + 3) / 4).toLong())} tokens. The model now sees the summary and your last ${Compaction.KEEP_USER_TURNS} messages; everything stays visible here."
+        } finally {
+            compacting = false
+        }
+    }
+
+    /** True when [all] fills the context window past the auto-compact threshold and has enough older messages to summarize. */
+    private fun autoCompactDue(all: List<ChatMessage>): Boolean {
+        val percent = app.config.autoCompactPercent
+        if (percent <= 0 || compacting || Compaction.cutPoint(all) == null) return false
+        val usage = contextUsage(all, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext)) ?: return false
+        return usage.first * 100 >= percent
+    }
+
     private fun ask(body: String) {
         val history = messages.toList()
         val modelCanUseTools = app.tools != false
@@ -508,6 +553,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             else -> definitionsFor(box)
         }
         gen.start(tools = offered, maxSteps = Skills.stepsFor(history, app.config.toolSteps)) {
+            // a nearly full window: summarize the older part first, so this question is not sent with a chat that no longer fits
+            if (autoCompactDue(messages.toList())) runCatching { compact() }
+            val history = Compaction.forModel(messages.toList())
             val config = app.config
             val vault = app.openVault().getOrNull()
             val hits = if (config.chatUseVault && vault != null) vault.search(body, config.contextNotes, config.contextCharsPerNote) else null

@@ -36,6 +36,8 @@ data class AppConfig(
     val showThinking: Boolean = true,
     /** How a reasoning model's thoughts show in Chat: "hidden", "summary" (one line with the length) or "full" (the whole text, dimmed, before the answer). */
     val thinkingView: String = "summary",
+    /** Compact the chat automatically (summarize the older part, see [Compaction]) before a message when the context window is this percent full; 0 turns it off. */
+    val autoCompactPercent: Int = 80,
     /** How many of the latest chat messages are sent to the model as context. */
     val chatHistory: Int = 20,
     /** Chats are saved to disk and the last one is reopened when Arcana starts. */

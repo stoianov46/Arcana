@@ -38,13 +38,13 @@ links), *Top tags*. Right: *Jump back in* (Ask your brain, AI notes, this sessio
   starts a new line; Up/Down move between lines. `Enter` sends. Long pastes are repaired from the clipboard (`KeyDispatcher`).
 - **The "/" menu**: a message that starts with `/` (no space yet) opens `slashMatches(SlashCommands + tool specs, typed)` above the
   field (≤8 rows, counted in `below`): ↑↓ choose, Tab/Enter use, Esc clears. A command runs through `runCommand` (`/new /history /save
-  /note /image /vault /tools /mode /memory /skills /append /replace /clear`); settings show an ON/OFF/mode badge (`slashState`); a tool inserts
+  /note /image /vault /tools /mode /autorun /compact /memory /skills /append /replace /clear`); settings show an ON/OFF/mode badge (`slashState`); a tool inserts
   "Use the <tool> tool to " (tools are called by the model, not typed); the list is grouped commands, skills, tools (`slashMatches` sorts by `SlashCategory`) with a COMMAND / SKILL / TOOL badge per row, and the skills are scanned from the skills folder every time the menu opens (`Skills.discover`, never hardcoded); each entry is coloured by what it is (`SlashKind`: commands cyan, skills purple, read-only tools green, changing tools orange, shell/delete red, web blue) with a glyph and a badge word; each **skill** found in the vault is listed as `/<name>` and attaches
   it as a `◆ skill <name>` chip whose text is added to the message on send (see [tools-and-agent.md](tools-and-agent.md), "Skills").
 - `@` attaches a vault **note**; `Ctrl+O` attaches **files** (pictures ≤5/10 MB for a vision model, **PDFs** ≤20 MB, text files ≤5/2 MB).
   Backspace on an empty field removes the last attachment.
 - `/vault` toggles **answer from vault** (each question searches the vault; the reply lists `Sources` and cites `[[Note]]`).
-  `/tools` toggles tools, `/mode` cycles ask → auto → plan, `/memory` opens `ARCANA.md`, `/skills` toggles skills and lists them.
+  `/tools` toggles tools, `/mode` cycles ask → auto → plan, `/autorun` toggles running shell commands without asking, `/compact` summarizes the older part of the chat (below), `/memory` opens `ARCANA.md`, `/skills` toggles skills and lists them.
 - Replies stream; the footer shows `✓ Done · time · ↑ prompt ↓ output tokens · tok/s` (a round that ended in a tool call shows a quiet
   `· step` line). The "thinking" status names the model. A reply keeps running when you leave the screen: with an empty field the
   number keys (and `Ctrl+P`) switch screens.
@@ -119,6 +119,10 @@ saved, captured, processed, attached, tool). Actions: save a **summary note** (m
 One line becomes `- HH:mm text` at the end of today's daily note. The daily note path/format comes from Obsidian's
 `.obsidian/daily-notes.json` when present, else Settings (`dailyFolder`, `dailyFormat`). `Ctrl+O` attaches any file(s): copied into
 `<outputFolder>/attachments/` and embedded as `![[name]]`.
+
+## Compacting a chat
+
+`/compact` (or Ctrl+P → "Compact the chat") asks the model to summarize everything before the user's last 2 turns (`Compaction.cutPoint`, at least 4 older messages) and inserts the summary into the chat at that point (`ChatSession.compact`). Nothing is removed: the messages above stay on screen and in saved notes, under a dim divider "◌ compacted: the model sees this summary instead of the messages above"; only `Compaction.forModel` (from the latest summary on) decides what the model is sent, and a later compaction chains onto the earlier summary. The summary is a `user` message starting with `Compaction.MARK`. **Auto-compact** (`autoCompactPercent`, default 80, Settings → Console → *Auto-compact*) does the same inside `ChatSession.ask` before a message when the last request filled that share of the window (`autoCompactDue`); a failure is ignored and the message goes out as it is. The summary request is recorded in Usage as feature `Compact`; the status bar shows `◌ compacting…` meanwhile.
 
 ## Usage
 

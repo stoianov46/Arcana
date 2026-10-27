@@ -22,6 +22,7 @@ import com.arcana.brain.app.navigation.Hints
 import com.arcana.brain.app.navigation.LocalNavigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.ChatMessage
+import com.arcana.brain.core.Compaction
 import com.arcana.brain.core.ImageFiles
 import com.arcana.brain.core.TextFiles
 import com.arcana.brain.core.SessionKind
@@ -34,6 +35,7 @@ import com.arcana.brain.core.Vault
 import com.arcana.brain.app.SystemOpen
 import com.jakewharton.mosaic.ui.Row
 import java.nio.file.Path
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
@@ -63,6 +65,7 @@ internal val SlashCommands = listOf(
     SlashItem("/image", "Attach a file or picture", false),
     SlashItem("/vault", "Answer from your vault notes (toggle)", false),
     SlashItem("/tools", "Let the model use tools (toggle)", false),
+    SlashItem("/compact", "Summarize the older part of this chat to free the context window", false),
     SlashItem("/mode", "Tools mode: ask, auto, plan (cycles)", false),
     SlashItem("/autorun", "Run shell commands without asking (toggle)", false),
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false),
@@ -81,6 +84,7 @@ internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean
         else -> "ON" to Palette.Green
     }
     "/mode" -> if (!config.toolsEnabled) "TOOLS OFF" to Palette.Dim else config.toolMode.uppercase() to when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }
+    "/compact" -> if (config.autoCompactPercent > 0) "AUTO ${config.autoCompactPercent}%" to Palette.Green else "MANUAL" to Palette.Dim
     "/autorun" -> if (!config.toolShell) "SHELL OFF" to Palette.Dim else if (config.toolAutoShell) "ON" to Palette.Red else "OFF" to Palette.Dim
     "/memory" -> if (config.memoryEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/skills" -> if (config.skillsEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
@@ -133,6 +137,7 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         }
         val window = effectiveContext(config.contextTokens, app.modelContext, app.loadedContext)
         contextUsage(chat.messages, window)?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
+        if (chat.compacting) add(pillSegment(if (plain) "compacting" else "◌ compacting…", Palette.Blue, 10))
         // a small window drops the oldest text without a word: say so before it matters (Settings → Ollama → Context window)
         if (window in 1 until COMFORTABLE_CONTEXT) add(pillSegment(if (plain) "! small ctx ${UsageStats.contextSize(window.toLong())}" else "⚠ ctx ${UsageStats.contextSize(window.toLong())}", Palette.Orange, 9))
         // ↑ (prompt) is exact and moves when a request ends; ↓ (reply) also counts the pieces streaming right now, until the exact figure replaces them
@@ -385,6 +390,15 @@ fun ChatScreen(app: AppContext) {
         toast(if (opened) "${Vault.MEMORY_FILE} opened in your editor. Save it; the next message uses it." else "Edit ${file} (it is read in every chat).")
     }
 
+    fun runCompact() {
+        if (gen.state == GenState.Running) return toast("Wait for the reply to finish before compacting.", error = true)
+        if (chat.compacting) return toast("Already compacting.", error = true)
+        toast("Compacting: the model is summarizing the older messages…")
+        app.scope.launch {
+            runCatching { chat.compact() }.onSuccess { toast(it) }.onFailure { toast(it.message ?: "Could not compact.", error = true) }
+        }
+    }
+
     fun toggleAutoRun() {
         if (!app.config.toolShell) return toast("Shell commands are off. Turn them on in Settings → Tools first.", error = true)
         val on = !app.config.toolAutoShell
@@ -416,6 +430,7 @@ fun ChatScreen(app: AppContext) {
             "/skills" -> toggleSkills()
             "/mode" -> cycleMode()
             "/autorun" -> toggleAutoRun()
+            "/compact" -> runCompact()
             "/append" -> openTargetPick(Target.Append)
             "/replace" -> openTargetPick(Target.Replace)
             else -> toast("Unknown command. Type / to see the commands and tools", error = true)
@@ -449,6 +464,7 @@ fun ChatScreen(app: AppContext) {
             Command("Memory file (ARCANA.md): open and edit", "Chat", "/memory") { openMemory() },
             Command(if (app.config.skillsEnabled) "Skills: turn off" else "Skills: turn on (list them)", "Chat", "/skills") { toggleSkills() },
             Command("Tools mode: ${app.config.toolMode} → next (ask, auto, plan)", "Chat", "/mode", app.config.toolsEnabled) { cycleMode() },
+            Command("Compact the chat: summarize the older part", "Chat", "/compact", chat.messages.size >= Compaction.MIN_MESSAGES) { runCompact() },
             Command(if (app.config.toolAutoShell) "Shell commands: ask before running again" else "Shell commands: run without asking", "Chat", "/autorun", app.config.toolsEnabled && app.config.toolShell) { toggleAutoRun() },
             Command(if (app.config.toolsEnabled) "Tools: turn off" else "Tools: turn on (read and write notes and files)", "Chat", "/tools") { toggleTools() },
             Command(if (app.config.chatUseVault) "Answer from my vault: turn off" else "Answer from my vault: turn on", "Chat", "/vault") { toggleVault() },
@@ -842,6 +858,7 @@ fun ChatScreen(app: AppContext) {
 
 /** The lines of one message; [entry] is the number of its first select-mode entry (a reply uses one per Markdown block). */
 private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, width: Int): List<Line> {
+    if (Compaction.isSummary(message)) return summaryLines(message, entry, app.config.plainGlyphs, width)
     val user = message.role == "user"
     val config = app.config
     if (message.role == "tool") return toolResultLines(message, config.plainGlyphs, width)
@@ -888,6 +905,16 @@ internal fun thinkingLines(thinking: String, view: String, plain: Boolean, width
     val header = "$mark thinking · $words ${if (words == 1) "word" else "words"}"
     if (view != "full") return listOf(Line(header, Palette.ConsoleDim))
     return listOf(Line(header, Palette.ConsoleDim, bold = true)) + wrap(sanitizeForTerminal(text), (width - 2).coerceAtLeast(10)).map { Line("  $it", Palette.ConsoleDim) } + Line("")
+}
+
+/** A compaction summary: a dim divider, the summary, and a line saying the model no longer sees what is above. */
+private fun summaryLines(message: ChatMessage, entry: Int, plain: Boolean, width: Int): List<Line> = buildList {
+    val rule = if (plain) "-" else "─"
+    val title = " ${if (plain) "" else "◌ "}compacted: the model sees this summary instead of the messages above "
+    add(Line((rule.repeat(3) + title + rule.repeat(width)).take(width), Palette.ConsoleDim, bold = true, entry = entry))
+    wrap(sanitizeForTerminal(Compaction.summaryText(message)), width).forEach { add(Line(it, Palette.ConsoleDim, entry = entry)) }
+    add(Line(rule.repeat(width), Palette.ConsoleDim, entry = entry))
+    add(Line(""))
 }
 
 /** What select mode can pick in [m]: your message as one entry, a reply as its Markdown blocks, tool results as none. */
@@ -941,7 +968,8 @@ private fun transcript(messages: List<ChatMessage>, model: String): String =
     messages.filter { it.role != "tool" && !(it.toolCalls.isNotEmpty() && it.content.isBlank()) }.joinToString("\n\n") {
         val attached = (it.imageNames + it.files.map { f -> f.name } + it.noteNames.map { n -> "[[${n.removeSuffix(".md")}]]" }).let { a -> if (a.isEmpty()) "" else "\n\n_Attached: ${a.joinToString(", ")}_" }
         val sources = if (it.sources.isEmpty()) "" else "\n\n_Sources: ${it.sources.joinToString(", ") { s -> "[[${s.removeSuffix(".md")}]]" }}_"
-        "## ${if (it.role == "user") "You" else model}\n\n${it.content.trim()}$attached$sources"
+        if (Compaction.isSummary(it)) "## Summary of the earlier conversation (compacted)\n\n${Compaction.summaryText(it)}"
+        else "## ${if (it.role == "user") "You" else model}\n\n${it.content.trim()}$attached$sources"
     }
 
 /** The buttons under the message field. */

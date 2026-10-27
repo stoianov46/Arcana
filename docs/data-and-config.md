@@ -40,6 +40,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `renderMarkdown` | true | rich Markdown vs raw text |
 | `showThinking` | true | "<model> is thinking…" status |
 | `thinkingView` | summary | how a reasoning model's thoughts show in Chat: `summary` (one dim line), `full`, `hidden`; the text is stored in `ChatMessage.thinking` (never sent back to the model) |
+| `autoCompactPercent` | 80 | compact the chat before a message when the context window is this percent full (0 = off); `/compact` always works (see `Compaction`) |
 | `chatHistory` | 20 | latest messages sent as context |
 | `keepChats` / `chatsKept` | true / 50 | persist chats / how many to keep |
 | `chatUseVault` | false | answer from vault (also `/vault`) |
