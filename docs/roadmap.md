@@ -1,6 +1,6 @@
 # Roadmap
 
-The TODO list, grouped into phases and worked through in order. Status: `todo`, `doing`, `done`, `partial`, `needs repro`, `skipped`.
+The TODO list, grouped into phases and worked through in order. Status: `todo`, `doing`, `done`, `partial`, `needs repro`, `proposal`, `skipped`.
 Update this file in the same commit as the work. The `#` numbers are the original TODO numbers.
 
 Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never a prettified "Gemma4"). #15 and #28 are skipped for now.
@@ -64,7 +64,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 | 21 | Decomposition skill as in CosmoCLI: `decompose` (quiz with `ask_user`, plan note, one item at a time) | done |
 | 25 | Manage Arcana's own files in Settings → Storage (size per area, clear, prune backups and trash by age) | done |
 | 26 | Distributable build (`make dist` → arcana.zip) with a configurable init: the wizard, or `arcana --init <vault> [--skip …]` | done |
-| 16 | Oracul concept (needs a design discussion first) | todo |
+| 16 | Oracul concept: proposal written ([proposals/oracul.md](proposals/oracul.md)); waiting for a decision, no code yet | proposal |
 
 ## Skipped
 
