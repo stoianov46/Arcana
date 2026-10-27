@@ -582,6 +582,25 @@ class CoreTest {
     }
 
     @Test
+    fun gitDiffShowsChangesReadOnlyAndRefusesOddArguments() {
+        val root = Files.createTempDirectory("arcana-git")
+        val vaultDir = Files.createDirectories(root.resolve("vault"))
+        val box = ToolBox(Vault(vaultDir), emptyList(), root.resolve("b"))
+        assertTrue(box.find("git_diff")!!.risk == ToolRisk.Read)
+        fun git(vararg args: String) = ProcessBuilder("git", "-c", "user.name=t", "-c", "user.email=t@t", *args).directory(vaultDir.toFile()).redirectErrorStream(true).start().also { it.inputStream.readBytes(); it.waitFor() }
+        git("init", "-q")
+        Files.writeString(vaultDir.resolve("a.md"), "one\n")
+        git("add", "."); git("commit", "-q", "-m", "first")
+        Files.writeString(vaultDir.resolve("a.md"), "two\n")
+        val patch = box.execute(call("git_diff"))
+        assertTrue(patch.startsWith("exit code 0") && "-one" in patch && "+two" in patch, patch)
+        assertTrue("a.md" in box.execute(call("git_diff", "summary" to "names")))
+        assertEquals("exit code 0 (no output)", box.execute(call("git_diff", "staged" to "true")))
+        assertTrue(box.execute(call("git_diff", "summary" to "x")).startsWith("Error:"))
+        assertTrue(box.execute(call("git_diff", "path" to "a'; rm -rf x; '")).startsWith("Error:"))
+    }
+
+    @Test
     fun contextLengthIsReadFromModelInfoAndAskedForWhenSet() {
         val body = """{"capabilities":["tools"],"model_info":{"general.architecture":"gemma4","gemma4.context_length":131072,"gemma4.embedding_length":2560}}"""
         assertEquals(131072, OllamaProtocol.parseContextLength(body))

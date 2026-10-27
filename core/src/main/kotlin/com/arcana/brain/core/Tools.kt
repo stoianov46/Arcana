@@ -120,6 +120,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         add(elapsedTool())
         add(waitTool())
         if (skills.isNotEmpty()) add(useSkillTool())
+        add(gitDiffTool())
         add(shellTool())
         add(webTool())
         add(searchTool())
@@ -517,6 +518,42 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         requireExists(raw, dir)
         require(Files.isDirectory(dir)) { "$raw is a file, not a folder." }
         runShell(command, dir, (a.int("timeout_seconds") ?: ShellPolicy.DEFAULT_SECONDS).coerceIn(1, ShellPolicy.MAX_SECONDS))
+    }
+
+    private fun gitDiffTool() = ToolSpec(
+        "git_diff", "Show what changed in a Git repository (`git diff`): the full patch, or just a summary or the changed file names. Read-only; use it to review changes before committing or to see what a file looked like before an edit.",
+        schema(
+            "cwd" to ("string" to "The repository folder: absolute, ~/…, or relative to the vault. Must be inside an allowed folder. Default: the vault"),
+            "staged" to ("boolean" to "Show the staged changes (--staged) instead of the unstaged ones"),
+            "summary" to ("string" to "Instead of the patch: `stat` (lines changed per file), `names` (only the changed file names) or `status` (names with A/M/D)"),
+            "path" to ("string" to "Only this file or folder inside the repository"),
+        ),
+        ToolRisk.Read, { listOf(it.str("cwd"), it.str("path")).filter { s -> s.isNotBlank() }.joinToString("  ") },
+        preview = { a -> listOf(gitDiffCommand(a), "in ${a.str("cwd").ifBlank { vault?.root?.toString() ?: "the first allowed folder" }}") },
+    ) { a ->
+        val raw = a.str("cwd").ifBlank { "." }
+        val dir = access.resolve(raw, base)
+        requireExists(raw, dir)
+        require(Files.isDirectory(dir)) { "$raw is a file, not a folder." }
+        runShell(gitDiffCommand(a), dir, 30)
+    }
+
+    /** The `git diff` command line for [a]. Only fixed flags and one quoted path go in, so it can only look. */
+    private fun gitDiffCommand(a: JsonObject): String = buildString {
+        append("git --no-pager diff --no-color --no-ext-diff --no-textconv")
+        if (a.bool("staged")) append(" --staged")
+        when (val summary = a.str("summary").trim()) {
+            "" -> {}
+            "stat" -> append(" --stat")
+            "names" -> append(" --name-only")
+            "status" -> append(" --name-status")
+            else -> throw IllegalArgumentException("summary must be stat, names or status, not \"$summary\".")
+        }
+        val path = a.str("path").trim()
+        if (path.isNotEmpty()) {
+            require('\'' !in path && '\n' !in path) { "That path cannot be used." }
+            append(" -- '").append(path).append("'")
+        }
     }
 
     private fun fileTools(): List<ToolSpec> = listOf(
