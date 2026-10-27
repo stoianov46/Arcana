@@ -32,7 +32,7 @@ data class AppConfig(
     val plainGlyphs: Boolean = false,
     /** Render Markdown in output (headings, bullets, code); off shows the model's text as written. */
     val renderMarkdown: Boolean = true,
-    /** Show "Gemma is thinking…" while a reasoning model works before its first words. */
+    /** Show "<model> is thinking…" while a reasoning model works before its first words. */
     val showThinking: Boolean = true,
     /** How many of the latest chat messages are sent to the model as context. */
     val chatHistory: Int = 20,

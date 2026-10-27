@@ -9,7 +9,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 
 | # | Task | Status |
 |---|---|---|
-| 27 | Show the original model name in the thinking line (and anywhere else a prettified name appears) | todo |
+| 27 | Show the original model name in the thinking line (and anywhere else a prettified name appears) | done |
 | 17 | Chat labels `◆ model` and a user glyph; per-family icon set in the design system | todo |
 | 9 | Replace single `Esc` to cancel a reply with a deliberate key (no misclicks) | todo |
 | 11 | Console output fills the remaining chat height | todo |
