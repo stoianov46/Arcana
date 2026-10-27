@@ -1,6 +1,6 @@
 # Roadmap
 
-The TODO list, grouped into phases and worked through in order. Status: `todo`, `doing`, `done`, `partial`, `skipped`.
+The TODO list, grouped into phases and worked through in order. Status: `todo`, `doing`, `done`, `partial`, `needs repro`, `skipped`.
 Update this file in the same commit as the work. The `#` numbers are the original TODO numbers.
 
 Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never a prettified "Gemma4"). #15 and #28 are skipped for now.
@@ -12,7 +12,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 | 27 | Show the original model name in the thinking line (and anywhere else a prettified name appears) | done |
 | 17 | Chat labels `◆ model` and a user glyph; per-family icon set in the design system | todo |
 | 9 | Cancel a reply with `Esc` twice instead of once (no misclicks) | done |
-| 11 | Console output fills the remaining chat height | todo |
+| 11 | Console output fills the remaining chat height | needs repro (idle chat fills the height at 24, 40 and 60 rows; the gap may only show while a reply runs or an approval is open) |
 | 30 | Split the thinking process from the answer | todo |
 | 31 | Handle `The model returned an empty response` (nudge/retry, setting) | todo |
 | 33 | Library: narrower notes list, wider note content | todo |
