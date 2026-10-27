@@ -27,6 +27,10 @@ import com.arcana.brain.core.REQUEST_ACCESS
 import com.arcana.brain.core.looksLikeToolTask
 import kotlinx.coroutines.launch
 import com.arcana.brain.core.REQUEST_ACCESS_DEFINITION
+import com.arcana.brain.app.screens.effectiveContext
+import com.arcana.brain.core.CHAT_STATS
+import com.arcana.brain.core.CHAT_STATS_DEFINITION
+import com.arcana.brain.core.ChatStats
 import com.arcana.brain.core.REQUEST_MODE
 import com.arcana.brain.core.REQUEST_MODE_DEFINITION
 import com.arcana.brain.core.TOOL_MODES
@@ -227,11 +231,12 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         for (call in calls) {
             // read again for every call: an earlier call of this round may have switched the mode, which rebuilds the toolbox
             val box = toolbox
-            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || box == null) {
+            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || call.name == CHAT_STATS || box == null) {
                 val message = ChatMessage.toolResult(call.name, when {
                     call.name == ASK_USER -> askUser(call, text)
                     call.name == REQUEST_ACCESS -> requestAccess(call)
                     call.name == REQUEST_MODE -> requestMode(call)
+                    call.name == CHAT_STATS -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart)
                     else -> "Error: tools are off. Call request_access to ask the user for them."
                 })
                 add(message)
@@ -379,7 +384,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** What the model is offered when it has a toolbox: the tools, a way to ask for another mode, and (in plan mode) a way to ask to leave it. */
     private fun definitionsFor(box: ToolBox): JsonArray =
-        JsonArray(box.definitions() + REQUEST_MODE_DEFINITION + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
+        JsonArray(box.definitions() + REQUEST_MODE_DEFINITION + CHAT_STATS_DEFINITION + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
 
     /** The model asks to switch the tool mode: the user always decides; when they agree the mode, the toolbox and the model's tools change at once. */
     private suspend fun requestMode(call: ToolCall): String {

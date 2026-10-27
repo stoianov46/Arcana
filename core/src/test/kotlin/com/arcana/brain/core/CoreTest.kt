@@ -582,6 +582,24 @@ class CoreTest {
     }
 
     @Test
+    fun chatStatsDescribesTheChatSoFar() {
+        val calls = listOf(ToolCall(ToolFunction("read_note", kotlinx.serialization.json.JsonObject(emptyMap()))), ToolCall(ToolFunction("read_note", kotlinx.serialization.json.JsonObject(emptyMap()))))
+        val messages = listOf(
+            ChatMessage.user("hi"),
+            ChatMessage.assistantCalls("", calls, ReplyStats(1000, 100, 4000, 2000)),
+            ChatMessage.toolResult("read_note", "x"), ChatMessage.toolResult("read_note", "y"),
+            ChatMessage.assistant("done", ReplyStats(2000, 300, 6000, 3000)),
+        )
+        val text = ChatStats.describe(messages, "qwen3:30b", 8000, 3, 15, 90_000)
+        assertTrue("Model: qwen3:30b" in text && "Messages: 5 (1 from the user, 2 replies, 2 tool results)" in text, text)
+        assertTrue("3k read" in text && "400 generated" in text && "10 s" in text, text)
+        assertTrue("Tool calls: 2 (read_note ×2)" in text && "of 8k tokens (29%)" in text && "running for 1 min 30 s" in text, text)
+        assertTrue("$0.0150" in text, text)
+        assertTrue("free" in ChatStats.describe(messages, "m", 0, 0, 0, 0) && "size unknown" in ChatStats.describe(emptyList(), "m", 0, 0, 0, 0))
+        assertTrue(CHAT_STATS_DEFINITION.toString().contains("chat_stats"))
+    }
+
+    @Test
     fun tagsWrittenAnyWayAreFoundAndAgentTagsStayNextToArcanas() {
         fun tags(front: String) = VaultIndex.frontmatterTags("---\n$front\n---\n\n")
         assertEquals(listOf("project", "ai"), tags("tags: project ai"))

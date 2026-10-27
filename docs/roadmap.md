@@ -35,7 +35,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 | 13 | `http_request` does not exist: documented, and a wrong tool name now gets a hint at the right one (`fetch_url` is GET only) | done |
 | 3 | Tags: `add_tags` and `list_tags` tools | done |
 | 4 | Tags added by the agent show in the Library "tags" tab (the index now reads `tag:`, `Tags:`, `a b` and `#a #b`) | done |
-| 24 | Tool for the model to read current chat statistics (tokens, cost, duration, model) | todo |
+| 24 | Tool for the model to read current chat statistics (`chat_stats`) | done |
 | 14 | Tool usage statistics (per job, and in the Usage tab) | todo |
 
 ## Phase 4: Context and memory
