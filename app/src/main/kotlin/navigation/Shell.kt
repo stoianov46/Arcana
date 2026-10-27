@@ -249,7 +249,7 @@ private fun TopBar(navigator: Navigator, columns: Int, busy: Boolean, badge: (Sc
     val fits = logoWidth + items.withIndex().sumOf { (i, s) -> full(i, s).length + 1 } <= columns
     Row(Modifier.fillMaxWidth().background(Palette.Surface)) {
         Label(" ", background = Palette.Surface)
-        Logo("◈ arcana", busy)
+        Logo("⟐ arcana", busy)
         Label("  ", background = Palette.Surface)
         items.forEachIndexed { i, s ->
             val on = s == navigator.current
@@ -273,7 +273,7 @@ private fun Sidebar(navigator: Navigator, width: Int, collapsed: Boolean, rows: 
     val roomy = rows >= 24
     Column(Modifier.width(width).fillMaxHeight().background(Palette.Surface).padding(horizontal = 1, vertical = if (roomy) 1 else 0)) {
         Stack(Modifier.weight(1f)) {
-            Logo(if (collapsed) " ◈" else "◈ arcana", busy)
+            Logo(if (collapsed) " ⟐" else " ⟐ arcana", busy)
             if (roomy) VGap()
             items.forEachIndexed { i, s ->
                 if (!collapsed && roomy && s.group != items.getOrNull(i - 1)?.group) {
