@@ -172,6 +172,14 @@ object OllamaProtocol {
             .firstOrNull { it.key.endsWith(".context_length") }?.value?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() }?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0
     }.getOrDefault(0)
 
+    /** The context window Ollama has loaded [model] with, from `/api/ps` (`context_length`); 0 when the model is not loaded or Ollama does not say. */
+    fun parseLoadedContext(body: String, model: String): Int = runCatching {
+        val models = (json.parseToJsonElement(body) as? kotlinx.serialization.json.JsonObject)?.get("models") as? kotlinx.serialization.json.JsonArray ?: return 0
+        models.mapNotNull { it as? kotlinx.serialization.json.JsonObject }
+            .firstOrNull { m -> listOf("name", "model").any { (m[it] as? kotlinx.serialization.json.JsonPrimitive)?.content == model } }
+            ?.get("context_length")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() } ?: 0
+    }.getOrDefault(0)
+
     /** Installed models with their size in bytes. */
     fun parseModelSizes(body: String): List<Pair<String, Long>> =
         runCatching { json.decodeFromString<WireTags>(body).models.map { it.name to it.size } }.getOrDefault(emptyList())
@@ -236,6 +244,14 @@ class OllamaClient(private val config: () -> AppConfig) {
         }
         if (response.statusCode() != 200) return@withContext emptyList<String>() to 0
         OllamaProtocol.parseCapabilities(response.body()) to OllamaProtocol.parseContextLength(response.body())
+    }
+
+    /** The context window the running [model] really has (what Ollama loaded it with), or 0 when it is not loaded or this Ollama version does not say. */
+    suspend fun loadedContext(model: String): Int = withContext(Dispatchers.IO) {
+        val cfg = config()
+        val request = HttpRequest.newBuilder(endpoint(cfg, "/api/ps")).timeout(Duration.ofSeconds(5)).GET().build()
+        val response = try { http.send(request, HttpResponse.BodyHandlers.ofString()) } catch (e: Exception) { return@withContext 0 }
+        if (response.statusCode() != 200) 0 else OllamaProtocol.parseLoadedContext(response.body(), model)
     }
 
     /** The installed models with what each can do (tools, vision, thinking) and its size, for choosing one; a model whose details cannot be read is still listed. */

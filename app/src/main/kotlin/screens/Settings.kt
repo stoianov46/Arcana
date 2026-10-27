@@ -179,6 +179,20 @@ private sealed interface Editing {
     data object ConfirmReset : Editing
 }
 
+/** What Ollama really runs the model with, next to the setting that asks for it: the number that counts, and a warning when it is small. */
+private fun contextNote(app: AppContext): String {
+    val config = app.config
+    val loaded = app.loadedContext
+    val real = com.arcana.brain.core.UsageStats::contextSize
+    return "\nRight now: " + when {
+        loaded > 0 -> "Ollama runs ${config.model} with a window of ${real(loaded.toLong())}" +
+            (if (config.contextTokens > 0 && loaded != config.contextTokens) " (you asked for ${real(config.contextTokens.toLong())}; Ollama's figure is the one that counts)" else "") +
+            (if (loaded < COMFORTABLE_CONTEXT) ". ⚠ That is small: long chats, notes and tool results get cut. Choose 32k or more." else ".")
+        config.contextTokens > 0 -> "${real(config.contextTokens.toLong())} is sent with every request; Ollama has not loaded the model yet, so send a message and this shows what it really got."
+        else -> "Ollama's own default is used and has not been read yet (send a message). It is often only 4k, which is too small for tools and long chats."
+    }
+}
+
 @Composable
 fun SettingsScreen(app: AppContext) {
     val scope = rememberCoroutineScope()
@@ -408,7 +422,7 @@ fun SettingsScreen(app: AppContext) {
                 if (group == Group.Tabs) {
                     if (!rememberDensity().compact) Hint("The first tab is where Arcana opens, and a tab's position decides its number key. Tabs move within their own section.")
                 } else {
-                    selected?.let { if (!rememberDensity().compact) Hint("${it.label}: ${it.help}") }
+                    selected?.let { if (!rememberDensity().compact) Hint("${it.label}: ${it.help}" + (if (it.label == "Context window") contextNote(app) else "")) }
                 }
             }
             is Editing.Typing -> {
@@ -417,7 +431,7 @@ fun SettingsScreen(app: AppContext) {
                 Panel(mode.setting.label) {
                     TextInput(mode.setting.label, field, true, maxRows = 4)
                     VGap()
-                    Hint(mode.setting.help)
+                    Hint(mode.setting.help + (if (mode.setting.label == "Context window") contextNote(app) else ""))
                     NoticeLine(notice)
                 }
             }

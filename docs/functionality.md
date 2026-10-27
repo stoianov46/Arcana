@@ -49,7 +49,7 @@ links), *Top tags*. Right: *Jump back in* (Ask your brain, AI notes, this sessio
   `· step` line). The "thinking" status names the model. A reply keeps running when you leave the screen: with an empty field the
   number keys (and `Ctrl+P`) switch screens.
 - **Status bar under the field** (`StatusBar(chatStatus(…))`): model pill, memory size (`✎ memory 2.3k`), context gauge (`ctx █░░ 3%
-  3.9k/131k`: last prompt + reply against `contextTokens` or the model's `context_length`, never more than the model supports), tokens in
+  3.9k/131k`: last prompt + reply against `contextTokens`, else the window Ollama really loaded (`/api/ps`), else the model's `context_length`; never more than the model supports; written `256k`, not `262k`; a window under 32k shows `⚠ ctx 4k`), tokens in
   and out (`↓` and the bottom bar's `⚡ N tok` also count the reply tokens streaming right now via `AppContext.liveTokens`, replaced by Ollama's exact figures when the request ends; `↑` prompt tokens are exact and step once per model round), estimated price (`est.`, from Settings → Ollama → Price per million tokens), session time, tool-mode pill. Least important
   items drop first on a narrow terminal.
 - Chats are **kept automatically** (`ChatStore`, one JSON per chat; the latest reopens at start; `/history`). Leaving never asks (only

@@ -308,7 +308,7 @@ The palette (`Ctrl+P`) has the same actions.
 - **Temperature**: low (0 to 0.3) for faithful summaries and rewrites, higher (0.8 and up) for ideas and brainstorming.
 - **System prompt** (Settings → Prompts): its role and tone, for example "Answer briefly, in the language of the note".
 - **Model**: bigger models write better but slower. Settings → Ollama → Model lists the installed ones with their size and what they can do (tools, vision, thinking); pick one that can use tools if you want the model to act. The Usage screen shows tokens per second.
-- **Context window**: how much of a chat the model can hold at once. A bigger window remembers more but needs more memory and is slower; the status-bar gauge shows how full it is (and never counts beyond what the model supports). Start a fresh chat with `/new` when it fills up.
+- **Context window**: how much of a chat the model can hold at once. A bigger window remembers more but needs more memory and is slower; the status-bar gauge shows how full it is (and never counts beyond what the model supports). With *Model default* Ollama picks its own window, often only 4k; Arcana reads the real one from Ollama and shows an orange `⚠ ctx 4k` when it is under 32k, so choose 32k or more in Settings → Ollama → Context window for tools and long chats. Start a fresh chat with `/new` when it fills up.
 
 ## Tokens and speed
 - A token is a piece of a word, roughly three quarters of a word. *Prompt tokens* are what you sent (including note text); *reply tokens* are what the model wrote.

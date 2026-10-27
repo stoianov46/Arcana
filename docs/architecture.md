@@ -49,6 +49,7 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 | `client: OllamaClient` | reads `config` lazily (URL/model/temperature/timeout changes apply at once) |
 | `connection: Connection` | `Checking / Online(models) / ModelMissing(models) / Offline(error)`; refreshed by `refreshConnection()` |
 | `vision`, `tools: Boolean?`, `modelContext` | model capabilities and maximum context from `/api/show` (`null`/0 = unknown) |
+| `loadedContext` | the window Ollama really loaded the model with, from `/api/ps` `context_length` (0 until the model has run, or on an older Ollama); refreshed after every reply and with the connection (`refreshLoadedContext`) |
 | `usage`, `recordUsage(feature, chunk)` | token accounting (`UsageStore`, `usage.jsonl`) |
 | `session: AppSession` | the run's activity log and "needs saving" logic |
 | `brain: BrainState` | background-built `VaultIndex` + `BrainHealth`; `refresh()` / `changed()` |

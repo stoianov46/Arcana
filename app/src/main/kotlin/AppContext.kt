@@ -52,6 +52,14 @@ class AppContext(
         private set
 
     /** The most tokens of context the model supports, as Ollama reports it; 0 when unknown. */
+    /** The context window Ollama has really loaded the model with (from `/api/ps`); 0 until the model has run, or when Ollama does not say. */
+    var loadedContext by mutableStateOf(0)
+        private set
+
+    suspend fun refreshLoadedContext() {
+        loadedContext = runCatching { client.loadedContext(config.model) }.getOrDefault(0)
+    }
+
     var modelContext by mutableStateOf(0)
         private set
     val client = OllamaClient { config }
@@ -133,6 +141,7 @@ class AppContext(
         }
         val shown = if (connection is Connection.Online) runCatching { client.show(config.model) }.getOrNull() else null
         modelContext = shown?.second ?: 0
+        refreshLoadedContext()
         val capabilities = shown?.first?.takeIf { it.isNotEmpty() }
         vision = capabilities?.let { "vision" in it }
         tools = capabilities?.let { "tools" in it }

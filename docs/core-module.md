@@ -37,6 +37,7 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
     maximum context from `model_info`); `capabilities(model)` is its first part. Empty/0 when unknown.
   - `listModels(): List<String>` and `modelDetails(): List<ModelDetails>` (`/api/tags` + `show` per model: size, capabilities; `summary()` is
     the `19 GB · tools · thinking` text of the model picker).
+  - `loadedContext(model)` (`/api/ps`, `OllamaProtocol.parseLoadedContext`): the `context_length` Ollama loaded the model with; 0 when it is not loaded or this Ollama is too old to say.
   - `chatRequest` sends `options.temperature`, and `num_ctx` when `AppConfig.contextTokens > 0`.
 - `OllamaProtocol` (pure, unit-tested): `chatRequest(config, messages, jsonMode, tools)`, `parseChunk(line)`, `parseCapabilities`,
   `parseModels`. Messages are serialized with `ChatMessage.withFilesInlined()` (text files become part of `content`).

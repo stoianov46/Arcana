@@ -46,8 +46,8 @@ object ChatStats {
             appendLine("Tool calls: ${calls.sumOf { it.value }}" + (if (calls.isEmpty()) "" else " (" + calls.joinToString { "${it.key} ×${it.value}" } + ")"))
             if (last != null && contextLimit > 0) {
                 val used = last.promptTokens + last.completionTokens
-                appendLine("Context window: the last request used ${UsageStats.compact(used.toLong())} of ${UsageStats.compact(contextLimit.toLong())} tokens (${"%.0f".format(used * 100.0 / contextLimit)}%)")
-            } else appendLine("Context window: " + (if (contextLimit > 0) "${UsageStats.compact(contextLimit.toLong())} tokens, no reply measured yet" else "size unknown"))
+                appendLine("Context window: the last request used ${UsageStats.compact(used.toLong())} of ${UsageStats.contextSize(contextLimit.toLong())} tokens (${"%.0f".format(used * 100.0 / contextLimit)}%)")
+            } else appendLine("Context window: " + (if (contextLimit > 0) "${UsageStats.contextSize(contextLimit.toLong())} tokens, no reply measured yet" else "size unknown"))
             append("Arcana has been running for ${describeDuration(sessionMillis / 1000)}.")
         }
     }

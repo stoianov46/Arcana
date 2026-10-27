@@ -237,7 +237,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                     call.name == ASK_USER -> askUser(call, text)
                     call.name == REQUEST_ACCESS -> requestAccess(call)
                     call.name == REQUEST_MODE -> requestMode(call)
-                    call.name == CHAT_STATS -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart)
+                    call.name == CHAT_STATS -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart)
                     else -> "Error: tools are off. Call request_access to ask the user for them."
                 })
                 add(message)
@@ -528,6 +528,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     private fun finishReply(text: String, stats: ReplyStats?) {
         add(ChatMessage.assistant(text, stats, pendingSources, gen.takeThinking()))
+        // the model is loaded now: ask Ollama which window it really got
+        app.scope.launch { app.refreshLoadedContext() }
         pendingSources = emptyList()
         gen.consume()
     }

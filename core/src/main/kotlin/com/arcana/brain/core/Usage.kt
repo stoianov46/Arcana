@@ -153,6 +153,9 @@ object UsageStats {
         today.atStartOfDay(zone).toInstant().toEpochMilli()
 
     /** "1.2k", "3.4M": a token count short enough for a status bar. */
+    /** A context window as the model cards and Settings write it: 262144 is `256k`, 32768 is `32k` (multiples of 1024), anything else as [compact]. */
+    fun contextSize(n: Long): String = if (n >= 1024 && n % 1024 == 0L) (if (n >= 1024 * 1024 && n % (1024 * 1024) == 0L) "${n / (1024 * 1024)}M" else "${n / 1024}k") else compact(n)
+
     fun compact(n: Long): String = when {
         n < 1_000 -> n.toString()
         n < 100_000 -> "%.1fk".format(n / 1000.0).replace(".0k", "k")

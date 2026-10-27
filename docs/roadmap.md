@@ -42,7 +42,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 
 | # | Task | Status |
 |---|---|---|
-| 29 | Context window consistent between Settings and Chat; read the real `num_ctx` from Ollama; warn below 32k | todo |
+| 29 | Context window consistent between Settings and Chat (`256k` everywhere); real window read from Ollama `/api/ps`; warning below 32k | done |
 | 8 | `compact` and auto-compact of the context | todo |
 | 7 | Memory file path configurable (vault or file system) | todo |
 | 34 | Project context: a folder added to the system prompt, file tools scoped to it | todo |

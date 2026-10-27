@@ -357,10 +357,22 @@ class DesignTest {
         val stats = com.arcana.brain.core.ReplyStats(promptTokens = 13_000, completionTokens = 600, totalMillis = 1000)
         val messages = listOf(com.arcana.brain.core.ChatMessage.user("hi"), com.arcana.brain.core.ChatMessage.assistant("ok", stats))
         val meter = com.arcana.brain.app.screens.contextMeter(messages, 131_072)
-        assertTrue("ctx ▰▱▱▱▱▱▱▱ 10% 13.6k/131k" in meter, meter)
+        assertTrue("ctx ▰▱▱▱▱▱▱▱ 10% 13.6k/128k" in meter, meter)
         assertEquals("", com.arcana.brain.app.screens.contextMeter(messages, 0))
         assertEquals("", com.arcana.brain.app.screens.contextMeter(listOf(com.arcana.brain.core.ChatMessage.user("hi")), 8192))
         assertTrue("nearly full" in com.arcana.brain.app.screens.contextMeter(messages, 16_000))
+    }
+
+    @Test
+    fun theContextWindowIsTheOneOllamaRunsWithAndIsWrittenTheSameEverywhere() {
+        val effective = { asked: Int, max: Int, loaded: Int -> com.arcana.brain.app.screens.effectiveContext(asked, max, loaded) }
+        assertEquals(32_768, effective(32_768, 262_144, 4_096), "an explicit window is what is sent, whatever is loaded")
+        assertEquals(65_536, effective(131_072, 65_536, 0), "never more than the model supports")
+        assertEquals(4_096, effective(0, 262_144, 4_096), "Model default: the window Ollama really loaded, not the model's maximum")
+        assertEquals(262_144, effective(0, 262_144, 0), "nothing loaded yet: the best known figure")
+        val size = { n: Long -> com.arcana.brain.core.UsageStats.contextSize(n) }
+        assertEquals("256k", size(262_144)); assertEquals("32k", size(32_768)); assertEquals("128k", size(131_072)); assertEquals("1M", size(1_048_576))
+        assertEquals("4k", size(4_096)); assertEquals("1.5k", size(1_500))
     }
 
     @Test

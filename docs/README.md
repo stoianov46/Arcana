@@ -14,7 +14,7 @@ no marketing. Read this page, then open only the file you need.
 - Package roots: `com.arcana.brain.core` and `com.arcana.brain.app` (sub-packages `design`, `input`, `navigation`, `screens`).
 - Single process, single window. State lives in Compose snapshot state held by `AppContext` (one instance per run).
 - Everything the user does ends up as: a vault file change, a chat file, a session event, a usage record, or config.
-- The LLM is only reached through `OllamaClient` (`/api/chat` streaming, `/api/show`, `/api/tags`).
+- The LLM is only reached through `OllamaClient` (`/api/chat` streaming, `/api/show`, `/api/tags`, `/api/ps`).
 - **Skills** are plain Markdown + files in the vault, found by folder layout and enforced by the harness (`requires:`); read [skills.md](skills.md) before touching `Skills.kt`, `use_skill`, the gate or the Chat badge.
 - The product rules in [conventions.md](conventions.md) are binding (e.g. "Chat's field always has the keyboard").
 

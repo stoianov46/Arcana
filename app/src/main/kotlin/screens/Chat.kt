@@ -38,11 +38,16 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
 /** The window the gauge counts against: what was asked for, but never more than the model supports (when that is known). */
-internal fun effectiveContext(asked: Int, modelMax: Int): Int = when {
-    asked <= 0 -> modelMax
-    modelMax > 0 -> minOf(asked, modelMax)
-    else -> asked
+internal fun effectiveContext(asked: Int, modelMax: Int, loaded: Int = 0): Int = when {
+    asked > 0 && modelMax > 0 -> minOf(asked, modelMax)
+    asked > 0 -> asked
+    // "Model default": Ollama runs with its own window, usually much smaller than what the model could do; once it has loaded the model it says which
+    loaded > 0 -> loaded
+    else -> modelMax
 }
+
+/** Below this many tokens a long chat, an attached note or a few tool results no longer fit and the oldest text is silently dropped. */
+internal const val COMFORTABLE_CONTEXT = 32_768
 
 /** One entry of the menu that opens when a message starts with "/": a command, or a tool (which writes the start of a request for it). */
 internal class SlashItem(
@@ -95,7 +100,7 @@ internal fun contextUsage(messages: List<ChatMessage>, limit: Int): Pair<Double,
     val stats = messages.mapNotNull { it.stats }.lastOrNull { it.promptTokens > 0 } ?: return null
     if (limit <= 0) return null
     val used = stats.promptTokens + stats.completionTokens
-    return (used.toDouble() / limit).coerceIn(0.0, 1.0) to "${UsageStats.compact(used.toLong())}/${UsageStats.compact(limit.toLong())}"
+    return (used.toDouble() / limit).coerceIn(0.0, 1.0) to "${UsageStats.compact(used.toLong())}/${UsageStats.contextSize(limit.toLong())}"
 }
 
 /** `ctx ▰▰▱▱▱▱▱▱ 12% 13k/131k`: how full the model's context was after the last reply (its prompt plus its answer); empty before the first reply or when the size is unknown. */
@@ -106,7 +111,7 @@ internal fun contextMeter(messages: List<ChatMessage>, limit: Int): String {
     val share = (used * 100.0 / limit).coerceIn(0.0, 100.0)
     val filled = (share / 12.5).toInt().coerceIn(0, 8).let { if (it == 0 && used > 0) 1 else it }
     val full = com.arcana.brain.core.UsageStats::compact
-    return " · ctx " + "▰".repeat(filled) + "▱".repeat(8 - filled) + " ${"%.0f".format(share)}% ${full(used.toLong())}/${full(limit.toLong())}" +
+    return " · ctx " + "▰".repeat(filled) + "▱".repeat(8 - filled) + " ${"%.0f".format(share)}% ${full(used.toLong())}/${com.arcana.brain.core.UsageStats.contextSize(limit.toLong())}" +
         if (share >= 80) " ⚠ nearly full: /new starts fresh" else ""
 }
 
@@ -126,7 +131,10 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
             if (memoryChars > 0) add(statusSegment("", "✎ memory ${UsageStats.compact(memoryChars.toLong())}", Palette.Green, 6))
             else add(statusSegment("", "✎ no ARCANA.md", Palette.Muted, 3))
         }
-        contextUsage(chat.messages, effectiveContext(config.contextTokens, app.modelContext))?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
+        val window = effectiveContext(config.contextTokens, app.modelContext, app.loadedContext)
+        contextUsage(chat.messages, window)?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
+        // a small window drops the oldest text without a word: say so before it matters (Settings → Ollama → Context window)
+        if (window in 1 until COMFORTABLE_CONTEXT) add(pillSegment(if (plain) "! small ctx ${UsageStats.contextSize(window.toLong())}" else "⚠ ctx ${UsageStats.contextSize(window.toLong())}", Palette.Orange, 9))
         // ↑ (prompt) is exact and moves when a request ends; ↓ (reply) also counts the pieces streaming right now, until the exact figure replaces them
         if (stats.isNotEmpty() || app.liveTokens > 0) add(StatusSegment(listOf(StatusPart("↑${compact(stats.sumOf { it.promptTokens.toLong() })}", Palette.Blue), StatusPart(" ↓${compact(stats.sumOf { it.completionTokens.toLong() } + app.liveTokens)}", Palette.Green)), 3))
         add(statusSegment("est.", priceText(cost), Palette.Orange, 7, bold = true))

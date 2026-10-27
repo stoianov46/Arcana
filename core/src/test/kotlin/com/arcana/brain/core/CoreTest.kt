@@ -582,6 +582,17 @@ class CoreTest {
     }
 
     @Test
+    fun theLoadedContextIsReadFromOllamasProcessList() {
+        val body = """{"models":[{"name":"qwen3.5:9b","model":"qwen3.5:9b","size":1,"context_length":4096},{"name":"gemma4:12b","model":"gemma4:12b","context_length":32768}]}"""
+        assertEquals(4096, OllamaProtocol.parseLoadedContext(body, "qwen3.5:9b"))
+        assertEquals(32768, OllamaProtocol.parseLoadedContext(body, "gemma4:12b"))
+        assertEquals(0, OllamaProtocol.parseLoadedContext(body, "other"))
+        assertEquals(0, OllamaProtocol.parseLoadedContext("""{"models":[]}""", "qwen3.5:9b"))
+        assertEquals(0, OllamaProtocol.parseLoadedContext("""{"models":[{"name":"m"}]}""", "m"), "an older Ollama without context_length")
+        assertEquals(0, OllamaProtocol.parseLoadedContext("not json", "m"))
+    }
+
+    @Test
     fun toolUseIsStoredAndTotalledPerTool() {
         val path = Files.createTempDirectory("arcana-tooluse").resolve("tool-usage.jsonl")
         val store = ToolUseStore(path)
