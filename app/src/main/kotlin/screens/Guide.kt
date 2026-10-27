@@ -308,7 +308,7 @@ The palette (`Ctrl+P`) has the same actions.
 ## Tokens and speed
 - A token is a piece of a word, roughly three quarters of a word. *Prompt tokens* are what you sent (including note text); *reply tokens* are what the model wrote.
 - A picture costs tokens too (a small one is under a hundred, a large photo can be several hundred), so it counts towards the limit above.
-- While a reply is running you can leave the Chat screen: press a screen number (1-9, 0) with the message field empty, or use `Ctrl+P`. The reply keeps streaming and the sidebar shows `…` (or `!` when the model is waiting for your answer). `Esc` in Chat cancels the reply.
+- While a reply is running you can leave the Chat screen: press a screen number (1-9, 0) with the message field empty, or use `Ctrl+P`. The reply keeps streaming and the sidebar shows `…` (or `!` when the model is waiting for your answer). `Esc` pressed twice in Chat cancels the reply.
 - A long note means a longer wait before the first words. "<model> is thinking…" means a reasoning model is working before it answers.
 
 ## Privacy

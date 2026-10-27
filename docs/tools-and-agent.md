@@ -34,7 +34,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
   1,200 characters (`Prompts.chatMessages`).
 - State stays `GenState.Running` for the whole loop; the generation belongs to `ChatSession`, so leaving the Chat screen does not stop it.
   Each round's tokens are recorded to usage. A round that ended in a tool call shows a quiet `· step` footer; only the last says `✓ Done`.
-- Cancelling (`Esc`) cancels the coroutine; pending dialogs are cancelled and a running command is interrupted.
+- Cancelling (`Esc` twice in Chat, `Generation.requestCancel`) cancels the coroutine; pending dialogs are cancelled and a running command is interrupted.
 - The model's capability is checked (`AppContext.tools`); without it Chat sends without tools and says so (toast, `⚠ no tools` pill).
 
 ## The tools

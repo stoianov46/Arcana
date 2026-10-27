@@ -231,7 +231,7 @@ fun ChatScreen(app: AppContext) {
 
     fun startNew() {
         if (gen.state == GenState.Running) {
-            toast("Wait for the reply to finish (or press Esc to cancel it) before starting a new chat.", error = true)
+            toast("Wait for the reply to finish (or press Esc twice to cancel it) before starting a new chat.", error = true)
             return
         }
         gen.reset()
@@ -485,7 +485,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.PickTarget -> Hints("type  search", "↑↓  move", "Enter  ${target.verb.lowercase()}", "Esc  cancel")
         ChatMode.Chat -> when {
             output.selecting -> Hints("↑↓  move", "Space  tick", "c  copy", "b  code only", "Esc  leave")
-            gen.state == GenState.Running -> Hints("Esc  cancel reply", "↑↓  scroll")
+            gen.state == GenState.Running -> Hints("Esc Esc  cancel reply", "↑↓  scroll")
             browsing -> Hints("Enter  type a message", "s  select & copy", "↑↓/Space  scroll", "1-9  screens")
             slashMatches.isNotEmpty() -> Hints("↑↓  choose", "Tab/Enter  use", "Esc  close")
             else -> Hints("Enter  send", "Alt+Enter  new line", "/  commands", "@  note", "Ctrl+O  attach", "Ctrl+S  save", "↑↓  scroll", "Esc  browse")
@@ -613,7 +613,7 @@ fun ChatScreen(app: AppContext) {
                 slashMatches.isNotEmpty() && key == Key.Down -> { slashIndex = (slashIndex + 1).mod(slashMatches.size); true }
                 slashMatches.isNotEmpty() && (key == Key.Tab || key == Key.Enter) -> { useSlash(slashMatches[slashIndex.coerceIn(0, slashMatches.size - 1)]); true }
                 key == Key.Escape -> when {
-                    gen.state == GenState.Running -> { gen.cancel(); true }
+                    gen.state == GenState.Running -> { gen.requestCancel(); true }
                     browsing -> { browsing = false; true }
                     chat.messages.isNotEmpty() -> { browsing = true; true }
                     else -> false
@@ -753,7 +753,7 @@ fun ChatScreen(app: AppContext) {
                     val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
                     val below = (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval).size + 3 else 2 + inputRows + pendingRow + slashMatches.size) + statusRows + panelActionRows
                     ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below, actions = actions), output)
-                    ReplyStatus(app, gen)
+                    ReplyStatus(app, gen, doubleEsc = true)
                 }
                 if (question != null) {
                     val qLines = questionLines(question, panelWidth())

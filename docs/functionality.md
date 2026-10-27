@@ -32,7 +32,7 @@ links), *Top tags*. Right: *Jump back in* (Ask your brain, AI notes, this sessio
 ## Chat (hub)
 
 - Chat **opens in browse mode** (field not focused: `j`/`k` scroll, `s` select & copy, digits switch screens); `Enter` starts typing and from then on the
-  field has the keyboard (letters never trigger shortcuts). `Esc` goes back to browse mode; while a reply runs `Esc` cancels it instead.
+  field has the keyboard (letters never trigger shortcuts). `Esc` goes back to browse mode; while a reply runs `Esc` pressed twice (within 3 s; the status line says "Esc again to cancel") cancels it instead, so a slip does not lose a reply (`Generation.requestCancel`).
   (`browsing` starts `true` and is local to the screen, so it resets whenever the tab is opened; `/new` puts the cursor in the field.)
 - **Multi-line field**: grows to a quarter of the screen (3–8 rows) with a scrollbar (`WrappedText`); `Alt+Enter`, or `\` then Enter,
   starts a new line; Up/Down move between lines. `Enter` sends. Long pastes are repaired from the clipboard (`KeyDispatcher`).

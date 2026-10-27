@@ -11,7 +11,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 |---|---|---|
 | 27 | Show the original model name in the thinking line (and anywhere else a prettified name appears) | done |
 | 17 | Chat labels `◆ model` and a user glyph; per-family icon set in the design system | todo |
-| 9 | Replace single `Esc` to cancel a reply with a deliberate key (no misclicks) | todo |
+| 9 | Cancel a reply with `Esc` twice instead of once (no misclicks) | done |
 | 11 | Console output fills the remaining chat height | todo |
 | 30 | Split the thinking process from the answer | todo |
 | 31 | Handle `The model returned an empty response` (nudge/retry, setting) | todo |

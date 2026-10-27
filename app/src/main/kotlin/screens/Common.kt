@@ -76,7 +76,7 @@ fun GenerationView(app: AppContext, gen: Generation, output: OutputState, rows: 
 
 /** The line under a reply: a spinner while generating, or why it stopped. */
 @Composable
-fun ReplyStatus(app: AppContext, gen: Generation) {
+fun ReplyStatus(app: AppContext, gen: Generation, doubleEsc: Boolean = false) {
     when (gen.state) {
         GenState.Running -> Spinner {
             val seconds = (System.currentTimeMillis() - gen.startedAt) / 1000
@@ -86,7 +86,12 @@ fun ReplyStatus(app: AppContext, gen: Generation) {
                 else -> "Generating…"
             }
             val tokens = if (gen.streamed > 0) " · ${if (app.config.plainGlyphs) "" else "↓ "}${gen.streamed} tokens" else ""
-            "$what ${seconds}s$tokens · Esc to cancel"
+            val cancel = when {
+                !doubleEsc -> "Esc to cancel"
+                gen.cancelArmed() -> "Esc again to cancel"
+                else -> "Esc twice to cancel"
+            }
+            "$what ${seconds}s$tokens · $cancel"
         }
         GenState.Failed -> Label((if (app.config.plainGlyphs) "Error: " else "✕ ") + gen.error, color = Palette.Red, wrap = true)
         GenState.Cancelled -> Label("Cancelled.", color = Palette.Warn)

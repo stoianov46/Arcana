@@ -5,7 +5,7 @@
 1. **Arcana is the control panel of the user's second brain.** UI/UX serves: capture → see → think → shape → keep. Don't turn it into a
    generic chat client.
 2. **Chat opens unfocused; once you press `Enter` the message field has the keyboard.** (The Chat screen starts in browse mode so that opening the tab never drops you into editing; the screen state resets each time the tab is opened.) No letter shortcuts while typing; actions are Ctrl keys, `/commands`, `@`,
-   the palette. `Esc` leaves the field for browse/select (while a reply runs, `Esc` cancels it and number keys switch screens only with an empty field). Shortcuts are Ctrl chords, never ⌘.
+   the palette. `Esc` leaves the field for browse/select (while a reply runs, `Esc` twice cancels it and number keys switch screens only with an empty field). Shortcuts are Ctrl chords, never ⌘.
 3. **Do not reintroduce separate "Summarize" or "Ask" screens.** They were merged into AI notes (tasks) and Chat (`/vault`).
 4. **The sidebar stays** (number keys + palette) but must be informative: badges, auto-fold under 90 columns. Top bar / right sidebar are options.
 5. **Follow CosmoCLI** (`/Users/stoianovk/IDEA Projects/CosmoCLI`, sibling project) for design system, navigation, hotkeys, text editing,
