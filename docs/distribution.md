@@ -36,6 +36,8 @@ arcana --help
 
 Settings → Storage lists the files Arcana itself keeps (not your notes or settings) and clears them (`Storage`). To reset a machine: delete the settings folder.
 
+Developers: [development.md](development.md) (environment, isolated run, release checklist).
+
 ## Checklist when you change the distribution
 
 1. `./gradlew test installDist distZip` is green and `arcana --help` runs from the unpacked zip.

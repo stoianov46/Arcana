@@ -9,6 +9,8 @@ app/build/install/arcana/bin/arcana        # or: make install, then "arcana"
 make dist                                  # app/build/distributions/arcana.zip: unzip anywhere (needs Java 17+) and run bin/arcana
 ```
 
+**Developing Arcana:** see [docs/development.md](docs/development.md) (JDK 21, isolated dev home, tests, definition of done); users: [docs/distribution.md](docs/distribution.md).
+
 **First start:** with no vault chosen yet Arcana opens a short setup: pick your Obsidian vault folder, then tick what to create in it (the memory file `ARCANA.md`, a `Skills/` folder with a guide and the starter skills, the output folder). It only creates what is missing. The same can be done without a screen, for a script or a new machine: `arcana --init ~/Obsidian/Vault [--skip memory,skills,output]`; `arcana --help` lists it. The setup can be run again any time from the command palette ("Set up the vault").
 
 The loop it is built around: **capture** a thought from anywhere (`Ctrl+N` → today's daily note) → **see** how the vault is doing

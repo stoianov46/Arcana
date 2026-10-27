@@ -27,6 +27,7 @@ no marketing. Read this page, then open only the file you need.
 | [core-module.md](core-module.md) | change Ollama/vault/index/session/chat-store/usage/inbox logic |
 | [app-module.md](app-module.md) | find the right file in the UI layer; state holders; navigation; design system; input |
 | [tools-and-agent.md](tools-and-agent.md) | work on the tool-calling loop, dialogs, shell/web/questions, or add a tool |
+| [development.md](development.md) | set up a dev environment, run without touching real data, where to change what, the definition of done (code, tests, docs, vault notes) and the release checklist |
 | [distribution.md](distribution.md) | build `arcana.zip`, install, the first-run setup, `arcana --init`, where files live and how to move them |
 | [proposals/oracul.md](proposals/oracul.md) | read before touching the core loop for "second opinion" / multi-model work: a proposal with levels, design and blast radius, not implemented |
 | [roadmap.md](roadmap.md) | see the TODO list by phase and what is done; update it with every piece of work |
