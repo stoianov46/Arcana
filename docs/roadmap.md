@@ -31,7 +31,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 | # | Task | Status |
 |---|---|---|
 | 12 | `cat` tool | done |
-| 32 | Git tools for the model (`git_diff` done; status, log, writes behind approval remain) | partial |
+| 32 | Git tools for the model: `git_diff`, `git_status`, `git_log` (read-only; writes go through `run_command`, which asks) | done |
 | 13 | `http_request` does not exist: documented, and a wrong tool name now gets a hint at the right one (`fetch_url` is GET only) | done |
 | 3 | Tags | todo |
 | 4 | Tags added by the agent show in the Library "tags" tab | todo |

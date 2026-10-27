@@ -663,6 +663,12 @@ class CoreTest {
         assertEquals("exit code 0 (no output)", box.execute(call("git_diff", "staged" to "true")))
         assertTrue(box.execute(call("git_diff", "summary" to "x")).startsWith("Error:"))
         assertTrue(box.execute(call("git_diff", "path" to "a'; rm -rf x; '")).startsWith("Error:"))
+        val status = box.execute(call("git_status"))
+        assertTrue(status.startsWith("exit code 0") && "a.md" in status, status)
+        val log = box.execute(call("git_log", "limit" to "5"))
+        assertTrue("first" in log && "t " in log, log)
+        assertTrue(box.execute(call("git_log", "path" to "a'; rm -rf x; '")).startsWith("Error:"))
+        assertTrue(listOf("git_status", "git_log").all { box.find(it)!!.risk == ToolRisk.Read })
     }
 
     @Test

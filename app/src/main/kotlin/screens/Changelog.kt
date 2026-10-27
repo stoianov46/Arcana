@@ -50,7 +50,7 @@ Built on 24–25 October 2026. Last updated 26 October 2026.
 - **Empty replies get a second chance**: a model that answers with nothing (after a tool result or a finished skill) is asked once more, out of sight, for a short answer; only a second empty reply shows "The model returned an empty response."
 - **Cancelling a reply takes two `Esc` presses** in Chat (`Esc twice to cancel` in the status line, `Esc again to cancel` after the first), so a stray key does not throw away a long reply.
 - **Real model names**: the thinking line in Chat shows the model exactly as Ollama names it (`gemma4:12b is thinking…`), the same as the status bar, not a prettified "Gemma4".
-- **`git_diff`**: the model can see what changed in a repository (the patch, `stat`, or just the file names; staged or not; one path). Read-only and needs no approval, so it also works in Plan mode.
+- **Git tools**: `git_diff` (the patch, `stat`, or just the file names; staged or not; one path), `git_status` and `git_log`. All read-only and without approval, so they also work in Plan mode; a commit or push still goes through `run_command`, which asks.
 - **`run_command`** (shell), off by default, every command asks first; harmless ones such as `git status` run at once; `sudo`, `rm -rf /` and similar are never run.
 - **`ask_user`**: the model can ask you a question with options (a quiz or a decision); **`delete_path`** and **`move_path`** always ask first, even in Auto mode, and a deleted item goes to a trash folder you can restore from.
 - **`fetch_url`** reads a public web page (HTML as readable text, JSON, PDF), off by default; every address asks first and is shown in full; localhost and your own network are refused, redirects are checked hop by hop.

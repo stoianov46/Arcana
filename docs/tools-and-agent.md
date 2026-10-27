@@ -65,6 +65,8 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `request_mode` | pseudo-tool (answered by the chat) | `mode` (`ask`/`auto`/`plan`), `reason` | offered whenever the model has a toolbox (`ChatSession.definitionsFor`); always asks "Switch to X mode?"; on yes `toolMode` changes, the toolbox is rebuilt and `Generation.useTools` gets the new definitions (later calls of the same round use the new toolbox); a refusal tells the model to stay put; `request_access` stays for leaving plan mode / turning tools on |
 | `ask_user` | Read (answered by the chat) | `question`, `options?`, `multiple?` | see "Questions" below; offered even when tools are off |
 | `cat` | Read | `path` | `read_file` with `start_line=1` (numbered lines like `cat -n`, ≤`RANGE_LINES`, with a "continue with start_line=N" note); both use `ToolBox.readFile` |
+| `git_status` | Read | `cwd?` | `git status --short --branch` (via `ToolBox.inRepo`, 30 s) |
+| `git_log` | Read | `cwd?`, `limit?` (≤50), `path?` | `git log -n N --pretty=format:'%h %ad %an  %s'`; one quoted path |
 | `git_diff` | Read | `cwd?`, `staged?`, `summary?` (`stat`/`names`/`status`), `path?` | runs `git --no-pager diff --no-color --no-ext-diff --no-textconv` (fixed flags and one single-quoted path, so it can only look) in a folder inside the allowed ones through `runShell` (30 s, output cut like `run_command`); needs no shell switch and no approval, and is allowed in plan mode |
 | `run_command` | Shell | `command`, `cwd?`, `timeout_seconds?` | off by default (`toolShell`); see "Shell" |
 | `fetch_url` | Web | `url`, `offset?` | off by default (`toolWeb`); see "Web" |

@@ -120,7 +120,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         add(elapsedTool())
         add(waitTool())
         if (skills.isNotEmpty()) add(useSkillTool())
-        add(gitDiffTool())
+        addAll(gitTools())
         add(shellTool())
         add(webTool())
         add(searchTool())
@@ -134,9 +134,9 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
      * (a home folder, `/etc`, `~/.ssh`…).
      */
     fun folderToGrant(call: ToolCall): Path? {
-        if (call.name !in FILE_TOOLS && call.name != "run_command" && call.name != "git_diff") return null
+        if (call.name !in FILE_TOOLS && call.name != "run_command" && !call.name.startsWith("git_")) return null
         // a move names two places; the first one that is outside the allowed folders is the one to offer
-        val keys = when (call.name) { "run_command", "git_diff" -> listOf("cwd"); "move_path" -> listOf("from", "to"); else -> listOf("path") }
+        val keys = when (call.name) { "run_command", "git_diff", "git_status", "git_log" -> listOf("cwd"); "move_path" -> listOf("from", "to"); else -> listOf("path") }
         var target: Path? = null
         for (key in keys) {
             val raw = (call.arguments[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: continue
@@ -533,6 +533,38 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         runShell(command, dir, (a.int("timeout_seconds") ?: ShellPolicy.DEFAULT_SECONDS).coerceIn(1, ShellPolicy.MAX_SECONDS))
     }
 
+    /** The read-only git tools: they run fixed git commands, so they can only look (changes go through run_command, which asks). */
+    private fun gitTools(): List<ToolSpec> = listOf(gitDiffTool(), gitStatusTool(), gitLogTool())
+
+    private fun inRepo(a: JsonObject, command: String): String {
+        val raw = a.str("cwd").ifBlank { "." }
+        val dir = access.resolve(raw, base)
+        requireExists(raw, dir)
+        require(Files.isDirectory(dir)) { "$raw is a file, not a folder." }
+        return runShell(command, dir, 30)
+    }
+
+    private fun gitStatusTool() = ToolSpec(
+        "git_status", "Show the state of a Git repository (`git status --short --branch`): the branch and which files are changed, staged or new. Read-only.",
+        schema("cwd" to ("string" to "The repository folder: absolute, ~/…, or relative to the vault. Must be inside an allowed folder. Default: the vault")),
+        ToolRisk.Read, { it.str("cwd").ifBlank { "(vault)" } },
+    ) { a -> inRepo(a, "git --no-pager status --short --branch") }
+
+    private fun gitLogTool() = ToolSpec(
+        "git_log", "Show the latest commits of a Git repository (`git log`, one line each: short hash, date, author, subject). Read-only.",
+        schema(
+            "cwd" to ("string" to "The repository folder: absolute, ~/…, or relative to the vault. Must be inside an allowed folder. Default: the vault"),
+            "limit" to ("integer" to "How many commits (default 10, at most 50)"),
+            "path" to ("string" to "Only commits that touched this file or folder"),
+        ),
+        ToolRisk.Read, { listOf(it.str("cwd"), it.str("path")).filter { s -> s.isNotBlank() }.joinToString("  ") },
+    ) { a ->
+        val limit = (a.int("limit") ?: 10).coerceIn(1, 50)
+        val path = a.str("path").trim()
+        require('\'' !in path && '\n' !in path) { "That path cannot be used." }
+        inRepo(a, "git --no-pager log --no-color -n $limit --date=short --pretty=format:'%h %ad %an  %s'" + (if (path.isEmpty()) "" else " -- '$path'"))
+    }
+
     private fun gitDiffTool() = ToolSpec(
         "git_diff", "Show what changed in a Git repository (`git diff`): the full patch, or just a summary or the changed file names. Read-only; use it to review changes before committing or to see what a file looked like before an edit.",
         schema(
@@ -543,13 +575,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         ),
         ToolRisk.Read, { listOf(it.str("cwd"), it.str("path")).filter { s -> s.isNotBlank() }.joinToString("  ") },
         preview = { a -> listOf(gitDiffCommand(a), "in ${a.str("cwd").ifBlank { vault?.root?.toString() ?: "the first allowed folder" }}") },
-    ) { a ->
-        val raw = a.str("cwd").ifBlank { "." }
-        val dir = access.resolve(raw, base)
-        requireExists(raw, dir)
-        require(Files.isDirectory(dir)) { "$raw is a file, not a folder." }
-        runShell(gitDiffCommand(a), dir, 30)
-    }
+    ) { a -> inRepo(a, gitDiffCommand(a)) }
 
     /** The `git diff` command line for [a]. Only fixed flags and one quoted path go in, so it can only look. */
     private fun gitDiffCommand(a: JsonObject): String = buildString {
