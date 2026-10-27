@@ -582,6 +582,35 @@ class CoreTest {
     }
 
     @Test
+    fun diffShowsHunksWithContextAndLineNumbers() {
+        assertTrue(Diff.unified("a\nb", "a\nb").isEmpty())
+        val old = (1..10).joinToString("\n") { "line $it" }
+        val new = old.replace("line 5", "line five")
+        assertEquals(listOf("@@ -3,5 +3,5 @@", "  line 3", "  line 4", "- line 5", "+ line five", "  line 6", "  line 7"), Diff.unified(old, new))
+        val two = Diff.unified(old, old.replace("line 1\n", "first\n").replace("line 10", "last"))
+        assertEquals(2, two.count { it.startsWith("@@") }, two.toString())
+        assertEquals(listOf("@@ -1,1 +1,2 @@", "- ", "+ x", "+ y"), Diff.unified("", "x\ny"))
+    }
+
+    @Test
+    fun changePreviewsShowTheRealDiffAgainstTheFileOnDisk() {
+        val root = Files.createTempDirectory("arcana-diff")
+        val vaultDir = Files.createDirectories(root.resolve("vault"))
+        Files.writeString(vaultDir.resolve("n.txt"), "one\ntwo\nthree\nfour\nfive\n")
+        val box = ToolBox(Vault(vaultDir), emptyList(), root.resolve("b"))
+        val edit = box.find("edit_file")!!.preview(call("edit_file", "path" to "n.txt", "old" to "three", "new" to "3").function.arguments)
+        assertTrue("- three" in edit && "+ 3" in edit && "  two" in edit && edit.any { it.startsWith("@@") }, edit.toString())
+        val write = box.find("write_file")!!.preview(call("write_file", "path" to "n.txt", "content" to "one\ntwo\nthree\nfour\nsix\n").function.arguments)
+        assertTrue("- five" in write && "+ six" in write, write.toString())
+        val same = box.find("write_file")!!.preview(call("write_file", "path" to "n.txt", "content" to "one\ntwo\nthree\nfour\nfive\n").function.arguments)
+        assertTrue(same.any { "nothing changes" in it }, same.toString())
+        val fresh = box.find("write_file")!!.preview(call("write_file", "path" to "new.txt", "content" to "a").function.arguments)
+        assertEquals(listOf("Create new.txt (1 characters)", "+ a"), fresh)
+        val missing = box.find("edit_file")!!.preview(call("edit_file", "path" to "n.txt", "old" to "nope", "new" to "x").function.arguments)
+        assertEquals(listOf("Edit n.txt", "- nope", "+ x"), missing)
+    }
+
+    @Test
     fun gitDiffShowsChangesReadOnlyAndRefusesOddArguments() {
         val root = Files.createTempDirectory("arcana-git")
         val vaultDir = Files.createDirectories(root.resolve("vault"))

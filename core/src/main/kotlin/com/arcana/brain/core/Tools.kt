@@ -674,8 +674,13 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
             ToolRisk.Write, { it.str("path") },
             { a ->
                 val exists = runCatching { Files.exists(access.resolve(a.str("path"), base)) }.getOrDefault(false)
-                listOf((if (exists) "Replace " else "Create ") + a.str("path") + " (${a.str("content").length} characters)") +
-                    a.str("content").lines().take(PREVIEW_LINES).map { "+ $it" }
+                val head = (if (exists) "Replace " else "Create ") + a.str("path") + " (${a.str("content").length} characters)"
+                val diff = if (exists) currentText(a.str("path"))?.let { Diff.unified(it, a.str("content")) } else null
+                when {
+                    diff == null -> listOf(head) + a.str("content").lines().take(PREVIEW_LINES).map { "+ $it" }
+                    diff.isEmpty() -> listOf(head, "The file already has exactly this text; nothing changes.")
+                    else -> listOf(head) + diff.take(MAX_DIFF_LINES)  + (if (diff.size > MAX_DIFF_LINES) listOf("… ${diff.size - MAX_DIFF_LINES} more lines of the diff") else emptyList())
+                }
             },
         ) { a ->
             val file = writable(a.str("path"))
@@ -694,7 +699,14 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
                 required = listOf("path", "old", "new"),
             ),
             ToolRisk.Write, { it.str("path") },
-            { a -> listOf("Edit ${a.str("path")}") + a.str("old").lines().take(PREVIEW_LINES).map { "- $it" } + a.str("new").lines().take(PREVIEW_LINES).map { "+ $it" } },
+            { a ->
+                val text = currentText(a.str("path"))
+                val old = a.str("old")
+                // the diff of the whole file when the piece is found once (what the edit would really do); the bare pieces otherwise
+                val diff = if (text != null && old.isNotEmpty() && text.indexOf(old) >= 0 && text.indexOf(old) == text.lastIndexOf(old)) Diff.unified(text, text.replace(old, a.str("new"))) else null
+                if (diff == null) listOf("Edit ${a.str("path")}") + old.lines().take(PREVIEW_LINES).map { "- $it" } + a.str("new").lines().take(PREVIEW_LINES).map { "+ $it" }
+                else listOf("Edit ${a.str("path")}") + diff.take(MAX_DIFF_LINES) + (if (diff.size > MAX_DIFF_LINES) listOf("… ${diff.size - MAX_DIFF_LINES} more lines of the diff") else emptyList())
+            },
         ) { a ->
             val file = writable(a.str("path"))
             requireExists(a.str("path"), file)
@@ -757,6 +769,12 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
             "Moved ${a.str("from")} to ${a.str("to")}."
         },
     )
+
+    /** The text of the file at [raw] for a preview: null when it is missing, a folder, too big or not text. */
+    private fun currentText(raw: String): String? = runCatching {
+        val file = access.resolve(raw, base)
+        if (Files.isRegularFile(file) && Files.size(file) <= MAX_DIFF_BYTES) Files.readString(file) else null
+    }.getOrNull()
 
     private fun countEntries(dir: Path): Int = runCatching { Files.walk(dir).use { it.count().toInt() - 1 } }.getOrDefault(0)
 
@@ -824,6 +842,10 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         const val FIND_SECONDS = 25L
         private val FIND_SKIP = setOf("Library", "node_modules", "build", "target", "Pods", "venv", "__pycache__", "Applications", "Movies", "Music", "Pictures", "Public")
         const val PREVIEW_LINES = 12
+
+        /** The most diff lines a change preview carries, and the biggest file it is computed for. */
+        const val MAX_DIFF_LINES = 60
+        const val MAX_DIFF_BYTES = 500_000L
         val PROTECTED = setOf(".git", ".obsidian")
         private val FILE_TOOLS = setOf("list_dir", "find_files", "grep_files", "read_file", "write_file", "edit_file", "delete_path", "move_path")
 

@@ -751,7 +751,7 @@ fun ChatScreen(app: AppContext) {
                     val statusRow = if (gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled) 1 else 0
                     // what sits under the conversation: the message field, or the change waiting for an answer
                     val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
-                    val below = (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval).size + 3 else 2 + inputRows + pendingRow + slashMatches.size) + statusRows + panelActionRows
+                    val below = (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval, approvalMax()).size + 3 else 2 + inputRows + pendingRow + slashMatches.size) + statusRows + panelActionRows
                     ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below, actions = actions), output)
                     ReplyStatus(app, gen, doubleEsc = true)
                 }
@@ -772,8 +772,8 @@ fun ChatScreen(app: AppContext) {
                 } else if (approval != null) {
                     Panel(approval.heading, accent = Palette.Warn) {
                         Label("${approval.icon} ${approval.title}", color = Palette.Warn, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
-                        approvalLines(approval).forEach { l ->
-                            Label(l, color = when { l.startsWith("+ ") -> Palette.Green; l.startsWith("- ") -> Palette.Red; else -> Palette.Text })
+                        approvalLines(approval, approvalMax()).forEach { l ->
+                            Label(l, color = when { l.startsWith("+ ") -> Palette.Green; l.startsWith("- ") -> Palette.Red; l.startsWith("@@") -> Palette.Blue; l.startsWith("…") -> Palette.Muted; else -> Palette.Text })
                         }
                         ActionBar(approvalActions(approval), panelWidth())
                     }
@@ -885,7 +885,13 @@ private fun toolResultLines(message: ChatMessage, plain: Boolean, width: Int): L
 }
 
 /** The lines of a change waiting for approval, as many as fit the panel. */
-private fun approvalLines(a: ChatSession.Approval): List<String> = a.lines.take(14)
+/** The lines of a change waiting for an answer, cut to [max] (with a note of how many are left out); a long diff is cut short on a small screen. */
+private fun approvalLines(a: ChatSession.Approval, max: Int): List<String> =
+    if (a.lines.size <= max) a.lines else a.lines.take(max - 1) + "… ${a.lines.size - max + 1} more lines"
+
+/** How many lines of a change fit above the buttons: about a third of the screen, at least 8. */
+@Composable
+private fun approvalMax(): Int = (LocalContentHeight.current / 3).coerceIn(8, 24)
 
 private fun approvalActions(a: ChatSession.Approval) = listOfNotNull(
     ActionItem("y", a.yes, accent = Palette.Cta),
