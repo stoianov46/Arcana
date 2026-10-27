@@ -13,6 +13,8 @@ import com.arcana.brain.app.input.KeyHandler
 import com.arcana.brain.app.input.char
 import com.arcana.brain.app.navigation.FocusMode
 import com.arcana.brain.app.navigation.Hints
+import com.arcana.brain.core.ToolStats
+import com.arcana.brain.core.ToolUseRecord
 import com.arcana.brain.core.UsageInsights
 import com.arcana.brain.core.UsageRecord
 import com.arcana.brain.core.UsageStats
@@ -29,7 +31,7 @@ import java.util.Locale
 
 private enum class Period(val title: String) { Session("This session"), Today("Today"), Week("7 days"), Month("30 days"), All("All time") }
 
-private enum class Page(val title: String) { Overview("Overview"), Breakdown("Breakdown"), Recent("Recent replies") }
+private enum class Page(val title: String) { Overview("Overview"), Breakdown("Breakdown"), Tools("Tools"), Recent("Recent replies") }
 
 private const val DAY = 86_400_000L
 
@@ -76,7 +78,7 @@ fun UsageScreen(app: AppContext) {
             ScreenHeader("Usage", "Clear the history")
             VGap()
             Panel("Clear all usage history?", accent = Palette.Red) {
-                Warning("Deletes usage.jsonl: ${all.size} recorded replies and their token counts. This cannot be undone.")
+                Warning("Deletes usage.jsonl and tool-usage.jsonl: ${all.size} recorded replies with their token counts, and the tool calls. This cannot be undone.")
             }
             ActionBar(listOf(ActionItem("y", "Clear history", accent = Palette.Red), ActionItem("any other key", "Keep it", accent = Palette.Cta)))
         } else {
@@ -99,7 +101,14 @@ fun UsageScreen(app: AppContext) {
             VGap()
             // rows left for panels: the header (2), the gaps and tab bar (3) are above them
             val room = (LocalContentHeight.current - 5 - (if (notice != null) 1 else 0)).coerceAtLeast(3)
-            Dashboard(period, page, records, all, room)
+            val toolRecords = ToolStats.since(app.toolUsage.toList(), when (period) {
+                Period.Session -> app.sessionStart
+                Period.Today -> UsageStats.startOfToday()
+                Period.Week -> UsageStats.startOfToday() - 6 * DAY
+                Period.Month -> UsageStats.startOfToday() - 29 * DAY
+                Period.All -> 0L
+            })
+            if (page == Page.Tools) ToolsPanel(toolRecords, room) else Dashboard(period, page, records, all, room)
             NoticeLine(notice)
         }
     }
@@ -185,6 +194,7 @@ private fun Dashboard(period: Period, page: Page, records: List<UsageRecord>, al
             if (left >= 6) { VGap(); SpeedPanel(all, period) }
         }
         Page.Recent -> RecentPanel(records, all, insights, (room - 4).coerceAtLeast(1))
+        Page.Tools -> Unit // drawn by [ToolsPanel]: tool calls are not model requests, so this page does not need any
     }
 }
 
@@ -392,6 +402,42 @@ private fun RecentPanel(records: List<UsageRecord>, all: List<UsageRecord>, insi
         }
         if (shown.size < records.size) Label("… ${records.size - shown.size} earlier replies not shown   (green: longest · orange: slowest)", color = Palette.Muted)
         else Label("green: longest reply · orange: slowest reply", color = Palette.Muted)
+    }
+}
+
+/**
+ * What the model's tools cost: per tool, how often it was called, about how many tokens its results put into the context (the part of a
+ * prompt that comes from tools), the average time and the calls that failed or were denied. Biggest context cost first.
+ */
+@Composable
+private fun ToolsPanel(records: List<ToolUseRecord>, room: Int) {
+    if (records.isEmpty()) {
+        Panel("Tools") { Hint("No tool calls in this period. Turn tools on in Chat (/tools) and ask the model to read or change something.") }
+        return
+    }
+    val rows = ToolStats.by(records).take((room - 4).coerceAtLeast(3))
+    val totalTokens = rows.sumOf { it.approxTokens }.coerceAtLeast(1)
+    val labelWidth = (rows.maxOfOrNull { it.tool.length } ?: 0).coerceIn(8, 18)
+    val barWidth = (panelWidth() - labelWidth - 34).coerceIn(0, 30)
+    val max = rows.maxOf { it.approxTokens }.coerceAtLeast(1)
+    Panel("Tools · ${records.size} calls · ≈${UsageStats.compact(totalTokens)} tokens of results") {
+        rows.forEach { t ->
+            val filled = if (t.approxTokens == 0L || barWidth == 0) 0 else ((t.approxTokens * barWidth) / max).toInt().coerceIn(1, barWidth)
+            Row {
+                Label(fit(t.tool, labelWidth), color = Palette.FieldLabel)
+                if (barWidth > 0) {
+                    Label(" " + "▬".repeat(filled), color = Palette.Blue)
+                    Label("▬".repeat(barWidth - filled), color = Palette.Dim)
+                }
+                Label(" ≈${UsageStats.compact(t.approxTokens)}", color = Palette.Text, textStyle = TextStyle.Bold)
+                Label(" %.0f%%".format(t.approxTokens * 100.0 / totalTokens), color = Palette.Muted)
+                Label(" ×${t.calls}", color = Palette.Muted)
+                Label(" ${seconds(t.averageMillis)}", color = Palette.Muted)
+                if (t.errors > 0) Label(" ✕${t.errors}", color = Palette.Red)
+                if (t.denied > 0) Label(" ⊘${t.denied}", color = Palette.Warn)
+            }
+        }
+        Hint("≈ tokens: what the results added to the conversation (4 characters ≈ 1 token). ×calls · average time · ✕ failed · ⊘ denied.")
     }
 }
 

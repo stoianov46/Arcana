@@ -122,6 +122,8 @@ One line becomes `- HH:mm text` at the end of today's daily note. The daily note
 
 ## Usage
 
+The **Tools** page (Tab) lists every tool the model called in the period: calls, ≈ tokens its results added to the context, average time, failed and denied calls (`tool-usage.jsonl`, `core/ToolUsage.kt`).
+
 Dashboard over `usage.jsonl` (`screens/Usage.kt`; analytics in `core/Usage.kt`: `UsageStats.perHour/perDay/speedPerDay/insights/
 estimatedCost`). Periods (←→): session, today, 7 days, 30 days, all time. Pages (`Tab`): **Overview** (totals tiles, column chart by hour or
 day, insights: busiest day, peak hour, streak, week on week, typical/slowest reply, context load), **Breakdown** (by feature/model with share,

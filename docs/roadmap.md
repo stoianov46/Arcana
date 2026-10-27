@@ -36,7 +36,7 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 | 3 | Tags: `add_tags` and `list_tags` tools | done |
 | 4 | Tags added by the agent show in the Library "tags" tab (the index now reads `tag:`, `Tags:`, `a b` and `#a #b`) | done |
 | 24 | Tool for the model to read current chat statistics (`chat_stats`) | done |
-| 14 | Tool usage statistics (per job, and in the Usage tab) | todo |
+| 14 | Tool usage statistics: Usage → **Tools** page (calls, ≈ tokens of results put into the context, average time, failures, denials) | done |
 
 ## Phase 4: Context and memory
 

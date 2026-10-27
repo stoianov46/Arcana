@@ -582,6 +582,27 @@ class CoreTest {
     }
 
     @Test
+    fun toolUseIsStoredAndTotalledPerTool() {
+        val path = Files.createTempDirectory("arcana-tooluse").resolve("tool-usage.jsonl")
+        val store = ToolUseStore(path)
+        listOf(
+            ToolUseRecord(1_000, "read_file", 40, "ok", 4_000), ToolUseRecord(2_000, "read_file", 60, "error", 20),
+            ToolUseRecord(3_000, "grep_files", 10, "ok", 400), ToolUseRecord(4_000, "run_command", 900, "denied", 60),
+        ).forEach { store.append(it) }
+        val loaded = store.load()
+        assertEquals(4, loaded.size)
+        val totals = ToolStats.by(loaded)
+        assertEquals(listOf("read_file", "grep_files", "run_command"), totals.map { it.tool }, "the biggest context cost first")
+        val read = totals.first()
+        assertEquals(2, read.calls); assertEquals(1, read.errors); assertEquals(0, read.denied); assertEquals(50L, read.averageMillis); assertEquals(1005L, read.approxTokens)
+        assertEquals(1, totals.last().denied)
+        assertEquals(2, ToolStats.since(loaded, 3_000).size)
+        store.clear()
+        assertTrue(store.load().isEmpty())
+        assertTrue(ToolUseRecord(0, "x", 0, "ok", 5).approxTokens == 2)
+    }
+
+    @Test
     fun chatStatsDescribesTheChatSoFar() {
         val calls = listOf(ToolCall(ToolFunction("read_note", kotlinx.serialization.json.JsonObject(emptyMap()))), ToolCall(ToolFunction("read_note", kotlinx.serialization.json.JsonObject(emptyMap()))))
         val messages = listOf(

@@ -17,6 +17,8 @@ import com.arcana.brain.core.SessionStore
 import com.arcana.brain.core.capture
 import com.arcana.brain.core.OllamaClient
 import com.arcana.brain.core.UsageRecord
+import com.arcana.brain.core.ToolUseRecord
+import com.arcana.brain.core.ToolUseStore
 import com.arcana.brain.core.UsageStore
 import com.arcana.brain.core.Vault
 import com.arcana.brain.core.VaultException
@@ -33,6 +35,7 @@ sealed interface Connection {
 class AppContext(
     private val store: ConfigStore = ConfigStore(),
     private val usageStore: UsageStore = UsageStore(),
+    private val toolUseStore: ToolUseStore = ToolUseStore(),
     chatStore: ChatStore = ChatStore(),
     sessionStore: SessionStore = SessionStore(),
 ) {
@@ -61,6 +64,14 @@ class AppContext(
 
     /** Every request ever made (loaded from `usage.jsonl`), newest last; the dashboard and the footer read it. */
     val usage = mutableStateListOf<UsageRecord>().also { it.addAll(usageStore.load()) }
+    /** Every tool call the model made (loaded from `tool-usage.jsonl`), newest last; the Usage screen's Tools page reads it. */
+    val toolUsage = mutableStateListOf<ToolUseRecord>().also { it.addAll(toolUseStore.load()) }
+
+    fun recordToolUse(record: ToolUseRecord) {
+        toolUsage += record
+        runCatching { toolUseStore.append(record) }
+    }
+
     /** The working session: everything done since Arcana opened (or since "new session"), logged and kept. */
     val session = AppSession(sessionStore)
     val sessionStart: Long get() = session.started
@@ -95,6 +106,8 @@ class AppContext(
     fun clearUsage() {
         usage.clear()
         runCatching { usageStore.clear() }
+        toolUsage.clear()
+        runCatching { toolUseStore.clear() }
     }
 
     /** How many replies are being generated right now (drives the animated logo). */

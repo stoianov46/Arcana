@@ -21,6 +21,7 @@ import com.arcana.brain.core.ConfigStore
 import com.arcana.brain.core.StoredChat
 import com.arcana.brain.core.ToolBox
 import com.arcana.brain.core.ToolCall
+import com.arcana.brain.core.ToolUseRecord
 import com.arcana.brain.core.ASK_USER
 import com.arcana.brain.core.ASK_USER_DEFINITION
 import com.arcana.brain.core.REQUEST_ACCESS
@@ -323,6 +324,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 if (choice == ApprovalChoice.Always) alwaysAllowed += call.name
                 allowed = choice != ApprovalChoice.Deny
             }
+            val startedAt = System.currentTimeMillis()
             val result = when {
                 allowed -> runInterruptible(Dispatchers.IO) { box.execute(call) }
                 refusal != null -> refusal
@@ -332,6 +334,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 app.session.log(SessionKind.Tool, "${call.name} ${spec.summary(call.arguments)}")
                 if (spec.risk != ToolRisk.Read) app.brain.changed()
             }
+            // what each tool costs: time, outcome and how much text it put into the context (shown on the Usage screen's Tools page)
+            if (spec != null) app.recordToolUse(ToolUseRecord(startedAt, call.name, System.currentTimeMillis() - startedAt, if (!allowed) "denied" else if (result.startsWith("Error:")) "error" else "ok", result.length))
             val message = ChatMessage.toolResult(call.name, result)
             add(message)
             added += message

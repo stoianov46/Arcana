@@ -48,7 +48,7 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 | `Inbox.kt` | Inbox | `InboxMode`; `Analysis` (Ready/Failed); uses `InboxProcessing`; editable plan fields |
 | `Compose.kt` | AI notes (`NoteComposerScreen`) | `Task` enum, `Mode` (Start, PickSource, Input, Follow, Title, AppendPick, ConfirmReplace, ConfirmDiscard, Result); conversation + `drafts` stack for undo; attachments |
 | `Session.kt` | Session | `SessionMode` (Overview, Summary, ConfirmNew); exit flow |
-| `Usage.kt` | Usage | dashboard: `Period` × `Page` (Overview, Breakdown, Recent); tiles, `ColumnChart`, insights, feature/model bars, hour strip, speed sparkline, recent table; `axisLabels`; `StatusHeader`; clear history |
+| `Usage.kt` | Usage | dashboard: `Period` × `Page` (Overview, Breakdown, Tools, Recent; Tools = `ToolsPanel` over `AppContext.toolUsage`, recorded by `ChatSession.runTools`); tiles, `ColumnChart`, insights, feature/model bars, hour strip, speed sparkline, recent table; `axisLabels`; `StatusHeader`; clear history |
 | `Changelog.kt` | Changelog | `changePages()`: hand-written pages (Latest, Tools, Chat, Brain, Interface, Start); same scroll/select view as Guide |
 | `Settings.kt` | Settings | declarative `settings` list (`Setting`, `choice`, `toggle`, `stepper`, `text`, `Editor.{Text,Model,Folder,Theme}`), tabs by `Group`; the model picker shows `ModelDetails` |
 | `Guide.kt` | Guide | 13 pages (Markdown strings; incl. "Skills") |

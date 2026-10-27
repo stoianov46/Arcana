@@ -21,6 +21,7 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `Skills.kt` | `Skill`, `Skills.discover` (one folder per skill, entry note `<name>.skill.md`, `output:` folder for results, problems), `catalog`, `load`, `loadEntry`, `isEntry`, `chipLabel`, `find`, `summary`, `parseRequirements`/`requirementsOf`; `Requirement` and `SkillRun` (the completion gate's progress) |
 | `VaultIndex.kt` tags | `VaultIndex.frontmatterTags` reads tags however they are written (`tags: [a, b]`, `a, b`, `a b`, `#a #b`, a `- a` list; `tags:`, `tag:` or `Tags:`; several keys all count); `cleanTag` and `isTagKey` are shared with `mergeFrontmatterTags` (Inbox.kt) and `Vault.addTags` |
 | `ChatStats.kt` | `CHAT_STATS`, `CHAT_STATS_DEFINITION`, `ChatStats.describe(...)`: the text the `chat_stats` pseudo-tool returns |
+| `ToolUsage.kt` | `ToolUseRecord` (time, tool, millis, `ok`/`error`/`denied`, result chars → `approxTokens` = chars/4), `ToolUseStore` (`tool-usage.jsonl` next to the settings), `ToolStats.by/since` → `ToolTotals` |
 | `Diff.kt` | `Diff.unified(old, new, context)`: a git-style line diff (`@@ -a,b +c,d @@` hunks, `  ` context, `- ` removed, `+ ` added; common start and end cut off first, an LCS for the middle, big middles shown as one replacement); used by the change previews |
 | `Shell.kt` | `ShellPolicy` (blocked / safe commands) and `runShell` (the `run_command` runner) |
 | `Web.kt` | `WebPolicy` (public addresses only), `fetchUrl` (manual redirects, size/time limits), `htmlToText` |
