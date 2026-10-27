@@ -38,6 +38,7 @@ Built on 24–25 October 2026. Last updated 26 October 2026.
 - A reply that ended in a tool call shows a quiet `step` line, so only the final answer says **Done**.
 
 ## More tools
+- **Empty replies get a second chance**: a model that answers with nothing (after a tool result or a finished skill) is asked once more, out of sight, for a short answer; only a second empty reply shows "The model returned an empty response."
 - **Cancelling a reply takes two `Esc` presses** in Chat (`Esc twice to cancel` in the status line, `Esc again to cancel` after the first), so a stray key does not throw away a long reply.
 - **Real model names**: the thinking line in Chat shows the model exactly as Ollama names it (`gemma4:12b is thinking…`), the same as the status bar, not a prettified "Gemma4".
 - **`git_diff`**: the model can see what changed in a repository (the patch, `stat`, or just the file names; staged or not; one path). Read-only and needs no approval, so it also works in Plan mode.

@@ -77,6 +77,30 @@ class SkillGateTest {
     }
 
     @Test
+    fun anEmptyReplyIsAskedAgainOnceBeforeItIsAnError() {
+        val bodies = CopyOnWriteArrayList<String>()
+        val server = fakeOllama(listOf(reply(""), reply("Here is the summary.")), bodies)
+        try {
+            val (gen, completed) = runLoop(server, null, CopyOnWriteArrayList())
+            assertEquals(GenState.Done, gen.state)
+            assertEquals("Here is the summary.", completed())
+            assertTrue("Your last reply was empty" in bodies[1] && "Your last reply was empty" !in bodies[0])
+        } finally {
+            server.stop(0)
+        }
+        val again = CopyOnWriteArrayList<String>()
+        val stubborn = fakeOllama(listOf(reply("")), again)
+        try {
+            val (gen, _) = runLoop(stubborn, null, CopyOnWriteArrayList())
+            assertEquals(GenState.Failed, gen.state)
+            assertEquals("The model returned an empty response.", gen.error)
+            assertEquals(2, again.size, "one retry, then the error")
+        } finally {
+            stubborn.stop(0)
+        }
+    }
+
+    @Test
     fun aModelThatKeepsIgnoringAStepIsEventuallyLetGoAndTheStepIsMarkedSkipped() {
         val bodies = CopyOnWriteArrayList<String>()
         val server = fakeOllama(listOf(reply("I am done.")), bodies) // always the same plain reply, never the tool call

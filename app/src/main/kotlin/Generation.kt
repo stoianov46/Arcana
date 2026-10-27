@@ -99,6 +99,7 @@ class Generation(
                 var step = 0
                 var limit = maxSteps
                 var nudges = 0
+                var emptyRetries = 0
                 while (true) {
                     val buffer = StringBuilder()
                     val calls = ArrayList<ToolCall>()
@@ -172,6 +173,14 @@ class Generation(
                             stats = null
                             continue
                         }
+                    }
+                    // some models end a round, or a finished skill, with nothing at all: ask once more, out of sight, before calling it a failure
+                    if (buffer.isBlank() && calls.isEmpty() && emptyRetries < MAX_EMPTY_RETRIES) {
+                        emptyRetries++
+                        messages = messages + ChatMessage.user(EMPTY_NUDGE)
+                        text = ""
+                        stats = null
+                        continue
                     }
                     if (buffer.isBlank()) {
                         error = "The model returned an empty response."
@@ -253,8 +262,12 @@ fun rememberGeneration(app: AppContext, feature: String): Generation {
 /** How many announcements in a row (without a tool call in between) are pushed on before the reply is accepted as it is. */
 private const val MAX_NUDGES = 2
 
+/** How often an empty reply is answered with [EMPTY_NUDGE] before it counts as an error. */
+private const val MAX_EMPTY_RETRIES = 1
+
 /** The live token counters move in steps of this many streamed pieces (one recomposition per piece would be wasteful). */
 private const val LIVE_BATCH = 4
+private const val EMPTY_NUDGE = "Your last reply was empty. Reply now with a short answer: what you did and the result, or what you need from me."
 private const val NUDGE = "Continue now: call the tool you just described. Do not describe it again, and do not ask me to confirm."
 
 /** True when [reply] ends by announcing a next step ("Next, I will read …") rather than giving an answer or asking the user something. */

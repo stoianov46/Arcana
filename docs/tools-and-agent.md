@@ -17,6 +17,8 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
               │     text at the end of the reply) → treated as a call    │
               │   still none, and the reply only announces a step        │
               │     (announcesAction)? → hidden nudge, ≤2 in a row     │
+              │   an empty reply with no calls? → hidden "your reply was │
+              │     empty" nudge once (EMPTY_NUDGE), then the error      │
               │   else finish (final reply, onComplete)                  │
               │   calls: ChatSession.runTools(text, calls, stats)        │
               │     add assistant(toolCalls) message to the chat         │
@@ -172,6 +174,8 @@ Small models sometimes answer `fetch_url(url="…")` as plain text instead of a 
 `TextToolCalls.extract` finds such calls: only known tools, only at the end of the reply, as `tool(arg="value", …)` or a JSON object with
 `name` and `arguments`, so a reply that merely explains a tool is never executed. `AppConfig.textCalls`: **auto** (default) runs them as
 real calls (approvals still apply), **ask** shows "Run this tool call?" first, **off** leaves the text.
+
+**Empty replies:** some models answer with nothing after a tool result or a finished skill. `Generation` asks once more with a hidden message (`EMPTY_NUDGE`, `MAX_EMPTY_RETRIES = 1`, not kept in the chat); only a second empty reply fails with "The model returned an empty response." (see `SkillGateTest`).
 
 The "keep going" nudge (`announcesAction`): a reply that only announces a step ("I will read…", "Let me check…", "This will help me
 locate…") gets a hidden "continue now" message (≤2 **in a row**: the counter resets after every real tool call, because a long skill narrates before many of its steps; with a per-question limit the third narration ended a skill run before its analysis step). "Let me know…" and real questions (`?` followed by space/end, not the
