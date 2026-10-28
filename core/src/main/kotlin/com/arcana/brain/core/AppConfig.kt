@@ -14,7 +14,7 @@ data class AppConfig(
     val model: String = "gemma4:latest",
     val theme: String = "dark",
     val vaultPath: String = System.getenv("ARCANA_VAULT").orEmpty(),
-    val outputFolder: String = "Arcana",
+    val outputFolder: String = "Research",
     val temperature: Double = 0.7,
     val timeoutSeconds: Int = 300,
     val contextNotes: Int = 5,

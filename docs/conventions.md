@@ -71,7 +71,7 @@ See [tools-and-agent.md](tools-and-agent.md#how-to-add-a-tool). A new tool also 
 ### Change skills (`requires:`, the gate, the chip, the menu)
 Read [skills.md](skills.md) first. Keep `Skills.kt` pure (no UI): the gate's rules live in `SkillRun`, the app only feeds and asks it. Skill text must stay under
 `Skills.MAX_CHARS` (18,000, including its properties). A change here updates `docs/skills.md`, the Guide page "Skills", the Changelog, the vault notes
-`Skills/Skills Guide.md`, `Arcana/Arcana LLM Reference.md`, `Arcana/Arcana Reference Documentation.md`, and (when a model rule changes) `ARCANA.md` and `Vault.MEMORY_TEMPLATE`.
+`Skills/Skills Guide.md`, `.arcana/reference/Arcana LLM Reference.md`, `.arcana/reference/Arcana Reference Documentation.md`, and (when a model rule changes) `ARCANA.md` and `Vault.MEMORY_TEMPLATE`.
 
 ### Add a theme
 Add a `ThemeSpec` to `Themes.all` in `design/Theme.kt` with the required role colours; it appears in Settings and previews itself.

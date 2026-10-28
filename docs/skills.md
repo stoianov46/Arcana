@@ -6,7 +6,7 @@ reference notes it needs. Arcana finds skills by their folder layout, tells the 
 
 This is the one document that explains the whole feature. Code: `core/Skills.kt` (everything pure), `core/Tools.kt` (`use_skill`, the catalog),
 `app/ChatSession.kt` (runs and the gate's owner), `app/Generation.kt` (the gate in the loop), `app/screens/Chat.kt` (menu, chip, status badge).
-For people writing skills there is also the note `Skills Guide.md` in the skills folder; for the model, `Arcana/Arcana LLM Reference.md`;
+For people writing skills there is also the note `Skills Guide.md` in the skills folder; for the model, `.arcana/reference/Arcana LLM Reference.md`;
 for users, the in-app Guide page "Skills".
 
 ## Starter skills
@@ -232,5 +232,5 @@ Lessons from building it against the live APIs: keyless DexPaprika serves only 2
 
 Update, in the same piece of work: this file; `tools-and-agent.md` (tool rows); `functionality.md`; `app-module.md` / `core-module.md`
 (file tables); `data-and-config.md` (config, vault conventions); `testing.md`; the in-app **Guide** page "Skills" and the **Changelog**;
-the vault notes `Skills/Skills Guide.md`, `Arcana/Arcana LLM Reference.md`, `Arcana/Arcana Reference Documentation.md`; the user's `ARCANA.md`
+the vault notes `Skills/Skills Guide.md`, `.arcana/reference/Arcana LLM Reference.md`, `.arcana/reference/Arcana Reference Documentation.md`; the user's `ARCANA.md`
 and `Vault.MEMORY_TEMPLATE` when a rule for the model changes. Keep the reference skill's note under 18,000 characters.

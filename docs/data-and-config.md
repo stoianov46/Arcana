@@ -27,7 +27,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `temperature` | 0.7 | sampling temperature |
 | `timeoutSeconds` | 300 | HTTP timeout per request |
 | `vaultPath` | `$ARCANA_VAULT` or empty | Obsidian vault folder (`~` allowed) |
-| `outputFolder` | `Arcana` | vault folder for notes Arcana creates (empty = vault root) |
+| `outputFolder` | `Research` | vault folder for notes Arcana creates for you (AI notes, saved chats; visible content, never skills or memory; empty = vault root). It used to be `Arcana`, which was confusing next to the internal `.arcana/`; an existing config keeps its saved value |
 | `contextNotes` / `contextCharsPerNote` | 5 / 4000 | how many notes / how many characters of each `/vault` mode sends; a longer note is cut with a marker for the model (`Prompts.cutMarker`) and the answer lists the cut sources (`ChatMessage.sourcesCut`) |
 | `systemPrompt` / `summaryPrompt` | see source | prompts editable in Settings |
 | `theme` | `dark` | theme id (`Themes.all`) |
