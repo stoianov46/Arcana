@@ -13,6 +13,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
+/** A backend refused because it is limiting requests (HTTP 429 / 202, a human check): another backend may still answer. */
+class SearchLimited(message: String) : IllegalArgumentException(message)
+
 /** One hit of a web search. */
 data class SearchResult(val title: String, val url: String, val snippet: String)
 
@@ -25,6 +28,41 @@ object WebSearch {
     const val DEFAULT_LIMIT = 5
     const val MAX_LIMIT = 10
     private val client: HttpClient by lazy { HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).connectTimeout(Duration.ofSeconds(WebPolicy.TIMEOUT_SECONDS)).build() }
+
+    /** DuckDuckGo gives no key and no quota: once it answers with a human check, asking again only extends the block, so it is left alone for a while. */
+    private const val DUCK_COOLDOWN_MS = 10 * 60_000L
+    @Volatile private var duckBlockedUntil = 0L
+
+    internal fun resetCooldown() { duckBlockedUntil = 0L }
+
+    private fun label(backend: String) = when (backend) { "searxng" -> "SearXNG"; "brave" -> "Brave Search"; else -> "DuckDuckGo" }
+
+    /** The backends in the order they are tried: the chosen one, then every other that is set up (a Brave key, a SearXNG address); DuckDuckGo last, and not at all while it cools down. */
+    internal fun order(backend: String, searxUrl: String, key: String, now: Long = System.currentTimeMillis()): List<String> {
+        val first = backend.ifBlank { "duckduckgo" }
+        val rest = listOf("brave", "searxng", "duckduckgo").filter { it != first && (it != "brave" || key.isNotBlank()) && (it != "searxng" || searxUrl.isNotBlank()) && (it != "duckduckgo" || now >= duckBlockedUntil) }
+        return listOf(first) + rest
+    }
+
+    /**
+     * [search] with a way out: when the chosen backend refuses or cannot be reached, the others that are set up are tried in turn. Returns the backend that
+     * answered with its results. When none does, the error says what each one said and how to set up a backend that does not limit (a Brave key, SearXNG).
+     */
+    fun searchWithFallback(
+        query: String, limit: Int, backend: String, searxUrl: String, key: String,
+        run: (String) -> List<SearchResult> = { b -> search(query, limit, b, searxUrl, key) },
+    ): Pair<String, List<SearchResult>> {
+        val said = ArrayList<String>()
+        for (b in order(backend, searxUrl, key)) {
+            try {
+                return b to run(b)
+            } catch (e: IllegalArgumentException) {
+                said += e.message.orEmpty()
+            }
+        }
+        val advice = " Do not call web_search again now: read a page you know with fetch_url, or tell the user. To make searching dependable they can set up Brave Search (a free key from api-dashboard.search.brave.com, in Settings → Tools → Search API key) or their own SearXNG server (Settings → Tools → Search backend and Search address)."
+        throw IllegalArgumentException(said.first() + (if (said.size > 1) " Also tried: " + said.drop(1).joinToString(" ") else "") + advice)
+    }
 
     /** Where the query goes, for the confirmation dialog: the backend's name and host. */
     fun describe(backend: String, searxUrl: String): String = when (backend) {
@@ -48,7 +86,16 @@ object WebSearch {
                 require(key.isNotBlank()) { "No Brave Search API key is set. Add it in Settings → Tools → Search API key, or choose another search backend." }
                 parseBrave(get("https://api.search.brave.com/res/v1/web/search?q=$q&count=$n", mapOf("X-Subscription-Token" to key.trim(), "Accept" to "application/json"), "Brave Search"), n)
             }
-            else -> parseDuckDuckGo(get("https://html.duckduckgo.com/html/?q=$q", emptyMap(), "DuckDuckGo"), n)
+            else -> {
+                val now = System.currentTimeMillis()
+                if (now < duckBlockedUntil) throw SearchLimited("DuckDuckGo limited requests from this connection a moment ago; Arcana leaves it alone for ${(duckBlockedUntil - now) / 60_000 + 1} more minute(s), because every new try makes the block longer.")
+                try {
+                    parseDuckDuckGo(get("https://html.duckduckgo.com/html/?q=$q", emptyMap(), "DuckDuckGo"), n)
+                } catch (e: SearchLimited) {
+                    duckBlockedUntil = System.currentTimeMillis() + DUCK_COOLDOWN_MS
+                    throw e
+                }
+            }
         }
     }
 
@@ -62,7 +109,7 @@ object WebSearch {
         val code = response.statusCode()
         if (code == 403 && name == "SearXNG") throw IllegalArgumentException("SearXNG refused the request (HTTP 403). Its settings must allow format json.")
         if (code == 401 || code == 403) throw IllegalArgumentException("$name refused the request (HTTP $code): check the API key.")
-        if (code == 429 || code == 202) throw IllegalArgumentException("$name is limiting requests right now (HTTP $code). Try again later or choose another search backend in Settings → Tools.")
+        if (code == 429 || code == 202) throw SearchLimited("$name is limiting requests right now (HTTP $code). Try again later or choose another search backend in Settings → Tools.")
         if (code !in 200..299) throw IllegalArgumentException("$name answered HTTP $code.")
         return response.body().take(WebPolicy.MAX_BYTES)
     }
@@ -78,7 +125,7 @@ object WebSearch {
             results += SearchResult(clean(m.groupValues[1]), url, snippets.getOrElse(i) { "" })
         }
         if (results.isEmpty() && Regex("anomaly|challenge|captcha|unusual traffic", RegexOption.IGNORE_CASE).containsMatchIn(html)) {
-            throw IllegalArgumentException("DuckDuckGo asked for a human check instead of answering. Try again later, or choose SearXNG or Brave in Settings → Tools.")
+            throw SearchLimited("DuckDuckGo asked for a human check instead of answering. Try again later, or choose SearXNG or Brave in Settings → Tools.")
         }
         return results.take(limit)
     }

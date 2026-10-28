@@ -542,7 +542,8 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         preview = { a -> listOf("Search the web for:", a.str("query").trim(), "Sent to ${WebSearch.describe(searchBackend, searchUrl)}; nothing else leaves your computer.") },
     ) { a ->
         val query = a.str("query").trim()
-        WebSearch.format(query, searchBackend, WebSearch.search(query, a.int("limit") ?: WebSearch.DEFAULT_LIMIT, searchBackend, searchUrl, searchKey))
+        val (used, results) = WebSearch.searchWithFallback(query, a.int("limit") ?: WebSearch.DEFAULT_LIMIT, searchBackend, searchUrl, searchKey)
+        WebSearch.format(query, used, results) + (if (used != searchBackend.ifBlank { "duckduckgo" }) "\n(The chosen search backend was limiting requests, so $used answered.)" else "")
     }
 
     private fun webTool() = ToolSpec(

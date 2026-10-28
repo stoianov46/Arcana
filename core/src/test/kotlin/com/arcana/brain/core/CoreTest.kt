@@ -740,6 +740,23 @@ class CoreTest {
     }
 
     @Test
+    fun aLimitedSearchBackendFallsBackToTheOnesThatAreSetUpAndDuckDuckGoCoolsDown() {
+        WebSearch.resetCooldown()
+        try {
+            assertEquals(listOf("duckduckgo"), WebSearch.order("duckduckgo", "", ""))
+            assertEquals(listOf("duckduckgo", "brave", "searxng"), WebSearch.order("duckduckgo", "http://localhost:8080", "key"))
+            assertEquals(listOf("brave", "searxng", "duckduckgo"), WebSearch.order("brave", "http://x", "k"))
+            val calls = ArrayList<String>()
+            val hit = SearchResult("A", "https://a.dev", "")
+            val (used, results) = WebSearch.searchWithFallback("q", 5, "duckduckgo", "", "key") { b -> calls += b; if (b == "duckduckgo") throw SearchLimited("limited") else listOf(hit) }
+            assertEquals("brave", used); assertEquals(listOf(hit), results); assertEquals(listOf("duckduckgo", "brave"), calls)
+            // nothing set up: the error names the way out and says not to retry
+            val e = runCatching { WebSearch.searchWithFallback("q", 5, "duckduckgo", "", "") { throw SearchLimited("DuckDuckGo is limiting requests right now (HTTP 202).") } }.exceptionOrNull()
+            assertTrue(e != null && "HTTP 202" in e.message.orEmpty() && "Brave Search" in e.message.orEmpty() && "Do not call web_search again" in e.message.orEmpty(), e?.message)
+        } finally { WebSearch.resetCooldown() }
+    }
+
+    @Test
     fun oldToolOutputIsKeptWholeUnlessTheUserChoosesToShortenIt() {
         val big = "x".repeat(5000)
         val history = listOf(ChatMessage.user("read it"), ChatMessage.toolResult("read_file", big), ChatMessage.assistant("ok"), ChatMessage.user("and again?"))
