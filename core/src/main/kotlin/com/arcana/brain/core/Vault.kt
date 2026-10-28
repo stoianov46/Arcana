@@ -20,7 +20,7 @@ data class SearchHit(val note: Note, val score: Int, val excerpt: String, val to
 class VaultException(message: String) : Exception(message)
 
 /**
- * @param memoryPath where the memory file lives (see [memoryFile]): blank is [MEMORY_FILE] at the vault root, a relative path is inside the
+ * @param memoryPath where the memory file lives (see [memoryFile]): blank is `.arcana/ARCANA.md` (an existing [MEMORY_FILE] at the vault root is still used), a relative path is inside the
  * vault, `~/…` or an absolute path is anywhere on this computer.
  */
 class Vault(root: Path, private val memoryPath: String = "") {
@@ -40,17 +40,21 @@ class Vault(root: Path, private val memoryPath: String = "") {
     fun read(note: String): String = Files.readString(resolve(note))
 
     /**
-     * The user's standing instructions and facts, like a CLAUDE.md: the note [MEMORY_FILE] at the vault root, or wherever the memory path
-     * setting points ([memoryFile]). Its text (without frontmatter, at most [MEMORY_LIMIT] characters) goes into every chat's system prompt;
+     * The user's standing instructions and facts, like a CLAUDE.md: the note `.arcana/ARCANA.md` (or an existing [MEMORY_FILE] at the vault root), or wherever the memory path
+     * setting points ([memoryFile]), after the user's own file in the settings folder. Its text (without frontmatter, at most [MEMORY_LIMIT] characters) goes into every chat's system prompt;
      * empty when there is no such file.
      */
     fun memory(): String {
-        val text = runCatching { splitFrontmatter(Files.readString(memoryFile())).second.trim() }.getOrDefault("")
+        val text = memoryText()
         return if (text.length > MEMORY_LIMIT) text.take(MEMORY_LIMIT) + "\n… (cut: the memory file is longer than $MEMORY_LIMIT characters)" else text
     }
 
     /** How long the memory file really is (without frontmatter), before [memory] cuts it at [MEMORY_LIMIT]; 0 when there is none. */
-    fun memoryLength(): Int = runCatching { splitFrontmatter(Files.readString(memoryFile())).second.trim().length }.getOrDefault(0)
+    fun memoryLength(): Int = memoryText().length
+
+    /** The user's own memory file (`~/.config/arcana/ARCANA.md`, for every vault) first, then this vault's. */
+    private fun memoryText(): String = listOf(Layout.globalMemory(), memoryFile()).distinct()
+        .mapNotNull { f -> runCatching { splitFrontmatter(Files.readString(f)).second.trim() }.getOrNull()?.takeIf { it.isNotEmpty() } }.joinToString("\n\n")
 
     /** What [rename] did: the note's new path and how many `[[links]]` it rewrote in how many other notes. */
     data class RenameResult(val path: String, val linksUpdated: Int, val notesChanged: Int)
@@ -90,11 +94,11 @@ class Vault(root: Path, private val memoryPath: String = "") {
         return RenameResult(root.relativize(to).toString().replace('\\', '/'), links, changed)
     }
 
-    /** Where the memory file is: [MEMORY_FILE] at the vault root when the path is blank, inside the vault when it is relative, anywhere for `~/…` or an absolute path. */
+    /** Where the memory file is: [Layout.defaultMemory] when the path is blank, inside the vault when it is relative, anywhere for `~/…` or an absolute path. */
     fun memoryFile(): Path {
         val raw = memoryPath.trim()
         return when {
-            raw.isEmpty() -> root.resolve(MEMORY_FILE)
+            raw.isEmpty() -> Layout.defaultMemory(root)
             raw == "~" || raw.startsWith("~/") -> Path.of(System.getProperty("user.home"), raw.removePrefix("~").trimStart('/')).normalize()
             Path.of(raw).isAbsolute -> Path.of(raw).normalize()
             else -> root.resolve(raw).normalize()

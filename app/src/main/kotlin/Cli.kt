@@ -2,6 +2,7 @@ package com.arcana.brain.app
 
 import com.arcana.brain.core.Bootstrap
 import com.arcana.brain.core.ConfigStore
+import com.arcana.brain.core.Layout
 import com.arcana.brain.core.Vault
 import java.nio.file.Files
 
@@ -19,6 +20,9 @@ Usage:
                                  the memory file (ARCANA.md), the Skills folder with its guide and the
                                  starter skills, and the output folder. Existing files are never touched.
       --skip memory,skills,output   leave some of that out (comma separated)
+  arcana --migrate               move the chosen vault's Skills/ and root ARCANA.md into its hidden .arcana/ folder
+                                 (.arcana/skills, .arcana/ARCANA.md), so the vault shows only content. Nothing is
+                                 overwritten; a link to a moved note is not rewritten.
   arcana --help                  this text
 """
 
@@ -29,9 +33,21 @@ Usage:
         "output" to setOf(Bootstrap.OUTPUT),
     )
 
+    /** `--migrate`: [Layout.migrate] on the vault in the settings. */
+    private fun migrate(store: ConfigStore, out: (String) -> Unit): Int {
+        val config = store.load()
+        val dir = AppContext.expandHome(config.vaultPath.trim().ifEmpty { out("No vault is chosen yet: start Arcana once, or run arcana --init <vault>."); return 1 })
+        if (!Files.isDirectory(dir)) { out("$dir is not a folder."); return 1 }
+        val result = runCatching { Layout.migrate(dir.toAbsolutePath().normalize(), config) }.getOrElse { out("Could not move: ${it.message}"); return 1 }
+        store.save(result.config)
+        result.lines.forEach { out(it) }
+        return 0
+    }
+
     fun run(args: Array<String>, store: ConfigStore = ConfigStore(), out: (String) -> Unit = ::println): Int? {
         if (args.isEmpty()) return null
         if ("--help" in args || "-h" in args) { out(HELP.trimEnd()); return 0 }
+        if ("--migrate" in args) return migrate(store, out)
         val at = args.indexOf("--init")
         if (at < 0) { out("Unknown option ${args.first()}.\n\n" + HELP.trimEnd()); return 2 }
         val path = args.getOrNull(at + 1)?.takeIf { !it.startsWith("--") } ?: run { out("--init needs the vault folder: arcana --init ~/Obsidian/Vault"); return 2 }

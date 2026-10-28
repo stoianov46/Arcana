@@ -69,7 +69,7 @@ Note: the vault note `ARCANA.md` (see [functionality.md](functionality.md)) is p
 | Palette | `Ctrl+P`: searchable list of every action |
 | Tools | Model-callable functions: read/search notes and files, change or delete them, ask the user, run commands, read web pages; changes, commands and fetches need the user's confirmation |
 | Memory file | The vault note `ARCANA.md`: standing instructions and facts added to every chat |
-| Skill | A runbook in the vault (`Skills/<name>/<name>.skill.md` + `reference/` + `scripts/`) that a model follows step by step; see [skills.md](skills.md) |
+| Skill | A runbook in the vault (`.arcana/skills/<name>/<name>.skill.md`, or the older `Skills/…` + `reference/` + `scripts/`) that a model follows step by step; see [skills.md](skills.md) |
 | Skill run / completion gate | One execution of a skill whose `requires:` steps Arcana ticks off; if the model tries to finish early the gate sends it back (badge `◆ name 7/11`) |
 | Skill chip | `◆ skill name` attached to a message (from the `/` menu or `@`): Arcana puts the skill's text into the message |
 | Status bar | The reusable one-line summary (`design/StatusBar.kt`): model, context gauge, tokens, estimated price, time |

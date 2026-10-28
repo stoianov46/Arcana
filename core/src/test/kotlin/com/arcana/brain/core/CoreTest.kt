@@ -721,17 +721,98 @@ class CoreTest {
         Files.writeString(vaultDir.resolve("ARCANA.md"), "my own rules")
         val made = Bootstrap.create(vault, config, Bootstrap.items(vault, config).map { it.id }.toSet())
         assertEquals("my own rules", Files.readString(vaultDir.resolve("ARCANA.md")))
-        assertEquals(listOf("Skills/", "Skills/Skills Guide.md", "Skills/decompose/decompose.skill.md", "Arcana/"), made)
+        assertEquals(listOf(".arcana/skills/", ".arcana/skills/Skills Guide.md", ".arcana/skills/decompose/decompose.skill.md", "Arcana/"), made)
         assertTrue(Bootstrap.items(vault, config).all { it.done })
         assertEquals(emptyList(), Bootstrap.create(vault, config, Bootstrap.items(vault, config).map { it.id }.toSet()), "a second run creates nothing")
         // only what was asked for
         val other = Vault(Files.createDirectories(root.resolve("v2")))
         assertEquals(listOf("ARCANA.md"), Bootstrap.create(other, AppConfig(), setOf(Bootstrap.MEMORY)))
-        assertTrue("Arcana memory" in Files.readString(root.resolve("v2/ARCANA.md")) && !Files.exists(root.resolve("v2/Skills")))
+        assertTrue("Arcana memory" in Files.readString(root.resolve("v2/.arcana/ARCANA.md")) && !Files.exists(root.resolve("v2/Skills")) && !Files.exists(root.resolve("v2/ARCANA.md")))
         // a custom skills folder is honoured
         val third = Vault(Files.createDirectories(root.resolve("v3")))
         Bootstrap.create(third, AppConfig(skillsFolder = "Runbooks"), setOf(Bootstrap.STARTER_SKILLS))
         assertTrue(Files.exists(root.resolve("v3/Runbooks/decompose/decompose.skill.md")))
+    }
+
+    private fun skillNote(dir: java.nio.file.Path, name: String, description: String = "Does $name.") {
+        Files.createDirectories(dir.resolve(name))
+        Files.writeString(dir.resolve("$name/$name.skill.md"), "---\nname: $name\ndescription: \"$description\"\n---\n# $name\n")
+    }
+
+    @Test
+    fun theInternalFolderIsFoundAutomaticallyAndAnOldLayoutKeepsWorking() {
+        val root = Files.createTempDirectory("arcana-layout")
+        // nothing yet: a new vault gets the hidden folder
+        assertEquals(".arcana/skills", Layout.skillsFolder(root, ""))
+        // an existing Skills/ is still used
+        Files.createDirectories(root.resolve("Skills"))
+        assertEquals("Skills", Layout.skillsFolder(root, ""))
+        // the hidden folder wins as soon as it exists; a named folder wins over both
+        Files.createDirectories(root.resolve(".arcana/skills"))
+        assertEquals(".arcana/skills", Layout.skillsFolder(root, "/"))
+        assertEquals("Runbooks", Layout.skillsFolder(root, "Runbooks/"))
+        // the memory file follows the same rule
+        Files.writeString(root.resolve("ARCANA.md"), "old")
+        assertEquals(root.resolve("ARCANA.md"), Layout.defaultMemory(root).takeIf { !Files.exists(root.resolve(".arcana/ARCANA.md")) })
+        Files.writeString(root.resolve(".arcana/ARCANA.md"), "new")
+        assertEquals(root.resolve(".arcana/ARCANA.md"), Layout.defaultMemory(root))
+    }
+
+    @Test
+    fun migrateMovesSkillsAndMemoryIntoTheHiddenFolderAndTouchesNothingElse() {
+        val root = Files.createTempDirectory("arcana-migrate")
+        skillNote(root.resolve("Skills"), "alpha")
+        Files.writeString(root.resolve("ARCANA.md"), "my rules")
+        Files.createDirectories(root.resolve("Reports")); Files.writeString(root.resolve("Reports/r.md"), "report")
+        val result = Layout.migrate(root, AppConfig(skillsFolder = "Skills", memoryPath = "ARCANA.md"))
+        assertTrue(result.lines.any { it.startsWith("Moved Skills/") } && result.lines.any { it.startsWith("Moved ARCANA.md") }, result.lines.toString())
+        assertTrue(Files.exists(root.resolve(".arcana/skills/alpha/alpha.skill.md")) && !Files.exists(root.resolve("Skills")))
+        assertEquals("my rules", Files.readString(root.resolve(".arcana/ARCANA.md")))
+        assertEquals("report", Files.readString(root.resolve("Reports/r.md")), "generated content stays where it is")
+        assertEquals("", result.config.skillsFolder + result.config.memoryPath, "the settings go back to automatic")
+        // a second run has nothing to do, and a target that exists is never overwritten
+        assertEquals(listOf("Nothing to move."), Layout.migrate(root, result.config).lines)
+        Files.writeString(root.resolve("ARCANA.md"), "another"); skillNote(root.resolve("Skills"), "beta")
+        val again = Layout.migrate(root, result.config)
+        assertTrue(again.lines.all { it.startsWith("Left") } && "my rules" == Files.readString(root.resolve(".arcana/ARCANA.md")), again.lines.toString())
+        // a skills folder the user named is left alone
+        assertTrue(Layout.migrate(root, AppConfig(skillsFolder = "Runbooks")).lines.any { "Runbooks" in it })
+    }
+
+    @Test
+    fun yourOwnMemoryFileComesBeforeTheVaultsAndCountsInItsLength() {
+        val home = Files.createTempDirectory("arcana-home")
+        val old = System.getProperty("user.home"); val oldEnv = System.getenv("ARCANA_CONFIG")
+        System.setProperty("user.home", home.toString())
+        try {
+            if (oldEnv != null) return // the config location is pinned from outside: this check is about the default one
+            val vaultDir = Files.createTempDirectory("arcana-gmem")
+            val vault = Vault(vaultDir)
+            Files.createDirectories(Layout.globalDir()); Files.writeString(Layout.globalMemory(), "Answer in Ukrainian.")
+            assertEquals("Answer in Ukrainian.", vault.memory())
+            vault.ensureMemory()
+            assertTrue(vault.memory().startsWith("Answer in Ukrainian.\n\n") && "Arcana memory" in vault.memory())
+            assertEquals(vault.memory().length, vault.memoryLength())
+        } finally { System.setProperty("user.home", old) }
+    }
+
+    @Test
+    fun yourOwnSkillsAndMemoryApplyToEveryVaultAndTheVaultWins() {
+        val root = Files.createTempDirectory("arcana-global")
+        val vaultDir = Files.createDirectories(root.resolve("vault"))
+        val vault = Vault(vaultDir)
+        skillNote(vaultDir.resolve(".arcana/skills"), "shared", "The vault's.")
+        skillNote(vaultDir.resolve(".arcana/skills"), "only-here")
+        val global = Files.createDirectories(root.resolve("home/skills"))
+        skillNote(global, "shared", "The global one.")
+        skillNote(global, "everywhere")
+        val found = Skills.discoverAll(vault, ".arcana/skills", global).associateBy { it.name }
+        assertEquals(setOf("shared", "only-here", "everywhere"), found.keys)
+        assertEquals("The vault's.", found.getValue("shared").description, "a vault skill of the same name wins")
+        val everywhere = found.getValue("everywhere")
+        assertTrue(java.nio.file.Path.of(everywhere.path).isAbsolute, "a global skill is addressed by its absolute path")
+        assertTrue("# everywhere" in Skills.load(vault, everywhere) && "# everywhere" in Skills.loadEntry(vault, everywhere.path).orEmpty())
+        assertEquals(listOf("only-here", "shared"), Skills.discoverAll(vault, ".arcana/skills", null).map { it.name })
     }
 
     @Test
@@ -739,7 +820,7 @@ class CoreTest {
         val root = Files.createTempDirectory("arcana-starter")
         val vault = Vault(Files.createDirectories(root.resolve("vault")))
         Bootstrap.create(vault, AppConfig(), setOf(Bootstrap.SKILLS_GUIDE, Bootstrap.STARTER_SKILLS))
-        val found = Skills.discover(vault, "Skills")
+        val found = Skills.discover(vault, ".arcana/skills")
         assertEquals(listOf("decompose"), found.map { it.name }, "the guide is a note, not a skill")
         val skill = found.single()
         assertTrue(skill.description.isNotBlank() && skill.problems.isEmpty(), skill.problems.toString())
@@ -824,8 +905,11 @@ class CoreTest {
     fun theMemoryFileCanLiveInsideTheVaultOrAnywhereOnTheComputer() {
         val root = Files.createTempDirectory("arcana-memloc")
         val vaultDir = Files.createDirectories(root.resolve("vault"))
-        // default: ARCANA.md at the vault root
-        assertEquals(vaultDir.toRealPath().resolve("ARCANA.md"), Vault(vaultDir).memoryFile().let { it.parent.toRealPath().resolve(it.fileName) })
+        // default: .arcana/ARCANA.md, hidden from the notes; an ARCANA.md that already sits at the vault root is still the one used
+        assertEquals(vaultDir.resolve(".arcana/ARCANA.md"), Vault(vaultDir).memoryFile())
+        Files.writeString(vaultDir.resolve("ARCANA.md"), "old place")
+        assertEquals(vaultDir.resolve("ARCANA.md"), Vault(vaultDir).memoryFile())
+        Files.delete(vaultDir.resolve("ARCANA.md"))
         // inside the vault, in a folder that does not exist yet
         val inside = Vault(vaultDir, "Notes/Memory.md")
         assertEquals("Memory.md", inside.memoryName())
@@ -1490,7 +1574,7 @@ class CoreTest {
         val vault = Vault(root)
         assertEquals("", vault.memory())
         val file = vault.ensureMemory()
-        assertEquals(root.resolve("ARCANA.md"), file)
+        assertEquals(root.resolve(".arcana/ARCANA.md"), file)
         assertTrue("## Remembered" in Files.readString(file))
         assertTrue("Arcana memory" in vault.memory())
         vault.remember("I write in Ukrainian and English")
@@ -1516,7 +1600,7 @@ class CoreTest {
         assertTrue(box.find("remember")!!.alwaysAsk)
         assertTrue("exactly these names" in box.describe())
         box.execute(call("remember", "text" to "likes tea"))
-        assertTrue("- likes tea" in Files.readString(root.resolve("v/ARCANA.md")))
+        assertTrue("- likes tea" in Files.readString(root.resolve("v/.arcana/ARCANA.md")))
     }
 
     @Test

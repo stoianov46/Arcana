@@ -10,7 +10,7 @@
 | Token usage | `~/.config/arcana/usage.jsonl` | one `UsageRecord` per line | `UsageStore` |
 | Tool backups | `~/.config/arcana/backups/` | copies of replaced/edited files | `ToolBox` |
 | Tool trash | `~/.config/arcana/trash/` | files deleted by `delete_path` outside the vault (inside the vault: `<vault>/.trash`) | `ToolBox` |
-| Memory file | `<vault>/ARCANA.md` by default, or `AppConfig.memoryPath` (inside the vault, `~/…` or absolute: `Vault.memoryFile()`) | Markdown, first 8,000 characters go to every chat | `Vault.memory/remember` |
+| Memory file | `<vault>/.arcana/ARCANA.md` by default (an existing `<vault>/ARCANA.md` is still used), or `AppConfig.memoryPath` (inside the vault, `~/…` or absolute: `Vault.memoryFile()`); the user's own `~/.config/arcana/ARCANA.md` comes before it in every chat (see "Where Arcana's own files live") | Markdown, first 8,000 characters go to every chat | `Vault.memory/remember` |
 | Your notes | the vault folder (`vaultPath`) | Markdown | `Vault` |
 | Vault trash | `<vault>/.trash/` | Obsidian-compatible trash | `Vault.trash/replace`, inbox backups |
 | Attachments | `<vault>/<outputFolder>/attachments/` | copied pictures/files | `Vault.copyAttachment` |
@@ -61,7 +61,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `toolAutoSearch` | false | `web_search` and `fetch_url` run without asking (Settings → Tools → *Search and fetch without asking*; needs `toolWeb`; HTTP requests still ask, the Oracul always asks); the Chat status bar shows an orange `↗ auto-search` |
 | `toolFolders` | `""` | Settings → Tools → *Allowed folders* (was *Extra folders*): `;`-separated roots the file tools may read and write besides the vault, `~` expanded (the only place a home or hidden folder can be allowed) |
 | `toolAutoRead` | true | read-only tools run without asking |
-| `skillsEnabled` / `skillsFolder` | true / `Skills` | the model is told which skills exist and gets `use_skill`; the vault folder with one folder per skill |
+| `skillsEnabled` / `skillsFolder` | true / `` (automatic) | the model is told which skills exist and gets `use_skill`; the vault folder with one folder per skill. Blank = `Layout.skillsFolder`: `.arcana/skills`, or an existing `Skills/`; a name set here wins |
 | `libraryTree` | true | the Library lists notes as a tree of folders that fold and unfold (false: one flat list with full paths) |
 | `toolSteps` | 8 | max tool rounds per question (1–60); at the limit `stepLimit` decides |
 | `stepLimit` | `ask` | at the step limit: `ask` shows a dialog offering that many more steps, `auto` gives them at once (up to `STEP_LIMIT_AUTO_ROUNDS` = 3 times per question, logged in the session, then it asks), `stop` makes the model answer with what it has. Each change, command and web address inside the extra steps keeps its own approval |
@@ -77,7 +77,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `soundAttention` / `soundDone` / `soundFailed` | `off` | a `SoundChoices` id (`off`, `sys:Hero`, `bell1`..`bell5`, `file`) for: a dialog waits for you / a reply finished / a reply failed |
 | `soundVolume` / `soundFile` / `soundWhere` | 80 / `` / `away` | volume in percent for system sounds and the file; the file for the choice `file`; `away` = only while Chat is not on screen, `always` |
 | `projectFolder` | `` | Settings → Tools → *Working folder* (was *Project folder*; optional, grants nothing beyond itself): allowed like the vault, where relative paths and commands start, its ARCANA.md / CLAUDE.md / AGENTS.md goes to the model (see tools-and-agent.md "Project context") |
-| `memoryPath` | `` | where the memory file is: blank = `ARCANA.md` at the vault root; relative = inside the vault; `~/…` or absolute = anywhere (Settings → Prompts → *Memory file path*); read by `Vault(root, memoryPath)` from `AppContext.openVault()` |
+| `memoryPath` | `` | where the memory file is: blank = `.arcana/ARCANA.md` (an existing root `ARCANA.md` is still used: `Layout.defaultMemory`); relative = inside the vault; `~/…` or absolute = anywhere (Settings → Prompts → *Memory file path*); read by `Vault(root, memoryPath)` from `AppContext.openVault()` |
 | `memoryEnabled` / `memoryOffered` | true / false | add `ARCANA.md` to every chat / already created or checked once (so a deleted file is not recreated) |
 | `contextTokens` | 0 | `num_ctx` to ask Ollama for (0 = Ollama's default); the Chat gauge counts against it, capped at the model's maximum; with 0 it counts against `AppContext.loadedContext` (what Ollama really loaded, usually far below the model's maximum) and only then the model's maximum (`effectiveContext`); sizes are written `256k` / `32k` (`UsageStats.contextSize`: multiples of 1024), a window under 32k (`COMFORTABLE_CONTEXT`) adds an orange `⚠ ctx 4k` pill; Settings → Context window shows "Right now: Ollama runs … with a window of …" |
 | `estPriceIn` / `estPriceOut` | 3 / 15 | US dollars per million prompt / reply tokens, only for the estimated price in the status bars |
@@ -94,10 +94,11 @@ Adding a field: give it a default (old config files must still load), add a Sett
 - Tags: `#tag` inline and `tags:` in frontmatter (list `[a, b]` or YAML `- a` lines).
 - Frontmatter written by Arcana: `created`, `generator: arcana`, `model`, `tags: [arcana]`. `Vault.replace` and
   `mergeFrontmatterTags` preserve existing frontmatter.
-- Renaming a note (Library `r`, `Vault.rename`) rewrites the links to it in other notes; `ARCANA.md` at the vault root is the memory file.
+- Renaming a note (Library `r`, `Vault.rename`) rewrites the links to it in other notes; the memory file is `.arcana/ARCANA.md` (or an older `ARCANA.md` at the vault root).
 - Daily notes: path from `.obsidian/daily-notes.json` (`folder`, `format`) else settings. Capture appends `- HH:mm text`.
 - Deletion is never permanent: `Vault.trash` → `.trash/`; the `delete_path` tool moves to `.trash/` (vault) or `<config>/trash`. Replacements/inbox processing back up originals into `.trash/`.
 - Session summary notes and saved chats are normal notes created in `outputFolder`.
+- **Where Arcana's own files live (`core/Layout.kt`).** Its working files are kept apart from the notes it produces (reports, research, AI notes, which stay visible in the vault in `outputFolder`, `Reports/…`, `Research/…`). *In the vault* the hidden folder `.arcana/`: `.arcana/skills/` and `.arcana/ARCANA.md` (hidden folders are skipped by Obsidian, by the note search and by `Vault.listNotes`, but every tool that opens a path reads them). *For the user*, in the settings folder `~/.config/arcana/`: `skills/` (every vault; a vault skill of the same name wins, `Skills.discoverAll`; a global skill is addressed by its absolute path and the toolbox may read that folder) and `ARCANA.md` (read first, then the vault's). Nothing moves by itself: a vault with `Skills/` or a root `ARCANA.md` keeps them until `arcana --migrate` (`Layout.migrate`) moves them (a target that exists is never overwritten; `[[links]]` to moved notes are not rewritten); a new vault gets `.arcana/`. Reference notes for the model (for example the LLM reference) can live in `.arcana/` too, but Arcana does not create or read them itself.
 - Skills: `<skillsFolder>/<name>/<name>.skill.md` (+ `reference/`, `scripts/`); properties Arcana reads: `name`, `description`, `version`, `output`, `requires` (quoted list items); everything else is for people. A skill's results live outside it (`output:`, e.g. `Reports/<name>/`). `create_note` merges a `---` properties block at the top of its content with Arcana's own; `set_properties` changes properties in place. See [skills.md](skills.md).
 
 ## Data shapes (persisted JSON)

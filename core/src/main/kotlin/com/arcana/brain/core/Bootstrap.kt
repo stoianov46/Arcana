@@ -19,7 +19,7 @@ object Bootstrap {
 
     /** What can be created in [vault] with these [config] settings, and what already exists. */
     fun items(vault: Vault, config: AppConfig): List<SetupItem> {
-        val skills = config.skillsFolder.trim('/').ifEmpty { "Skills" }
+        val skills = Layout.skillsFolder(vault.root, config.skillsFolder)
         val skillsDir = vault.root.resolve(skills)
         return listOf(
             SetupItem(MEMORY, "Memory file", "${vault.memoryName()}: who you are and the rules that make a model use its tools; read in every chat", Files.exists(vault.memoryFile())),
@@ -32,7 +32,7 @@ object Bootstrap {
 
     /** Creates the [ids] that are missing and returns one line for each thing it made (empty when everything was there). */
     fun create(vault: Vault, config: AppConfig, ids: Set<String>): List<String> {
-        val skills = config.skillsFolder.trim('/').ifEmpty { "Skills" }
+        val skills = Layout.skillsFolder(vault.root, config.skillsFolder)
         val skillsDir = vault.root.resolve(skills)
         val made = ArrayList<String>()
         fun write(path: java.nio.file.Path, text: String, shown: String) {

@@ -6,12 +6,12 @@ reference notes it needs. Arcana finds skills by their folder layout, tells the 
 
 This is the one document that explains the whole feature. Code: `core/Skills.kt` (everything pure), `core/Tools.kt` (`use_skill`, the catalog),
 `app/ChatSession.kt` (runs and the gate's owner), `app/Generation.kt` (the gate in the loop), `app/screens/Chat.kt` (menu, chip, status badge).
-For people writing skills there is also the vault note `Skills/Skills Guide.md`; for the model, `Arcana/Arcana LLM Reference.md`;
+For people writing skills there is also the note `Skills Guide.md` in the skills folder; for the model, `Arcana/Arcana LLM Reference.md`;
 for users, the in-app Guide page "Skills".
 
 ## Starter skills
 
-`Bootstrap` (first-run setup, palette "Set up the vault", `arcana --init`) puts `Skills/Skills Guide.md` and the starter skills from `core/StarterSkills.kt` into a vault, never over an existing file: today `decompose` (a todo list becomes a plan: analyze → `ask_user` quiz → plan note → one item at a time; it requires the `ask_user` and `create_note` steps). `CoreTest.theStarterSkillsAreRealSkillsWithoutProblems` keeps them valid (found, described, steps parsed, under 18,000 characters, `needs:` are real tools).
+`Bootstrap` (first-run setup, palette "Set up the vault", `arcana --init`) puts `Skills Guide.md` and the starter skills (into `.arcana/skills/`, or the skills folder in use) from `core/StarterSkills.kt` into a vault, never over an existing file: today `decompose` (a todo list becomes a plan: analyze → `ask_user` quiz → plan note → one item at a time; it requires the `ask_user` and `create_note` steps). `CoreTest.theStarterSkillsAreRealSkillsWithoutProblems` keeps them valid (found, described, steps parsed, under 18,000 characters, `needs:` are real tools).
 
 ## 1. Why it is built this way
 
@@ -33,7 +33,8 @@ Skills as a folder of Markdown instructions with reference files and scripts, re
 ## 2. Layout and naming
 
 ```
-<skills folder>/                      default "Skills" (Settings → Tools → Skills folder; AppConfig.skillsFolder)
+<skills folder>/                      automatic: .arcana/skills, or an existing Skills/ (Settings → Tools → Skills folder; AppConfig.skillsFolder; see Layout)
+                                      plus ~/.config/arcana/skills/ for every vault (a vault skill of the same name wins)
   <name>/                             lower-case words joined by "-" (nameRule), e.g. coingecko-forecast
     <name>.skill.md                   THE ENTRY NOTE (Skills.ENTRY_SUFFIX). Without it the folder is not a skill.
     reference/…                       notes the skill reads only when needed (loaded on demand with read_note)

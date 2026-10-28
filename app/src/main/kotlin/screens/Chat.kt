@@ -454,9 +454,9 @@ fun ChatScreen(app: AppContext) {
         app.update(app.config.copy(skillsEnabled = on))
         if (!on) return toast("Skills are off: the model is not told about them.")
         val vault = app.openVault().getOrNull() ?: return toast("Choose a vault first (Settings → Vault).", error = true)
-        val found = Skills.discover(vault, app.config.skillsFolder)
+        val found = Skills.discoverAll(vault, app.skillsFolder())
         toast(when {
-            found.isEmpty() -> "Skills are on, but there are none in ${app.config.skillsFolder}/ yet (one folder per skill; see the Skills Guide note)."
+            found.isEmpty() -> "Skills are on, but there are none in ${app.skillsFolder()}/ yet (one folder per skill; see the Skills Guide note)."
             !app.config.toolsEnabled -> "${found.size} skill(s): ${found.joinToString { it.name }}. Turn tools on (/tools) so the model can load them."
             else -> "${found.size} skill(s): ${found.joinToString { Skills.summary(it) }}. Type / and pick one."
         }, error = found.any { it.problems.isNotEmpty() })
@@ -605,7 +605,7 @@ fun ChatScreen(app: AppContext) {
     // the skills are read from the vault folder (never hardcoded): when Chat opens, after each message, and again every time the menu opens, so one added in Obsidian shows up at once
     val skillList = remember(app.config.vaultPath, app.config.skillsEnabled, app.config.skillsFolder, chat.messages.size, slashQuery != null) {
         val vault = app.openVault().getOrNull()
-        if (vault == null || !app.config.skillsEnabled) emptyList() else Skills.discover(vault, app.config.skillsFolder)
+        if (vault == null || !app.config.skillsEnabled) emptyList() else Skills.discoverAll(vault, app.skillsFolder())
     }
     val slashItems = remember(app.config.vaultPath, skillList) {
         SlashCommands + skillList.map { SlashItem("/" + it.name, it.description.ifEmpty { "(no description)" }.substringBefore(". ").take(80).trimEnd('.'), false, skill = true, usage = "e.g. /${it.name} <what you want>   (attaches the skill and sends your request)") } + (chat.toolboxFor(app.config.copy(toolsEnabled = true, toolMode = "ask"))?.specs.orEmpty())
@@ -622,7 +622,7 @@ fun ChatScreen(app: AppContext) {
             // attaching is explicit: a chip above the field, and Arcana puts the skill's text into the message when it is sent (the model need not call use_skill)
             val skill = skillList.firstOrNull { "/" + it.name == item.name }
             input.clear()
-            if (skill == null) return toast("That skill is no longer in ${app.config.skillsFolder}/.", error = true)
+            if (skill == null) return toast("That skill is no longer in ${app.skillsFolder()}/.", error = true)
             if (skill.path !in chat.attachments.notes) chat.attachments.notes += skill.path
             app.session.log(SessionKind.Attached, "Skill ${skill.name}", skill.path)
             toast(if (app.config.toolsEnabled) "Skill ${skill.name} attached. Type what you want and press Enter (Backspace on an empty field removes it)."

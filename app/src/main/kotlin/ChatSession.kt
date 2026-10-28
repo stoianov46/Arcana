@@ -309,7 +309,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             shell = config.toolShell,
             web = config.toolWeb,
             searchBackend = config.searchBackend, searchUrl = config.searchUrl, searchKey = config.searchKey,
-            skillsFolder = if (config.skillsEnabled) config.skillsFolder else "",
+            skillsFolder = if (config.skillsEnabled) app.skillsFolder(config) else "",
         )
     }
 

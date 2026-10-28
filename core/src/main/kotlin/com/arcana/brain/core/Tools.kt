@@ -108,10 +108,10 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
     private val searchBackend: String = "duckduckgo", private val searchUrl: String = "", private val searchKey: String = "",
     /** The vault folder that holds skills (see [Skills]); blank turns skills off. */ private val skillsFolder: String = "",
     /** The project the user works on (see [projectNote]): allowed like the vault, and what a relative path or a default folder means. */ private val project: Path? = null) {
-    val access = FileAccess(listOfNotNull(vault?.root, project) + folders)
+    val access = FileAccess(listOfNotNull(vault?.root, project) + folders + listOfNotNull(Layout.globalSkills().takeIf { skillsFolder.isNotBlank() && java.nio.file.Files.isDirectory(it) })) // the user's own skills (see [Layout]) are readable too
 
     /** The skills found now: a toolbox is built for each message, so a skill added in Obsidian is there at once. */
-    val skills: List<Skill> = if (vault != null && skillsFolder.isNotBlank()) Skills.discover(vault, skillsFolder) else emptyList()
+    val skills: List<Skill> = if (vault != null && skillsFolder.isNotBlank()) Skills.discoverAll(vault, skillsFolder) else emptyList()
 
     val specs: List<ToolSpec> = buildList {
         if (vault != null) addAll(vaultTools(vault))

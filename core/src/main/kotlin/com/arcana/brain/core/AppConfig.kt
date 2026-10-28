@@ -138,8 +138,8 @@ data class AppConfig(
     val stepLimit: String = "ask",
     /** Skills (runbooks in the vault, see Skills.kt): the model gets a list of them and can load one with use_skill; Chat's "/" menu offers them. */
     val skillsEnabled: Boolean = true,
-    /** The vault folder that holds one folder per skill. */
-    val skillsFolder: String = "Skills",
+    /** The vault folder that holds one folder per skill. Blank = automatic ([Layout.skillsFolder]: `.arcana/skills`, or an existing `Skills/`). */
+    val skillsFolder: String = "",
     /** The Library lists its notes as a tree of folders that fold and unfold (off: one flat list with the full paths). */
     val libraryTree: Boolean = true,
     /** What select mode copies: "markdown" (as written) or "plain" (Markdown markers removed). */

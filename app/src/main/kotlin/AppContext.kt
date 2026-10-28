@@ -11,6 +11,8 @@ import com.arcana.brain.core.ConfigStore
 import com.arcana.brain.app.navigation.ScreenOrder
 import com.arcana.brain.core.ChatChunk
 import com.arcana.brain.core.ChatStore
+import com.arcana.brain.core.Layout
+import com.arcana.brain.core.Skills
 import com.arcana.brain.core.DailyNotes
 import com.arcana.brain.core.SessionKind
 import com.arcana.brain.core.SessionStore
@@ -213,6 +215,10 @@ class AppContext(
         onFolder = { dir -> update(config.copy(lastPickerDir = dir.toString())) },
         forModel = forModel,
     )
+
+    /** The vault folder with the skills for [config]'s settings (automatic when blank: see [Layout.skillsFolder]); `Skills` when no vault is open. */
+    fun skillsFolder(config: AppConfig = this.config): String =
+        openVault().getOrNull()?.let { Layout.skillsFolder(it.root, config.skillsFolder) } ?: config.skillsFolder.trim('/').ifEmpty { Skills.DEFAULT_FOLDER }
 
     fun openVault(): Result<Vault> {
         val raw = config.vaultPath.trim()

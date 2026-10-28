@@ -30,8 +30,8 @@ arcana --help
 | settings | `~/.config/arcana/config.json` | `ARCANA_CONFIG` (path of the file) |
 | default vault for a fresh config | none | `ARCANA_VAULT` |
 | chats, sessions, usage logs, tool usage, backups, trash | next to the settings file | follow `ARCANA_CONFIG` |
-| memory file | `<vault>/ARCANA.md` | Settings → Prompts → *Memory file path* (`memoryPath`) |
-| skills | `<vault>/Skills/` | Settings → Tools → *Skills folder* |
+| memory file | `<vault>/.arcana/ARCANA.md` (an old `<vault>/ARCANA.md` still works), plus `~/.config/arcana/ARCANA.md` for every vault | Settings → Prompts → *Memory file path* (`memoryPath`) |
+| skills | `<vault>/.arcana/skills/` (an old `<vault>/Skills/` still works), plus `~/.config/arcana/skills/` for every vault | Settings → Tools → *Skills folder*; `arcana --migrate` moves an old layout |
 | start script JVM options | | `JAVA_OPTS` (for example `-Xmx512m`) |
 
 Settings → Storage lists the files Arcana itself keeps (not your notes or settings) and clears them (`Storage`). To reset a machine: delete the settings folder.

@@ -64,28 +64,47 @@ object Skills {
     fun discover(vault: Vault, folder: String): List<Skill> {
         val base = folder.trim('/').ifBlank { return emptyList() }
         val dir = vault.root.resolve(base).normalize()
-        if (!dir.startsWith(vault.root) || !Files.isDirectory(dir)) return emptyList()
+        if (!dir.startsWith(vault.root)) return emptyList()
+        return scan(vault, dir)
+    }
+
+    /**
+     * The vault's skills ([folder]) and the user's own ones ([global], by default the settings folder's `skills/`, for every vault). A vault
+     * skill of the same name wins. A global skill's `path` and `folder` are absolute, which every reader handles (`root.resolve(absolute)`).
+     */
+    fun discoverAll(vault: Vault, folder: String, global: Path? = Layout.globalSkills()): List<Skill> {
+        val own = discover(vault, folder)
+        if (global == null) return own
+        val names = own.map { it.name }.toSet()
+        return own + scan(vault, global.toAbsolutePath().normalize()).filter { it.name !in names }
+    }
+
+    private fun scan(vault: Vault, dir: Path): List<Skill> {
+        if (!Files.isDirectory(dir)) return emptyList()
         val subs = try { Files.newDirectoryStream(dir).use { s -> s.filter { Files.isDirectory(it) && !it.fileName.toString().startsWith(".") }.sortedBy { it.fileName.toString() } } } catch (e: Exception) { return emptyList() }
-        return subs.mapNotNull { sub ->
-            val dirName = sub.fileName.toString()
-            val entry = sub.resolve("$dirName$ENTRY_SUFFIX")
-            if (!Files.isRegularFile(entry)) return@mapNotNull null
-            val text = runCatching { Files.readString(entry) }.getOrDefault("")
-            val meta = frontmatter(text)
-            val problems = ArrayList<String>()
-            val name = meta["name"]?.takeIf { it.isNotBlank() } ?: dirName
-            if (name != dirName) problems += "name \"$name\" differs from the folder name \"$dirName\""
-            if (!nameRule.matches(dirName)) problems += "the folder name should be lower-case words joined by - (for example coingecko-forecast)"
-            val description = meta["description"].orEmpty().trim()
-            if (description.isEmpty()) problems += "no description: add `description:` to the properties so the model knows when to use it"
-            parseRequirements(text).second.forEach { problems += "requires: cannot read the line \"$it\" (write: tool ~ text in the call => text in the result x3 | label)" }
-            if (text.length > MAX_CHARS) problems += "the entry note has ${text.length} characters; keep it under $MAX_CHARS or the model will not read the end (move detail into a reference/ note)"
-            Skill(
-                name = dirName, description = description, version = meta["version"].orEmpty().trim(), output = meta["output"].orEmpty().trim().trim('/'),
-                path = entry.relativeTo(vault.root).toString().replace('\\', '/'), folder = sub.relativeTo(vault.root).toString().replace('\\', '/'),
-                files = filesOf(sub, dirName), chars = text.length, problems = problems,
-            )
-        }
+        return subs.mapNotNull { scanSkill(vault, it) }
+    }
+
+    /** The skill in the folder [sub] (its entry note must be `<folder name>.skill.md`), or null when that is not a skill. */
+    private fun scanSkill(vault: Vault, sub: Path): Skill? {
+        fun shown(p: Path) = (if (p.startsWith(vault.root)) p.relativeTo(vault.root) else p).toString().replace('\\', '/')
+        val dirName = sub.fileName.toString()
+        val entry = sub.resolve("$dirName$ENTRY_SUFFIX")
+        if (!Files.isRegularFile(entry)) return null
+        val text = runCatching { Files.readString(entry) }.getOrDefault("")
+        val meta = frontmatter(text)
+        val problems = ArrayList<String>()
+        val name = meta["name"]?.takeIf { it.isNotBlank() } ?: dirName
+        if (name != dirName) problems += "name \"$name\" differs from the folder name \"$dirName\""
+        if (!nameRule.matches(dirName)) problems += "the folder name should be lower-case words joined by - (for example coingecko-forecast)"
+        val description = meta["description"].orEmpty().trim()
+        if (description.isEmpty()) problems += "no description: add `description:` to the properties so the model knows when to use it"
+        parseRequirements(text).second.forEach { problems += "requires: cannot read the line \"$it\" (write: tool ~ text in the call => text in the result x3 | label)" }
+        if (text.length > MAX_CHARS) problems += "the entry note has ${text.length} characters; keep it under $MAX_CHARS or the model will not read the end (move detail into a reference/ note)"
+        return Skill(
+            name = dirName, description = description, version = meta["version"].orEmpty().trim(), output = meta["output"].orEmpty().trim().trim('/'),
+            path = shown(entry), folder = shown(sub), files = filesOf(sub, dirName), chars = text.length, problems = problems,
+        )
     }
 
     /** True when the note at [path] (vault-relative) is a skill's entry note. */
@@ -100,9 +119,8 @@ object Skills {
     /** The loaded text of the skill whose entry note is [path] (what `use_skill` returns), or null when [path] is not a skill entry or cannot be read. */
     fun loadEntry(vault: Vault, path: String): String? {
         if (!isEntry(path)) return null
-        val skillFolder = path.substringBeforeLast('/', "")
-        val skills = discover(vault, skillFolder.substringBeforeLast('/', ""))
-        return skills.firstOrNull { it.path == path }?.let { runCatching { load(vault, it) }.getOrNull() }
+        val sub = vault.root.resolve(path.substringBeforeLast('/', "")).normalize()
+        return scanSkill(vault, sub)?.takeIf { it.path == path }?.let { runCatching { load(vault, it) }.getOrNull() }
     }
 
     /**

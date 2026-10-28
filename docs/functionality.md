@@ -79,7 +79,7 @@ adds the real tool list to the same prompt.
 
 ## Skills
 
-A skill is a runbook in the vault (`Skills/<name>/<name>.skill.md`, plus `reference/` and `scripts/`; its results go to a folder it names with `output:`).
+A skill is a runbook in the vault (`.arcana/skills/<name>/<name>.skill.md` (hidden folder; the older `Skills/` still works, `arcana --migrate` moves it), or in `~/.config/arcana/skills/` for every vault, plus `reference/` and `scripts/`; its results go to a folder it names with `output:`).
 Full explanation: [skills.md](skills.md). What the user sees and does:
 - **Find:** type `/` in Chat: skills are listed after the commands, before the tools (badge `SKILL`, name `◆ /name`, hint = the first sentence of `description:`); the folder is rescanned every time the menu opens. `/skills` toggles skills (Settings → Tools → *Skills*, *Skills folder*) and shows what was found and what needs attention.
 - **Use:** picking one attaches the chip `◆ skill name` (Backspace on an empty field removes it); type the task and send. Arcana adds the skill's text to the message, so the model need not call `use_skill`; that question may take up to 40 tool rounds. With tools off a toast says the skill cannot act.

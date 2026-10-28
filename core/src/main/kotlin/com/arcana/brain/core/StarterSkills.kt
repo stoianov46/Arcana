@@ -48,7 +48,7 @@ Turns a raw list of todos into finished work in four phases. Do not skip a phase
         ),
     )
 
-    /** `Skills/Skills Guide.md`: short, for the person who writes the next skill. */
+    /** `Skills Guide.md` in the skills folder: short, for the person who writes the next skill. */
     val GUIDE: String = """
 ---
 tags: [skills, arcana, guide]
@@ -62,7 +62,7 @@ A **skill** is a runbook in the vault that a local model follows step by step. A
 ## Layout
 
 ```
-Skills/
+.arcana/skills/            (or Skills/ in an older vault; Settings → Tools → Skills folder)
   Skills Guide.md          this note (not a skill)
   <name>/                  lower-case words joined by -, for example decompose
     <name>.skill.md        the entry note: the folder name + .skill.md
