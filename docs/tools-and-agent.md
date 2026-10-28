@@ -77,7 +77,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `web_search` | Web | `query`, `limit?` | same switch as `fetch_url`; see "Web"; returns title, address and snippet per result (≤10) |
 | `request_access` | pseudo-tool | `reason` | the only tool a model has when tools are off (plus `ask_user`); asks the user to turn tools on or leave plan mode |
 
-Allowed roots = vault root + the **project folder** (`projectFolder`) + `toolFolders` (`;`-separated, `~` expanded). Writes additionally refuse any path containing a `.git`
+Allowed roots = vault root + the **working folder** (`projectFolder`, Settings label *Working folder*) + `toolFolders` (`;`-separated, `~` expanded). Writes additionally refuse any path containing a `.git`
 or `.obsidian` segment. Backups: `<config dir>/backups/<yyyyMMdd-HHmmss>-<name>` (suffix `.2`, `.3` on collision).
 `ToolBox.cheatSheet()` lists every tool with its exact parameter names (optional ones end in `?`); it goes into the system prompt
 with `ToolBox.describe()` so small models neither forget nor invent tools.
@@ -125,7 +125,7 @@ Whenever a limit is hit the user gets a dialog instead of a model saying "I cann
 - **Folder not allowed**: a file tool, `run_command` (`cwd`) or `move_path` aimed outside the allowed folders → `ToolBox.folderToGrant(call)`
   (the directory, or its nearest existing parent) → "Allow this folder?". Not offered: the home folder, anything with fewer than 3 path
   segments (`/etc`), hidden folders. `y`/`a` → `box.allow(folder)` and the folder is appended to `config.toolFolders`. The error otherwise
-  names Settings → Tools → Extra folders.
+  names Settings → Tools → Allowed folders.
 - **Step limit**: `Generation.onStepLimit` asks "N more steps?".
 - **Shell / web off**: the first call asks to turn them on (below).
 - **Model without tool support**: toast on send and the `⚠ no tools` pill.
@@ -158,7 +158,9 @@ Every dialog (change, command, web, access, mode, step limit, text call, memory)
 
 ## Project context (`projectFolder`)
 
-Settings → Tools → *Project folder* (`AppConfig.projectFolder`, `~` expanded; a path that is not a folder counts as none: `ChatSession.projectFolder`) makes `ToolBox(project = …)`: the folder is an allowed root, `base` (what a relative path and the default `cwd` of `run_command` / `git_*` mean) becomes the project instead of the vault (`relativeTo` rewrites the tool descriptions: "relative to the project folder"), and `describe()` adds `projectNote`: the path, the top level (≤40 entries, no hidden ones or `node_modules`/`build`/…) and the project's own instructions (the first of `PROJECT_FILES` = `ARCANA.md`, `CLAUDE.md`, `AGENTS.md`, ≤3,000 characters). The vault tools (`search_notes`, `create_note`…) keep working on the vault. The Chat status bar shows `▣ <folder name>`.
+**Two settings, two jobs.** *Allowed folders* (`AppConfig.toolFolders`, `;`-separated, `~` expanded) are the roots the file tools may use: the only place a home folder (`~`) or a hidden folder can be allowed (the grant dialog never offers them). *Working folder* (`AppConfig.projectFolder`) is optional and adds context, not permission beyond itself. The labels were *Extra folders* and *Project folder* before; the config keys did not change.
+
+Settings → Tools → *Working folder* (`AppConfig.projectFolder`, `~` expanded; a path that is not a folder counts as none: `ChatSession.projectFolder`) makes `ToolBox(project = …)`: the folder is an allowed root, `base` (what a relative path and the default `cwd` of `run_command` / `git_*` mean) becomes the project instead of the vault (`relativeTo` rewrites the tool descriptions: "relative to the project folder"), and `describe()` adds `projectNote`: the path, the top level (≤40 entries, no hidden ones or `node_modules`/`build`/…) and the project's own instructions (the first of `PROJECT_FILES` = `ARCANA.md`, `CLAUDE.md`, `AGENTS.md`, ≤3,000 characters). The vault tools (`search_notes`, `create_note`…) keep working on the vault. The Chat status bar shows `▣ <folder name>`.
 
 ## HTTP requests (`http_request`) and why there is a gate
 

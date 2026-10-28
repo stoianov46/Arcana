@@ -122,3 +122,15 @@ under the title. Chat (`chatStatus`) and Usage use it; any screen can.
 draws a scrollbar in its last column when the text is taller than the window: a `█` thumb (as tall as the visible share, at the window's
 position) on a `│` track. `ScrollView` does the same for the conversation.
 
+
+## The reply line during a tool loop
+
+`Generation.streamed` counts pieces for the whole turn, `roundPieces` and `roundStartedAt` for the current round. A new round of a tool loop starts with no pieces while Ollama reads the whole conversation again (minutes on a big context), so the token count cannot move. `ReplyStatus` then says `<model> is reading the conversation again…` with the round's own seconds, until the first piece arrives.
+
+## Questions from Arcana itself
+
+`ChatSession.Question` is the dialog `ask_user` uses; `fromArcana = true` makes it read `? Arcana asks` instead of `? <model> asks`. The dialog before a too-long attached note is one (`send`, `longNotes`); a cancel runs `onDeclined`, which puts the typed text back in the field.
+
+## The empty row under Chat
+
+Chat ends with one blank row (`bottomGap`, none in tiny density) so its key hints do not touch the footer. It is part of the exact row count in `Chat.kt`: `outputRows(fixed = … + bottomGap)`. Other screens still end flush against the footer.

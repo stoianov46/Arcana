@@ -105,7 +105,7 @@ ever written to the settings. The judge is only the judge: it sees all answers (
 ## Interface
 
 - **Bottom bar badge:** `Ψ <oracul> ⚖ <judge> · auto|always|manual`, the judge only when it differs; orange `Ψ <model>…` while it works;
-  nothing when no Oracul model is set. The Chat status bar shows the same setup text when idle and an orange pill while consulting: `Ψ <model>…` for the Oracul, `⚖ <judge>…` while the judge works. Both bars build the text with `Oracul.statusText` so they cannot drift apart. The glyph is `Oracul.GLYPH`.
+  nothing when no Oracul model is set. The Chat status bar shows the same setup text when idle and an orange pill while consulting: `Ψ <model>…` for the Oracul, `⚖ <judge>…` while the judge works. Both bars build the text with `Oracul.statusText` so they cannot drift apart. The Chat bar builds the worker and the Oracul as one segment (`modelsSegment`): whoever works now is the first, filled pill, the other follows quietly (`waiting` for the worker); the quiet part is dropped when it would take more than half the bar. The reply line under the chat (`ReplyStatus`) says `Ψ <model> is answering…` (`⚖ <judge> is judging the answers…` for the judge) with the Oracul's own seconds (`ChatSession.consultingSince`) while it works, instead of the waiting worker's thinking line. Esc: `ChatSession.cancelOracul` cancels `autoConsult` and `manualConsult` (the jobs of `/oracul`, `/compare`, `/takeover`) when the worker is not running; the `finally` blocks clear `consulting` and nothing is added. Over columns the comparison's title is drawn with each model name in its column's colour (`comparisonTitleRuns`, `partColor` shared with the pills). An automatic opinion or comparison (`autoConsult`) is cancelled when the user sends a new message, so it cannot outlive its answer and keep `consulting` set through the next turn. The bottom bar swaps the two badges the same way and greys the worker's; on the Chat screen it collapses the Oracul badge to its glyphs (`Ψ`, plus `⚖` when the judge is another model; orange with `…` while asking), because the Chat bar already names the models. The glyph is `Oracul.GLYPH`.
 - **Blocks:** a heading `Ψ Second opinion · <model>`, the text, a closing `Checked with: …` when it used tools, and, while it is open, the
   hint "› /revise: …".
 - **Split view (`comparisonView`, Settings → Console):** a comparison is drawn as columns (`Chat.sideBySide`): a filled name pill per
@@ -129,6 +129,7 @@ ever written to the settings. The judge is only the judge: it sees all answers (
 | `oraculUrl` | blank = main server | a second Ollama server for the Oracul, the judge, planner and reviewer |
 | `oraculAuto` | `problems` | `off` / `problems` / `always` |
 | `stuckCalls` / `stuckTurns` | `4` / `3` | failed calls in one turn per step-in; failing turns in a row for an automatic review (`0` = never) |
+| `oraculJudgeAuto` | `false` | when an automatic opinion is due, run `compare()` (Oracul answer plus judge verdict) instead; mid-turn stuck advice and skill reviewers stay single opinions |
 | `oraculTools` | `true` | the Oracul may use the worker's tools |
 | `rolePlanner` / `roleWorker` / `roleReviewer` | blank | the role table for skill runs |
 | `comparisonView` | `side` | `side` or `stacked` |

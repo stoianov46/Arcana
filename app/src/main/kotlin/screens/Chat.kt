@@ -163,30 +163,49 @@ internal fun contextMeter(messages: List<ChatMessage>, limit: Int): String {
         if (share >= 80) " ⚠ nearly full: /new starts fresh" else ""
 }
 
+/**
+ * The worker and the Oracul in one segment, so it is clear which model works now: that one is the filled pill (accent for the worker, orange for the Oracul or the judge, with `…`),
+ * the other follows it quietly (the Oracul's setup while the worker works, `waiting` for the worker while the Oracul answers). The quiet part is dropped when the bar is narrow.
+ */
+internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConfig, plain: Boolean, width: Int): StatusSegment {
+    val setup = Oracul.statusText(config, plain)
+    if (asking != null) {
+        val judging = asking == Oracul.judge(config) && asking != Oracul.model(config)
+        val pill = " ${if (plain) "${if (judging) "judge" else "oracul"} $asking" else "${if (judging) "⚖" else Oracul.GLYPH} $asking…"} "
+        val waiting = " $workerLabel ${if (plain) "waits" else "waiting"}"
+        val parts = mutableListOf(StatusPart(pill, Palette.Background, bold = true, background = Palette.Orange))
+        if (pill.length + waiting.length <= width / 2) parts += StatusPart(waiting, Palette.Muted)
+        return StatusSegment(parts, 10)
+    }
+    val parts = mutableListOf(StatusPart(" $workerLabel ", Palette.Background, bold = true, background = Palette.Accent))
+    if (setup.isNotEmpty() && workerLabel.length + 2 + setup.length + 1 <= width / 2) parts += StatusPart(" $setup", Palette.Blue)
+    return StatusSegment(parts, 10)
+}
+
+/** The memory pill when the file is longer than what is sent: how much goes to the model of how much there is, in warning colours (the end is not read). */
+internal fun memoryCutText(total: Int, plain: Boolean): String =
+    "${if (plain) "!" else "⚠"} memory ${UsageStats.compact(Vault.MEMORY_LIMIT.toLong())} of ${UsageStats.compact(total.toLong())}: end cut"
+
 /** What the Chat status bar says: model, chat, context gauge, tokens, estimated price, session time and the tool state. */
-private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memoryChars: Int): List<StatusSegment> {
+private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memoryChars: Int, width: Int): List<StatusSegment> {
     val config = app.config
     val stats = chat.messages.mapNotNull { it.stats }
     val sessionRecords = UsageStats.since(app.usage.toList(), app.sessionStart)
     val cost = UsageStats.estimatedCost(sessionRecords, config.estPriceIn, config.estPriceOut) + app.liveTokens * config.estPriceOut / 1_000_000.0
     val compact = UsageStats::compact
     return buildList {
-        add(pillSegment(ModelIcon.label(config.model, plain), Palette.Accent, 9))
+        // the models, one segment: whoever works now comes first as a filled pill, the other one after it, quiet
+        add(modelsSegment(ModelIcon.label(config.model, plain), chat.consulting, config, plain, width))
         add(statusSegment("temperature", "°${config.temperature}", Palette.Accent, 6))
         if (config.chatUseVault) add(pillSegment("◉ vault", Palette.Cta, 6))
         // the memory file the assistant reads in every chat: shown, so you can see that it is in use (and how much room it takes)
         if (config.memoryEnabled) {
-            if (memoryChars > 0) add(statusSegment("", "✎ memory ${UsageStats.compact(memoryChars.toLong())}", Palette.Green, 6))
+            if (memoryChars > Vault.MEMORY_LIMIT) add(pillSegment(memoryCutText(memoryChars, plain), Palette.Orange, 9))
+            else if (memoryChars > 0) add(statusSegment("", "✎ memory ${UsageStats.compact(memoryChars.toLong())}", Palette.Green, 6))
             else add(statusSegment("", "✎ no ARCANA.md", Palette.Muted, 3))
         }
         val window = effectiveContext(config.contextTokens, app.modelContext, app.loadedContext)
         contextUsage(chat.messages, window)?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
-        // the Oracul: orange with the name while it works (the judge with its own glyph), quietly its setup the rest of the time
-        val asking = chat.consulting
-        if (asking != null) {
-            val judging = asking == Oracul.judge(config) && asking != Oracul.model(config)
-            add(pillSegment(if (plain) "${if (judging) "judge" else "oracul"} $asking" else "${if (judging) "⚖" else Oracul.GLYPH} $asking…", Palette.Orange, 10))
-        } else Oracul.statusText(config, plain).takeIf { it.isNotEmpty() }?.let { add(statusSegment("", it, Palette.Blue, 8)) }
         if (chat.compacting) add(pillSegment(if (plain) "compacting" else "◌ compacting…", Palette.Blue, 10))
         // a small window drops the oldest text without a word: say so before it matters (Settings → Ollama → Context window)
         if (window in 1 until COMFORTABLE_CONTEXT) add(pillSegment(if (plain) "! small ctx ${UsageStats.contextSize(window.toLong())}" else "⚠ ctx ${UsageStats.contextSize(window.toLong())}", Palette.Orange, 9))
@@ -450,18 +469,18 @@ fun ChatScreen(app: AppContext) {
     fun runOracul(compare: Boolean, only: String? = null) {
         if (gen.state == GenState.Running) return toast("Wait for the reply to finish first.", error = true)
         if (chat.consulting != null) return toast("The Oracul is already working.", error = true)
-        toast("Asking ${if (compare) "the Oracul and the judge" else (only ?: com.arcana.brain.core.Oracul.model(app.config)).ifEmpty { "the Oracul" }}…")
-        app.scope.launch {
-            runCatching { if (compare) chat.compare(only) else chat.secondOpinion(only) }.onSuccess { toast(it) }.onFailure { toast(it.message ?: "The Oracul could not answer.", error = true) }
+        toast("Asking ${if (compare) "the Oracul and the judge" else (only ?: com.arcana.brain.core.Oracul.model(app.config)).ifEmpty { "the Oracul" }}… (Esc cancels)")
+        chat.manualConsult = app.scope.launch {
+            runCatching { if (compare) chat.compare(only) else chat.secondOpinion(only) }.onSuccess { toast(it) }.onFailure { if (it is kotlinx.coroutines.CancellationException) toast("Cancelled: nothing was added.") else toast(it.message ?: "The Oracul could not answer.", error = true) }
         }
     }
 
     fun runTakeover() {
         if (gen.state == GenState.Running) return toast("Wait for the reply to finish first.", error = true)
         if (chat.consulting != null) return toast("The Oracul is already working.", error = true)
-        toast("${com.arcana.brain.core.Oracul.model(app.config).ifEmpty { "The Oracul" }} is taking over…")
-        app.scope.launch {
-            runCatching { chat.takeOver() }.onSuccess { gen.reset(); toast(it) }.onFailure { toast(it.message ?: "The Oracul could not take over.", error = true) }
+        toast("${com.arcana.brain.core.Oracul.model(app.config).ifEmpty { "The Oracul" }} is taking over… (Esc cancels)")
+        chat.manualConsult = app.scope.launch {
+            runCatching { chat.takeOver() }.onSuccess { gen.reset(); toast(it) }.onFailure { if (it is kotlinx.coroutines.CancellationException) toast("Cancelled.") else toast(it.message ?: "The Oracul could not take over.", error = true) }
         }
     }
 
@@ -534,7 +553,7 @@ fun ChatScreen(app: AppContext) {
         input.clear()
         output.reset()
         if (app.config.toolsEnabled && app.tools == false) toast("${app.config.model} cannot use tools, so it will only answer. Choose another model in Settings → Ollama → Model.", error = true)
-        chat.send(text)
+        chat.send(text) { input.set(text) }
     }
 
     // Select mode walks entries: each of your messages is one, and a reply is split into its Markdown blocks.
@@ -766,6 +785,8 @@ fun ChatScreen(app: AppContext) {
                 slashMatches.isNotEmpty() && key == Key.Enter -> { useSlash(slashMatches[slashIndex.coerceIn(0, slashMatches.size - 1)]); true }
                 key == Key.Escape -> when {
                     gen.state == GenState.Running -> { gen.requestCancel(); true }
+                    // the Oracul or the judge working on its own (an opinion, a comparison, a takeover): one Esc stops it, nothing is added
+                    chat.cancelOracul() -> true
                     browsing -> { browsing = false; true }
                     chat.messages.isNotEmpty() -> { browsing = true; true }
                     else -> false
@@ -868,7 +889,7 @@ fun ChatScreen(app: AppContext) {
             }
             ChatMode.Chat -> {
                 // read again after every message, so an edit of the file shows up
-                val memoryChars = remember(chat.messages.size, app.config.memoryEnabled, mode) { if (app.config.memoryEnabled) app.openVault().getOrNull()?.memory()?.length ?: 0 else 0 }
+                val memoryChars = remember(chat.messages.size, app.config.memoryEnabled, mode) { if (app.config.memoryEnabled) app.openVault().getOrNull()?.memoryLength() ?: 0 else 0 }
                 val count = chat.messages.size
                 ScreenHeader(
                     "Chat",
@@ -878,6 +899,7 @@ fun ChatScreen(app: AppContext) {
                 )
                 // the status bar sits under the message field (above the buttons): one row more in the count below
                 val statusRows = if (rememberDensity().tiny) 0 else 1
+                val bottomGap = if (rememberDensity().tiny) 0 else 1
                 VGap()
                 Panel("Conversation") {
                     val width = outputWidth()
@@ -908,13 +930,13 @@ fun ChatScreen(app: AppContext) {
                     // what sits under the conversation: the message field, or the change waiting for an answer
                     val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
                     val below = (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval, approvalMax()).size + 3 else 2 + inputRows + pendingRow + slashMatches.size + (if (slashUsage.isEmpty()) 0 else 1)) + statusRows + panelActionRows
-                    ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below, actions = actions), output)
-                    ReplyStatus(app, gen, doubleEsc = true)
+                    ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below + bottomGap, actions = actions), output)
+                    ReplyStatus(app, gen, doubleEsc = true, consulting = chat.consulting, consultingSince = chat.consultingSince)
                 }
                 if (question != null) {
                     val qLines = questionLines(question, panelWidth())
                     Panel("Question", accent = Palette.Cta) {
-                        Label("? ${app.config.model} asks", color = Palette.Cta, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
+                        Label(if (question.fromArcana) "? Arcana asks" else "? ${app.config.model} asks", color = Palette.Cta, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
                         qLines.forEach { l -> Label(l, color = if (l.startsWith("▸")) Palette.Cta else if (l.contains("[x]")) Palette.Green else Palette.Text) }
                         // the last row: "type my own answer", which becomes a text field right here when it is selected
                         Row {
@@ -924,7 +946,7 @@ fun ChatScreen(app: AppContext) {
                         }
                         ActionBar(questionActions(question), panelWidth(), ActionStyle.Button)
                     }
-                    if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars))
+                    if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars, LocalContentWidth.current))
                 } else if (approval != null) {
                     Panel(approval.heading, accent = Palette.Warn) {
                         Label("${approval.icon} ${approval.title}", color = Palette.Warn, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
@@ -933,7 +955,7 @@ fun ChatScreen(app: AppContext) {
                         }
                         ActionBar(approvalActions(approval), panelWidth(), ActionStyle.Button)
                     }
-                    if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars))
+                    if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars, LocalContentWidth.current))
                 } else {
                     VGap()
                     // the menu of commands and tools, just above the message field
@@ -959,9 +981,11 @@ fun ChatScreen(app: AppContext) {
                         }
                     }
                     TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = maxInputRows(), attachments = chat.attachments)
-                    if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars))
+                    if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars, LocalContentWidth.current))
                     ActionBar(chatActions(browsing, entries.isNotEmpty()))
                 }
+                // one empty row under the whole screen, so the last row does not touch the footer (counted in the conversation's height above)
+                if (bottomGap > 0) Label(" ")
             }
         }
     }
@@ -996,6 +1020,8 @@ private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, widt
             // the notes the answer was built from, when the vault was searched
             if (message.sources.isNotEmpty()) {
                 wrap("Sources  " + message.sources.joinToString("  ") { "▤ ${sanitizeForTerminal(it.removeSuffix(".md"))}" }, width).forEach { add(Line(it, Palette.Accent)) }
+                // notes longer than Chars per note were shown to the model only in part: the answer may miss what is further down
+                if (message.sourcesCut.isNotEmpty()) wrap("${if (config.plainGlyphs) "!" else "⚠"} Only the start was read of: " + message.sourcesCut.joinToString(", ") { sanitizeForTerminal(it.removeSuffix(".md")) } + " (Settings → Vault → Chars per note)", width).forEach { add(Line(it, Palette.Warn)) }
             }
             // the closing line of a finished reply: Done, time, tokens, speed
             message.stats?.let { add(replyFooter(it, config.plainGlyphs, step = message.toolCalls.isNotEmpty())) }
@@ -1021,10 +1047,14 @@ internal fun thinkingLines(thinking: String, view: String, plain: Boolean, width
 
 /** What the Oracul said: a header with the model(s), then the text as Markdown, dimmed apart from its own colours. The whole block is one entry for select mode. */
 private fun opinionLines(message: ChatMessage, entry: Int, config: AppConfig, width: Int, applyHint: Boolean): List<Line> = buildList {
-    add(Line("${if (config.plainGlyphs) "*" else Oracul.GLYPH} ${sanitizeForTerminal(Oracul.title(message))}", Palette.Blue, bold = true, entry = entry))
     // a comparison in the window is drawn as columns when the setting says so and every column is wide enough to read
     val comparison = if (config.comparisonView == "side") Oracul.comparisonParts(message) else null
-    if (comparison != null && columnCount(comparison.answers.size, width) >= 2) {
+    val columns = comparison != null && columnCount(comparison.answers.size, width) >= 2
+    val title = "${if (config.plainGlyphs) "*" else Oracul.GLYPH} ${sanitizeForTerminal(Oracul.title(message))}"
+    // over columns the model names in the title wear the colours of their columns
+    if (columns && comparison != null) add(Line(title, Palette.Blue, bold = true, entry = entry, runs = comparisonTitleRuns(title, comparison)))
+    else add(Line(title, Palette.Blue, bold = true, entry = entry))
+    if (comparison != null && columns) {
         addAll(sideBySide(comparison, entry, config, width))
         add(Line(""))
         return@buildList
@@ -1126,6 +1156,37 @@ internal fun columnCount(answers: Int, width: Int): Int = minOf(answers, 3, (wid
 /** What a line is made of, as runs (so two lines can be joined into one row), and how many cells it takes. */
 private fun runsOf(line: Line): List<Run> = line.runs ?: listOf(Run(line.text, if (line.color == Color.Unspecified) Palette.ConsoleText else line.color, line.background, if (line.bold) TextStyle.Bold else TextStyle.Unspecified))
 
+/** The colour of the n-th answer of a comparison: the main model's is the accent, the Oracul models' follow the palette. Used by the column pills and the title. */
+private fun partColor(comparison: Oracul.Comparison, index: Int): Color {
+    val palette = listOf(Palette.Blue, Palette.Cta, Palette.Green)
+    return if (comparison.answers[index].main) Palette.Accent else palette[(index - 1).coerceAtLeast(0) % palette.size]
+}
+
+/** The comparison's title with each model name in the colour of its column and the judge's in the verdict's orange; `Ψ Comparison` keeps the title's blue and the words between the names are muted. */
+internal fun comparisonTitleRuns(title: String, comparison: Oracul.Comparison): List<Run> {
+    // `Ψ Comparison` keeps the title's blue; what follows is muted, with the names coloured
+    val head = title.indexOf(" · ").let { if (it < 0) 0 else it }
+    val judgedAt = title.lastIndexOf("judged by ").let { if (it < 0) title.length else it + "judged by ".length }
+    val spans = ArrayList<Triple<Int, Int, Color>>()
+    spans += Triple(0, head, Palette.Blue)
+    var cursor = head
+    comparison.answers.forEachIndexed { i, part ->
+        val at = title.indexOf(part.name, cursor)
+        if (at >= 0 && at + part.name.length <= judgedAt) { spans += Triple(at, at + part.name.length, partColor(comparison, i)); cursor = at + part.name.length }
+    }
+    if (judgedAt < title.length) spans += Triple(judgedAt, minOf(title.length, judgedAt + comparison.judge.length), Palette.Orange)
+    val runs = ArrayList<Run>()
+    var at = 0
+    for ((from, to, color) in spans) {
+        if (to <= from) continue
+        if (from > at) runs += Run(title.substring(at, from), Palette.Muted, Color.Unspecified, TextStyle.Bold)
+        runs += Run(title.substring(from, to), color, Color.Unspecified, TextStyle.Bold)
+        at = to
+    }
+    if (at < title.length) runs += Run(title.substring(at), Palette.Muted, Color.Unspecified, TextStyle.Bold)
+    return runs
+}
+
 /**
  * A comparison as columns: a coloured pill with the model's name over each answer (the main model's, then the Oracul models', each in its
  * own colour), the answers next to each other with a dim bar between them, and the judge's verdict under them across the whole width.
@@ -1136,12 +1197,11 @@ internal fun sideBySide(comparison: Oracul.Comparison, entry: Int, config: AppCo
     val columns = columnCount(comparison.answers.size, width)
     val gutter = 3
     val cw = (width - gutter * (columns - 1)) / columns
-    val palette = listOf(Palette.Blue, Palette.Cta, Palette.Green)
     fun pill(text: String, color: Color) = Run(" $text ", Palette.Background, color, TextStyle.Bold)
     comparison.answers.chunked(columns).forEach { rowOfParts ->
         val cells = rowOfParts.map { part ->
             val index = comparison.answers.indexOf(part)
-            val color = if (part.main) Palette.Accent else palette[(index - 1).coerceAtLeast(0) % palette.size]
+            val color = partColor(comparison, index)
             val glyph = if (plain) "*" else if (part.main) ModelIcon.of(part.name) else Oracul.GLYPH
             val label = sanitizeForTerminal("$glyph ${part.name} · ${if (part.main) "main" else "oracul"}").take(cw - 2)
             val rule = Line((if (plain) "-" else "─").repeat(cw), color, entry = entry)

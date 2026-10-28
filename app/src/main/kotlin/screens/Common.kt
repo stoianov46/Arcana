@@ -76,16 +76,24 @@ fun GenerationView(app: AppContext, gen: Generation, output: OutputState, rows: 
 
 /** The line under a reply: a spinner while generating, or why it stopped. */
 @Composable
-fun ReplyStatus(app: AppContext, gen: Generation, doubleEsc: Boolean = false) {
+fun ReplyStatus(app: AppContext, gen: Generation, doubleEsc: Boolean = false, consulting: String? = null, consultingSince: Long = 0L) {
     when (gen.state) {
         GenState.Running -> Spinner {
-            val seconds = (System.currentTimeMillis() - gen.startedAt) / 1000
+            // while the Oracul (or the judge) works inside the turn the line is about that model, not the worker that waits for it
+            // a later round of a tool loop starts silent: the model reads the whole conversation again before its first piece, so the token count cannot move yet
+            val reading = consulting == null && gen.streamed > 0 && gen.roundPieces == 0
+            val seconds = (System.currentTimeMillis() - if (consulting != null) consultingSince else if (reading) gen.roundStartedAt else gen.startedAt) / 1000
             val what = when {
+                reading -> "${app.config.model} is reading the conversation again…"
+                consulting != null -> {
+                    val judging = consulting == com.arcana.brain.core.Oracul.judge(app.config) && consulting != com.arcana.brain.core.Oracul.model(app.config)
+                    if (judging) "⚖ $consulting is judging the answers…" else "${com.arcana.brain.core.Oracul.GLYPH} $consulting is answering…"
+                }
                 gen.thinking && app.config.showThinking -> "${app.config.model} is thinking…"
                 gen.text.isEmpty() -> "Waiting for the model…"
                 else -> "Generating…"
             }
-            val tokens = if (gen.streamed > 0) " · ${if (app.config.plainGlyphs) "" else "↓ "}${gen.streamed} tokens" else ""
+            val tokens = if (gen.streamed > 0 && consulting == null && !reading) " · ${if (app.config.plainGlyphs) "" else "↓ "}${gen.streamed} tokens" else ""
             val cancel = when {
                 !doubleEsc -> "Esc to cancel"
                 gen.cancelArmed() -> "Esc again to cancel"

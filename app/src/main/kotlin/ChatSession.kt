@@ -78,6 +78,11 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     val unsaved: Boolean get() = messages.size > savedMessages
 
     private var pendingSources: List<String> = emptyList()
+    private var pendingCut: List<String> = emptyList()
+
+    /** Notes the user chose to send whole, and notes they accepted cut, for this chat (the history is re-read on every turn, so the choice must stay). */
+    private val wholeNotes = mutableSetOf<String>()
+    private val cutAccepted = mutableSetOf<String>()
 
     /** The reply being written. It lives as long as the app does. */
     val gen: Generation by lazy {
@@ -173,7 +178,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     enum class ApprovalChoice { Allow, Deny, Always }
 
     /** A question the model put to the user with ask_user: pick an option (or several), or type an answer. */
-    class Question(val text: String, val options: List<String>, val multiple: Boolean) {
+    class Question(val text: String, val options: List<String>, val multiple: Boolean, val fromArcana: Boolean = false) {
         /** The answer as text for the model; null when the user skipped it. */
         val answer = CompletableDeferred<String?>()
         val picked = androidx.compose.runtime.mutableStateListOf<Int>()
@@ -323,7 +328,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             if (grant != null) {
                 val pending = Approval(
                     "folder", "Allow Arcana to use this folder?",
-                    listOf("${grant}", "The model may read, and (with your approval each time) change, files inside it.", "You can remove it later in Settings → Tools → Extra folders."),
+                    listOf("${grant}", "The model may read, and (with your approval each time) change, files inside it.", "You can remove it later in Settings → Tools → Allowed folders."),
                     heading = "Allow this folder?", icon = "▤",
                 )
                 val choice = awaitApproval(pending)
@@ -531,13 +536,48 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         persist()
     }
 
-    /** Sends [text] with the attached pictures and notes; the reply streams into [gen]. */
-    fun send(text: String) {
+    /**
+     * Sends [text] with the attached pictures and notes; the reply streams into [gen]. A note longer than [MAX_NOTE_CHARS] would reach the model
+     * cut, so the user is asked first (send the start, send it whole, or cancel); [onDeclined] runs when they cancel, so the screen can give back what they typed.
+     */
+    fun send(text: String, onDeclined: () -> Unit = {}) {
+        val long = longNotes()
+        if (long.isEmpty()) return sendNow(text)
+        app.scope.launch {
+            for ((path, length) in long) {
+                val q = Question(
+                    "“${path.substringAfterLast('/').removeSuffix(".md")}” has ${UsageStats.compact(length.toLong())} characters, and Arcana sends at most ${UsageStats.compact(MAX_NOTE_CHARS.toLong())} of a note. What should be sent?",
+                    listOf("Send the first ${UsageStats.compact(MAX_NOTE_CHARS.toLong())} (the model is told the rest is missing)", "Send the whole note (it may not fit the context window)", "Cancel: do not send"), false, fromArcana = true,
+                )
+                question = q
+                val answer = try { q.answer.await() } finally { question = null }
+                when {
+                    answer == q.options[0] -> cutAccepted += path
+                    answer == q.options[1] -> wholeNotes += path
+                    else -> { onDeclined(); return@launch }
+                }
+            }
+            sendNow(text)
+        }
+    }
+
+    /** The notes attached to the message being written that are longer than [MAX_NOTE_CHARS] and have not been decided on yet in this chat: path and length. */
+    private fun longNotes(): List<Pair<String, Int>> {
+        val vault = app.openVault().getOrNull() ?: return emptyList()
+        return attachments.peek().notes.filter { it !in wholeNotes && it !in cutAccepted && !Skills.isEntry(it) }.mapNotNull { path ->
+            val length = runCatching { Vault.splitFrontmatter(vault.read(path)).second.length }.getOrDefault(0)
+            if (length > MAX_NOTE_CHARS) path to length else null
+        }
+    }
+
+    private fun sendNow(text: String) {
         val sent = attachments.drain()
         val body = text.ifEmpty {
             if (sent.pictures.isEmpty() && sent.files.isNotEmpty()) "Explain the attached file${if (sent.files.size == 1) "" else "s"}."
             else "Describe the attached image${if (sent.pictures.size == 1) "" else "s"}."
         }
+        // an automatic opinion on the previous answer, still being written, is out of date now: the user has moved on (and it must not keep the Oracul pill lit through the new turn)
+        autoConsult?.cancel()
         add(ChatMessage.user(body, sent.pictures, sent.notes, sent.files))
         app.session.log(SessionKind.Asked, body)
         // a job that clearly needs file tools, with tools off: offer them now instead of letting the model say it cannot
@@ -552,7 +592,16 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private var toolsDeclined = false
 
     /** The model being consulted right now (a second opinion or a comparison is being written); null otherwise. */
-    var consulting by mutableStateOf<String?>(null)
+    private var consultingNow by mutableStateOf<String?>(null)
+    var consulting: String?
+        get() = consultingNow
+        private set(value) {
+            if (value != consultingNow) consultingSince = System.currentTimeMillis()
+            consultingNow = value
+        }
+
+    /** When [consulting] last changed, so the reply line can count the Oracul's own seconds. */
+    var consultingSince = 0L
         private set
 
     /**
@@ -762,12 +811,27 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private fun maybeConsult() {
         val config = app.config
         // a skill that names a reviewer asks for the review itself, whatever the automatic setting says
-        runReviewer?.let { reviewer -> if (consulting == null) app.scope.launch { runCatching { secondOpinion(reviewer) } }; return }
+        runReviewer?.let { reviewer -> if (consulting == null) autoConsult = app.scope.launch { runCatching { secondOpinion(reviewer) } }; return }
         // the Oracul already stepped in during this turn because the worker kept failing: one consultation per turn is enough
         if (stuckAdvised > 0) return
         if (Oracul.model(config).isEmpty() || config.oraculAuto == "off" || consulting != null) return
         if (!Oracul.due(config, Oracul.turnFacts(messages.toList(), skillRun?.skippedCount ?: 0))) return
-        app.scope.launch { runCatching { secondOpinion() } }
+        // opt-in (Settings → Oracul → Judge automatically): a full comparison with a verdict instead of one opinion
+        autoConsult = if (config.oraculJudgeAuto) app.scope.launch { runCatching { compare() } } else app.scope.launch { runCatching { secondOpinion() } }
+    }
+
+    /** The automatic opinion or comparison that runs after a reply; a new message of the user cancels it. */
+    private var autoConsult: kotlinx.coroutines.Job? = null
+
+    /** An Oracul run the user started (`/oracul`, `/compare`, `/takeover`); set by the screen that launches it. */
+    var manualConsult: kotlinx.coroutines.Job? = null
+
+    /** Esc: stops whatever the Oracul or the judge is doing outside the worker's turn. True when something was running. */
+    fun cancelOracul(): Boolean {
+        if (consulting == null) return false
+        autoConsult?.cancel()
+        manualConsult?.cancel()
+        return true
     }
 
     /** True while a summary is being written (compacting runs apart from replies). */
@@ -841,6 +905,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val vault = app.openVault().getOrNull()
             val hits = if (config.chatUseVault && vault != null) vault.search(body, config.contextNotes, config.contextCharsPerNote) else null
             pendingSources = hits?.map { it.note.path }.orEmpty()
+            pendingCut = hits?.filter { it.missing > 0 }?.map { it.note.path }.orEmpty()
             Prompts.chatMessages(config, history, hits, noteTexts(vault, history.takeLast(config.chatHistory)), tools = box != null, toolsNote = box?.describe().orEmpty(), canRequestTools = canRequest, memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "")
         }
     }
@@ -851,16 +916,17 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         return window.flatMap { it.noteNames }.distinct().mapNotNull { path ->
             // a skill's entry note goes in as the skill loader gives it (folder, file list, instructions); any other note as its text
             Skills.loadEntry(vault, path)?.let { path to it }
-                ?: runCatching { path to Vault.splitFrontmatter(vault.read(path)).second.take(MAX_NOTE_CHARS) }.getOrNull()
+                ?: runCatching { path to Vault.splitFrontmatter(vault.read(path)).second.let { if (path in wholeNotes) it else Prompts.cutNote(it, MAX_NOTE_CHARS) } }.getOrNull()
         }.toMap()
     }
 
     private fun finishReply(text: String, stats: ReplyStats?) {
-        add(ChatMessage.assistant(text, stats, pendingSources, gen.takeThinking()))
+        add(ChatMessage.assistant(text, stats, pendingSources, gen.takeThinking(), pendingCut))
         maybeConsult()
         // the model is loaded now: ask Ollama which window it really got
         app.scope.launch { app.refreshLoadedContext() }
         pendingSources = emptyList()
+        pendingCut = emptyList()
         gen.consume()
     }
 
@@ -869,7 +935,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         skillRun = null
         clearRoles()
         toolsDeclined = false
-        messages.clear()
+        messages.clear(); wholeNotes.clear(); cutAccepted.clear()
         input.clear()
         attachments.clear()
         savedMessages = 0
@@ -880,7 +946,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         clearRoles()
         skillRun = null // a run belongs to the conversation it started in (see docs/skills.md)
         skillTick++
-        messages.clear()
+        messages.clear(); wholeNotes.clear(); cutAccepted.clear()
         messages += chat.messages
         attachments.clear()
         id = chat.id

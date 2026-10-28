@@ -26,6 +26,10 @@ for users, the in-app Guide page "Skills".
 | `planner:`, `worker:` and `reviewer:` in the properties (or the role table in Settings → Oracul, for skills that name none) give the models for a run. The `planner` writes a short numbered plan from the question and the skill's instructions before the worker starts; it is added as a `Ψ Plan · model` block (`Oracul.planMessage`, not a review: no `/revise` hint) that the worker is told to follow where it is right, and is written only when a skill chip starts the run (not for a skill the model loads itself with `use_skill`); a failing planner is only a message. The same applies to (roles per skill step, level 3 of the Oracul plan) | a small skill model is fast; a skill that must be right (a report, a forecast) wants a bigger one, and only that skill pays for it. Applied in `ChatSession.applyRoles`: the installed `worker` replaces the chat model for that message (it must have the `tools` capability when tools are on), the `reviewer` runs `secondOpinion` when the answer is done, whatever the Oracul's automatic setting says. An uninstalled or tool-less model is skipped with a message and the settings' model is used. The settings are never changed, the next message goes back to them |
 | The gate is **generic** (reads `requires:` of any skill) | nothing in Arcana's code knows about one particular skill |
 
+### How this relates to other systems
+
+Skills as a folder of Markdown instructions with reference files and scripts, read when needed, are a common pattern (for example Anthropic's Agent Skills with `SKILL.md`); plans and to-do lists, and guards that stop a model from finishing early (a stop hook, a validator node in a workflow framework), are common too. What is Arcana's own is the combination: the steps a skill lists in `requires:` are **checked in code** by the completion gate and a model that tries to finish early is sent back, with a strike count and a visible badge. Elsewhere steps are usually only advice. The names (`requires:`, the gate, 3 strikes, 40 rounds) are not a convention other tools share. This comparison is from general knowledge of other tools, not from their current documentation.
+
 ## 2. Layout and naming
 
 ```
@@ -155,7 +159,7 @@ loaded as text). Restoring an old chat starts no run.
 | 8 per folder / 60 files | `filesOf` | keeps `use_skill` output short when a folder grows |
 | 80 / 240 characters | menu hint / catalog description | one line in the menu; a sentence or two for the model |
 | 80 characters | `create_note` title | `Vault.sanitizeTitle`: skills must build unique, short names in their scripts |
-| 4,000 characters | `ARCANA.md` | only the start is sent to the model: keep skill-related rules near the top |
+| 8,000 characters | `ARCANA.md` | only the start is sent to the model: keep skill-related rules near the top |
 
 ## 7. Tricky moments (read before changing anything)
 

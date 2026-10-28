@@ -79,7 +79,7 @@ class FileAccess(roots: List<Path>) {
         }
         val real = realOf(path)
         if (realRoots.none { real.startsWith(it) }) {
-            throw OutsideFoldersException(real, "$text is outside the folders Arcana may use (${roots.joinToString(", ")}). The user can allow a specific folder in Settings → Tools → Extra folders (a whole home folder or hidden folder is never offered on the spot): tell them which folder you need, or try a likely one such as ~/Documents, ~/Desktop or ~/Developer.")
+            throw OutsideFoldersException(real, "$text is outside the folders Arcana may use (${roots.joinToString(", ")}). The user can allow a specific folder in Settings → Tools → Allowed folders (a whole home folder or hidden folder is never offered on the spot): tell them which folder you need, or try a likely one such as ~/Documents, ~/Desktop or ~/Developer.")
         }
         return path
     }

@@ -1480,8 +1480,9 @@ class CoreTest {
         vault.remember("Projects live in ~/IDEA Projects\nand more")
         val text = Files.readString(file)
         assertTrue(text.trimEnd().endsWith("- Projects live in ~/IDEA Projects and more") && "- I write in Ukrainian and English" in text, text)
-        Files.writeString(file, "---\ntags: [x]\n---\n" + "z".repeat(5000))
-        assertTrue(vault.memory().length < 4200 && "cut" in vault.memory() && "tags" !in vault.memory())
+        Files.writeString(file, "---\ntags: [x]\n---\n" + "z".repeat(9000))
+        assertTrue(vault.memory().length < 8200 && "cut" in vault.memory() && "tags" !in vault.memory())
+        assertEquals(9000, vault.memoryLength(), "the real length, so the status bar can say how much is cut")
         val system = Prompts.chatMessages(AppConfig(), listOf(ChatMessage.user("hi")), null, emptyMap(), memory = "Always answer in French.").first().content
         assertTrue("ARCANA.md" in system && "Always answer in French." in system)
         assertTrue("ARCANA.md" !in Prompts.chatMessages(AppConfig(), listOf(ChatMessage.user("hi")), null, emptyMap()).first().content)
@@ -1761,5 +1762,23 @@ class CoreTest {
         val advice = Oracul.stuckMessage("big", "Try another way.")
         assertTrue(Oracul.isReview(advice) && Oracul.body(advice) == "Try another way.")
         assertEquals(listOf("big"), Oracul.lastTurn(listOf(ChatMessage.user("old"), ChatMessage.assistant("a"), ChatMessage.user("big"))).map { it.content })
+    }
+
+    @Test
+    fun `a note cut for the model says so`() {
+        val short = Prompts.cutNote("abc", 10)
+        assertEquals("abc", short, "a note that fits is untouched")
+        val cut = Prompts.cutNote("x".repeat(30), 10)
+        assertTrue(cut.startsWith("x".repeat(10)) && "only 10 of 30 characters" in cut && "read_note" in cut)
+        val dir = Files.createTempDirectory("cut")
+        Files.writeString(dir.resolve("Long.md"), "alpha ".repeat(500))
+        val hit = Vault(dir).search("alpha", 3, 100).single()
+        assertEquals(3000, hit.total)
+        assertEquals(2900, hit.missing)
+        assertTrue("only 100 of 3000" in Prompts.hitText(hit) && "read_note" !in Prompts.hitText(hit))
+        assertTrue("read_note" in Prompts.hitText(hit, tools = true))
+        val whole = Vault(dir).search("alpha", 3, 5000).single()
+        assertEquals(0, whole.missing)
+        assertTrue("cut" !in Prompts.hitText(whole), "a note shown whole has no marker")
     }
 }

@@ -12,7 +12,10 @@ data class Note(val path: String, val modified: Long) {
     val title: String get() = path.substringAfterLast('/').removeSuffix(".md")
 }
 
-data class SearchHit(val note: Note, val score: Int, val excerpt: String)
+data class SearchHit(val note: Note, val score: Int, val excerpt: String, val total: Int = excerpt.length) {
+    /** How many characters of the note the model is not shown. */
+    val missing: Int get() = (total - excerpt.length).coerceAtLeast(0)
+}
 
 class VaultException(message: String) : Exception(message)
 
@@ -45,6 +48,9 @@ class Vault(root: Path, private val memoryPath: String = "") {
         val text = runCatching { splitFrontmatter(Files.readString(memoryFile())).second.trim() }.getOrDefault("")
         return if (text.length > MEMORY_LIMIT) text.take(MEMORY_LIMIT) + "\n… (cut: the memory file is longer than $MEMORY_LIMIT characters)" else text
     }
+
+    /** How long the memory file really is (without frontmatter), before [memory] cuts it at [MEMORY_LIMIT]; 0 when there is none. */
+    fun memoryLength(): Int = runCatching { splitFrontmatter(Files.readString(memoryFile())).second.trim().length }.getOrDefault(0)
 
     /** What [rename] did: the note's new path and how many `[[links]]` it rewrote in how many other notes. */
     data class RenameResult(val path: String, val linksUpdated: Int, val notesChanged: Int)
@@ -235,7 +241,7 @@ class Vault(root: Path, private val memoryPath: String = "") {
                 if (term in lowerTitle) score += 10
                 score += minOf(countOccurrences(lowerText, term), 10)
             }
-            if (score == 0) null else SearchHit(note, score, excerpt(text, lowerText, terms, excerptChars))
+            if (score == 0) null else SearchHit(note, score, excerpt(text, lowerText, terms, excerptChars), text.length)
         }.sortedByDescending { it.score }.take(limit)
     }
 
@@ -256,10 +262,10 @@ class Vault(root: Path, private val memoryPath: String = "") {
 
     companion object {
         const val MEMORY_FILE = "ARCANA.md"
-        const val MEMORY_LIMIT = 4000
+        const val MEMORY_LIMIT = 8000
         const val MEMORY_TEMPLATE = """# Arcana memory
 
-This note is read at the start of every chat (the first 4,000 characters). Edit it any time; the next message uses the new text.
+This note is read at the start of every chat (the first 8,000 characters). Edit it any time; the next message uses the new text.
 
 ## Rules for using tools (always follow)
 1. You have real tools. Before you say you cannot read, search, change or open something, call the matching tool. Never answer about files, folders, notes or web pages from memory.
@@ -373,6 +379,16 @@ This note is read at the start of every chat (the first 4,000 characters). Edit 
 enum class NoteTask { Summarize, Improve, Continue, Translate, ActionItems, Connect, Custom }
 
 object Prompts {
+    /** What the model is told when it is shown only part of a note, so it neither assumes it saw it all nor hides that from the user. */
+    fun cutMarker(shown: Int, total: Int, tools: Boolean = false): String =
+        "\n… (cut: only $shown of $total characters of this note are shown" + (if (tools) "; read the whole note with read_note if you need the rest" else "") + ")"
+
+    /** [text] limited to [limit] characters, with the marker when it was longer. */
+    fun cutNote(text: String, limit: Int): String = if (text.length <= limit) text else text.take(limit) + cutMarker(limit, text.length, tools = true)
+
+    /** One vault excerpt as the model reads it: the note's title and the part of it that was found, with the marker when the note goes on. */
+    fun hitText(hit: SearchHit, tools: Boolean = false): String =
+        "### [[${hit.note.title}]]\n${hit.excerpt}" + if (hit.missing > 0) cutMarker(hit.excerpt.length, hit.total, tools) else ""
     fun summarize(config: AppConfig, noteTitle: String, noteText: String): List<ChatMessage> = listOf(
         ChatMessage.system(config.systemPrompt),
         ChatMessage.user("${config.summaryPrompt}\n\nNote title: $noteTitle\n\n---\n$noteText"),
@@ -382,7 +398,7 @@ object Prompts {
         val context = if (hits.isEmpty()) {
             "No matching notes were found in the vault."
         } else {
-            hits.joinToString("\n\n") { "### [[${it.note.title}]]\n${it.excerpt}" }
+            hits.joinToString("\n\n") { hitText(it) }
         }
         return listOf(
             ChatMessage.system(
@@ -451,7 +467,7 @@ object Prompts {
                 } else "\n\n---\nAttached note “$title” ($name):\n${noteTexts[name] ?: "(this note could not be read)"}"
             }
             if (hits != null && i == lastUser) {
-                val context = if (hits.isEmpty()) "No matching notes were found in the vault." else hits.joinToString("\n\n") { "### [[${it.note.title}]]\n${it.excerpt}" }
+                val context = if (hits.isEmpty()) "No matching notes were found in the vault." else hits.joinToString("\n\n") { hitText(it, tools) }
                 content = "Vault excerpts:\n\n$context\n\nQuestion: $content"
             }
             m.copy(content = content, noteNames = emptyList())

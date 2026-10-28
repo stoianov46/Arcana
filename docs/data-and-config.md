@@ -10,7 +10,7 @@
 | Token usage | `~/.config/arcana/usage.jsonl` | one `UsageRecord` per line | `UsageStore` |
 | Tool backups | `~/.config/arcana/backups/` | copies of replaced/edited files | `ToolBox` |
 | Tool trash | `~/.config/arcana/trash/` | files deleted by `delete_path` outside the vault (inside the vault: `<vault>/.trash`) | `ToolBox` |
-| Memory file | `<vault>/ARCANA.md` by default, or `AppConfig.memoryPath` (inside the vault, `~/…` or absolute: `Vault.memoryFile()`) | Markdown, first 4,000 characters go to every chat | `Vault.memory/remember` |
+| Memory file | `<vault>/ARCANA.md` by default, or `AppConfig.memoryPath` (inside the vault, `~/…` or absolute: `Vault.memoryFile()`) | Markdown, first 8,000 characters go to every chat | `Vault.memory/remember` |
 | Your notes | the vault folder (`vaultPath`) | Markdown | `Vault` |
 | Vault trash | `<vault>/.trash/` | Obsidian-compatible trash | `Vault.trash/replace`, inbox backups |
 | Attachments | `<vault>/<outputFolder>/attachments/` | copied pictures/files | `Vault.copyAttachment` |
@@ -28,7 +28,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `timeoutSeconds` | 300 | HTTP timeout per request |
 | `vaultPath` | `$ARCANA_VAULT` or empty | Obsidian vault folder (`~` allowed) |
 | `outputFolder` | `Arcana` | vault folder for notes Arcana creates (empty = vault root) |
-| `contextNotes` / `contextCharsPerNote` | 5 / 4000 | how many notes / chars `/vault` mode sends |
+| `contextNotes` / `contextCharsPerNote` | 5 / 4000 | how many notes / how many characters of each `/vault` mode sends; a longer note is cut with a marker for the model (`Prompts.cutMarker`) and the answer lists the cut sources (`ChatMessage.sourcesCut`) |
 | `systemPrompt` / `summaryPrompt` | see source | prompts editable in Settings |
 | `theme` | `dark` | theme id (`Themes.all`) |
 | `uiScale` | `normal` | `compact`/`normal`/`spacious` layout density |
@@ -58,7 +58,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `searchUrl` | `""` | address of the user's SearXNG server (used only by that backend) |
 | `searchKey` | `""` | Brave Search API key, stored in plain text in `config.json` (keep the file private); the Settings row shows only its last 4 characters |
 | `textCalls` | `auto` | a tool call written as text: `auto` runs it, `ask` shows it first, `off` leaves it |
-| `toolFolders` | `""` | extra folders for tools (`;`-separated) |
+| `toolFolders` | `""` | Settings → Tools → *Allowed folders* (was *Extra folders*): `;`-separated roots the file tools may read and write besides the vault, `~` expanded (the only place a home or hidden folder can be allowed) |
 | `toolAutoRead` | true | read-only tools run without asking |
 | `skillsEnabled` / `skillsFolder` | true / `Skills` | the model is told which skills exist and gets `use_skill`; the vault folder with one folder per skill |
 | `libraryTree` | true | the Library lists notes as a tree of folders that fold and unfold (false: one flat list with full paths) |
@@ -68,11 +68,12 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `stuckCalls` / `stuckTurns` | `4` / `3` | the stuck thresholds (Settings → Oracul → *Stuck: failed calls / failing turns*): the Oracul steps into a tool loop after every `stuckCalls` failed calls of one turn, and an automatic review is due after `stuckTurns` failing turns in a row; `0` = never |
 | `oraculUrl` | `` | another Ollama server for the Oracul and the judge (blank = the main one); `Oracul.serverConfig` swaps `ollamaUrl` for them, the model pickers of Settings → Oracul list what is installed there |
 | `oraculModel` / `judgeModel` / `oraculAuto` | `` / `` / `problems` | the Oracul (second opinion) model, the judge model (blank = the Oracul model), and when a second opinion is asked for by itself (`off`, `problems`, `always`); blank `oraculModel` turns the Oracul off |
+| `oraculJudgeAuto` | false | when an automatic second opinion is due, run a full comparison (Oracul answers, judge compares) instead; slow, three model runs |
 | `oraculTools` | true | the Oracul may use the worker's tools to check an answer (reads follow *Read without asking*; every change, command and web access asks, even in Auto mode); needs `toolsEnabled` and a tools-capable Oracul model |
 | `setupDone` | false | the first-run setup was finished or skipped (it opens by itself only while there is no vault and this is false); set by the wizard and by `arcana --init` |
 | `soundAttention` / `soundDone` / `soundFailed` | `off` | a `SoundChoices` id (`off`, `sys:Hero`, `bell1`..`bell5`, `file`) for: a dialog waits for you / a reply finished / a reply failed |
 | `soundVolume` / `soundFile` / `soundWhere` | 80 / `` / `away` | volume in percent for system sounds and the file; the file for the choice `file`; `away` = only while Chat is not on screen, `always` |
-| `projectFolder` | `` | the project the model works in: allowed like the vault, where relative paths and commands start, its ARCANA.md / CLAUDE.md / AGENTS.md goes to the model (see tools-and-agent.md "Project context") |
+| `projectFolder` | `` | Settings → Tools → *Working folder* (was *Project folder*; optional, grants nothing beyond itself): allowed like the vault, where relative paths and commands start, its ARCANA.md / CLAUDE.md / AGENTS.md goes to the model (see tools-and-agent.md "Project context") |
 | `memoryPath` | `` | where the memory file is: blank = `ARCANA.md` at the vault root; relative = inside the vault; `~/…` or absolute = anywhere (Settings → Prompts → *Memory file path*); read by `Vault(root, memoryPath)` from `AppContext.openVault()` |
 | `memoryEnabled` / `memoryOffered` | true / false | add `ARCANA.md` to every chat / already created or checked once (so a deleted file is not recreated) |
 | `contextTokens` | 0 | `num_ctx` to ask Ollama for (0 = Ollama's default); the Chat gauge counts against it, capped at the model's maximum; with 0 it counts against `AppContext.loadedContext` (what Ollama really loaded, usually far below the model's maximum) and only then the model's maximum (`effectiveContext`); sizes are written `256k` / `32k` (`UsageStats.contextSize`: multiples of 1024), a window under 32k (`COMFORTABLE_CONTEXT`) adds an orange `⚠ ctx 4k` pill; Settings → Context window shows "Right now: Ollama runs … with a window of …" |

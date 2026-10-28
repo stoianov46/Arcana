@@ -613,6 +613,10 @@ class DesignTest {
         assertEquals(2, columnCount(2, 125), "never more columns than answers")
         val message = com.arcana.brain.core.Oracul.comparisonMessage("worker", listOf("big" to "Right side text", "other" to "Third"), "judge", "Left side text", "Big is best.")
         val parts = com.arcana.brain.core.Oracul.comparisonParts(message)!!
+        val titleRuns = com.arcana.brain.app.screens.comparisonTitleRuns("Ψ Comparison · worker vs big, other, judged by judge", parts)
+        assertEquals("Ψ Comparison · worker vs big, other, judged by judge", titleRuns.joinToString("") { it.text })
+        assertEquals(listOf("worker", "big", "other", "judge"), titleRuns.filter { it.color != com.arcana.brain.app.design.Palette.Muted }.map { it.text }.drop(1), "each model name has its own colour")
+        assertEquals(com.arcana.brain.app.design.Palette.Orange, titleRuns.last().color)
         val lines = sideBySide(parts, 7, com.arcana.brain.core.AppConfig(), 90)
         val texts = lines.map { it.text }
         assertTrue(texts.any { "worker · main" in it } && texts.any { "big · oracul" in it && "worker" !in it || "big · oracul" in it }, texts.toString())
@@ -621,5 +625,24 @@ class DesignTest {
         assertTrue(texts.first { "Third" in it }.let { "Right" !in it }, "the third answer starts a new row of columns")
         assertTrue(texts.any { "Verdict · judge" in it } && texts.any { "Big is best." in it })
         assertTrue(lines.all { it.text.length <= 90 && it.entry == 7 }, "no row is wider than the window and every row belongs to the block")
+    }
+
+    @Test
+    fun `the memory pill says when the end of the file is cut`() {
+        assertEquals("⚠ memory 8k of 11k: end cut", com.arcana.brain.app.screens.memoryCutText(11_000, false))
+        assertEquals("! memory 8k of 11k: end cut", com.arcana.brain.app.screens.memoryCutText(11_000, true))
+    }
+
+    @Test
+    fun `the models segment puts the model that works first`() {
+        val config = com.arcana.brain.core.AppConfig(oraculModel = "big", judgeModel = "jdg")
+        val idle = com.arcana.brain.app.screens.modelsSegment("◆ small", null, config, false, 120)
+        assertEquals(" ◆ small ", idle.parts[0].text)
+        assertTrue(idle.parts[1].text.contains("Ψ big"))
+        val asking = com.arcana.brain.app.screens.modelsSegment("◆ small", "big", config, false, 120)
+        assertEquals(" Ψ big… ", asking.parts[0].text)
+        assertTrue(asking.parts[1].text.contains("small waiting"))
+        assertTrue(com.arcana.brain.app.screens.modelsSegment("◆ small", "jdg", config, false, 120).parts[0].text.contains("⚖ jdg"))
+        assertEquals(1, com.arcana.brain.app.screens.modelsSegment("◆ small", "big", config, false, 20).parts.size, "narrow: only the pill")
     }
 }

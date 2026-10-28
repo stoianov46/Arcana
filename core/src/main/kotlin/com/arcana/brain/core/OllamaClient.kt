@@ -37,6 +37,8 @@ data class ChatMessage(
     val noteNames: List<String> = emptyList(),
     /** For a reply: the vault paths of the notes it was answered from. */
     val sources: List<String> = emptyList(),
+    /** For a reply: which of [sources] were shown to the model only in part (the note is longer than *Chars per note*). */
+    val sourcesCut: List<String> = emptyList(),
     /** For a message of yours: the text files attached to it (their text is sent with the message and kept in the chat). */
     val files: List<FileAttachment> = emptyList(),
     /** For a reply: the tools the model asked to use (its text, if any, is [content]). */
@@ -50,8 +52,8 @@ data class ChatMessage(
         fun system(content: String) = ChatMessage("system", content)
         fun user(content: String, images: List<ImageAttachment> = emptyList(), notes: List<String> = emptyList(), files: List<FileAttachment> = emptyList()) =
             ChatMessage("user", content, images.map { it.base64 }, images.map { it.name }, noteNames = notes, files = files)
-        fun assistant(content: String, stats: ReplyStats? = null, sources: List<String> = emptyList(), thinking: String = "") =
-            ChatMessage("assistant", content, stats = stats, sources = sources, thinking = thinking)
+        fun assistant(content: String, stats: ReplyStats? = null, sources: List<String> = emptyList(), thinking: String = "", sourcesCut: List<String> = emptyList()) =
+            ChatMessage("assistant", content, stats = stats, sources = sources, sourcesCut = sourcesCut, thinking = thinking)
         fun assistantCalls(content: String, calls: List<ToolCall>, stats: ReplyStats? = null, thinking: String = "") =
             ChatMessage("assistant", content, stats = stats, toolCalls = calls, thinking = thinking)
         fun toolResult(name: String, content: String) = ChatMessage("tool", content, toolName = name)

@@ -78,6 +78,11 @@ Closing review (2026-10-28): #11 stays *needs repro* (skipped until a screenshot
 | Slash commands take text (`/revise now`, `/oracul model`, a skill with its request), a usage example under the highlighted menu entry | [functionality.md](functionality.md) | done |
 | Quiet action bars inside screens, filled buttons only for dialogs (`ActionStyle`) | [conventions.md](conventions.md) | done |
 | `http_request` gate; `curl` / `wget` refused in the shell | [tools-and-agent.md](tools-and-agent.md) | done |
+| One block for the working model in the Chat status bar (`modelsSegment`), a collapsed Oracul badge in the bottom bar while in Chat, the reply line naming who works (Oracul, judge, reading the conversation again), coloured model names in a comparison's title | [oracul.md](oracul.md) | done |
+| *Judge automatically* (a full comparison instead of one automatic opinion, off by default); Esc cancels an Oracul run on its own; a new message cancels a stale automatic opinion | [oracul.md](oracul.md) | done |
+| Memory file limit raised to 8,000 characters, and the memory pill turns orange (`⚠ memory 8k of 11k: end cut`) when the file is longer than what is sent | [data-and-config.md](data-and-config.md) | done |
+| Cut notes are never silent: a marker for the model, `⚠ Only the start was read of: …` under the answer, and a dialog before a very long `@` note is sent | [functionality.md](functionality.md) | done |
+| Settings renamed: *Extra folders* → *Allowed folders*, *Project folder* → *Working folder*, with explanations (keys unchanged) | [tools-and-agent.md](tools-and-agent.md) | done |
 | `search_notes` explains a miss and searches short or common words as written | [tools-and-agent.md](tools-and-agent.md) | done |
 
 ## Skipped

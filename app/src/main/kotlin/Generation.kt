@@ -79,6 +79,11 @@ class Generation(
         private set
     var streamed by mutableIntStateOf(0)
         private set
+    /** The same for the current round of a tool loop: a new round starts with no pieces while the model reads the whole conversation again (minutes on a big context). */
+    var roundStartedAt = 0L
+        private set
+    var roundPieces by mutableIntStateOf(0)
+        private set
     private var job: Job? = null
     /** The tools offered each round; a tool round may replace them (the user just turned tools on). */
     private var activeTools: JsonArray? = null
@@ -95,6 +100,8 @@ class Generation(
         error = null
         stats = null
         streamed = 0
+        roundPieces = 0
+        roundStartedAt = System.currentTimeMillis()
         startedAt = System.currentTimeMillis()
         thinking = false
         transition(GenState.Running)
@@ -116,6 +123,8 @@ class Generation(
                     val offered = if (onToolRound != null && step < limit) activeTools else null
                     var pieces = 0
                     var liveAdded = 0
+                    roundPieces = 0
+                    roundStartedAt = System.currentTimeMillis()
                     try {
                         client.chat(messages, json, offered).collect { chunk ->
                             if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) {
@@ -126,6 +135,7 @@ class Generation(
                             if (chunk.content.isNotEmpty() || chunk.thinking.isNotEmpty()) {
                                 streamed++
                                 pieces++
+                                roundPieces = pieces
                                 if (pieces - liveAdded >= LIVE_BATCH) { onLive(pieces - liveAdded); liveAdded = pieces }
                             }
                             calls += chunk.toolCalls

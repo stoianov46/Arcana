@@ -94,6 +94,8 @@ data class AppConfig(
     val judgeModel: String = "",
     /** When a second opinion is asked for without being asked: `off`, `problems` (failed tool calls, skipped skill steps) or `always`. */
     val oraculAuto: String = "problems",
+    /** When an automatic second opinion is due, run a full comparison instead (the Oracul answers too, the judge compares). Slower: three model runs. Off by default. */
+    val oraculJudgeAuto: Boolean = false,
     /** The worker counts as stuck, and the Oracul steps into its tool loop, after this many failed tool calls in one turn (and again after every further such number); 0 = never. */
     val stuckCalls: Int = 4,
     /** An automatic review is due after this many turns in a row that each had a failed tool call; 0 = never. */
