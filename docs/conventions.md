@@ -51,7 +51,7 @@ Global: `paletteCommands` in `navigation/Overlays.kt`.
 
 ### Add a key
 Add to `Key.kt` + map in `KeyMapping.kt` (and a test), handle it in the screen's `KeyHandler` (or `overlayKey` for overlays),
-add it to `Hints`/`ActionBar` and the Guide's key page. Check it doesn't collide with text editing keys or Cyrillic mapping.
+add it to `Hints`/`ActionBar` and the Guide's key page. **Two looks for action bars** (`ActionStyle`): `Quiet` (the default: the key in its colour and bold, the label muted, ` · ` between, nothing filled, no blank row above) for the controls inside a screen so they do not add noise; `Button` (filled key and label chips, a blank row above) for dialogs and calls to act: approvals, questions, every `y` / `any other key` confirmation, the setup wizard. Choose Button when the bar answers a question the screen asked, Quiet when it only lists what the keys do here. The footer's own hints (`FooterHints`) keep their chips. Check it doesn't collide with text editing keys or Cyrillic mapping.
 
 ### Add an attachment-capable input
 Create `val attachments = remember { app.attachments() }` (or `app.attachments(forModel = false)` for copy-only), pass it to
@@ -78,7 +78,7 @@ Add a `ThemeSpec` to `Themes.all` in `design/Theme.kt` with the required role co
 
 ## Known limitations / backlog
 
-- Tools: no `http_request` (POST) tool (a model that calls it, or `curl`, `ls`, `grep`…, gets an error with a hint at the right tool: `ToolBox.wrongNameHint`); tool results are stored in full in chats (shortened only when sent); tools are not available in AI notes; shell commands are not sandboxed by folder (only their working directory is).
+- Tools: sending HTTP is `http_request` (gated, previewed, always asks); `curl` and `wget` are refused in `run_command`; a tool that does not exist (`ls`, `grep`, `web_get`…) gets an error with a hint at the right one (`ToolBox.wrongNameHint`); tool results are stored in full in chats (shortened only when sent); tools are not available in AI notes; shell commands are not sandboxed by folder (only their working directory is).
 - Scanned PDFs have no text layer (rendering pages as pictures is not implemented).
 - Vault search is keyword-based (no embeddings).
 - The `utils/` template module is unused; it can be removed.

@@ -5,6 +5,8 @@ Update this file in the same commit as the work. The `#` numbers are the origina
 
 Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never a prettified "Gemma4"). #15 and #28 are skipped for now.
 
+Closing review (2026-10-28): #11 stays *needs repro* (skipped until a screenshot with terminal size and Interface scale shows it); #15 and #28 stay skipped; the design choices were reviewed and kept (split-view colours and the 38-cell column minimum, quiet action bars with filled buttons only for questions and confirmations, stuck defaults 4 failed calls and 3 failing turns); no real-model smoke test was run (everything was tested with fake Ollama servers and the real UI against them), so the first real use of the Oracul, stuck detection and split view is the remaining check.
+
 ## Phase 1: Chat polish
 
 | # | Task | Status |
@@ -64,7 +66,19 @@ Decisions: show only the real Ollama model name everywhere (`gemma4:12b`, never 
 | 21 | Decomposition skill as in CosmoCLI: `decompose` (quiz with `ask_user`, plan note, one item at a time) | done |
 | 25 | Manage Arcana's own files in Settings → Storage (size per area, clear, prune backups and trash by age) | done |
 | 26 | Distributable build (`make dist` → arcana.zip) with a configurable init: the wizard, or `arcana --init <vault> [--skip …]` | done |
-| 16 | Oracul concept: proposal written ([proposals/oracul.md](proposals/oracul.md)); waiting for a decision, no code yet | proposal |
+| 16 | Oracul: levels 0-1 built (`/oracul`, `/compare`, `/revise`, automatic trigger, models in Settings → Oracul, bottom-bar badge), with the worker's tools (changes always ask). Escalation built (`/takeover`). Roles per skill built (`worker:`/`reviewer:` in a skill). Second Ollama server built (`oraculUrl`). Judge for more than two built (`oraculExtra`). Complete, with the planner role, the role table and a multi-select picker (architecture: [oracul.md](oracul.md)) | done |
+
+## Added later (not on the original list)
+
+| Task | Where | Status |
+|---|---|---|
+| Oracul as a whole: second opinion, judge, `/takeover`, skill roles (worker / reviewer / planner and a role table), a second Ollama server, several models in `/compare`, stepping into a worker that keeps failing (thresholds are settings), status bars | [oracul.md](oracul.md) | done |
+| Side-by-side comparison in Chat (setting Console → Comparison view) | [oracul.md](oracul.md) | done |
+| Memory fit and a suggested Oracul and judge in the model pickers | [oracul.md](oracul.md) | done |
+| Slash commands take text (`/revise now`, `/oracul model`, a skill with its request), a usage example under the highlighted menu entry | [functionality.md](functionality.md) | done |
+| Quiet action bars inside screens, filled buttons only for dialogs (`ActionStyle`) | [conventions.md](conventions.md) | done |
+| `http_request` gate; `curl` / `wget` refused in the shell | [tools-and-agent.md](tools-and-agent.md) | done |
+| `search_notes` explains a miss and searches short or common words as written | [tools-and-agent.md](tools-and-agent.md) | done |
 
 ## Skipped
 

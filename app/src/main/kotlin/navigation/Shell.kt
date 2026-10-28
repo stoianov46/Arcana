@@ -363,16 +363,19 @@ private fun Footer(app: AppContext, navigator: Navigator, hint: String, columns:
     // Tokens used since Arcana started: grows after every reply; the Usage screen has the full picture.
     val tokens = app.sessionTokens
     val tokenBadge = if (tokens > 0) " ⚡ ${UsageStats.compact(tokens)} tok " else ""
+    val oracul = oraculBadge(app)
     Row(Modifier.fillMaxWidth().background(Palette.SurfaceHigh)) {
         Label(badgeText, color = Palette.Background, background = badgeColor, textStyle = TextStyle.Bold)
+        // the second-opinion model, next to the worker's: orange while it is being asked
+        if (oracul != null) Label(oracul.first, color = Palette.Background, background = oracul.second, textStyle = TextStyle.Bold)
         if (tokenBadge.isNotEmpty()) Label(tokenBadge, color = Palette.Background, background = Palette.Blue, textStyle = TextStyle.Bold) // a badge like the model pill; blue = tokens, as in the Chat status bar
         if (navigator.focusMode) Label(" ✎ EDITING  Esc ", color = Palette.Background, background = Palette.Editing, textStyle = TextStyle.Bold)
-        val room = columns - badgeText.length - tokenBadge.length - (if (navigator.focusMode) 16 else 0) - 2
+        val room = columns - badgeText.length - tokenBadge.length - (oracul?.first?.length ?: 0) - (if (navigator.focusMode) 16 else 0) - 2
         val toast = navigator.toast
         if (toast != null && !navigator.quitPending) {
             // a message from an overlay replaces the hints for a few seconds
             Label("", Modifier.weight(1f), background = Palette.SurfaceHigh, fill = true)
-            Label(" ${if (toast.isError) "✕" else "✓"} ${toast.text} ".take((columns - badgeText.length - tokenBadge.length - 2).coerceAtLeast(10)), color = Palette.Background, background = if (toast.isError) Palette.Red else Palette.Green, textStyle = TextStyle.Bold)
+            Label(" ${if (toast.isError) "✕" else "✓"} ${toast.text} ".take((columns - badgeText.length - tokenBadge.length - (oracul?.first?.length ?: 0) - 2).coerceAtLeast(10)), color = Palette.Background, background = if (toast.isError) Palette.Red else Palette.Green, textStyle = TextStyle.Bold)
             Label(" ", background = Palette.SurfaceHigh)
         } else {
             FooterHints(if (navigator.quitPending) hint else fitHints(hint, room), badges = !navigator.quitPending)
@@ -388,7 +391,19 @@ private fun quitPrompt(room: Int, unsaved: Boolean): String {
     return if (full.length <= room) full else short.take(room.coerceAtLeast(0))
 }
 
-private fun AppContext.badgeWidth(): Int = (if (sessionTokens > 0) " ⚡ ${UsageStats.compact(sessionTokens)} tok ".length else 0) + when (connection) {
+/**
+ * The Oracul's badge for the bottom bar: its model, the judge (`⚖`, when it is another model) and when it speaks (`auto` after problems, `always`, or `manual` = only on /oracul), orange while
+ * it is being asked. Null when no Oracul model is set, so a user who does not use it sees nothing.
+ */
+private fun oraculBadge(app: AppContext): Pair<String, Color>? {
+    val oracul = com.arcana.brain.core.Oracul
+    val model = oracul.model(app.config).ifEmpty { return null }
+    // while the judge is the one working it says so with its own glyph
+    app.chat.consulting?.let { return " ${if (it == oracul.judge(app.config) && it != model) "⚖" else oracul.GLYPH} $it… " to Palette.Orange }
+    return " ${oracul.statusText(app.config)} " to Palette.Accent
+}
+
+private fun AppContext.badgeWidth(): Int = (oraculBadge(this)?.first?.length ?: 0) + (if (sessionTokens > 0) " ⚡ ${UsageStats.compact(sessionTokens)} tok ".length else 0) + when (connection) {
     Connection.Checking -> " ○ checking ".length
     is Connection.Online -> " ● ${config.model} ".length
     is Connection.ModelMissing -> " ● model missing ".length

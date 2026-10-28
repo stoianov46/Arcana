@@ -32,14 +32,15 @@ import kotlinx.coroutines.launch
 private const val PRUNE_DAYS = 30
 
 private enum class Group(val title: String) {
-    Ollama("Ollama"), Vault("Vault"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Sounds("Sounds"), Storage("Storage"), Accessibility("Accessibility"), Tabs("Tabs"),
+    Ollama("Ollama"), Vault("Vault"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Oracul("Oracul"), Sounds("Sounds"), Storage("Storage"), Accessibility("Accessibility"), Tabs("Tabs"),
 }
 
 /** How Enter edits a setting that is not simply stepped with ←/→. */
 private sealed interface Editor {
     /** Types a value; [apply] throws IllegalArgumentException with a user-facing message on invalid input. */
     class Text(val apply: (AppConfig, String) -> AppConfig) : Editor
-    data object Model : Editor
+    /** Enter lists the installed models; [set] stores the choice in the setting this editor belongs to ([allowNone]: blank is a valid choice and means off). */
+    class Model(val label: String, val get: (AppConfig) -> String, val set: (AppConfig, String) -> AppConfig, val allowNone: Boolean = false, val oracul: Boolean = false, val multi: Boolean = false) : Editor
     data object Folder : Editor
     data object Theme : Editor
     /** Enter asks to clear the files of one [com.arcana.brain.core.Storage] area. */
@@ -126,12 +127,22 @@ private fun storageSetting(id: String): Setting {
     )
 }
 
+/** The editor of the main model setting (declared before [settings], which uses it). */
+private val MainModel = Editor.Model("Model", { it.model }, { c, v -> c.copy(model = v) })
+
+private val OraculModel = Editor.Model("Oracul model", { it.oraculModel }, { c, v -> c.copy(oraculModel = v) }, allowNone = true, oracul = true)
+private val ExtraModels = Editor.Model("More Oracul models", { it.oraculExtra }, { c, v -> c.copy(oraculExtra = v.split(',').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")) }, allowNone = true, oracul = true, multi = true)
+private val PlannerRole = Editor.Model("Skill planner", { it.rolePlanner }, { c, v -> c.copy(rolePlanner = v) }, allowNone = true, oracul = true)
+private val WorkerRole = Editor.Model("Skill worker", { it.roleWorker }, { c, v -> c.copy(roleWorker = v) }, allowNone = true)
+private val ReviewerRole = Editor.Model("Skill reviewer", { it.roleReviewer }, { c, v -> c.copy(roleReviewer = v) }, allowNone = true, oracul = true)
+private val JudgeModel = Editor.Model("Judge model", { it.judgeModel }, { c, v -> c.copy(judgeModel = v) }, allowNone = true, oracul = true)
+
 private val settings: List<Setting> = listOf(
     text(Group.Ollama, "Ollama URL", "Where the Ollama server listens.", { it.ollamaUrl }, { c, v ->
         require(v.startsWith("http://") || v.startsWith("https://")) { "URL must start with http:// or https://" }
         c.copy(ollamaUrl = v.trimEnd('/'))
     }),
-    Setting(Group.Ollama, "Model", "The model that answers. Enter lists what is installed.", { it.model }, editor = Editor.Model),
+    Setting(Group.Ollama, "Model", "The model that answers. Enter lists what is installed.", { it.model }, editor = MainModel),
     Setting(
         Group.Ollama, "Temperature", "0 is focused and repeatable, 2 is adventurous. ←/→ step by 0.1, Enter types a value.",
         value = { it.temperature.toString() },
@@ -174,6 +185,7 @@ private val settings: List<Setting> = listOf(
     toggle(Group.Console, "Answer from vault", "Chat searches your notes for each question and answers from what it finds, citing the notes. You can also switch this per chat with /vault.", { it.chatUseVault }, { c, v -> c.copy(chatUseVault = v) }),
     toggle(Group.Console, "Render Markdown", "On: headings, bullets and code are drawn as such. Off: the model's text exactly as written.", { it.renderMarkdown }, { c, v -> c.copy(renderMarkdown = v) }),
     toggle(Group.Console, "Show thinking", "Show \"<model> is thinking…\" while a reasoning model works before its first words.", { it.showThinking }, { c, v -> c.copy(showThinking = v) }),
+    choice(Group.Console, "Comparison view", "How /compare shows the answers in Chat. Side by side: the main model's answer and the Oracul models' answers in columns, each under a coloured name, the verdict below across the whole width (needs a window of about 80 columns for two answers, 120 for three, else they stack). Stacked: one under another.", listOf("side" to "Side by side", "stacked" to "Stacked"), { it.comparisonView }, { c, v -> c.copy(comparisonView = v) }),
     choice(Group.Console, "Thinking in Chat", "What a reasoning model thought before it answered, kept apart from the answer. Summary: one dim line with its length. Full: all of it, dimmed, above the answer. Hidden: not shown (it is still kept with the chat).", listOf("summary" to "Summary", "full" to "Full", "hidden" to "Hidden"), { it.thinkingView }, { c, v -> c.copy(thinkingView = v) }),
     choice(Group.Console, "Auto-compact", "When the context window is this full, Arcana first asks the model to summarize the older part of the chat (like /compact), then sends your message. Nothing is deleted: the summary appears in the chat as a divider and the model just stops being sent what is above it. Off: only /compact does it.", listOf("0" to "Off", "70" to "At 70%", "80" to "At 80%", "90" to "At 90%"), { it.autoCompactPercent.toString() }, { c, v -> c.copy(autoCompactPercent = v.toInt()) }),
     stepper(Group.Console, "Chat history", "How many of the latest messages Chat sends to the model as context. ←/→ step by 2.", 2..100, 2, { it.chatHistory }, { c, n -> c.copy(chatHistory = n) }),
@@ -213,6 +225,20 @@ private val settings: List<Setting> = listOf(
     text(Group.Prompts, "System prompt", "Tells the model who it is. Sent with every request.", { it.systemPrompt }, { c, v -> c.copy(systemPrompt = v) }),
     text(Group.Prompts, "Summary prompt", "The instruction used by Summarize.", { it.summaryPrompt }, { c, v -> c.copy(summaryPrompt = v) }),
 
+    Setting(Group.Oracul, "Oracul model", "A second model that reads the worker's answer and says what is wrong or missing (a second opinion), and answers the same question for a comparison. It advises only; its text appears in the chat as a Ψ block. None = the Oracul is off. Enter lists the installed models; a bigger or different one from the worker is the point (loading it replaces the worker in memory for a while on a small machine).", { it.oraculModel.ifEmpty { "(none: off)" } }, editor = OraculModel),
+    Setting(Group.Oracul, "More Oracul models", "Optional. Enter lists the installed models: Space ticks several, Enter saves. /compare then asks all of them and the judge compares every answer. More models, longer wait: each one is loaded in turn.", { it.oraculExtra.ifEmpty { "(none)" } }, editor = ExtraModels),
+    Setting(Group.Oracul, "Judge model", "The model that compares the answers (/compare) and writes the best final answer. None = the Oracul model judges.", { it.judgeModel.ifEmpty { "(same as the Oracul)" } }, editor = JudgeModel),
+    text(Group.Oracul, "Oracul server", "Another Ollama server for the Oracul and the judge, for example a bigger machine on your network (http://host:11434). Blank: the same server as the main model. Only Ollama; what the Oracul reads from your chat goes to that server.", { it.oraculUrl }, { c, v ->
+        require(v.isEmpty() || v.startsWith("http://") || v.startsWith("https://")) { "URL must start with http:// or https://" }
+        c.copy(oraculUrl = v.trim().trimEnd('/'))
+    }),
+    Setting(Group.Oracul, "Skill planner", "The model that writes a short plan before a skill starts (the worker then sees it). A skill's own `planner:` property wins. Blank: no plan.", { it.rolePlanner.ifEmpty { "(no plan)" } }, editor = PlannerRole),
+    Setting(Group.Oracul, "Skill worker", "The model that runs skills instead of the chat model. A skill's own `worker:` property wins. Blank: the chat model.", { it.roleWorker.ifEmpty { "(the chat model)" } }, editor = WorkerRole),
+    Setting(Group.Oracul, "Skill reviewer", "The model that gives a second opinion when a skill's run is done, whatever the automatic setting says. A skill's own `reviewer:` property wins. Blank: none.", { it.roleReviewer.ifEmpty { "(no review)" } }, editor = ReviewerRole),
+    choice(Group.Oracul, "Stuck: failed calls", "The main model counts as stuck after this many failed tool calls in one turn (errors, timeouts, commands that exit with an error). The Oracul then reads the attempts and its advice goes into the main model's loop, and again after every further such number. Needs an Oracul model and an automatic setting other than Off.", listOf("0" to "Never", "3" to "After 3", "4" to "After 4", "6" to "After 6", "8" to "After 8"), { it.stuckCalls.toString() }, { c, v -> c.copy(stuckCalls = v.toInt()) }),
+    choice(Group.Oracul, "Stuck: failing turns", "An automatic review is due when this many turns in a row each had a failed tool call, even if each had only one (you keep coming back, the main model keeps failing). Used by On problems.", listOf("0" to "Never", "2" to "After 2", "3" to "After 3", "4" to "After 4", "5" to "After 5"), { it.stuckTurns.toString() }, { c, v -> c.copy(stuckTurns = v.toInt()) }),
+    toggle(Group.Oracul, "Oracul may use tools", "On: the Oracul can use the same tools as the main model to CHECK an answer (read files, search notes, run a harmless command). Reading follows Read without asking; every change, command and web access asks you first, even in Auto mode, in a dialog marked Ψ Oracul. Needs Tools in Chat on and an Oracul model that supports tools; Plan mode keeps it read-only. Off: it only reads the question and the answer.", { it.oraculTools }, { c, v -> c.copy(oraculTools = v) }),
+    choice(Group.Oracul, "Automatic second opinion", "Off: only when you type /oracul. On problems: after a turn where two or more tool calls failed, a skill had to skip a required step, or three turns in a row had a failed call; and in the middle of a turn, every 4th failed call (the worker keeps failing: the Oracul reads the attempts and its advice goes into the loop). Always: after every finished reply (slow: the Oracul model runs each time). Needs an Oracul model.", listOf("off" to "Off", "problems" to "On problems", "always" to "Always"), { it.oraculAuto }, { c, v -> c.copy(oraculAuto = v) }),
     soundSetting("Needs you", "Plays when the model waits for you: an approval or a question.", com.arcana.brain.core.ChatSoundEvent.Attention, { it.soundAttention }, { c, v -> c.copy(soundAttention = v) }),
     soundSetting("Reply finished", "Plays when a reply, with all its tool steps, is finished.", com.arcana.brain.core.ChatSoundEvent.Done, { it.soundDone }, { c, v -> c.copy(soundDone = v) }),
     soundSetting("Reply failed", "Plays when a reply ends with an error.", com.arcana.brain.core.ChatSoundEvent.Failed, { it.soundFailed }, { c, v -> c.copy(soundFailed = v) }),
@@ -238,11 +264,12 @@ private val settings: List<Setting> = listOf(
 )
 
 private const val CustomModel = "✎ Type a custom name…"
+private const val NoModel = "∅ None (off)"
 
 /** What the screen is doing with the highlighted setting. */
 private sealed interface Editing {
     data class Typing(val setting: Setting, val editor: Editor.Text) : Editing
-    data class PickModel(val models: List<String>, val details: Map<String, String> = emptyMap()) : Editing
+    data class PickModel(val target: Editor.Model, val models: List<String>, val details: Map<String, String> = emptyMap(), val ticked: androidx.compose.runtime.snapshots.SnapshotStateList<String> = androidx.compose.runtime.mutableStateListOf(), val machine: String = "") : Editing
     data object PickTheme : Editing
     data class PickFolder(val browser: DirectoryPickerState) : Editing
     data object ConfirmReset : Editing
@@ -319,17 +346,33 @@ fun SettingsScreen(app: AppContext) {
                 picker.index = Themes.all.indexOfFirst { it.id == app.config.theme }.coerceAtLeast(0)
                 editing = Editing.PickTheme
             }
-            Editor.Model -> scope.launch {
+            is Editor.Model -> scope.launch {
                 try {
-                    val details = app.client.modelDetails()
-                    val models = details.map { it.name } + CustomModel
+                    val details = (if (editor.oracul) com.arcana.brain.core.OllamaClient { com.arcana.brain.core.Oracul.serverConfig(app.config, app.config.model) } else app.client).modelDetails()
+                    val models = (if (editor.allowNone) listOf(NoModel) else emptyList()) + details.map { it.name } + CustomModel
                     picker.reset()
-                    picker.index = models.indexOf(app.config.model).coerceAtLeast(0)
-                    editing = Editing.PickModel(models, details.associate { it.name to it.summary() })
+                    picker.index = models.indexOf(editor.get(app.config)).coerceAtLeast(0)
+                    // does it fit this machine's memory (the Oracul's own server: unknown, so no verdict), and which one would we pick
+                    val ram = if (editor.oracul && app.config.oraculUrl.isNotBlank()) 0L else com.arcana.brain.core.ModelFit.physicalMemory()
+                    val workerBytes = if (editor.oracul) details.firstOrNull { it.name == app.config.model }?.sizeBytes ?: 0L else 0L
+                    val picks = com.arcana.brain.core.ModelFit.suggest(details, app.config.model, ram, app.config.oraculTools)
+                    val suggested = when { !editor.oracul -> null; editor === JudgeModel -> picks.judge; else -> picks.oracul }
+                    val notes = details.associate { d ->
+                        d.name to buildString {
+                            append(d.summary())
+                            if (ram > 0 && d.sizeBytes > 0) {
+                                val fit = com.arcana.brain.core.ModelFit.fit(d.sizeBytes, workerBytes, ram)
+                                append(" · ").append(if (editor.oracul || fit == com.arcana.brain.core.ModelFit.Fit.TooBig) com.arcana.brain.core.ModelFit.label(fit) else "fits")
+                            }
+                            if (d.name == suggested) append(" · ★ suggested")
+                        }
+                    }
+                    val machine = if (ram > 0) "this machine ${com.arcana.brain.core.ModelFit.gb(ram)}, ~${com.arcana.brain.core.ModelFit.gb(com.arcana.brain.core.ModelFit.budget(ram))} for models" else if (editor.oracul && app.config.oraculUrl.isNotBlank()) "the Oracul server's memory is unknown here" else ""
+                    editing = Editing.PickModel(editor, models, notes, androidx.compose.runtime.mutableStateListOf<String>().also { t -> if (editor.multi) t += editor.get(app.config).split(',').map { it.trim() }.filter { it.isNotEmpty() } }, machine)
                 } catch (e: Exception) {
                     notice = Notice("${e.message} Type the model name instead.", isError = true)
-                    field.set(app.config.model)
-                    editing = Editing.Typing(setting, Editor.Text { c, v -> require(v.isNotBlank()) { "Model name cannot be empty" }; c.copy(model = v.trim()) })
+                    field.set(editor.get(app.config))
+                    editing = Editing.Typing(setting, Editor.Text { c, v -> require(editor.allowNone || v.isNotBlank()) { "Model name cannot be empty" }; editor.set(c, v.trim()) })
                 }
             }
             is Editor.Clear -> {
@@ -399,7 +442,7 @@ fun SettingsScreen(app: AppContext) {
             Hints("↑↓  choose", "←→  change", "Enter  edit", "Tab  next group", "R  reset", "t  test")
         }
         is Editing.Typing -> Hints("Enter  save", "Ctrl+U  clear line", "Esc  cancel")
-        is Editing.PickModel -> Hints("↑↓  move", "Enter  choose", "/  filter", "Esc  cancel")
+        is Editing.PickModel -> if (mode.target.multi) Hints("↑↓  move", "Space  tick", "Enter  save", "/  filter", "Esc  cancel") else Hints("↑↓  move", "Enter  choose", "/  filter", "Esc  cancel")
         Editing.PickTheme -> Hints("↑↓  preview", "Enter  choose", "/  filter", "Esc  cancel")
         is Editing.PickFolder ->
             if (mode.browser.filtering) Hints("↑↓  move", "Enter  open", "Esc  clear filter") else Hints("Space  use folder", "Enter  open", "←  up", "/  filter", "Esc  cancel")
@@ -415,15 +458,22 @@ fun SettingsScreen(app: AppContext) {
                 else -> field.onKey(key)
             }
             is Editing.PickModel -> when {
+                // several models: Space ticks the highlighted one (while filtering, a space belongs to the filter)
+                mode.target.multi && !picker.filtering && key.char == ' ' -> {
+                    picker.selected(mode.models) { it }?.takeIf { it != CustomModel && it != NoModel }?.let { if (it in mode.ticked) mode.ticked.remove(it) else mode.ticked.add(it) }
+                    true
+                }
                 picker.handle(key, mode.models) { it } -> true
                 key == Key.Enter -> {
                     when (val choice = picker.selected(mode.models) { it }) {
                         null -> Unit
                         CustomModel -> {
-                            field.set(app.config.model)
-                            editing = Editing.Typing(settings.first { it.label == "Model" }, Editor.Text { c, v -> require(v.isNotBlank()) { "Model name cannot be empty" }; c.copy(model = v.trim()) })
+                            field.set(mode.target.get(app.config))
+                            editing = Editing.Typing(settings.first { it.editor === mode.target }, Editor.Text { c, v -> require(mode.target.allowNone || v.isNotBlank()) { "Model name cannot be empty" }; mode.target.set(c, v.trim()) })
                         }
-                        else -> { changed(app.config.copy(model = choice), "Model"); editing = null }
+                        NoModel -> { changed(mode.target.set(app.config, ""), mode.target.label); editing = null }
+                        // nothing ticked: Enter on a model chooses just that one
+                        else -> { changed(mode.target.set(app.config, if (mode.target.multi) mode.ticked.ifEmpty { listOf(choice) }.joinToString(", ") else choice), mode.target.label); editing = null }
                     }
                     true
                 }
@@ -523,10 +573,10 @@ fun SettingsScreen(app: AppContext) {
                 }
             }
             is Editing.PickModel -> {
-                ScreenHeader("Settings › Model", "Installed on ${app.config.ollamaUrl}")
+                ScreenHeader("Settings › ${mode.target.label}", "Installed on ${if (mode.target.oracul) com.arcana.brain.core.Oracul.serverConfig(app.config, "").ollamaUrl else app.config.ollamaUrl}" + if (mode.machine.isEmpty()) "" else "  ·  ${mode.machine}")
                 VGap()
                 Panel("Models") {
-                    Picker(mode.models, picker, label = { it }, rows = bodyRows(extra = 5), icon = { if (it == CustomModel) "" else "◆" }, iconColor = { Palette.Accent }, meta = { (if (it == app.config.model) "current · " else "") + mode.details[it].orEmpty() }, metaColor = { if (it == app.config.model) Palette.Green else Palette.Muted })
+                    Picker(mode.models, picker, label = { if (mode.target.multi && it != CustomModel && it != NoModel) (if (it in mode.ticked) "[x] " else "[ ] ") + it else it }, rows = bodyRows(extra = 5), icon = { if (it == CustomModel || it == NoModel) "" else "◆" }, iconColor = { Palette.Accent }, meta = { (if (it == mode.target.get(app.config)) "current · " else "") + mode.details[it].orEmpty() }, metaColor = { val note = mode.details[it].orEmpty(); when { "too big" in note -> Palette.Red; "★" in note || it == app.config.model -> Palette.Green; else -> Palette.Muted } })
                 }
             }
             Editing.PickTheme -> {
@@ -565,7 +615,7 @@ fun SettingsScreen(app: AppContext) {
                     }
                 }
                 ActionBar(if (area?.prunable == true) listOf(ActionItem("y", "Older than $PRUNE_DAYS days", accent = Palette.Red), ActionItem("a", "Everything", accent = Palette.Red), ActionItem("any other key", "Keep", accent = Palette.Cta))
-                    else listOf(ActionItem("y", "Clear it", accent = Palette.Red), ActionItem("any other key", "Keep", accent = Palette.Cta)))
+                    else listOf(ActionItem("y", "Clear it", accent = Palette.Red), ActionItem("any other key", "Keep", accent = Palette.Cta)), style = ActionStyle.Button)
             }
             Editing.ConfirmReset -> {
                 ScreenHeader("Settings", "Reset every option")
@@ -573,7 +623,7 @@ fun SettingsScreen(app: AppContext) {
                 Panel("Reset all options?", accent = Palette.Red) {
                     Warning("Every option goes back to its built-in default, including prompts, model and Ollama URL. The vault path is kept.")
                 }
-                ActionBar(listOf(ActionItem("y", "Reset all", accent = Palette.Red), ActionItem("any other key", "Keep my settings", accent = Palette.Cta)))
+                ActionBar(listOf(ActionItem("y", "Reset all", accent = Palette.Red), ActionItem("any other key", "Keep my settings", accent = Palette.Cta)), style = ActionStyle.Button)
             }
         }
     }

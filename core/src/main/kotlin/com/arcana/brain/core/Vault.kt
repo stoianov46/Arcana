@@ -222,8 +222,9 @@ class Vault(root: Path, private val memoryPath: String = "") {
         return target.relativeTo(root).toString().replace('\\', '/')
     }
 
-    fun search(query: String, limit: Int, excerptChars: Int): List<SearchHit> {
-        val terms = tokenize(query)
+    fun search(query: String, limit: Int, excerptChars: Int, literalFallback: Boolean = false): List<SearchHit> {
+        // [literalFallback]: a query made only of short or very common words ("AI", "the") is looked for as the text itself instead of finding nothing
+        val terms = tokenize(query).ifEmpty { if (literalFallback) listOfNotNull(query.trim().lowercase().takeIf { it.isNotEmpty() }) else emptyList() }
         if (terms.isEmpty()) return emptyList()
         return notes().mapNotNull { note ->
             val text = runCatching { read(note.path) }.getOrNull() ?: return@mapNotNull null

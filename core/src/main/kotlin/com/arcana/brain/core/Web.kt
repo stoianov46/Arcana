@@ -116,3 +116,109 @@ internal fun decodeEntities(text: String): String {
     s = Regex("&#[xX]([0-9a-fA-F]+);").replace(s) { m -> m.groupValues[1].toIntOrNull(16)?.takeIf { it in 32..0x10FFFF }?.let { String(Character.toChars(it)) } ?: m.value }
     return s
 }
+
+/**
+ * The gate for HTTP requests of every kind (the `http_request` tool): which methods, which addresses, how much may be sent, and how a request is
+ * shown to the user before it leaves. It exists so a model never needs `curl` in a shell: here the address is checked ([WebPolicy]), the whole
+ * request is shown, credentials are hidden in that view, and the user approves it.
+ */
+object HttpGate {
+    val METHODS = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")
+
+    /** The largest body a request may carry. */
+    const val MAX_BODY = 200_000
+
+    /** Headers the HTTP stack sets itself (and that would only be used to confuse a server); never sent. */
+    private val RESTRICTED = setOf("host", "content-length", "connection", "transfer-encoding", "upgrade", "expect", "te", "trailer", "proxy-connection", "keep-alive")
+
+    private val SECRET_NAME = Regex("(?i)authorization|cookie|api[-_]?key|token|secret|password|passwd|signature|x-auth")
+    private val SECRET_QUERY = Regex("(?i)([?&](?:api[-_]?key|apikey|key|token|access_token|secret|password|auth|signature)=)[^&#\\s]+")
+
+    fun isSecretHeader(name: String) = SECRET_NAME.containsMatchIn(name)
+
+    /** `Name: value` lines as pairs; a line without a colon, with a bad name or with a restricted name is an error the model can read. */
+    fun parseHeaders(text: String): List<Pair<String, String>> = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.map { line ->
+        val at = line.indexOf(':')
+        require(at > 0) { "A header must look like `Name: value`, not \"$line\"." }
+        val name = line.substring(0, at).trim()
+        val value = line.substring(at + 1).trim()
+        require(name.matches(Regex("[A-Za-z0-9!#$%&'*+.^_`|~-]+"))) { "\"$name\" is not a valid header name." }
+        require('\n' !in value && '\r' !in value) { "A header value cannot contain a line break." }
+        require(name.lowercase() !in RESTRICTED) { "The $name header is set by Arcana and cannot be given." }
+        name to value
+    }
+
+    /** The reason this request is not allowed, or null. [allowPrivate] is for tests that talk to a local server. */
+    fun refusal(method: String, url: String, headers: String, body: String, allowPrivate: Boolean = false): String? {
+        if (method.uppercase() !in METHODS) return "The method must be one of ${METHODS.joinToString()}, not \"$method\"."
+        WebPolicy.refusal(url, allowPrivate)?.let { return it }
+        if (body.length > MAX_BODY) return "The body is ${body.length} characters; at most $MAX_BODY can be sent."
+        if (body.isNotEmpty() && method.uppercase() in setOf("GET", "HEAD")) return "A $method request has no body. Use POST, PUT or PATCH to send one."
+        runCatching { parseHeaders(headers) }.exceptionOrNull()?.let { return it.message }
+        return null
+    }
+
+    /** [url] with the value of a key-like query parameter hidden, for showing it to the user and logging it. */
+    fun maskUrl(url: String): String = SECRET_QUERY.replace(url) { it.groupValues[1] + "••••" }
+
+    /** The request as lines for the approval dialog: what is sent, to whom, with credentials hidden. */
+    fun preview(method: String, url: String, headers: String, body: String, maxBodyLines: Int): List<String> = buildList {
+        val host = runCatching { URI(url.trim()).host }.getOrNull().orEmpty()
+        add("${method.uppercase()} ${maskUrl(url.trim())}")
+        val parsed = runCatching { parseHeaders(headers) }.getOrDefault(emptyList())
+        parsed.forEach { (name, value) -> add("$name: ${if (isSecretHeader(name)) "•••• (hidden here, sent to $host)" else value.take(120)}") }
+        if (body.isNotEmpty()) {
+            add("Body, ${body.length} characters:")
+            body.lines().take(maxBodyLines).forEach { add("  ${it.take(160)}") }
+            if (body.lines().size > maxBodyLines) add("  … (${body.lines().size - maxBodyLines} more lines)")
+        }
+        val sends = body.isNotEmpty() || method.uppercase() !in setOf("GET", "HEAD")
+        add(if (sends) "This sends data to $host. Check the address and the body before you allow it." else "Only the request itself leaves your computer; no files are sent.")
+        if (parsed.any { isSecretHeader(it.first) } || SECRET_QUERY.containsMatchIn(url)) add("It carries credentials: allow it only if you trust $host.")
+    }
+}
+
+/**
+ * Sends the request and returns the status, a few useful headers and the text of the answer. Every method is checked by [HttpGate] first.
+ * Only GET and HEAD follow redirects (each hop re-checked); for the others the redirect is reported, never followed, so a body is not sent on
+ * to an address the user did not see. A non-2xx answer is returned as text (an API's error message is what the model needs), not thrown.
+ */
+internal fun httpRequest(method: String, url: String, headers: String, body: String, allowPrivate: Boolean = false): String {
+    val verb = method.trim().uppercase().ifEmpty { "GET" }
+    HttpGate.refusal(verb, url, headers, body, allowPrivate)?.let { throw IllegalArgumentException(it) }
+    val sendHeaders = HttpGate.parseHeaders(headers)
+    var current = url.trim()
+    repeat(WebPolicy.MAX_REDIRECTS + 1) {
+        WebPolicy.refusal(current, allowPrivate)?.let { throw IllegalArgumentException(it) }
+        val builder = HttpRequest.newBuilder(URI(current)).timeout(Duration.ofSeconds(WebPolicy.TIMEOUT_SECONDS)).header("User-Agent", "Arcana/1.0 (local assistant)")
+        sendHeaders.forEach { (k, v) -> builder.header(k, v) }
+        val publisher = if (body.isEmpty()) HttpRequest.BodyPublishers.noBody() else HttpRequest.BodyPublishers.ofString(body)
+        val request = builder.method(verb, publisher).build()
+        val response = try { http.send(request, HttpResponse.BodyHandlers.ofInputStream()) } catch (e: Exception) {
+            throw IllegalArgumentException("Could not reach ${HttpGate.maskUrl(current)}: ${e.message ?: e.javaClass.simpleName}")
+        }
+        val status = response.statusCode()
+        val location = response.headers().firstValue("Location").orElse(null)
+        if (status in listOf(301, 302, 303, 307, 308) && location != null) {
+            response.body().close()
+            val next = URI(current).resolve(location).toString()
+            if (verb != "GET" && verb != "HEAD") return "$verb ${HttpGate.maskUrl(current)}  →  HTTP $status, redirected to $next. A $verb request is not repeated at another address by itself: if that address is right, send the request there."
+            current = next
+            return@repeat
+        }
+        val type = response.headers().firstValue("Content-Type").orElse("").substringBefore(';').trim().lowercase()
+        val bytes = response.body().use { it.readNBytes(WebPolicy.MAX_BYTES + 1) }
+        val truncated = bytes.size > WebPolicy.MAX_BYTES
+        val shown = bytes.copyOf(minOf(bytes.size, WebPolicy.MAX_BYTES))
+        val interesting = listOf("retry-after", "x-ratelimit-remaining", "x-ratelimit-reset", "ratelimit-remaining", "location").mapNotNull { n -> response.headers().firstValue(n).orElse(null)?.let { "$n: $it" } }
+        val text = when {
+            verb == "HEAD" || shown.isEmpty() -> "(no body)"
+            type.startsWith("text/") || type.endsWith("json") || type.endsWith("xml") || type == "application/javascript" || type.isEmpty() -> String(shown, Charsets.UTF_8)
+            else -> "($type, ${shown.size} bytes: not text, not shown)"
+        }
+        val part = text.take(WebPolicy.READ_CHARS)
+        val more = if (text.length > part.length || truncated) "\n… (cut: the answer is longer than ${WebPolicy.READ_CHARS} characters)" else ""
+        return "$verb ${HttpGate.maskUrl(current)}  →  HTTP $status${if (type.isEmpty()) "" else ", $type"}${if (interesting.isEmpty()) "" else "\n" + interesting.joinToString("\n")}\n\n${part.trim()}$more"
+    }
+    throw IllegalArgumentException("Too many redirects.")
+}

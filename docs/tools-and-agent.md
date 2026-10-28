@@ -43,7 +43,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 
 | Name | Risk | Arguments | Notes |
 |---|---|---|---|
-| `search_notes` | Read | `query`, `limit?` | `Vault.search`, ≤20 results with excerpts |
+| `search_notes` | Read | `query`, `limit?` | `Vault.search`, ≤20 results with excerpts. Finds notes with ANY word of the query (3+ letters, `stopWords` such as "the" skipped, case-insensitive, titles weigh more); a query left with no words ("the", "AI") is searched as the literal text (`literalFallback`, tool only: the automatic Ask-your-vault search keeps skipping them); an empty query is an error; a miss names the words searched, says the vault has N notes ("the search is not broken") and points to `grep_files` for exact text, so a model does not mistake a miss for a bug |
 | `list_notes` | Read | `folder?` | vault-relative paths, ≤200 |
 | `read_note` | Read | `path` | `.md` optional; truncated at 20,000 chars |
 | `list_dir` | Read | `path`, `recursive?` | folders end with `/`; recursive = whole tree as relative paths (≤500, 10 levels; hidden files shown, `.git`/`.ssh`-style folders and build/media folders skipped) |
@@ -64,7 +64,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `elapsed_time` | Read | `from`, `to?` | time between two moments (default: until now): `total_work_time=5 min 12 s`, `seconds=312`, `from=`, `to=` (local ISO, so the model can copy them into properties); `from`/`to` accept ISO with an offset or `Z`, a local date-time (`T` or space; this computer's zone) or Unix seconds/ms (`parseMoment`, `describeDuration`, `describeElapsed`); error when the end is before the start; pairs with `current_time` for "how long did this take" (models cannot subtract clock times reliably) |
 | `wait` | Read | `seconds`, `reason?` | sleeps 1–`MAX_WAIT_SECONDS` (120) seconds on the IO thread, then returns "Waited N s." and the time (`describeNow`); for rate limits (CoinGecko allows only ~5–7 requests a minute): wait, then retry; longer waits = call again; `Esc` interrupts it; no approval |
 | `use_skill` | Read | `name` | (see [skills.md](skills.md)) **only offered when the vault has at least one skill** (`ToolBox.skills`, folder `AppConfig.skillsFolder`, switch `skillsEnabled`); returns `Skills.load`: folder, file list, entry-note text without properties, cut at 20,000 characters; allowed in plan mode; see "Skills" |
-| `chat_stats` | pseudo-tool (answered by the chat) | none | offered with the toolbox (`definitionsFor`); `ChatStats.describe` (core/ChatStats.kt): model, messages, tokens in/out (sums of the replies' `ReplyStats`), time generating, estimated cost (settings prices), tool calls by name, context use after the last request, how long Arcana has run |
+| `chat_stats` | pseudo-tool (answered by the chat) | none | offered with the toolbox (`definitionsFor`); `ChatStats.describe` (core/ChatStats.kt): model, messages, tokens in/out (sums of the replies' `ReplyStats`), time generating, estimated cost (settings prices), tool calls by name, context use after the last request, token spend per model and in total since Arcana started (from the Usage records) with what each model was used for, which other models were consulted (the Oracul's setup, second opinions, comparisons, plans, takeovers with their models) and how often the Oracul, judge and planner were called in all the history, how long Arcana has run |
 | `request_mode` | pseudo-tool (answered by the chat) | `mode` (`ask`/`auto`/`plan`), `reason` | offered whenever the model has a toolbox (`ChatSession.definitionsFor`); always asks "Switch to X mode?"; on yes `toolMode` changes, the toolbox is rebuilt and `Generation.useTools` gets the new definitions (later calls of the same round use the new toolbox); a refusal tells the model to stay put; `request_access` stays for leaving plan mode / turning tools on |
 | `ask_user` | Read (answered by the chat) | `question`, `options?`, `multiple?` | see "Questions" below; offered even when tools are off |
 | `cat` | Read | `path` | `read_file` with `start_line=1` (numbered lines like `cat -n`, ≤`RANGE_LINES`, with a "continue with start_line=N" note); both use `ToolBox.readFile` |
@@ -72,6 +72,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `git_log` | Read | `cwd?`, `limit?` (≤50), `path?` | `git log -n N --pretty=format:'%h %ad %an  %s'`; one quoted path |
 | `git_diff` | Read | `cwd?`, `staged?`, `summary?` (`stat`/`names`/`status`), `path?` | runs `git --no-pager diff --no-color --no-ext-diff --no-textconv` (fixed flags and one single-quoted path, so it can only look) in a folder inside the allowed ones through `runShell` (30 s, output cut like `run_command`); needs no shell switch and no approval, and is allowed in plan mode |
 | `run_command` | Shell | `command`, `cwd?`, `timeout_seconds?` | off by default (`toolShell`); see "Shell" |
+| `http_request` | Web | `url`, `method?` (GET default, POST, PUT, PATCH, DELETE, HEAD), `headers?` (`Name: value` lines), `body?` (≤200,000 characters) | the gated way to send anything but a plain page read; see "HTTP requests (`http_request`)"; same switch as `fetch_url` (`toolWeb`), always asks, never "always" |
 | `fetch_url` | Web | `url`, `offset?` | off by default (`toolWeb`); see "Web" |
 | `web_search` | Web | `query`, `limit?` | same switch as `fetch_url`; see "Web"; returns title, address and snippet per result (≤10) |
 | `request_access` | pseudo-tool | `reason` | the only tool a model has when tools are off (plus `ask_user`); asks the user to turn tools on or leave plan mode |
@@ -86,7 +87,7 @@ with `ToolBox.describe()` so small models neither forget nor invent tools.
 | Type | Role |
 |---|---|
 | `ToolCall(function: ToolFunction(name, arguments: JsonObject))` | what the model asked for (Ollama wire shape) |
-| `ToolRisk { Read, Write, Shell, Web }` | everything but `Read` needs approval; `Web` covers `fetch_url` and `web_search` |
+| `ToolRisk { Read, Write, Shell, Web }` | everything but `Read` needs approval; `Web` covers `fetch_url`, `http_request` and `web_search` |
 | `ToolSpec(name, description, parameters, risk, summary, preview, alwaysAsk, confirmHeading, run)` | one tool; `summary(args)` is the one-line subject shown in the chat, `preview(args)` (for `edit_file` / `write_file` over an existing file a `Diff.unified` of the real file, cut at `MAX_DIFF_LINES`; the Chat panel cuts it again to a third of the screen and colours `@@`, `+`, `-`) the lines of the approval dialog (`+`/`-` for changes); `alwaysAsk` = asks in every mode and offers no "always" |
 | `FileAccess(roots)` | sandbox: `resolve(raw, base)` accepts absolute, `~/…` or relative-to-vault paths; a relative path that does not exist in the vault is looked for in the other roots; rejects anything whose **real path** (symlinks resolved) is outside the roots (`OutsideFoldersException`) |
 | `ToolBox(vault?, folders, backups, outputFolder, model, readOnly, shell, web)` | builds `specs`, `find`, `definitions()` (Ollama `tools` JSON), `execute(call)` (exceptions → `"Error: …"`), `folderToGrant(call)`, `allow(folder)`, `describe()`, `cheatSheet()`; `readOnly` (plan mode) keeps only `Read` specs |
@@ -140,6 +141,8 @@ gets an error telling it to call again. Offered in plan mode and when tools are 
 
 ## Shell (`run_command`)
 
+`curl` and `wget` are refused here (see "HTTP requests (`http_request`)"): the model is told to use `fetch_url` or `http_request`.
+
 `toolAutoShell` (`/autorun`, Settings → Tools → *Run commands without asking*) skips the approval of every command; blocked ones are refused before the approval step, so they still never run. The Chat status bar shows a red `▶ auto-run` pill while it is on (and not in Plan mode).
 
 `ToolRisk.Shell`, off by default (`toolShell`; the first call asks "Turn on shell commands?"). `ShellPolicy` (core/Shell.kt):
@@ -149,13 +152,27 @@ on. Everything else shows "Run this command?" with the command, folder and timeo
 closed, stdout+stderr merged, output capped at 20,000 characters (start and end kept), 60 s default / 600 s max, the process tree is killed
 on timeout or cancel. `cwd` must be inside an allowed folder. Plan mode never offers it.
 
+## Approvals are queued (`awaitApproval`)
+
+Every dialog (change, command, web, access, mode, step limit, text call, memory) goes through `ChatSession.awaitApproval`, which holds a `Mutex`, so only one is on screen and the Oracul's and the worker's wait for each other in the order they ask. The dialogs are the same panel (`approval`); the Oracul's heading starts with `Ψ Oracul ·`.
+
 ## Project context (`projectFolder`)
 
 Settings → Tools → *Project folder* (`AppConfig.projectFolder`, `~` expanded; a path that is not a folder counts as none: `ChatSession.projectFolder`) makes `ToolBox(project = …)`: the folder is an allowed root, `base` (what a relative path and the default `cwd` of `run_command` / `git_*` mean) becomes the project instead of the vault (`relativeTo` rewrites the tool descriptions: "relative to the project folder"), and `describe()` adds `projectNote`: the path, the top level (≤40 entries, no hidden ones or `node_modules`/`build`/…) and the project's own instructions (the first of `PROJECT_FILES` = `ARCANA.md`, `CLAUDE.md`, `AGENTS.md`, ≤3,000 characters). The vault tools (`search_notes`, `create_note`…) keep working on the vault. The Chat status bar shows `▣ <folder name>`.
 
+## HTTP requests (`http_request`) and why there is a gate
+
+Models reach for `curl` whenever they must POST or send a key, and a shell would let them do it unseen. So the shell refuses `curl` and `wget` (`ShellPolicy.BLOCKED`: "network requests from a shell…", anywhere in a command line, also after `&&` or `|`; a script that calls them internally is not affected) and `http_request` (`HttpGate` + `httpRequest`, core/Web.kt) is the one way:
+
+- **Gate (`HttpGate.refusal`):** method in `GET POST PUT PATCH DELETE HEAD`; the address through `WebPolicy` (http/https, public hosts only, no user info; own computer and network are never reached); body ≤ `MAX_BODY` and none on GET/HEAD; headers as `Name: value` lines with valid names, no line breaks, and not the ones the HTTP stack sets itself (`Host`, `Content-Length`…).
+- **What the user sees (`HttpGate.preview`):** "Send this HTTP request?": the method and address (a key-like query value such as `?api_key=…` is shown as `••••`), every header (`Authorization`, cookies, API keys and tokens hidden but named, with "sent to <host>"), the body (first lines), a line saying data is sent to the host, and a warning when credentials go along. Always asked, never "always" (like every `Web` tool); in the Oracul's dialog it is marked Ψ Oracul.
+- **Sending (`httpRequest`):** 20 s timeout, answer read up to 2 MB, text and JSON returned with the status and a few useful headers (`Retry-After`, rate-limit ones, `Location`); a non-2xx answer is returned as text, not an error (an API's error message is what the model needs). Redirects: GET/HEAD follow them hop by hop (each hop re-checked); for the others the redirect is only reported, so a body is never sent on to an address the user did not see.
+- **Not covered, on purpose:** file uploads, cookies kept between calls, proxies, client certificates. Add them only with the same gate and preview.
+- Plan mode has no `Web` tools. `wrongNameHint` sends `http_request`-like names (`curl`, `wget`, `http_get`, `web_get`…) to `fetch_url` / `http_request`. Tests: `CoreTest.httpRequestIsTheGatedWayToPostAndCurlIsRefused` (a real local server proves what goes out).
+
 ## Web (`fetch_url`)
 
-There is **no `http_request` tool**: `fetch_url` is GET only (no POST, no headers, no keys). A model that calls `http_request`, `curl` and similar gets "there is no tool called …" plus a hint (`wrongNameHint`: use `fetch_url` / `web_search`, or `curl` through `run_command`). Add a real one only with the same checks as `fetch_url` (see the last section).
+`fetch_url` only reads (GET). Sending anything (POST, PUT, PATCH, DELETE), headers, keys or a body is `http_request`, below; `curl` and `wget` are refused in `run_command`.
 
 `ToolRisk.Web`, off by default (`toolWeb`; first call asks "Turn on web pages?"). `WebPolicy.refusal` (core/Web.kt): http/https only, no
 user info, and the host must resolve to public addresses only (loopback, link-local, site-local, 100.64/10, fc00::/7, multicast and
@@ -241,5 +258,5 @@ Brain/Library reread the vault.
 
 - A Skills screen (list with problems, open the entry note, create from a template); skill-level `needs` checks (warn when a needed tool is off).
 
-- An `http_request` tool (POST/headers) designed like `fetch_url`; more search backends.
+- More search backends; cookies/uploads for `http_request` (only behind the same gate and preview).
 - MCP client support (reuse the same loop/permission layer); per-folder read/write rights; tools in AI notes.

@@ -124,6 +124,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         addAll(gitTools())
         add(shellTool())
         add(webTool())
+        add(httpTool())
         add(searchTool())
     }.filter { !readOnly || it.risk == ToolRisk.Read }
 
@@ -340,8 +341,8 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
     /** Models often reach for tools of other systems; say which of ours does the job (or that nothing does), so they do not try again. */
     private fun wrongNameHint(name: String): String = when {
         Regex("(?i)http|curl|wget|fetch|browse|open_url|web_get|get_url|download").containsMatchIn(name) ->
-            " Arcana has no $name. To read a public web page use fetch_url (GET only, no POST or headers); to search the web use web_search. " +
-                "For a POST or an API call with headers, run curl with run_command (the user approves it)."
+            " Arcana has no $name. To read a public web page use fetch_url; for a POST, PUT, DELETE or any request with headers or a body use http_request; " +
+                "to search the web use web_search. curl and wget are refused in run_command."
         Regex("(?i)^(ls|dir|tree)$").matches(name) -> " Use list_dir."
         Regex("(?i)^(head|tail|type|more|less|read|open)$").matches(name) -> " Use read_file, or cat to print a file."
         Regex("(?i)^(grep|rg|search)$").matches(name) -> " Use grep_files to search inside files, or search_notes for the vault."
@@ -353,12 +354,20 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
 
     private fun vaultTools(vault: Vault): List<ToolSpec> = listOf(
         ToolSpec(
-            "search_notes", "Search the user's notes for a phrase. Returns the best matching notes with an excerpt each.",
+            "search_notes", "Search the user's notes for words. Finds notes that contain ANY of the words (3+ letters, common words are skipped; a short term like \"AI\" is searched as written) in the title or text and returns the best matches with an excerpt each. For an exact phrase or a regular expression use grep_files.",
             schema("query" to ("string" to "Words to look for"), "limit" to ("integer" to "How many notes (default 5, at most 20)"), required = listOf("query")),
             ToolRisk.Read, { it.str("query") },
         ) { a ->
-            val hits = vault.search(a.str("query"), (a.int("limit") ?: 5).coerceIn(1, 20), 300)
-            if (hits.isEmpty()) "No notes matched." else hits.joinToString("\n\n") { "${it.note.path}\n${it.excerpt}" }
+            val query = a.str("query")
+            if (query.isBlank()) return@ToolSpec "Error: query is empty. Give the words to look for."
+            val hits = vault.search(query, (a.int("limit") ?: 5).coerceIn(1, 20), 300, literalFallback = true)
+            if (hits.isNotEmpty()) hits.joinToString("\n\n") { "${it.note.path}\n${it.excerpt}" }
+            else {
+                // say what was searched and how big the vault is, so a miss is not mistaken for a broken tool
+                val words = Vault.tokenize(query)
+                "No notes matched ${if (words.isEmpty()) "\"${query.trim()}\"" else words.joinToString(" ") { "\"$it\"" }} (the search is not broken: the vault has ${vault.notes().size} notes). " +
+                    "It looks for any of the words (3+ letters, common words like \"the\" are skipped) in titles and text, case-insensitive. Try other or fewer words, a part of a title, or grep_files for an exact text."
+            }
         },
         ToolSpec(
             "list_notes", "List the notes in the vault, optionally only those inside one folder. Paths are relative to $relativeTo.",
@@ -549,6 +558,21 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         },
     ) { a ->
         fetchUrl(a.str("url"), a.int("offset") ?: 0)
+    }
+
+    private fun httpTool() = ToolSpec(
+        "http_request", "Send an HTTP request to a public web address and get the status and the answer (JSON, text). The one way to POST, PUT, PATCH or DELETE, or to send headers (an API key) or a body: do NOT use curl or wget in a shell, they are refused. For simply reading a page use fetch_url. The user sees the whole request, with credentials hidden, and approves it every time; only public addresses are reachable.",
+        schema(
+            "url" to ("string" to "The full http(s) address"),
+            "method" to ("string" to "GET (default), POST, PUT, PATCH, DELETE or HEAD"),
+            "headers" to ("string" to "Optional headers, one `Name: value` per line, for example: Content-Type: application/json"),
+            "body" to ("string" to "Optional body (at most ${HttpGate.MAX_BODY} characters), for POST, PUT and PATCH; for JSON send the JSON text and set Content-Type"),
+            required = listOf("url"),
+        ),
+        ToolRisk.Web, { "${it.str("method").ifBlank { "GET" }.uppercase()} ${HttpGate.maskUrl(it.str("url").trim())}" },
+        preview = { a -> HttpGate.preview(a.str("method").ifBlank { "GET" }, a.str("url"), a.str("headers"), a.str("body"), PREVIEW_LINES) },
+    ) { a ->
+        httpRequest(a.str("method").ifBlank { "GET" }, a.str("url"), a.str("headers"), a.str("body"))
     }
 
     private fun shellTool() = ToolSpec(

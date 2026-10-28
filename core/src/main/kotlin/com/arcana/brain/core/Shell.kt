@@ -36,6 +36,7 @@ object ShellPolicy {
         Regex("""\bdd\b.*\bof=/dev/""") to "writing to a disk device",
         Regex(""">\s*/dev/(sd|disk|nvme|rdisk)""") to "writing to a disk device",
         Regex(""":\(\)\s*\{""") to "a fork bomb",
+        Regex("""(^|[\s;&|(])(curl|wget)(\s|$)""") to "network requests from a shell (use fetch_url to read a page or http_request to send a request: they check the address, show you the whole request and ask first)",
         Regex("""\b(curl|wget)\b[^|;&\n]*\|\s*(sudo\s+)?(sh|bash|zsh|python\d*)\b""") to "piping a download straight into a shell",
         Regex("""\brm\s+(-[a-zA-Z]*\s+)*-[a-zA-Z]*[rR][a-zA-Z]*\s+(-[a-zA-Z]*\s+)*(/|~|[$]HOME|/\*|~/\*|\*|\.\.?)(\s|/?$)""") to "deleting a whole folder tree (rm -r on /, ~, * or ..)",
     )

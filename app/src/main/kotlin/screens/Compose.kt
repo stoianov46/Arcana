@@ -629,7 +629,7 @@ private fun NoteComposerContent(app: AppContext, vault: Vault) {
                 Panel("Replace this note with the draft?", accent = Palette.Orange) {
                     Warning("The text of “${source?.title}” is replaced by the draft. Its frontmatter is kept, and the old text is saved first in the vault's .trash folder, so nothing is lost.")
                 }
-                ActionBar(listOf(ActionItem("y", "Replace note", accent = Palette.Orange), ActionItem("any other key", "Keep the note", accent = Palette.Cta)))
+                ActionBar(listOf(ActionItem("y", "Replace note", accent = Palette.Orange), ActionItem("any other key", "Keep the note", accent = Palette.Cta)), style = ActionStyle.Button)
             }
             Mode.ConfirmDiscard -> {
                 ScreenHeader("AI notes", subject())
@@ -637,7 +637,7 @@ private fun NoteComposerContent(app: AppContext, vault: Vault) {
                 Panel("Discard this draft?", accent = Palette.Warn) {
                     Warning("The draft (${drafts.size} version${if (drafts.size == 1) "" else "s"}) has not been written to your vault. Save it, add it to a note or replace one first, or discard it.")
                 }
-                ActionBar(listOf(ActionItem("y", "Discard draft", accent = Palette.Red), ActionItem("any other key", "Keep working", accent = Palette.Cta)))
+                ActionBar(listOf(ActionItem("y", "Discard draft", accent = Palette.Red), ActionItem("any other key", "Keep working", accent = Palette.Cta)), style = ActionStyle.Button)
             }
         }
     }

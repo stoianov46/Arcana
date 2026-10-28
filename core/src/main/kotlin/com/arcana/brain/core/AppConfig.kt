@@ -36,6 +36,8 @@ data class AppConfig(
     val showThinking: Boolean = true,
     /** How a reasoning model's thoughts show in Chat: "hidden", "summary" (one line with the length) or "full" (the whole text, dimmed, before the answer). */
     val thinkingView: String = "summary",
+    /** How a `/compare` result is drawn in Chat: `side` (the answers next to each other, when the window is wide enough) or `stacked` (one under another). */
+    val comparisonView: String = "side",
     /** Compact the chat automatically (summarize the older part, see [Compaction]) before a message when the context window is this percent full; 0 turns it off. */
     val autoCompactPercent: Int = 80,
     /** How many of the latest chat messages are sent to the model as context. */
@@ -78,6 +80,26 @@ data class AppConfig(
     val searchBackend: String = "duckduckgo",
     val searchUrl: String = "",
     val searchKey: String = "",
+    /** The Oracul (see [Oracul]): the model that gives second opinions; blank = off. */
+    val oraculModel: String = "",
+    /** Default models for skill runs (a skill's own `planner:` / `worker:` / `reviewer:` wins); blank = not used. See [SkillRoles]. */
+    val rolePlanner: String = "",
+    val roleWorker: String = "",
+    val roleReviewer: String = "",
+    /** More models that answer a comparison (`/compare`) besides the Oracul model, comma-separated; the judge then compares all the answers. */
+    val oraculExtra: String = "",
+    /** Another Ollama server for the Oracul and the judge (a bigger machine on your network); blank = the same server as the main model. */
+    val oraculUrl: String = "",
+    /** The model that judges a comparison; blank = the Oracul model. */
+    val judgeModel: String = "",
+    /** When a second opinion is asked for without being asked: `off`, `problems` (failed tool calls, skipped skill steps) or `always`. */
+    val oraculAuto: String = "problems",
+    /** The worker counts as stuck, and the Oracul steps into its tool loop, after this many failed tool calls in one turn (and again after every further such number); 0 = never. */
+    val stuckCalls: Int = 4,
+    /** An automatic review is due after this many turns in a row that each had a failed tool call; 0 = never. */
+    val stuckTurns: Int = 3,
+    /** The Oracul may use the worker's tools to check an answer (reads follow *Read without asking*; every change, command and web access asks the user, even in Auto mode). Needs tools on and an Oracul model that supports them. */
+    val oraculTools: Boolean = true,
     /** The first-run setup (vault, memory file, skills) was finished or skipped; it opens by itself only until then. */
     val setupDone: Boolean = false,
     /** Sounds for what happens in Chat (see [SoundChoices] for the ids): when the model waits for you, when a reply finishes, when it fails. All off by default. */

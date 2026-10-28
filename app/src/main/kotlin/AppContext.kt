@@ -108,8 +108,8 @@ class AppContext(
     val sessionTokens: Long get() = usage.filter { it.time >= sessionStart }.sumOf { it.totalTokens.toLong() } + liveTokens
 
     /** Called when a reply finishes: keeps the tokens Ollama reported for it. */
-    fun recordUsage(feature: String, chunk: ChatChunk) {
-        val record = UsageRecord(System.currentTimeMillis(), feature, config.model, chunk.promptTokens, chunk.completionTokens, chunk.totalMillis)
+    fun recordUsage(feature: String, chunk: ChatChunk, model: String = config.model) {
+        val record = UsageRecord(System.currentTimeMillis(), feature, model, chunk.promptTokens, chunk.completionTokens, chunk.totalMillis)
         usage += record
         runCatching { usageStore.append(record) }
     }

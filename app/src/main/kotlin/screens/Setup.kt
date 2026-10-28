@@ -106,7 +106,7 @@ fun SetupScreen(app: AppContext) {
                     DirectoryPicker(browser, rows = bodyRows(extra = 8))
                     error?.let { Warning(it) }
                 }
-                ActionBar(DirectoryPickerState.actions(browser) + ActionItem("s", "Skip setup"))
+                ActionBar(DirectoryPickerState.actions(browser) + ActionItem("s", "Skip setup"), style = ActionStyle.Button)
             }
             SetupStep.Items -> {
                 ScreenHeader(if (hasVault) "Set up the vault" else "Welcome to Arcana", "${if (hasVault) "" else "Step 2 of 2: "}tick what to create in ${config.vaultPath}. Nothing that exists is touched")
@@ -124,7 +124,7 @@ fun SetupScreen(app: AppContext) {
                     }
                     error?.let { Warning(it) }
                 }
-                ActionBar(listOf(ActionItem("Space", "Tick"), ActionItem("Enter", "Create the ticked", ticked.isNotEmpty(), Palette.Cta), ActionItem("Esc", if (hasVault) "Close" else "Back")))
+                ActionBar(listOf(ActionItem("Space", "Tick"), ActionItem("Enter", "Create the ticked", ticked.isNotEmpty(), Palette.Cta), ActionItem("Esc", if (hasVault) "Close" else "Back")), style = ActionStyle.Button)
             }
             SetupStep.Done -> {
                 ScreenHeader(if (hasVault) "Set up the vault" else "You are set", "Arcana is ready")
@@ -138,7 +138,7 @@ fun SetupScreen(app: AppContext) {
                     VGap()
                     Hint("Open Chat (1), press Enter and ask. /memory opens your memory file; /skills lists the skills. The Guide (9) explains the rest.")
                 }
-                ActionBar(listOf(ActionItem("Enter", "Start", accent = Palette.Cta)))
+                ActionBar(listOf(ActionItem("Enter", "Start", accent = Palette.Cta)), style = ActionStyle.Button)
             }
         }
 

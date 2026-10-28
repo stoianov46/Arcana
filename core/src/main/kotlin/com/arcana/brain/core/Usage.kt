@@ -13,7 +13,7 @@ import kotlinx.serialization.json.Json
 @Serializable
 data class UsageRecord(
     val time: Long,
-    /** The part of Arcana that made the request: Summarize, Chat, Ask or Generate. */
+    /** The part of Arcana that made the request: Summarize, Chat, Ask, Generate, Compact, Inbox, or the other models: Oracul, Judge, Planner. */
     val feature: String,
     val model: String,
     val promptTokens: Int,

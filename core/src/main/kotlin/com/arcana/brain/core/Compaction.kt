@@ -39,7 +39,7 @@ object Compaction {
      */
     fun cutPoint(messages: List<ChatMessage>): Int? {
         val from = messages.indexOfLast { isSummary(it) }.coerceAtLeast(0)
-        val turns = messages.indices.filter { it >= from && messages[it].role == "user" && !isSummary(messages[it]) }
+        val turns = messages.indices.filter { it >= from && messages[it].role == "user" && !isSummary(messages[it]) && !Oracul.isOpinion(messages[it]) }
         if (turns.size < KEEP_USER_TURNS) return null
         val cut = turns[turns.size - KEEP_USER_TURNS]
         return if (cut - from >= MIN_MESSAGES) cut else null

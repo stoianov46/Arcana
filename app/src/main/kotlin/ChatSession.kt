@@ -27,11 +27,14 @@ import com.arcana.brain.core.ASK_USER_DEFINITION
 import com.arcana.brain.core.REQUEST_ACCESS
 import com.arcana.brain.core.looksLikeToolTask
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import com.arcana.brain.core.REQUEST_ACCESS_DEFINITION
 import com.arcana.brain.app.screens.contextUsage
 import com.arcana.brain.app.screens.effectiveContext
 import com.arcana.brain.core.CHAT_STATS
 import com.arcana.brain.core.Compaction
+import com.arcana.brain.core.Oracul
+import com.arcana.brain.core.OllamaClient
 import com.arcana.brain.core.UsageStats
 import com.arcana.brain.core.CHAT_STATS_DEFINITION
 import com.arcana.brain.core.ChatStats
@@ -79,9 +82,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** The reply being written. It lives as long as the app does. */
     val gen: Generation by lazy {
         Generation(
-            app.scope, app.client,
+            app.scope, OllamaClient { app.config.let { c -> runWorker?.let { m -> c.copy(model = m) } ?: c } },
             onBusy = { busy -> app.busy = (app.busy + if (busy) 1 else -1).coerceAtLeast(0) },
-            onUsage = { chunk -> app.recordUsage("Chat", chunk) },
+            onUsage = { chunk -> app.recordUsage("Chat", chunk, runWorker ?: app.config.model) },
             onComplete = { text, stats -> finishReply(text, stats) },
             onToolRound = ::runTools,
             onStepLimit = ::stepLimit,
@@ -101,6 +104,58 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** Changes whenever [skillRun] makes progress, so the status bar redraws. */
     var skillTick by androidx.compose.runtime.mutableIntStateOf(0)
         private set
+
+    /** The model the running skill asked for instead of the chat model (`worker:`), and the one that reviews its answer (`reviewer:`); null = the settings decide. Cleared by the next message. */
+    private var runWorker: String? = null
+    private var runReviewer: String? = null
+
+    /** What the skill's roles did that the user should know (a model that is not installed, or cannot call tools); the Chat shows it once. */
+    var roleNote by androidx.compose.runtime.mutableStateOf<String?>(null)
+
+    /**
+     * Applies the roles of the skill whose entry note is [entry]: an installed model replaces the chat model for the rest of this message
+     * (it must be able to call tools when tools are on), the reviewer is asked when the answer is done. A model that is not usable is
+     * skipped with a note, and the settings' model is used. Nothing is changed in the settings.
+     */
+    private suspend fun applyRoles(entry: String): String? {
+        val vault = app.openVault().getOrNull() ?: return null
+        val roles = runCatching { Skills.roles(vault.read(entry)).withDefaults(app.config) }.getOrNull()?.takeIf { it.any } ?: return null
+        val installed = runCatching { app.client.listModels() }.getOrNull() ?: return null
+        val onOracul = if (app.config.oraculUrl.isBlank()) installed else runCatching { clientFor("").listModels() }.getOrDefault(emptyList())
+        fun has(m: String, among: List<String> = installed) = among.any { it == m || it == "$m:latest" }
+        val skill = Skills.nameOfEntry(entry)
+        if (roles.worker.isNotEmpty()) when {
+            !has(roles.worker) -> roleNote = "Skill $skill asks for the worker model ${roles.worker}, which is not installed: ${app.config.model} is used."
+            app.config.toolsEnabled && "tools" !in runCatching { app.client.capabilities(roles.worker) }.getOrDefault(listOf("tools")) -> roleNote = "Skill $skill asks for ${roles.worker}, which cannot use tools: ${app.config.model} is used."
+            else -> runWorker = roles.worker.takeIf { it != app.config.model }
+        }
+        if (roles.reviewer.isNotEmpty()) {
+            if (has(roles.reviewer, onOracul)) runReviewer = roles.reviewer else roleNote = "Skill $skill asks ${roles.reviewer} to review, which is not installed: no review."
+        }
+        // the planner is returned, not remembered: a plan is written once, when the run starts
+        if (roles.planner.isEmpty()) return null
+        if (has(roles.planner, onOracul)) return roles.planner
+        roleNote = "Skill $skill asks ${roles.planner} to plan, which is not installed: no plan."
+        return null
+    }
+
+    /** The planner model writes a short plan for [question] from the skill's instructions; it is added to the chat as a block the worker then sees. A failure is only a note. */
+    private suspend fun plan(planner: String, entry: String, question: String) {
+        val vault = app.openVault().getOrNull() ?: return
+        consulting = planner
+        try {
+            val text = Oracul.ask(clientFor(planner), Oracul.planRequest(question, Skills.loadEntry(vault, entry).orEmpty())) { app.recordUsage("Planner", it, planner) }
+            if (text.isEmpty()) roleNote = "$planner returned an empty plan: the worker starts without one." else add(Oracul.planMessage(planner, text))
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            roleNote = "The planner $planner failed (${e.message}): the worker starts without a plan."
+        } finally {
+            consulting = null
+        }
+    }
+
+    private fun clearRoles() { runWorker = null; runReviewer = null }
 
     private fun startSkillRun(name: String, requirements: List<Requirement>) {
         skillRun = if (requirements.isEmpty()) null else SkillRun(name, requirements)
@@ -201,6 +256,14 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     var approval by mutableStateOf<Approval?>(null)
         private set
 
+    /** Only one dialog is on screen at a time: the worker's and the Oracul's wait for each other here, in the order they ask. */
+    private val approvalLock = kotlinx.coroutines.sync.Mutex()
+
+    private suspend fun awaitApproval(pending: Approval): ApprovalChoice = approvalLock.withLock {
+        approval = pending
+        try { pending.answer.await() } finally { approval = null }
+    }
+
     /** Tools the user allowed "always" for this session. */
     private val alwaysAllowed = mutableSetOf<String>()
     private var toolbox: ToolBox? = null
@@ -245,7 +308,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                     call.name == ASK_USER -> askUser(call, text)
                     call.name == REQUEST_ACCESS -> requestAccess(call)
                     call.name == REQUEST_MODE -> requestMode(call)
-                    call.name == CHAT_STATS -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart)
+                    call.name == CHAT_STATS -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList())
                     else -> "Error: tools are off. Call request_access to ask the user for them."
                 })
                 add(message)
@@ -263,8 +326,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                     listOf("${grant}", "The model may read, and (with your approval each time) change, files inside it.", "You can remove it later in Settings → Tools → Extra folders."),
                     heading = "Allow this folder?", icon = "▤",
                 )
-                approval = pending
-                val choice = try { pending.answer.await() } finally { approval = null }
+                val choice = awaitApproval(pending)
                 if (choice == ApprovalChoice.Deny) {
                     folderDenied = true
                 } else {
@@ -285,8 +347,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                         listOf("The model wants to run shell commands (builds, tests, git…).", "You still approve every single command before it runs.", "Turn it off again in Settings → Tools → Shell commands."),
                         heading = "Turn on shell commands?", icon = "$", yes = "Turn on", always = false,
                     )
-                    approval = pending
-                    val choice = try { pending.answer.await() } finally { approval = null }
+                    val choice = awaitApproval(pending)
                     if (choice == ApprovalChoice.Deny) refusal = "The user did not allow shell commands. Do not ask again; tell them they can turn them on in Settings → Tools → Shell commands."
                     else app.update(app.config.copy(toolShell = true))
                 }
@@ -302,8 +363,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                         listOf("The model wants to search the web and read web pages.", "You approve every search and address before it is sent; only public pages are reachable.", "Turn it off again in Settings → Tools → Web pages."),
                         heading = "Turn on web pages?", icon = "↗", yes = "Turn on", always = false,
                     )
-                    approval = pending
-                    val choice = try { pending.answer.await() } finally { approval = null }
+                    val choice = awaitApproval(pending)
                     if (choice == ApprovalChoice.Deny) refusal = "The user did not allow web access. Do not ask again; tell them they can turn it on in Settings → Tools → Web pages."
                     else app.update(app.config.copy(toolWeb = true))
                 }
@@ -318,17 +378,12 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             if (ask && allowed) {
                 val shell = spec!!.risk == ToolRisk.Shell
                 val pending = if (shell) Approval(call.name, "run_command", spec.preview(call.arguments), heading = "Run this command?", icon = "$", yes = "Run", always = false)
-                else if (spec.risk == ToolRisk.Web) Approval(call.name, call.name, spec.preview(call.arguments), heading = if (call.name == "web_search") "Search the web?" else "Fetch this web page?", icon = "↗", yes = if (call.name == "web_search") "Search" else "Fetch", always = false)
+                else if (spec.risk == ToolRisk.Web) Approval(call.name, call.name, spec.preview(call.arguments), heading = webHeading(call.name), icon = "↗", yes = if (call.name == "web_search") "Search" else if (call.name == "http_request") "Send" else "Fetch", always = false)
                 else Approval(
                     call.name, "${call.name}  ${spec.summary(call.arguments)}", spec.preview(call.arguments),
                     heading = spec.confirmHeading ?: "Allow this change?", icon = if (spec.alwaysAsk) "!" else "⚙", always = !spec.alwaysAsk,
                 )
-                approval = pending
-                val choice = try {
-                    pending.answer.await()
-                } finally {
-                    approval = null
-                }
+                val choice = awaitApproval(pending)
                 if (choice == ApprovalChoice.Always) alwaysAllowed += call.name
                 allowed = choice != ApprovalChoice.Deny
             }
@@ -352,9 +407,12 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 val skill = Skills.find(box.skills, (call.arguments["name"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty())
                 val vault = app.openVault().getOrNull()
                 if (skill != null && vault != null && skillRun?.name != skill.name) startSkillRun(skill.name, Skills.requirementsOf(vault, skill.path))
+                if (skill != null && runWorker == null && runReviewer == null) applyRoles(skill.path) // a plan is only written at the start of a message, not here
             }
             skillRun?.let { it.observe(call.name, call.arguments.toString(), result); skillTick++ }
         }
+        // the turn keeps failing: the Oracul reads the attempts and its advice joins the loop, so the next round starts from it
+        stuckAdvice()?.let { add(it); added += it }
         return added
     }
 
@@ -379,8 +437,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 ),
                 heading = "Memory file created", icon = "✎", yes = "Open it to fill in", always = false,
             )
-            approval = pending
-            val choice = try { pending.answer.await() } finally { approval = null }
+            val choice = awaitApproval(pending)
             if (choice != ApprovalChoice.Deny) SystemOpen.open(file.toString())
         }
     }
@@ -413,8 +470,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             }, "Now: ${app.config.toolMode}. Switch back any time with /mode."),
             heading = "Switch to ${mode.replaceFirstChar { it.uppercase() }} mode?", icon = "⚙", yes = "Switch to ${mode.replaceFirstChar { it.uppercase() }}", always = false,
         )
-        approval = pending
-        val choice = try { pending.answer.await() } finally { approval = null }
+        val choice = awaitApproval(pending)
         if (choice == ApprovalChoice.Deny) return "The user did not allow the switch; you stay in ${app.config.toolMode} mode. Do not ask again; carry on in this mode or tell them what you need."
         app.update(app.config.copy(toolMode = mode))
         val box = toolboxFor(app.config).also { toolbox = it }
@@ -434,8 +490,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             listOf("Plan mode is read-only, so the model cannot make this change.", "Ask mode lets it try, and you approve every change before it happens.", "Switch back any time with /mode."),
             heading = "Leave plan mode?", icon = "⚙", yes = "Switch to Ask mode", always = false,
         )
-        approval = pending
-        val choice = try { pending.answer.await() } finally { approval = null }
+        val choice = awaitApproval(pending)
         if (choice == ApprovalChoice.Deny) return false
         app.update(app.config.copy(toolsEnabled = true, toolMode = if (app.config.toolMode == "plan") "ask" else app.config.toolMode))
         toolbox = toolboxFor(app.config)
@@ -450,8 +505,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             lines + listOf("It did not make a real call, so nothing has run. Run it as one?", "Change this in Settings → Tools → Calls written as text."),
             heading = "Run this tool call?", icon = "⚙", yes = "Run it", always = false,
         )
-        approval = pending
-        val choice = try { pending.answer.await() } finally { approval = null }
+        val choice = awaitApproval(pending)
         return choice != ApprovalChoice.Deny
     }
 
@@ -462,8 +516,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             listOf("Allow ${app.config.toolSteps} more steps, or stop here and let it answer with what it has.", "Change the default in Settings → Tools → Steps per question."),
             heading = "Step limit reached", icon = "⏱", yes = "${app.config.toolSteps} more steps", always = false,
         )
-        approval = pending
-        val choice = try { pending.answer.await() } finally { approval = null }
+        val choice = awaitApproval(pending)
         return if (choice == ApprovalChoice.Deny) 0 else app.config.toolSteps
     }
 
@@ -497,6 +550,225 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     private var toolsDeclined = false
+
+    /** The model being consulted right now (a second opinion or a comparison is being written); null otherwise. */
+    var consulting by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * The Oracul's tools: the same toolbox as the worker's (so plan mode, the allowed folders, the shell and web switches all apply), or null when
+     * tools are off, the setting says no, or the Oracul model cannot call tools (then it only talks).
+     */
+    private suspend fun oraculToolbox(model: String): ToolBox? {
+        if (!app.config.toolsEnabled || !app.config.oraculTools) return null
+        if ("tools" !in runCatching { clientFor(model).capabilities(model) }.getOrDefault(emptyList())) return null
+        return toolboxFor(app.config)
+    }
+
+    /**
+     * The Oracul works with its tools: asks [model] with [request], runs the tool calls it makes and asks again, up to the step limit, then
+     * returns its final text and the tools it used. Reads follow *Read without asking*; **everything else always asks the user**, in Auto mode
+     * too, in a dialog marked as the Oracul's. It has no `ask_user`, no mode or access requests: it cannot ask for more power.
+     */
+    private suspend fun oraculAgent(model: String, box: ToolBox, request: List<ChatMessage>): Pair<String, List<String>> {
+        val client = clientFor(model)
+        val definitions = box.definitions()
+        val limit = app.config.toolSteps.coerceIn(1, 10)
+        val used = ArrayList<String>()
+        var messages = request
+        for (step in 0..limit) {
+            val text = StringBuilder()
+            val calls = ArrayList<ToolCall>()
+            // the last round offers no tools, so it has to answer with what it has
+            client.chat(messages, false, if (step < limit) definitions else null).collect { chunk ->
+                text.append(chunk.content)
+                calls += chunk.toolCalls
+                if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) app.recordUsage("Oracul", chunk, model)
+            }
+            if (calls.isEmpty()) return text.toString().trim() to used
+            messages = messages + ChatMessage.assistantCalls(text.toString().trim(), calls)
+            for (call in calls) {
+                used += call.name
+                messages = messages + ChatMessage.toolResult(call.name, oraculCall(model, box, call))
+            }
+        }
+        return "" to used
+    }
+
+    private fun webHeading(tool: String) = when (tool) { "web_search" -> "Search the web?"; "http_request" -> "Send this HTTP request?"; else -> "Fetch this web page?" }
+
+    /** One tool call of the Oracul: asked about first unless it only reads, then run on the IO thread; recorded like the worker's calls. */
+    private suspend fun oraculCall(model: String, box: ToolBox, call: ToolCall): String {
+        val spec = box.find(call.name) ?: return "Error: there is no tool called ${call.name}. Available: ${box.specs.joinToString { it.name }}."
+        val ask = if (spec.risk == ToolRisk.Read) !app.config.toolAutoRead else true // changes, commands and web: always, whatever the mode
+        var allowed = true
+        if (ask) {
+            val heading = when (spec.risk) {
+                ToolRisk.Shell -> "Run this command?"
+                ToolRisk.Web -> webHeading(call.name)
+                else -> spec.confirmHeading ?: if (spec.risk == ToolRisk.Read) "Allow this read?" else "Allow this change?"
+            }
+            val pending = Approval(call.name, "$model (Oracul)  ${call.name}  ${spec.summary(call.arguments)}", spec.preview(call.arguments), heading = "${Oracul.GLYPH} Oracul · $heading", icon = Oracul.GLYPH, always = false)
+            allowed = awaitApproval(pending) != ApprovalChoice.Deny
+        }
+        val startedAt = System.currentTimeMillis()
+        val result = if (allowed) runInterruptible(Dispatchers.IO) { box.execute(call) } else "The user denied this action. Do not try it again; say what you would have done instead."
+        app.recordToolUse(ToolUseRecord(startedAt, call.name, System.currentTimeMillis() - startedAt, if (!allowed) "denied" else if (result.startsWith("Error:")) "error" else "ok", result.length))
+        if (allowed && !result.startsWith("Error:")) {
+            app.session.log(SessionKind.Tool, "Oracul: ${call.name} ${spec.summary(call.arguments)}")
+            if (spec.risk != ToolRisk.Read) app.brain.changed()
+        }
+        return result
+    }
+
+    /** How many times the Oracul has already stepped in during this turn because the worker kept failing (reset by the next message). */
+    private var stuckAdvised = 0
+
+    /**
+     * The worker is in its tool loop and keeps failing (every [AppConfig.stuckCalls] failed calls of this turn): the Oracul reads the attempts so far and
+     * says what is going wrong and what to do differently. Returns the advice as a review block for the loop to carry on from, or null when it is not
+     * due, the Oracul is off or busy, or it could not answer (a failure here must never break the worker's turn). Same settings as the other automatic
+     * second opinions (`oraculAuto` not `off`), same tools and the same asking.
+     */
+    private suspend fun stuckAdvice(): ChatMessage? {
+        val config = app.config
+        val model = Oracul.model(config)
+        if (model.isEmpty() || config.oraculAuto == "off" || consulting != null) return null
+        val level = Oracul.stuckLevel(Oracul.turnFacts(messages.toList(), 0), config)
+        if (level <= stuckAdvised) return null
+        stuckAdvised = level
+        consulting = model
+        try {
+            val turn = Oracul.lastTurn(messages.toList())
+            val question = turn.firstOrNull()?.content.orEmpty()
+            val box = oraculToolbox(model)
+            val (text, used) = if (box != null) oraculAgent(model, box, Oracul.stuckRequest(question, turn, withTools = true))
+            else Oracul.ask(clientFor(model), Oracul.stuckRequest(question, turn)) { app.recordUsage("Oracul", it, model) } to emptyList()
+            return if (text.isEmpty()) null else Oracul.stuckMessage(model, text + Oracul.toolsLine(used))
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return null
+        } finally {
+            consulting = null
+        }
+    }
+
+    /** A client for [model] with the current settings, so another model can be asked without touching the main one. */
+    private fun clientFor(model: String) = OllamaClient { Oracul.serverConfig(app.config, model) }
+
+    /**
+     * A second opinion on the last answer from the Oracul model: it reads the question and the answer (and may check with the worker's tools, see [oraculAgent]) and says what is wrong or
+     * missing. The result is added to the chat as a block of its own; returns a line for the user. Throws with a message when it cannot.
+     */
+    suspend fun secondOpinion(reviewer: String? = null): String {
+        val model = (reviewer ?: Oracul.model(app.config)).ifEmpty { error("Choose an Oracul model first: Settings → Oracul → Model.") }
+        val (question, answer) = Oracul.lastExchange(messages.toList()) ?: error("There is no answer to review yet.")
+        check(consulting == null) { "The Oracul is already working." }
+        consulting = model
+        try {
+            val facts = Oracul.turnFacts(messages.toList(), skillRun?.skippedCount ?: 0)
+            val box = oraculToolbox(model)
+            val used: List<String>
+            val text = if (box != null) {
+                oraculAgent(model, box, Oracul.reviewRequest(question, answer, facts.toolNames, withTools = true)).also { used = it.second }.first
+            } else {
+                used = emptyList()
+                Oracul.ask(clientFor(model), Oracul.reviewRequest(question, answer, facts.toolNames)) { app.recordUsage("Oracul", it, model) }
+            }
+            require(text.isNotEmpty()) { "$model returned an empty opinion; nothing was added." }
+            add(Oracul.opinionMessage(model, text + Oracul.toolsLine(used)))
+            return "Second opinion from $model added."
+        } finally {
+            consulting = null
+        }
+    }
+
+    /**
+     * The Oracul model (and the extra models of Settings → Oracul → *More Oracul models*) answer the same question as the worker did, and the
+     * judge model compares all the answers and says which is best (with a best final answer). One block is added to the chat with every answer
+     * and the verdict. An extra model that cannot answer is left out with a line saying so; the Oracul model itself must answer.
+     */
+    suspend fun compare(only: String? = null): String {
+        val models = (only?.let { listOf(it) } ?: Oracul.models(app.config)).ifEmpty { error("Choose an Oracul model first: Settings → Oracul → Model.") }
+        val judge = Oracul.judge(app.config)
+        val (question, answer) = Oracul.lastExchange(messages.toList()) ?: error("There is no answer to compare yet.")
+        check(consulting == null) { "The Oracul is already working." }
+        try {
+            val answers = ArrayList<Pair<String, String>>()
+            val skipped = ArrayList<String>()
+            for ((i, model) in models.withIndex()) {
+                consulting = model
+                try {
+                    val box = oraculToolbox(model)
+                    val usedTools: List<String>
+                    val other = if (box != null) {
+                        oraculAgent(model, box, Oracul.answerRequest(question, withTools = true)).also { usedTools = it.second }.first
+                    } else {
+                        usedTools = emptyList()
+                        Oracul.ask(clientFor(model), Oracul.answerRequest(question)) { app.recordUsage("Oracul", it, model) }
+                    }
+                    require(other.isNotEmpty()) { "$model returned an empty answer." }
+                    answers += model to other + Oracul.toolsLine(usedTools)
+                } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (i == 0) throw IllegalStateException("${e.message} Nothing was added.")
+                    skipped += "$model (${e.message})"
+                }
+            }
+            consulting = judge
+            val verdict = Oracul.ask(clientFor(judge), Oracul.judgeRequest(question, app.config.model, answer, answers)) { app.recordUsage("Judge", it, judge) }
+            require(verdict.isNotEmpty()) { "$judge returned an empty verdict; nothing was added." }
+            add(Oracul.comparisonMessage(app.config.model, answers, judge, answer, verdict + if (skipped.isEmpty()) "" else "\n\n_Left out: ${skipped.joinToString("; ")}_"))
+            return "Comparison added: ${answers.joinToString(", ") { it.first }} against ${app.config.model}, judged by $judge." + if (skipped.isEmpty()) "" else " Left out: ${skipped.joinToString { it.substringBefore(" (") }}."
+        } finally {
+            consulting = null
+        }
+    }
+
+    /**
+     * Escalation: the worker failed this turn (an error, an empty reply), so the Oracul model continues it from the same history, with its own model
+     * and the worker's tools (every change still asks, see [oraculAgent]). Its answer is added as an ordinary reply headed with the model's name.
+     * Returns a line for the user; throws with a message when it cannot.
+     */
+    suspend fun takeOver(): String {
+        val model = Oracul.model(app.config).ifEmpty { error("Choose an Oracul model first: Settings → Oracul → Model.") }
+        check(consulting == null) { "The Oracul is already working." }
+        check(messages.lastOrNull()?.role == "user" || messages.lastOrNull()?.role == "tool") { "There is no unanswered message to take over." }
+        consulting = model
+        try {
+            val config = app.config.copy(model = model)
+            val vault = app.openVault().getOrNull()
+            val history = Compaction.forModel(messages.toList())
+            val box = oraculToolbox(model)
+            val request = Prompts.chatMessages(config, history, null, noteTexts(vault, history.takeLast(config.chatHistory)), tools = box != null, toolsNote = box?.describe().orEmpty(), memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "")
+            val (text, used) = if (box != null) oraculAgent(model, box, request) else Oracul.ask(clientFor(model), request) { app.recordUsage("Oracul", it, model) } to emptyList()
+            require(text.isNotEmpty()) { "$model returned an empty answer; nothing was added." }
+            add(ChatMessage.assistant(Oracul.takeoverHeading(model) + text + Oracul.toolsLine(used)))
+            return "$model took over and answered."
+        } finally {
+            consulting = null
+        }
+    }
+
+    /** Applies the latest second opinion: the worker is asked to revise its last answer with it (the opinion is already in the history). */
+    fun revise(extra: String = "") {
+        check(Oracul.hasOpenOpinion(messages.toList())) { "There is no second opinion to apply: ask for one with /oracul first." }
+        send(Oracul.REVISE_PROMPT + if (extra.isBlank()) "" else "\nThe user adds: ${extra.trim()}")
+    }
+
+    /** After a finished reply: ask for a second opinion by itself when the settings say a turn like this deserves one. A failure is ignored. */
+    private fun maybeConsult() {
+        val config = app.config
+        // a skill that names a reviewer asks for the review itself, whatever the automatic setting says
+        runReviewer?.let { reviewer -> if (consulting == null) app.scope.launch { runCatching { secondOpinion(reviewer) } }; return }
+        // the Oracul already stepped in during this turn because the worker kept failing: one consultation per turn is enough
+        if (stuckAdvised > 0) return
+        if (Oracul.model(config).isEmpty() || config.oraculAuto == "off" || consulting != null) return
+        if (!Oracul.due(config, Oracul.turnFacts(messages.toList(), skillRun?.skippedCount ?: 0))) return
+        app.scope.launch { runCatching { secondOpinion() } }
+    }
 
     /** True while a summary is being written (compacting runs apart from replies). */
     var compacting by mutableStateOf(false)
@@ -547,6 +819,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         toolbox = box
         // a new message of the user ends any earlier run (the gate must not drag an unrelated question back into an unfinished skill)...
         if (skillRun != null) { skillRun = null; skillTick++ }
+        clearRoles()
+        stuckAdvised = 0
         // ...and a skill chip on it starts a run of that skill (its required steps are then watched)
         history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }?.let { entry ->
             val vault = app.openVault().getOrNull()
@@ -558,6 +832,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             else -> definitionsFor(box)
         }
         gen.start(tools = offered, maxSteps = Skills.stepsFor(history, app.config.toolSteps)) {
+            // a skill that names its models: the chip's roles apply from the first round
+            history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }?.let { entry -> applyRoles(entry)?.let { plan(it, entry, body) } }
             // a nearly full window: summarize the older part first, so this question is not sent with a chat that no longer fits
             if (autoCompactDue(messages.toList())) runCatching { compact() }
             val history = Compaction.forModel(messages.toList())
@@ -581,6 +857,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     private fun finishReply(text: String, stats: ReplyStats?) {
         add(ChatMessage.assistant(text, stats, pendingSources, gen.takeThinking()))
+        maybeConsult()
         // the model is loaded now: ask Ollama which window it really got
         app.scope.launch { app.refreshLoadedContext() }
         pendingSources = emptyList()
@@ -590,6 +867,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** Starts an empty conversation. The old one stays saved and can be opened again from the history. */
     fun startNew() {
         skillRun = null
+        clearRoles()
         toolsDeclined = false
         messages.clear()
         input.clear()
@@ -599,6 +877,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     fun open(chat: StoredChat) {
+        clearRoles()
         skillRun = null // a run belongs to the conversation it started in (see docs/skills.md)
         skillTick++
         messages.clear()

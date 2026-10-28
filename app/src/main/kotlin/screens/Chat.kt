@@ -23,6 +23,9 @@ import com.arcana.brain.app.navigation.LocalNavigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.Compaction
+import com.arcana.brain.core.Oracul
+import com.jakewharton.mosaic.ui.Color
+import com.jakewharton.mosaic.ui.TextStyle
 import com.arcana.brain.core.ImageFiles
 import com.arcana.brain.core.TextFiles
 import com.arcana.brain.core.SessionKind
@@ -55,7 +58,30 @@ internal const val COMFORTABLE_CONTEXT = 32_768
 internal class SlashItem(
     val name: String, val hint: String, val tool: Boolean, val skill: Boolean = false,
     val kind: SlashKind = if (skill) SlashKind.Skill else if (tool) SlashKind.Read else SlashKind.Command,
+    /** An example of how to type it with its text (`/revise focus on the typo`), shown under the highlighted entry; blank for a command that takes no text. */
+    val usage: String = "",
 )
+
+/** What a request for each tool might look like when typed after its name (`/read_note Trip Planner`); blank = it needs nothing. */
+private val ToolExamples = mapOf(
+    "search_notes" to "oracul second opinion", "list_notes" to "Skills", "read_note" to "Trip Planner", "create_note" to "Ideas/Weekend plan with three bullet points",
+    "append_to_note" to "Trip Planner: add a packing list", "set_properties" to "Trip Planner status: done", "add_tags" to "Trip Planner travel, 2026",
+    "remember" to "I prefer short answers", "use_skill" to "coingecko-forecast", "wait" to "5 seconds", "web_search" to "ollama context window size",
+    "fetch_url" to "https://example.com/page", "http_request" to "GET https://api.example.com/status", "run_command" to "ls -la ~/Downloads",
+    "git_status" to "in ~/projects/app", "git_log" to "last 5 commits in ~/projects/app", "git_diff" to "in ~/projects/app", "list_dir" to "~/Downloads",
+    "find_files" to "*.md in ~/Documents", "grep_files" to "TODO in ~/projects/app", "read_file" to "~/projects/app/README.md", "cat" to "~/projects/app/README.md",
+    "write_file" to "~/notes.txt with the text hello", "edit_file" to "README.md: change the title to Arcana", "delete_path" to "~/old/notes.txt", "move_path" to "a.txt to ~/Archive/a.txt",
+)
+
+/**
+ * The usage line of a tool in the slash menu: `e.g. /read_note Trip Planner` from [ToolExamples], else its required arguments in angle
+ * brackets (`/name <path> <content>`), else a note that it needs no text.
+ */
+internal fun toolUsage(name: String, required: List<String>): String = when {
+    name in ToolExamples -> "e.g. /$name ${ToolExamples.getValue(name)}"
+    required.isNotEmpty() -> "usage: /$name ${required.joinToString(" ") { "<$it>" }}"
+    else -> "needs no text: just /$name"
+}
 
 internal val SlashCommands = listOf(
     SlashItem("/new", "Start a new chat", false),
@@ -65,6 +91,10 @@ internal val SlashCommands = listOf(
     SlashItem("/image", "Attach a file or picture", false),
     SlashItem("/vault", "Answer from your vault notes (toggle)", false),
     SlashItem("/tools", "Let the model use tools (toggle)", false),
+    SlashItem("/oracul", "Ask the Oracul model for a second opinion on the last answer", false, usage = "e.g. /oracul qwen3:30b   (ask that model just this once)"),
+    SlashItem("/revise", "The main model revises its answer using the Oracul's opinion", false, usage = "e.g. /revise focus on the edge case   (your note is added)"),
+    SlashItem("/takeover", "The Oracul model finishes the turn the main model failed", false),
+    SlashItem("/compare", "The Oracul answers too and a judge compares the answers", false, usage = "e.g. /compare qwen3:30b   (answer with that model instead)"),
     SlashItem("/compact", "Summarize the older part of this chat to free the context window", false),
     SlashItem("/mode", "Tools mode: ask, auto, plan (cycles)", false),
     SlashItem("/autorun", "Run shell commands without asking (toggle)", false),
@@ -84,11 +114,25 @@ internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean
         else -> "ON" to Palette.Green
     }
     "/mode" -> if (!config.toolsEnabled) "TOOLS OFF" to Palette.Dim else config.toolMode.uppercase() to when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }
+    "/oracul" -> if (config.oraculModel.isBlank()) "NO MODEL" to Palette.Dim else (if (config.oraculAuto == "off") "MANUAL" else "AUTO ${config.oraculAuto.uppercase()}") to Palette.Green
     "/compact" -> if (config.autoCompactPercent > 0) "AUTO ${config.autoCompactPercent}%" to Palette.Green else "MANUAL" to Palette.Dim
     "/autorun" -> if (!config.toolShell) "SHELL OFF" to Palette.Dim else if (config.toolAutoShell) "ON" to Palette.Red else "OFF" to Palette.Dim
     "/memory" -> if (config.memoryEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/skills" -> if (config.skillsEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     else -> null
+}
+
+/** A typed line that starts with a slash, split into the command word (a trailing `:` or `,` dropped, so `/revise:` works) and the text after it. */
+internal fun splitSlash(text: String): Pair<String, String> {
+    val line = text.trim()
+    val word = line.substringBefore(' ').substringBefore('\n').trimEnd(':', ',')
+    return word to line.removePrefix(line.substringBefore(' ').substringBefore('\n')).trim()
+}
+
+/** The message for a slash word that is no command, skill or tool: says what was typed and offers the closest names. */
+internal fun unknownCommand(word: String, items: List<SlashItem>): String {
+    val close = slashMatches(items, word).take(3).map { it.name }
+    return "Unknown command $word." + (if (close.isEmpty()) "" else " Did you mean ${close.joinToString(", ")}?") + " Type / to see the commands and tools."
 }
 
 /** The entries that fit what is typed after the slash, grouped commands, skills, tools; in each group names that start with it first, then names that contain it. */
@@ -137,6 +181,12 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         }
         val window = effectiveContext(config.contextTokens, app.modelContext, app.loadedContext)
         contextUsage(chat.messages, window)?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
+        // the Oracul: orange with the name while it works (the judge with its own glyph), quietly its setup the rest of the time
+        val asking = chat.consulting
+        if (asking != null) {
+            val judging = asking == Oracul.judge(config) && asking != Oracul.model(config)
+            add(pillSegment(if (plain) "${if (judging) "judge" else "oracul"} $asking" else "${if (judging) "⚖" else Oracul.GLYPH} $asking…", Palette.Orange, 10))
+        } else Oracul.statusText(config, plain).takeIf { it.isNotEmpty() }?.let { add(statusSegment("", it, Palette.Blue, 8)) }
         if (chat.compacting) add(pillSegment(if (plain) "compacting" else "◌ compacting…", Palette.Blue, 10))
         // a small window drops the oldest text without a word: say so before it matters (Settings → Ollama → Context window)
         if (window in 1 until COMFORTABLE_CONTEXT) add(pillSegment(if (plain) "! small ctx ${UsageStats.contextSize(window.toLong())}" else "⚠ ctx ${UsageStats.contextSize(window.toLong())}", Palette.Orange, 9))
@@ -392,6 +442,29 @@ fun ChatScreen(app: AppContext) {
         toast(if (opened) "${vault.memoryName()} opened in your editor. Save it; the next message uses it." else "Edit ${file} (it is read in every chat).")
     }
 
+    // everything the slash menu knows (commands, skills, tools); set once the menu's list is built, read when a typed line is sent
+    var slashItemsNow: List<SlashItem> = SlashCommands
+    var useSlashNow: (SlashItem) -> Unit = {}
+
+    /** [only]: ask this model instead of the Oracul model, for this one call (`/oracul qwen3:30b`). */
+    fun runOracul(compare: Boolean, only: String? = null) {
+        if (gen.state == GenState.Running) return toast("Wait for the reply to finish first.", error = true)
+        if (chat.consulting != null) return toast("The Oracul is already working.", error = true)
+        toast("Asking ${if (compare) "the Oracul and the judge" else (only ?: com.arcana.brain.core.Oracul.model(app.config)).ifEmpty { "the Oracul" }}…")
+        app.scope.launch {
+            runCatching { if (compare) chat.compare(only) else chat.secondOpinion(only) }.onSuccess { toast(it) }.onFailure { toast(it.message ?: "The Oracul could not answer.", error = true) }
+        }
+    }
+
+    fun runTakeover() {
+        if (gen.state == GenState.Running) return toast("Wait for the reply to finish first.", error = true)
+        if (chat.consulting != null) return toast("The Oracul is already working.", error = true)
+        toast("${com.arcana.brain.core.Oracul.model(app.config).ifEmpty { "The Oracul" }} is taking over…")
+        app.scope.launch {
+            runCatching { chat.takeOver() }.onSuccess { gen.reset(); toast(it) }.onFailure { toast(it.message ?: "The Oracul could not take over.", error = true) }
+        }
+    }
+
     fun runCompact() {
         if (gen.state == GenState.Running) return toast("Wait for the reply to finish before compacting.", error = true)
         if (chat.compacting) return toast("Already compacting.", error = true)
@@ -418,7 +491,9 @@ fun ChatScreen(app: AppContext) {
         })
     }
 
-    fun runCommand(command: String) {
+    fun runCommand(command: String, args: String = "") {
+        // text after a command is only meaningful for these; anywhere else say so instead of guessing
+        if (args.isNotEmpty() && command !in setOf("/oracul", "/compare", "/revise")) return toast("$command takes no text after it. Type just $command.", error = true)
         when (command) {
             "/new" -> startNew()
             "/history" -> openHistory()
@@ -433,18 +508,28 @@ fun ChatScreen(app: AppContext) {
             "/mode" -> cycleMode()
             "/autorun" -> toggleAutoRun()
             "/compact" -> runCompact()
+            "/oracul" -> runOracul(compare = false, only = args.ifEmpty { null })
+            "/compare" -> runOracul(compare = true, only = args.ifEmpty { null })
+            "/takeover" -> runTakeover()
+            "/revise" -> runCatching { chat.revise(args) }.onFailure { toast(it.message ?: "Nothing to revise.", error = true) }
             "/append" -> openTargetPick(Target.Append)
             "/replace" -> openTargetPick(Target.Replace)
-            else -> toast("Unknown command. Type / to see the commands and tools", error = true)
+            else -> toast(unknownCommand(command, slashItemsNow), error = true)
         }
     }
 
     fun send() {
-        val text = input.text.trim()
+        var text = input.text.trim()
         if ((text.isEmpty() && chat.attachments.isEmpty) || gen.state == GenState.Running) return
         if (text.startsWith("/") && chat.attachments.isEmpty) {
+            val (word, args) = splitSlash(text)
+            val known = slashItemsNow.firstOrNull { it.name.equals(word, ignoreCase = true) }
             input.clear()
-            return runCommand(text)
+            if (known == null || !(known.skill || known.tool)) return runCommand(word.lowercase(), args)
+            // a skill or a tool typed out with its request after it (`/forecast ETH`, `/read_note Plan`) does what the menu would have done, then the request is sent
+            if (known.skill) useSlashNow(known)
+            if (args.isEmpty()) { if (known.tool) input.set("Use the ${known.name} tool to "); return }
+            text = if (known.tool) "Use the ${known.name} tool to $args" else args
         }
         input.clear()
         output.reset()
@@ -466,6 +551,10 @@ fun ChatScreen(app: AppContext) {
             Command("Memory file (ARCANA.md): open and edit", "Chat", "/memory") { openMemory() },
             Command(if (app.config.skillsEnabled) "Skills: turn off" else "Skills: turn on (list them)", "Chat", "/skills") { toggleSkills() },
             Command("Tools mode: ${app.config.toolMode} → next (ask, auto, plan)", "Chat", "/mode", app.config.toolsEnabled) { cycleMode() },
+            Command("Oracul: second opinion on the last answer", "Chat", "/oracul", lastAnswer != null) { runOracul(compare = false) },
+            Command("Oracul: compare with another model's answer", "Chat", "/compare", lastAnswer != null) { runOracul(compare = true) },
+            Command("Oracul: take over the turn the main model failed", "Chat", "/takeover", gen.state == GenState.Failed) { runTakeover() },
+            Command("Oracul: have the main model revise its answer", "Chat", "/revise", Oracul.hasOpenOpinion(chat.messages.toList())) { runCatching { chat.revise() }.onFailure { toast(it.message ?: "Nothing to revise.", error = true) } },
             Command("Compact the chat: summarize the older part", "Chat", "/compact", chat.messages.size >= Compaction.MIN_MESSAGES) { runCompact() },
             Command(if (app.config.toolAutoShell) "Shell commands: ask before running again" else "Shell commands: run without asking", "Chat", "/autorun", app.config.toolsEnabled && app.config.toolShell) { toggleAutoRun() },
             Command(if (app.config.toolsEnabled) "Tools: turn off" else "Tools: turn on (read and write notes and files)", "Chat", "/tools") { toggleTools() },
@@ -485,11 +574,14 @@ fun ChatScreen(app: AppContext) {
         if (vault == null || !app.config.skillsEnabled) emptyList() else Skills.discover(vault, app.config.skillsFolder)
     }
     val slashItems = remember(app.config.vaultPath, skillList) {
-        SlashCommands + skillList.map { SlashItem("/" + it.name, it.description.ifEmpty { "(no description)" }.substringBefore(". ").take(80).trimEnd('.'), false, skill = true) } + (chat.toolboxFor(app.config.copy(toolsEnabled = true, toolMode = "ask"))?.specs.orEmpty())
-            .map { SlashItem(it.name, it.description.substringBefore(". ").substringBefore("\n").take(80).trimEnd('.'), true, kind = SlashKind.forTool(it.name, it.risk)) }
+        SlashCommands + skillList.map { SlashItem("/" + it.name, it.description.ifEmpty { "(no description)" }.substringBefore(". ").take(80).trimEnd('.'), false, skill = true, usage = "e.g. /${it.name} <what you want>   (attaches the skill and sends your request)") } + (chat.toolboxFor(app.config.copy(toolsEnabled = true, toolMode = "ask"))?.specs.orEmpty())
+            .map { SlashItem(it.name, it.description.substringBefore(". ").substringBefore("\n").take(80).trimEnd('.'), true, kind = SlashKind.forTool(it.name, it.risk), usage = toolUsage(it.name, (it.parameters["required"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { r -> (r as? kotlinx.serialization.json.JsonPrimitive)?.content }.orEmpty())) }
     }
+    slashItemsNow = slashItems
     val slashMatches = if (slashQuery == null) emptyList() else slashMatches(slashItems, slashQuery).take(8)
     var slashIndex by remember(slashQuery) { androidx.compose.runtime.mutableIntStateOf(0) }
+    // an example of how to type the highlighted entry, one row under it
+    val slashUsage = slashMatches.getOrNull(slashIndex.coerceIn(0, (slashMatches.size - 1).coerceAtLeast(0)))?.usage.orEmpty()
 
     fun useSlash(item: SlashItem) {
         if (item.skill) {
@@ -505,6 +597,7 @@ fun ChatScreen(app: AppContext) {
         else { input.clear(); runCommand(item.name) }
     }
 
+    useSlashNow = ::useSlash
     val attachments = chat.attachments
     val request = saving
     val leave = leaving
@@ -532,13 +625,19 @@ fun ChatScreen(app: AppContext) {
             output.selecting -> Hints("↑↓  move", "Space  tick", "c  copy", "b  code only", "Esc  leave")
             gen.state == GenState.Running -> Hints("Esc Esc  cancel reply", "↑↓  scroll")
             browsing -> Hints("Enter  type a message", "s  select & copy", "↑↓/Space  scroll", "1-9  screens")
-            slashMatches.isNotEmpty() -> Hints("↑↓  choose", "Tab/Enter  use", "Esc  close")
+            slashMatches.isNotEmpty() -> Hints("↑↓  choose", "Tab  complete", "Enter  run", "Esc  close")
             else -> Hints("Enter  send", "Alt+Enter  new line", "/  commands", "@  note", "Ctrl+O  attach", "Ctrl+S  save", "↑↓  scroll", "Esc  browse")
         }
     }
 
     // a vault without ARCANA.md gets one, with an offer to fill it in
     androidx.compose.runtime.LaunchedEffect(Unit) { chat.offerMemory() }
+    // a skill asked for a model that cannot be used: say so once
+    androidx.compose.runtime.LaunchedEffect(chat.roleNote) { chat.roleNote?.let { toast(it, error = true); chat.roleNote = null } }
+    // the worker failed this turn: offer the Oracul (never automatic, it is one keystroke away)
+    androidx.compose.runtime.LaunchedEffect(gen.state) {
+        if (gen.state == GenState.Failed && com.arcana.brain.core.Oracul.model(app.config).isNotEmpty() && app.config.oraculAuto != "off") toast("The model failed this turn. Type /takeover to let ${com.arcana.brain.core.Oracul.model(app.config)} finish it.")
+    }
 
     KeyHandler { key ->
         if (question != null) {
@@ -662,7 +761,9 @@ fun ChatScreen(app: AppContext) {
                 slashMatches.isNotEmpty() && key == Key.Escape -> { input.clear(); true }
                 slashMatches.isNotEmpty() && key == Key.Up -> { slashIndex = (slashIndex - 1).mod(slashMatches.size); true }
                 slashMatches.isNotEmpty() && key == Key.Down -> { slashIndex = (slashIndex + 1).mod(slashMatches.size); true }
-                slashMatches.isNotEmpty() && (key == Key.Tab || key == Key.Enter) -> { useSlash(slashMatches[slashIndex.coerceIn(0, slashMatches.size - 1)]); true }
+                // Tab completes the highlighted name into the field (`/revise `), ready for the text that follows; Enter runs it
+                slashMatches.isNotEmpty() && key == Key.Tab -> { input.set(slashMatches[slashIndex.coerceIn(0, slashMatches.size - 1)].name.let { if (it.startsWith("/")) it else "/$it" } + " "); true }
+                slashMatches.isNotEmpty() && key == Key.Enter -> { useSlash(slashMatches[slashIndex.coerceIn(0, slashMatches.size - 1)]); true }
                 key == Key.Escape -> when {
                     gen.state == GenState.Running -> { gen.requestCancel(); true }
                     browsing -> { browsing = false; true }
@@ -713,6 +814,7 @@ fun ChatScreen(app: AppContext) {
                         ActionItem("Ctrl+O", "Overwrite a note…"),
                         ActionItem("Esc", "Cancel", accent = Palette.Cta),
                     ),
+                    style = ActionStyle.Button,
                 )
             }
             ChatMode.Leave -> {
@@ -722,7 +824,7 @@ fun ChatScreen(app: AppContext) {
                     Warning("This conversation (${chat.messages.size - chat.savedMessages} new messages) is not saved to your vault as a note.")
                     Hint("Chats are not being kept (Settings → Console → Keep chats), so it is gone once you leave.")
                 }
-                ActionBar(listOf(ActionItem("w", "Save to vault first"), ActionItem("Esc", "Leave chat", accent = Palette.Red), ActionItem("any other key", "Stay", accent = Palette.Cta)))
+                ActionBar(listOf(ActionItem("w", "Save to vault first"), ActionItem("Esc", "Leave chat", accent = Palette.Red), ActionItem("any other key", "Stay", accent = Palette.Cta)), style = ActionStyle.Button)
             }
             ChatMode.ConfirmClear -> {
                 ScreenHeader("Chat", chat.title)
@@ -730,7 +832,7 @@ fun ChatScreen(app: AppContext) {
                 Panel("Erase this chat?", accent = Palette.Red) {
                     Warning("“${chat.title}” (${chat.messages.size} messages) is deleted from the history. /new keeps it and starts a fresh chat instead.")
                 }
-                ActionBar(listOf(ActionItem("y", "Erase chat", accent = Palette.Red), ActionItem("any other key", "Keep it", accent = Palette.Cta)))
+                ActionBar(listOf(ActionItem("y", "Erase chat", accent = Palette.Red), ActionItem("any other key", "Keep it", accent = Palette.Cta)), style = ActionStyle.Button)
             }
             ChatMode.ConfirmReplace -> {
                 ScreenHeader("Chat", "Replace “${replaceTarget}”")
@@ -738,7 +840,7 @@ fun ChatScreen(app: AppContext) {
                 Panel("Replace this note with ${if (overwriting == null || overwriting?.lastAnswerOnly == true) "the last answer" else "this chat"}?", accent = Palette.Orange) {
                     Warning("The text of the note is replaced by ${if (overwriting == null || overwriting?.lastAnswerOnly == true) "the answer" else "the chat"}. Its frontmatter is kept, and the old text is saved first in the vault's .trash folder.")
                 }
-                ActionBar(listOf(ActionItem("y", "Replace note", accent = Palette.Orange), ActionItem("any other key", "Keep the note", accent = Palette.Cta)))
+                ActionBar(listOf(ActionItem("y", "Replace note", accent = Palette.Orange), ActionItem("any other key", "Keep the note", accent = Palette.Cta)), style = ActionStyle.Button)
             }
             ChatMode.History -> {
                 ScreenHeader("Chat history", "Pick a conversation to continue. The current one is saved as it is")
@@ -786,8 +888,10 @@ fun ChatScreen(app: AppContext) {
                             if (!app.config.toolsEnabled) add(Line("› Tools are off: type /tools so the model can read and write your notes and files (it asks before changing anything).", Palette.Hint))
                         }
                         var next = 0
+                        // the opinion nobody has answered yet says how to use it
+                        val openOpinion = if (Oracul.hasOpenOpinion(shownMessages)) shownMessages.last { Oracul.isReview(it) } else null
                         shownMessages.forEach { m ->
-                            addAll(messageLines(app, m, next, width))
+                            addAll(messageLines(app, m, next, width, applyHint = m === openOpinion))
                             next += entriesOf(m).size
                         }
                     }
@@ -803,7 +907,7 @@ fun ChatScreen(app: AppContext) {
                     val statusRow = if (gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled) 1 else 0
                     // what sits under the conversation: the message field, or the change waiting for an answer
                     val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
-                    val below = (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval, approvalMax()).size + 3 else 2 + inputRows + pendingRow + slashMatches.size) + statusRows + panelActionRows
+                    val below = (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval, approvalMax()).size + 3 else 2 + inputRows + pendingRow + slashMatches.size + (if (slashUsage.isEmpty()) 0 else 1)) + statusRows + panelActionRows
                     ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below, actions = actions), output)
                     ReplyStatus(app, gen, doubleEsc = true)
                 }
@@ -818,7 +922,7 @@ fun ChatScreen(app: AppContext) {
                             if (question.typing) com.jakewharton.mosaic.ui.Box(com.jakewharton.mosaic.modifier.Modifier.weight(1f)) { TextValue(question.field, true, "Type your answer", 3) }
                             else Label("Type my own answer", color = Palette.Muted)
                         }
-                        ActionBar(questionActions(question), panelWidth())
+                        ActionBar(questionActions(question), panelWidth(), ActionStyle.Button)
                     }
                     if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars))
                 } else if (approval != null) {
@@ -827,7 +931,7 @@ fun ChatScreen(app: AppContext) {
                         approvalLines(approval, approvalMax()).forEach { l ->
                             Label(l, color = when { l.startsWith("+ ") -> Palette.Green; l.startsWith("- ") -> Palette.Red; l.startsWith("@@") -> Palette.Blue; l.startsWith("…") -> Palette.Muted; else -> Palette.Text })
                         }
-                        ActionBar(approvalActions(approval), panelWidth())
+                        ActionBar(approvalActions(approval), panelWidth(), ActionStyle.Button)
                     }
                     if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars))
                 } else {
@@ -848,6 +952,11 @@ fun ChatScreen(app: AppContext) {
                             if (state != null) Label(" ${state.first} ", color = Palette.Background, background = state.second, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
                             else if (item.tool) item.kind.badge?.let { badge -> Label(" $badge ", color = Palette.Background, background = item.kind.color, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold) }
                         }
+                        // how to type it, under the highlighted entry and lined up with the descriptions
+                        if (selected && slashUsage.isNotEmpty()) Row {
+                            Label("  " + " ".repeat(24), color = Palette.Muted)
+                            Label(" " + fit(slashUsage, (LocalContentWidth.current - 30).coerceAtLeast(10)), color = Palette.Hint)
+                        }
                     }
                     TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = maxInputRows(), attachments = chat.attachments)
                     if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars))
@@ -859,8 +968,9 @@ fun ChatScreen(app: AppContext) {
 }
 
 /** The lines of one message; [entry] is the number of its first select-mode entry (a reply uses one per Markdown block). */
-private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, width: Int): List<Line> {
+private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, width: Int, applyHint: Boolean = false): List<Line> {
     if (Compaction.isSummary(message)) return summaryLines(message, entry, app.config.plainGlyphs, width)
+    if (Oracul.isOpinion(message)) return opinionLines(message, entry, app.config, width, applyHint)
     val user = message.role == "user"
     val config = app.config
     if (message.role == "tool") return toolResultLines(message, config.plainGlyphs, width)
@@ -907,6 +1017,24 @@ internal fun thinkingLines(thinking: String, view: String, plain: Boolean, width
     val header = "$mark thinking · $words ${if (words == 1) "word" else "words"}"
     if (view != "full") return listOf(Line(header, Palette.ConsoleDim))
     return listOf(Line(header, Palette.ConsoleDim, bold = true)) + wrap(sanitizeForTerminal(text), (width - 2).coerceAtLeast(10)).map { Line("  $it", Palette.ConsoleDim) } + Line("")
+}
+
+/** What the Oracul said: a header with the model(s), then the text as Markdown, dimmed apart from its own colours. The whole block is one entry for select mode. */
+private fun opinionLines(message: ChatMessage, entry: Int, config: AppConfig, width: Int, applyHint: Boolean): List<Line> = buildList {
+    add(Line("${if (config.plainGlyphs) "*" else Oracul.GLYPH} ${sanitizeForTerminal(Oracul.title(message))}", Palette.Blue, bold = true, entry = entry))
+    // a comparison in the window is drawn as columns when the setting says so and every column is wide enough to read
+    val comparison = if (config.comparisonView == "side") Oracul.comparisonParts(message) else null
+    if (comparison != null && columnCount(comparison.answers.size, width) >= 2) {
+        addAll(sideBySide(comparison, entry, config, width))
+        add(Line(""))
+        return@buildList
+    }
+    // the worker's own sentence that introduces a review is for the model, not for the reader
+    val body = Oracul.body(message)
+    addAll(renderMarkdown(parseMarkdown(body), width, entry = { entry }, rich = config.renderMarkdown, plainGlyphs = config.plainGlyphs))
+    // while nobody has answered it: how to act on it (nothing is applied by itself)
+    if (applyHint) add(Line("› /revise: the main model corrects its answer with this  ·  or just carry on".take(width), Palette.Hint, entry = -1))
+    add(Line(""))
 }
 
 /** A compaction summary: a dim divider, the summary, and a line saying the model no longer sees what is above. */
@@ -970,7 +1098,8 @@ private fun transcript(messages: List<ChatMessage>, model: String): String =
     messages.filter { it.role != "tool" && !(it.toolCalls.isNotEmpty() && it.content.isBlank()) }.joinToString("\n\n") {
         val attached = (it.imageNames + it.files.map { f -> f.name } + it.noteNames.map { n -> "[[${n.removeSuffix(".md")}]]" }).let { a -> if (a.isEmpty()) "" else "\n\n_Attached: ${a.joinToString(", ")}_" }
         val sources = if (it.sources.isEmpty()) "" else "\n\n_Sources: ${it.sources.joinToString(", ") { s -> "[[${s.removeSuffix(".md")}]]" }}_"
-        if (Compaction.isSummary(it)) "## Summary of the earlier conversation (compacted)\n\n${Compaction.summaryText(it)}"
+        if (Oracul.isOpinion(it)) "## ${Oracul.title(it)}\n\n${Oracul.body(it)}"
+        else if (Compaction.isSummary(it)) "## Summary of the earlier conversation (compacted)\n\n${Compaction.summaryText(it)}"
         else "## ${if (it.role == "user") "You" else model}\n\n${it.content.trim()}$attached$sources"
     }
 
@@ -987,3 +1116,57 @@ private fun chatActions(browsing: Boolean, hasEntries: Boolean): List<ActionItem
             ActionItem("Ctrl+P", "Commands", accent = Palette.Cta),
         )
     }
+
+/** The narrowest an answer column may be before the comparison is stacked instead. */
+internal const val MIN_COLUMN = 38
+
+/** How many answers fit in a row of [width] cells: up to three, each at least [MIN_COLUMN] wide with a 3-cell gutter between them. */
+internal fun columnCount(answers: Int, width: Int): Int = minOf(answers, 3, (width + 3) / (MIN_COLUMN + 3))
+
+/** What a line is made of, as runs (so two lines can be joined into one row), and how many cells it takes. */
+private fun runsOf(line: Line): List<Run> = line.runs ?: listOf(Run(line.text, if (line.color == Color.Unspecified) Palette.ConsoleText else line.color, line.background, if (line.bold) TextStyle.Bold else TextStyle.Unspecified))
+
+/**
+ * A comparison as columns: a coloured pill with the model's name over each answer (the main model's, then the Oracul models', each in its
+ * own colour), the answers next to each other with a dim bar between them, and the judge's verdict under them across the whole width.
+ * More answers than columns continue in further rows of columns.
+ */
+internal fun sideBySide(comparison: Oracul.Comparison, entry: Int, config: AppConfig, width: Int): List<Line> = buildList {
+    val plain = config.plainGlyphs
+    val columns = columnCount(comparison.answers.size, width)
+    val gutter = 3
+    val cw = (width - gutter * (columns - 1)) / columns
+    val palette = listOf(Palette.Blue, Palette.Cta, Palette.Green)
+    fun pill(text: String, color: Color) = Run(" $text ", Palette.Background, color, TextStyle.Bold)
+    comparison.answers.chunked(columns).forEach { rowOfParts ->
+        val cells = rowOfParts.map { part ->
+            val index = comparison.answers.indexOf(part)
+            val color = if (part.main) Palette.Accent else palette[(index - 1).coerceAtLeast(0) % palette.size]
+            val glyph = if (plain) "*" else if (part.main) ModelIcon.of(part.name) else Oracul.GLYPH
+            val label = sanitizeForTerminal("$glyph ${part.name} · ${if (part.main) "main" else "oracul"}").take(cw - 2)
+            val rule = Line((if (plain) "-" else "─").repeat(cw), color, entry = entry)
+            val body = renderMarkdown(parseMarkdown(part.text), cw, entry = { entry }, rich = config.renderMarkdown, plainGlyphs = plain)
+                .dropWhile { it.text.isBlank() && it.runs == null }.dropLastWhile { it.text.isBlank() && it.runs == null }
+            listOf(Line(label, color, bold = true, entry = entry, runs = listOf(pill(label, color)))) + rule + body
+        }
+        for (row in 0 until (cells.maxOf { it.size })) {
+            val runs = ArrayList<Run>()
+            val text = StringBuilder()
+            cells.forEachIndexed { c, cell ->
+                val line = cell.getOrNull(row)
+                val own = if (line == null) emptyList() else runsOf(line)
+                val used = line?.let { l -> if (l.runs != null) l.runs.sumOf { it.text.length } else l.text.length } ?: 0
+                if (c > 0) { runs += Run(" ${if (plain) "|" else "│"} ", Palette.ConsoleDim); text.append(" | ") }
+                runs += own
+                line?.let { text.append(it.text) }
+                if (c < cells.size - 1 && used < cw) { runs += Run(" ".repeat(cw - used), Palette.ConsoleText, line?.fill ?: Color.Unspecified); text.append(" ".repeat(cw - used)) }
+            }
+            add(Line(text.toString(), entry = entry, runs = runs))
+        }
+        add(Line("", entry = entry))
+    }
+    // the judge speaks across the whole width, in a colour of its own so it is the thing the eye goes to
+    val verdictLabel = sanitizeForTerminal("${if (plain) "=" else "⚖"} Verdict · ${comparison.judge}").take(width - 2)
+    add(Line(verdictLabel, Palette.Orange, bold = true, entry = entry, runs = listOf(pill(verdictLabel, Palette.Orange))))
+    addAll(renderMarkdown(parseMarkdown(comparison.verdict), width, entry = { entry }, rich = config.renderMarkdown, plainGlyphs = plain))
+}

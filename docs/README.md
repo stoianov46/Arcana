@@ -29,7 +29,7 @@ no marketing. Read this page, then open only the file you need.
 | [tools-and-agent.md](tools-and-agent.md) | work on the tool-calling loop, dialogs, shell/web/questions, or add a tool |
 | [development.md](development.md) | set up a dev environment, run without touching real data, where to change what, the definition of done (code, tests, docs, vault notes) and the release checklist |
 | [distribution.md](distribution.md) | build `arcana.zip`, install, the first-run setup, `arcana --init`, where files live and how to move them |
-| [proposals/oracul.md](proposals/oracul.md) | read before touching the core loop for "second opinion" / multi-model work: a proposal with levels, design and blast radius, not implemented |
+| [oracul.md](oracul.md) | work on anything that asks another model than the chat model: second opinions, `/compare`, `/takeover`, skill roles, the second Ollama server, the split view: principles, flow, message conventions, safety, decisions |
 | [roadmap.md](roadmap.md) | see the TODO list by phase and what is done; update it with every piece of work |
 | [skills.md](skills.md) | understand or change **skills** (vault runbooks), the `/` menu entries, the skill chip, the required-steps gate and its progress badge |
 | [data-and-config.md](data-and-config.md) | touch `config.json`, on-disk stores, vault conventions, frontmatter |

@@ -29,6 +29,14 @@ class Skill(
     val problems: List<String>,
 )
 
+/** The models a skill asks for (`worker:` and `reviewer:` in its properties); blank = not set, the settings decide. */
+data class SkillRoles(val worker: String = "", val reviewer: String = "", val planner: String = "") {
+    val any: Boolean get() = worker.isNotEmpty() || reviewer.isNotEmpty() || planner.isNotEmpty()
+
+    /** What the skill does not name is taken from the role table in the settings ([AppConfig.roleWorker] and the others). */
+    fun withDefaults(config: AppConfig) = SkillRoles(worker.ifEmpty { config.roleWorker.trim() }, reviewer.ifEmpty { config.roleReviewer.trim() }, planner.ifEmpty { config.rolePlanner.trim() })
+}
+
 object Skills {
     const val DEFAULT_FOLDER = "Skills"
 
@@ -137,6 +145,9 @@ object Skills {
         val text = head + body
         return if (text.length <= LOAD_LIMIT) text else text.take(LOAD_LIMIT) + "\n… (cut at $LOAD_LIMIT characters; the rest of the skill is in ${skill.path})"
     }
+
+    /** The models the skill's entry note asks for: `planner` writes a plan first, `worker` runs the skill instead of the chat model, `reviewer` gives the second opinion at the end. */
+    fun roles(entryText: String): SkillRoles = frontmatter(entryText).let { SkillRoles(it["worker"].orEmpty().trim(), it["reviewer"].orEmpty().trim(), it["planner"].orEmpty().trim()) }
 
     /** A one-line summary for lists and toasts. */
     fun summary(skill: Skill): String = "${skill.name}${if (skill.version.isEmpty()) "" else " v${skill.version}"}${if (skill.problems.isEmpty()) "" else " (needs attention: ${skill.problems.first()})"}"

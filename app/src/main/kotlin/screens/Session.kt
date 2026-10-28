@@ -206,6 +206,7 @@ fun SessionScreen(app: AppContext) {
                         ActionItem("l", "Save log, then start"),
                         ActionItem("Esc", "Cancel", accent = Palette.Cta),
                     ),
+                    style = ActionStyle.Button,
                 )
             }
         }

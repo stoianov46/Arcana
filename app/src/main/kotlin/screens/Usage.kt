@@ -80,7 +80,7 @@ fun UsageScreen(app: AppContext) {
             Panel("Clear all usage history?", accent = Palette.Red) {
                 Warning("Deletes usage.jsonl and tool-usage.jsonl: ${all.size} recorded replies with their token counts, and the tool calls. This cannot be undone.")
             }
-            ActionBar(listOf(ActionItem("y", "Clear history", accent = Palette.Red), ActionItem("any other key", "Keep it", accent = Palette.Cta)))
+            ActionBar(listOf(ActionItem("y", "Clear history", accent = Palette.Red), ActionItem("any other key", "Keep it", accent = Palette.Cta)), style = ActionStyle.Button)
         } else {
             val shown = UsageStats.totals(records)
             val cost = UsageStats.estimatedCost(records, app.config.estPriceIn, app.config.estPriceOut)

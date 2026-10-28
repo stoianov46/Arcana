@@ -77,6 +77,16 @@ then `renderMarkdown(blocks, width, entry, rich, plainGlyphs)` → `List<Line>` 
 
 Anything with a `background` run is treated as an unbreakable chip by `wrapRuns` — keep that in mind when tinting text.
 
+### Columns made of rendered lines (the comparison split view, `Chat.sideBySide`)
+
+A row of the conversation is one `Line`, so two columns are made by rendering each part on its own at the column width (`renderMarkdown(…, cw)`) and joining
+the *n*-th line of every column into one `Line` whose `runs` are: the first column's runs, padding up to the column width (a code block's `fill` becomes the
+padding's background so the box does not end early), a dim bar run, the next column's runs, and so on. `Line.text` is the plain text of all of them, kept
+in step with the runs because select mode and wrapping measure it. Rules that keep it safe: every cell is at most the column width (it was wrapped to it),
+the last column is not padded, every joined row carries the block's `entry` (select and copy treat the block as one), and `columnCount` decides before
+anything is built whether the window is wide enough (else the old stacked rendering is used). Wide characters are replaced first (`sanitizeForTerminal`),
+as everywhere in the renderer, because Mosaic counts one cell where the terminal draws two.
+
 ## Theming
 
 `Palette` exposes the current theme (`Palette.use(spec)` on theme change). Use **roles** (`Palette.Accent`, `Cta`, `Green`, `Red`,
@@ -94,7 +104,7 @@ Chat counts every row under the conversation by hand (`below`), then `outputRows
 conversation. `below` is the sum of: the message field (`2 + inputRows + attachment rows`, `inputRows` up to a quarter of the screen, 3–8),
 the `/` menu rows (≤8, only while a message starts with `/`), the **status bar** row (`statusRows`, 0 when the density is `tiny`), and, for
 a dialog (approval or question), its panel instead of the field: `lines + 3` plus its button rows. **Dialog buttons live inside the panel**
-(`ActionBar(items, panelWidth())`), so their rows are counted with `breakIntoLines(items, panelWidth()).size + 1` and `actions = null` is
+(`ActionBar(items, panelWidth())`), so their rows are counted with `breakIntoLines(items, panelWidth()).size + 1` (they use `ActionStyle.Button`, the default of `breakIntoLines`; a quiet bar has no blank row above, `actionBarRows` knows) and `actions = null` is
 passed to `outputRows`; the message field keeps its buttons below the status bar (`actions = chatActions(…)`). Add a row to any of these and
 add it to the count.
 

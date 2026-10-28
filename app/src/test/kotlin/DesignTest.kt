@@ -1,5 +1,14 @@
 package com.arcana.brain.app
 
+import com.arcana.brain.app.design.ActionItem
+import com.arcana.brain.app.screens.SlashCommands
+import com.arcana.brain.app.screens.splitSlash
+import com.arcana.brain.app.screens.columnCount
+import com.arcana.brain.app.screens.sideBySide
+import com.arcana.brain.app.screens.toolUsage
+import com.arcana.brain.app.screens.unknownCommand
+import com.arcana.brain.app.design.ActionStyle
+import com.arcana.brain.app.design.breakIntoLines
 import com.arcana.brain.app.design.Line
 import com.arcana.brain.app.design.OutputState
 import com.arcana.brain.app.design.Palette
@@ -559,5 +568,58 @@ class DesignTest {
         assertEquals(listOf("◌ thinking · 3 words"), com.arcana.brain.app.screens.thinkingLines(text, "summary", false, 40).map { it.text })
         val full = com.arcana.brain.app.screens.thinkingLines(text, "full", false, 40)
         assertTrue(full.size > 2 && full.all { it.entry < 0 })
+    }
+
+    @Test
+    fun quietActionBarsAreNarrowerThanButtonsAndBreakAtTheirOwnWidth() {
+        val items = listOf(ActionItem("Enter", "Send"), ActionItem("@", "Note"), ActionItem("Ctrl+O", "Attach"))
+        // button: " Enter " + " Send " = 13, " @ "+" Note " = 9, " Ctrl+O "+" Attach " = 16, gaps of 2; quiet: 10, 6, 13, gaps of 3
+        assertEquals(1, breakIntoLines(items, 13 + 2 + 9 + 2 + 16, ActionStyle.Button).size)
+        assertEquals(2, breakIntoLines(items, 13 + 2 + 9 + 2 + 15, ActionStyle.Button).size)
+        assertEquals(1, breakIntoLines(items, 10 + 3 + 6 + 3 + 13, ActionStyle.Quiet).size)
+        assertEquals(2, breakIntoLines(items, 10 + 3 + 6 + 3 + 12, ActionStyle.Quiet).size)
+        assertEquals(ActionStyle.Button, ActionStyle.entries.first { it.name == "Button" })
+    }
+
+    @Test
+    fun aTypedSlashLineIsSplitIntoTheCommandAndWhatFollowsIt() {
+        assertEquals("/revise" to "", splitSlash("/revise"))
+        assertEquals("/revise" to "focus on the typo", splitSlash("  /revise   focus on the typo "))
+        assertEquals("/revise" to "the main model", splitSlash("/revise: the main model"), "the colon of the hint it was copied from is dropped")
+        assertEquals("/oracul" to "qwen3:30b", splitSlash("/oracul qwen3:30b"))
+        assertEquals("/revise" to "a\nb", splitSlash("/revise\na\nb"))
+        val message = unknownCommand("/reviise", SlashCommands)
+        assertTrue("Unknown command /reviise." in message && message.endsWith("Type / to see the commands and tools."), message)
+        assertTrue("/revise" in unknownCommand("/revis", SlashCommands), "a near miss names the command")
+        assertEquals("Unknown command /zzz. Type / to see the commands and tools.", unknownCommand("/zzz", SlashCommands))
+    }
+
+    @Test
+    fun theSlashMenuShowsAnExampleForEntriesThatTakeText() {
+        assertEquals("e.g. /read_note Trip Planner", toolUsage("read_note", listOf("path")))
+        assertEquals("usage: /some_new_tool <path> <content>", toolUsage("some_new_tool", listOf("path", "content")), "a tool without a curated example shows its required arguments")
+        assertEquals("needs no text: just /another", toolUsage("another", emptyList()))
+        val withText = SlashCommands.filter { it.usage.isNotEmpty() }.map { it.name }
+        assertEquals(listOf("/oracul", "/revise", "/compare"), withText, "exactly the commands that accept text carry an example")
+        assertTrue(SlashCommands.filter { it.usage.isEmpty() }.none { it.name in setOf("/oracul", "/revise", "/compare") })
+    }
+
+    @Test
+    fun aComparisonIsDrawnInColumnsThatFitTheWidth() {
+        assertEquals(1, columnCount(2, 60), "two columns of 38 do not fit in 60 cells")
+        assertEquals(2, columnCount(2, 80))
+        assertEquals(2, columnCount(5, 90))
+        assertEquals(3, columnCount(5, 125))
+        assertEquals(2, columnCount(2, 125), "never more columns than answers")
+        val message = com.arcana.brain.core.Oracul.comparisonMessage("worker", listOf("big" to "Right side text", "other" to "Third"), "judge", "Left side text", "Big is best.")
+        val parts = com.arcana.brain.core.Oracul.comparisonParts(message)!!
+        val lines = sideBySide(parts, 7, com.arcana.brain.core.AppConfig(), 90)
+        val texts = lines.map { it.text }
+        assertTrue(texts.any { "worker · main" in it } && texts.any { "big · oracul" in it && "worker" !in it || "big · oracul" in it }, texts.toString())
+        val both = texts.first { "Left side text" in it }
+        assertTrue("Right side text" in both && both.indexOf("Left") < both.indexOf("Right"), "the two answers share a row, left then right: $both")
+        assertTrue(texts.first { "Third" in it }.let { "Right" !in it }, "the third answer starts a new row of columns")
+        assertTrue(texts.any { "Verdict · judge" in it } && texts.any { "Big is best." in it })
+        assertTrue(lines.all { it.text.length <= 90 && it.entry == 7 }, "no row is wider than the window and every row belongs to the block")
     }
 }

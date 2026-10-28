@@ -81,6 +81,9 @@ description: "What it does AND when to use it."   # the model picks a skill by t
 version: 1
 type: skill
 output: Reports/my-skill        # where results go
+planner: qwen3:30b             # optional: the model that writes a short plan first
+worker: qwen3:30b              # optional: the model that runs this skill (an installed one) instead of the chat model
+reviewer: gemma4:12b            # optional: the model that gives a second opinion when the run is done
 requires:                       # optional: steps that must happen before the run may end
   - "create_note | step 4: save the report"
 ---
