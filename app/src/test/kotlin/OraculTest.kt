@@ -205,6 +205,27 @@ class OraculTest {
     }
 
     @Test
+    fun aRepeatedWaitAndAFailedReadAreNeverAnsweredFromMemory() {
+        val f = fake()
+        try {
+            val vault = Files.createDirectories(Files.createTempDirectory("arcana-wait-vault").resolve("v"))
+            f.script = { model, body ->
+                val tools = Regex("\"role\":\"tool\"").findAll(body).count()
+                if (model == "worker" && "\"tools\"" in body && tools < 2) call("wait", """{"seconds":1}""") else null
+            }
+            val app = app(f) { copy(toolsEnabled = true, toolAutoRead = true, vaultPath = vault.toString()) }
+            val chat = app.chat
+            chat.send("wait twice")
+            val deadline = System.currentTimeMillis() + 15_000
+            while (chat.messages.none { it.role == "assistant" && it.toolCalls.isEmpty() } && System.currentTimeMillis() < deadline) Thread.sleep(50)
+            val results = chat.messages.filter { it.role == "tool" }
+            assertEquals(2, results.size)
+            assertTrue(results.all { "already made" !in it.content && it.content.startsWith("Waited") }, results.map { it.content }.toString())
+            assertEquals(2, app.toolUsage.size, "both waits really ran")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun theModelCanKeepATaskListWithTheTodoTool() {
         val f = fake()
         try {

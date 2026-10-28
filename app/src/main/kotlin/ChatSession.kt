@@ -343,7 +343,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val spec = box.find(call.name)
             // the same read, search or page asked for again in this turn, with nothing changed since: answer it from what the turn already has (no run, no dialog)
             val callKey = call.name + " " + call.arguments
-            val earlier = if (spec != null && repeatable(spec)) turnCalls[callKey] else null
+            val earlier = if (spec != null && repeatable(spec)) turnCalls[callKey]?.takeIf { System.currentTimeMillis() - it.first < REPEAT_MEMORY_MS }?.second else null
             if (earlier != null) {
                 val message = ChatMessage.toolResult(call.name, "You already made this exact call earlier in this turn and nothing has changed since, so the result is the same as the one above in this conversation (it began: $earlier). Use that result instead of asking again; if you need something different, change the arguments.")
                 add(message)
@@ -429,8 +429,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             }
             // remember a read for the rest of the turn; anything that changes or runs something makes an older read untrustworthy
             if (allowed && spec != null) {
-                if (!repeatable(spec)) turnCalls.clear()
-                else if (!result.startsWith("Error:")) turnCalls[callKey] = result.take(160).replace('\n', ' ')
+                // a change, a command or a pause (time passes, a rate limit resets) makes older reads untrustworthy; a failed result is never remembered, so a retry really runs
+                if (!repeatable(spec) || spec.name in CLEARS_MEMORY) turnCalls.clear()
+                if (repeatable(spec) && !FAILURE_LOOK.containsMatchIn(result.take(300))) turnCalls[callKey] = System.currentTimeMillis() to result.take(160).replace('\n', ' ')
             }
             if (allowed && spec != null && !result.startsWith("Error:")) {
                 app.session.log(SessionKind.Tool, "${call.name} ${spec.summary(call.arguments)}")
@@ -727,10 +728,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private var stuckAdvised = 0
 
     /** The reads, searches and page fetches of the current turn, with the start of what each returned: an identical repeat is not run (or asked about) again. Cleared with every new question and by anything that changes or runs something. */
-    private val turnCalls = HashMap<String, String>()
+    private val turnCalls = HashMap<String, Pair<Long, String>>()
 
     /** What may be answered from [turnCalls]: tools that only look (and the web reads, which would ask the user again for the same address). */
-    private fun repeatable(spec: com.arcana.brain.core.ToolSpec) = spec.risk == ToolRisk.Read || spec.name == "fetch_url" || spec.name == "web_search"
+    private fun repeatable(spec: com.arcana.brain.core.ToolSpec) = spec.name !in NEVER_REMEMBERED && (spec.risk == ToolRisk.Read || spec.name == "fetch_url" || spec.name == "web_search")
 
     /**
      * The worker is in its tool loop and keeps failing (every [AppConfig.stuckCalls] failed calls of this turn): the Oracul reads the attempts so far and
@@ -1044,6 +1045,18 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     private companion object {
         const val MAX_NOTE_CHARS = 60_000
+
+        /** How long an identical read of the current turn is answered from memory: a note edited outside Arcana meanwhile is read again after this. */
+        const val REPEAT_MEMORY_MS = 45_000L
+
+        /** Tools whose answer changes with time, or that are meant to be repeated: never answered from memory. */
+        val NEVER_REMEMBERED = setOf("wait", "current_time", "elapsed_time")
+
+        /** After these the rest of the turn starts with an empty memory. */
+        val CLEARS_MEMORY = setOf("wait")
+
+        /** A result that looks like a failure (including a web service's own refusal) is not remembered. */
+        val FAILURE_LOOK = Regex("""(?i)^error:|\bHTTP (4|5)\d\d\b|rate.?limit|too many requests|timed out|temporarily unavailable|try again""")
 
         /** The web tools that *Search and fetch without asking* lets through; `http_request` is not one of them (it can send a body and headers). */
         val AUTO_WEB = setOf("web_search", "fetch_url")

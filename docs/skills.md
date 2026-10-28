@@ -87,7 +87,7 @@ the run ends at the user's NEXT message or /new (the badge disappears); a new ch
 
 Chip vs `use_skill`: with a chip the text is part of the **user message** (and is re-sent with every request while that message is inside the
 chat-history window, about 4–5k tokens for the forecast skill); with `use_skill` it is a **tool result** (cut to 20,000 characters like
-`read_note`, and shortened like any old tool output when the history is re-sent). If the user attached the skill, the model is told not to
+`read_note`, and kept whole like any old tool output unless *Old tool output* is set to shorten). If the user attached the skill, the model is told not to
 call `use_skill` for it.
 
 ## 4. Discovery, catalog and loading (details)

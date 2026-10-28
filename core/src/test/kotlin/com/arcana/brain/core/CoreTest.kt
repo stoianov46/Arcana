@@ -740,6 +740,24 @@ class CoreTest {
     }
 
     @Test
+    fun oldToolOutputIsKeptWholeUnlessTheUserChoosesToShortenIt() {
+        val big = "x".repeat(5000)
+        val history = listOf(ChatMessage.user("read it"), ChatMessage.toolResult("read_file", big), ChatMessage.assistant("ok"), ChatMessage.user("and again?"))
+        fun sent(config: AppConfig) = Prompts.chatMessages(config, history, null, emptyMap()).first { it.role == "tool" }.content
+        assertEquals(big, sent(AppConfig()), "the default cuts nothing")
+        val shortened = sent(AppConfig(oldToolOutput = "shorten"))
+        assertTrue(shortened.length < 1600 && "shortened: the first 1200 of 5000 characters" in shortened && "call the tool again" in shortened, shortened.takeLast(120))
+    }
+
+    @Test
+    fun aCutInAToolResultIsFoundSoTheChatCanSayIt() {
+        assertEquals("… (cut after 20000 characters; the file has more. Read the rest with start_line / end_line)", ToolCuts.marker("line\nline\n… (cut after 20000 characters; the file has more. Read the rest with start_line / end_line)"))
+        assertEquals("… and 40 more (name a folder to narrow it down)", ToolCuts.marker("a.md\nb.md\n… and 40 more (name a folder to narrow it down)"))
+        assertEquals("… 120 characters left out …", ToolCuts.marker("start\n… 120 characters left out …\nend"))
+        assertEquals(null, ToolCuts.marker("a normal result\nwith … an ellipsis in the middle\nand nothing left out"))
+    }
+
+    @Test
     fun theModelsTaskListIsParsedShownAndKeptInTheChat() {
         val items = Todos.parse("[x] read the note\n- [~] write the summary\n3. [ ] save it\nplain line\n\n(x) odd mark")
         assertEquals(listOf('x', '~', ' ', ' ', 'x'), items.map { it.state })
@@ -1723,8 +1741,10 @@ class CoreTest {
             val lost = box.execute(call("list_dir", "path" to "Arcana/src"))
             assertTrue("Did you mean" in lost && "IDEA Projects/Arcana/src" in lost, lost)
             val old = ChatMessage.toolResult("list_dir", "x".repeat(5000))
-            val sent = Prompts.chatMessages(AppConfig(), listOf(old, ChatMessage.assistant("ok"), ChatMessage.user("next"), ChatMessage.toolResult("list_dir", "y".repeat(5000))), null, emptyMap(), tools = true)
+            val history = listOf(old, ChatMessage.assistant("ok"), ChatMessage.user("next"), ChatMessage.toolResult("list_dir", "y".repeat(5000)))
+            val sent = Prompts.chatMessages(AppConfig(oldToolOutput = "shorten"), history, null, emptyMap(), tools = true)
             assertTrue(sent[1].content.length < 2000 && sent.last().content.length == 5000)
+            assertEquals(5000, Prompts.chatMessages(AppConfig(), history, null, emptyMap(), tools = true)[1].content.length, "by default an old result is sent whole")
             assertTrue(".git/" !in out && !out.startsWith("Error"), out)
             assertTrue(".gitlab-ci.yml" in box.execute(call("find_files", "name" to "gitlab-ci")))
             assertTrue(deep.toString() !in out)

@@ -471,8 +471,9 @@ object Prompts {
         val window = window(config.chatHistory, history)
         val lastUser = window.indexOfLast { it.role == "user" }
         val converted = window.mapIndexed { i, m ->
-            // old tool output (whole directory trees, files) would fill the model's context; the answer built on it stays
-            if (m.role == "tool" && i < lastUser) return@mapIndexed if (m.content.length > OLD_TOOL_RESULT) m.copy(content = m.content.take(OLD_TOOL_RESULT) + "\n… (shortened)") else m
+            // old tool output is kept whole unless the user chose "shorten" (Settings → Tools → Old tool output): a silent cut made models read the same file again or answer from half of it
+            if (m.role == "tool" && i < lastUser && config.oldToolOutput == "shorten") return@mapIndexed if (m.content.length > OLD_TOOL_RESULT) m.copy(content = m.content.take(OLD_TOOL_RESULT) + "\n… (shortened: the first $OLD_TOOL_RESULT of ${m.content.length} characters are kept; call the tool again for the whole result)") else m
+            if (m.role == "tool") return@mapIndexed m
             if (m.role != "user") return@mapIndexed m
             var content = m.content
             for (name in m.noteNames) {

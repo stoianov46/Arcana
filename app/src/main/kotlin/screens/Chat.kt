@@ -1145,7 +1145,11 @@ private fun toolResultLines(message: ChatMessage, plain: Boolean, width: Int): L
     val size = if (text.length > 80 || '\n' in text) "  (${text.length} characters)" else ""
     val mark = if (plain) (if (failed) "x" else "ok") else if (failed) "✕" else "✓"
     val body = "  ${if (plain) "->" else "↳"} $mark ${first.take((width - 8 - size.length).coerceAtLeast(10))}$size"
-    return listOf(Line(body.take(width), if (failed) Palette.Red else Palette.Muted), Line(""))
+    // what the tool left out, said plainly: the model was not given it, and a character count hides that
+    val cut = com.arcana.brain.core.ToolCuts.marker(text)
+    val lines = mutableListOf(Line(body.take(width), if (failed) Palette.Red else Palette.Muted))
+    if (cut != null) lines += Line("    ${if (plain) "[cut]" else "✂"} ${sanitizeForTerminal(cut)}".take(width), Palette.Orange)
+    return lines + Line("")
 }
 
 /** The lines of a change waiting for approval, as many as fit the panel. */

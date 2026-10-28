@@ -21,6 +21,7 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `Tools.kt` | tool-calling types (`ToolCall`, `ToolSpec`, `ToolRisk`), `FileAccess` sandbox, `ToolBox` (all tools, `cheatSheet`, `describe`), prompts (`TOOLS_PROMPT`, `REQUEST_ACCESS_PROMPT`, `NO_TOOLS_PROMPT`), `wait` (`MAX_WAIT_SECONDS`), `ask_user`/`request_access` definitions, `cleanOption`, `looksLikeToolTask`, `describeNow` |
 | `Skills.kt` | `Skill`, `Skills.discover` (one folder per skill, entry note `<name>.skill.md`, `output:` folder for results, problems), `catalog`, `load`, `loadEntry`, `isEntry`, `chipLabel`, `find`, `summary`, `parseRequirements`/`requirementsOf`; `Requirement` and `SkillRun` (the completion gate's progress) |
 | `VaultIndex.kt` tags | `VaultIndex.frontmatterTags` reads tags however they are written (`tags: [a, b]`, `a, b`, `a b`, `#a #b`, a `- a` list; `tags:`, `tag:` or `Tags:`; several keys all count); `cleanTag` and `isTagKey` are shared with `mergeFrontmatterTags` (Inbox.kt) and `Vault.addTags` |
+| `ToolCuts.kt` | `ToolCuts.marker(result)`: the line in which a tool says it left something out, shown in the chat as `✂ …` |
 | `Todos.kt` | `TODO`, `TODO_DEFINITION`, `Todos` (`parse`, `describe`, `last`, `render`): the model's own task list, the `todo` pseudo-tool; the list is derived from the latest `todo` call in the chat (`ChatSession.todos`), nothing is stored apart from the messages |
 | `ChatStats.kt` | `CHAT_STATS`, `CHAT_STATS_DEFINITION`, `ChatStats.describe(...)`: the text the `chat_stats` pseudo-tool returns |
 | `ToolUsage.kt` | `ToolUseRecord` (time, tool, millis, `ok`/`error`/`denied`, result chars → `approxTokens` = chars/4), `ToolUseStore` (`tool-usage.jsonl` next to the settings), `ToolStats.by/since` → `ToolTotals` |
@@ -82,7 +83,7 @@ Static helpers: `sanitizeTitle`, `splitFrontmatter(text) -> (frontmatter, body)`
 `Prompts` (all prompt text lives here; `window(limit, history)` is what a chat sends: at least the last N messages and never less than the whole current turn; `cutMarker` / `cutNote` / `hitText` mark a cut note): `summarize`, `ask`, `noteTask(config, NoteTask, title, text, input)`,
 `compose(config, request)`, `chatMessages(config, history, hits?, noteTexts, tools, toolsNote, canRequestTools, memory, today)`, `sessionSummary(config, activity, chats)`.
 `chatMessages` windows history to `config.chatHistory`, inlines attached notes into the user messages, wraps the latest
-question with vault excerpts when `hits != null`, shortens tool output older than the latest user message to 1,200 characters, and builds the system prompt: `systemPrompt` + today's date + (`TOOLS_PROMPT` + tool note | `REQUEST_ACCESS_PROMPT` | `NO_TOOLS_PROMPT`) + the `ARCANA.md` memory.
+question with vault excerpts when `hits != null`, keeps tool output older than the latest user message whole (or, with `oldToolOutput = "shorten"`, cuts it to 1,200 characters with a marker), and builds the system prompt: `systemPrompt` + today's date + (`TOOLS_PROMPT` + tool note | `REQUEST_ACCESS_PROMPT` | `NO_TOOLS_PROMPT`) + the `ARCANA.md` memory.
 
 ## `VaultIndex.kt`
 
