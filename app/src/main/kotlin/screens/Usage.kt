@@ -190,6 +190,7 @@ private fun Dashboard(period: Period, page: Page, records: List<UsageRecord>, al
                 left -= FeatureRows + 2
                 if (left >= 14) { VGap(); FeaturePanel(records, Palette.Blue, "By model") { it.model }; left -= FeatureRows + 3 }
             }
+            if (left >= 6) { VGap(); AdvisorsPanel(records); left -= ADVISOR_ROWS + 3 }
             if (left >= 6) { VGap(); HoursPanel(records, insights); left -= 6 }
             if (left >= 6) { VGap(); SpeedPanel(all, period) }
         }
@@ -206,6 +207,7 @@ private fun CompositionLet(width: Int, content: @Composable () -> Unit) {
 
 private const val TILES_ROWS = 4
 private const val FeatureRows = 6
+private const val ADVISOR_ROWS = 3
 
 @Composable
 private fun Tiles(totals: UsageTotals, insights: UsageInsights) {
@@ -331,6 +333,21 @@ private fun FeaturePanel(records: List<UsageRecord>, color: Color, title: String
     val rows = UsageStats.by(records, key).take(FeatureRows)
     val total = records.sumOf { it.totalTokens.toLong() }.coerceAtLeast(1)
     Panel(title) { Bars(rows.map { Triple(it.first, it.second.totalTokens, it.second) }, color, total) }
+}
+
+/** The Oracul, the Planner and the Judge side by side: calls, tokens, share of all tokens, time per call and the models that did the work. */
+@Composable
+private fun AdvisorsPanel(records: List<UsageRecord>) {
+    val width = panelWidth()
+    Panel("Oracul, Planner, Judge") {
+        UsageStats.advisors(records).forEach { a ->
+            val t = a.totals
+            val line = if (t.requests == 0) fit(a.feature, 8) + " not used in this period"
+            else fit(a.feature, 8) + " " + "${t.requests} calls".padEnd(10) + UsageStats.compact(t.totalTokens).padStart(6) + " tok  " + "%.0f%%".format(a.share * 100).padStart(4) +
+                "  avg " + seconds(t.millis / t.requests).padStart(5) + "  " + a.models.joinToString(", ")
+            Label(line.take(width), color = if (t.requests == 0) Palette.Dim else Palette.Text)
+        }
+    }
 }
 
 /** Which hours of the day are busy: one shaded cell per hour (░▒▓█ by share of the busiest), with the hours named below. */

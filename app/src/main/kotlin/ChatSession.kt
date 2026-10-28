@@ -377,7 +377,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 ToolRisk.Write -> spec.alwaysAsk || app.config.toolMode != "auto" // deleting and moving ask even in Auto mode
                 ToolRisk.Read -> !app.config.toolAutoRead
                 ToolRisk.Shell -> !app.config.toolAutoShell && !(app.config.toolAutoRead && ShellPolicy.isSafe(command)) // never "always": each command is looked at, unless auto-run is on
-                ToolRisk.Web -> !(call.name == "web_search" && app.config.toolAutoSearch) // never "always": the address itself can carry data out; only a search can be let through (Settings → Tools → Search without asking)
+                ToolRisk.Web -> !(call.name in AUTO_WEB && app.config.toolAutoSearch) // never "always": the address itself can carry data out; only a search or a page read can be let through (Settings → Tools → Search and fetch without asking); http_request always asks
             }
             var allowed = !folderDenied && refusal == null
             if (ask && allowed) {
@@ -978,5 +978,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     private companion object {
         const val MAX_NOTE_CHARS = 60_000
+
+        /** The web tools that *Search and fetch without asking* lets through; `http_request` is not one of them (it can send a body and headers). */
+        val AUTO_WEB = setOf("web_search", "fetch_url")
     }
 }

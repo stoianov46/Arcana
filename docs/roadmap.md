@@ -84,7 +84,7 @@ Closing review (2026-10-28): #11 stays *needs repro* (skipped until a screenshot
 | Cut notes are never silent: a marker for the model, `⚠ Only the start was read of: …` under the answer, and a dialog before a very long `@` note is sent | [functionality.md](functionality.md) | done |
 | Settings renamed: *Extra folders* → *Allowed folders*, *Project folder* → *Working folder*, with explanations (keys unchanged) | [tools-and-agent.md](tools-and-agent.md) | done |
 | Memory advice for chosen models (a warning and a better choice under the Settings row, after saving, and a `⚠` in the Chat status bar) | [oracul.md](oracul.md) | done |
-| *Search without asking*: `web_search` alone may run without a dialog (off by default; pages and HTTP requests and the Oracul still ask) | [tools-and-agent.md](tools-and-agent.md) | done |
+| *Search and fetch without asking*: `web_search` and `fetch_url` may run without a dialog (off by default; HTTP requests and the Oracul still ask) | [tools-and-agent.md](tools-and-agent.md) | done |
 | Oracul concept review: mapped to standard agent patterns, caveats written down (not measured on real tasks yet) | [oracul.md](oracul.md) | done |
 | Context fixes found in a real chat: the Oracul, judge and planner see the recent conversation (`Oracul.background`; Settings → Oracul → Chat context: messages and characters each, no fixed cap); the worker's window never cuts into the current turn (`Prompts.window`); a reviewer block tells the worker it saw only part of the chat | [oracul.md](oracul.md) | done |
 | `search_notes` explains a miss and searches short or common words as written | [tools-and-agent.md](tools-and-agent.md) | done |

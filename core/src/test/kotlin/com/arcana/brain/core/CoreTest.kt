@@ -87,6 +87,23 @@ class CoreTest {
     }
 
     @Test
+    fun advisorsAreCountedApartFromTheChat() {
+        val records = listOf(
+            UsageRecord(1, "Chat", "gemma", 600, 200, 8000),
+            UsageRecord(2, "Oracul", "big", 100, 50, 3000),
+            UsageRecord(3, "Oracul", "big", 100, 50, 1000),
+            UsageRecord(4, "Judge", "judge", 40, 10, 500),
+        )
+        val advisors = UsageStats.advisors(records).associateBy { it.feature }
+        assertEquals(listOf("Oracul", "Planner", "Judge"), UsageStats.advisors(records).map { it.feature })
+        assertEquals(2, advisors.getValue("Oracul").totals.requests)
+        assertEquals(300L, advisors.getValue("Oracul").totals.totalTokens)
+        assertEquals(listOf("big"), advisors.getValue("Oracul").models)
+        assertEquals(0, advisors.getValue("Planner").totals.requests)
+        assertEquals(300.0 / 1150, advisors.getValue("Oracul").share, 0.0001)
+    }
+
+    @Test
     fun usageIsStoredAndSummarised() {
         val store = UsageStore(Files.createTempDirectory("usage").resolve("usage.jsonl"))
         assertTrue(store.load().isEmpty())

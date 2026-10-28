@@ -156,7 +156,7 @@ The **Tools** page (Tab) lists every tool the model called in the period: calls,
 
 Dashboard over `usage.jsonl` (`screens/Usage.kt`; analytics in `core/Usage.kt`: `UsageStats.perHour/perDay/speedPerDay/insights/
 estimatedCost`). Periods (←→): session, today, 7 days, 30 days, all time. Pages (`Tab`): **Overview** (totals tiles, column chart by hour or
-day, insights: busiest day, peak hour, streak, week on week, typical/slowest reply, context load), **Breakdown** (by feature/model with share,
+day, insights: busiest day, peak hour, streak, week on week, typical/slowest reply, context load), **Breakdown** (by feature/model with share, an *Oracul, Planner, Judge* panel with calls, tokens, share, average time and models (`UsageStats.advisors`),
 hour heat strip, speed sparkline), **Recent replies** (table; longest green, slowest orange). Its header is a `StatusHeader` (page, period,
 replies, tokens, estimated price, speed, session time). Every panel states its row need and is dropped when the height cannot hold it
 (80×24 safe).
@@ -179,7 +179,7 @@ Tabs (groups) and rows:
 - **Sounds** (all off by default; `core/Sound.kt`): *Needs you* (an approval or a question waits), *Reply finished*, *Reply failed*: each ←/→ over Off, macOS system sounds, terminal bells × 1–5 and *Your own file* (and plays the choice as you step); *Play when* (`soundWhere`: `away` = only while another screen than Chat is showing, `always`), *Volume*, *Your own sound* (a file path). `Shell` watches `app.chat.approval / question / gen.state` with `snapshotFlow` and calls `Sounds.notify`; `CommandSoundPlayer` plays through `afplay` on macOS and falls back to the terminal bell. The Chat tab itself shows `!` (an approval) or `?` (a question), pulsing, from every screen.
 - **Console**: Answer from vault, Render Markdown, Show thinking, Thinking in Chat (summary/full/hidden), Comparison view (side by side / stacked), Auto-compact, Chat history, Keep chats, Chats kept, Copy as.
 - **Tools**: Tools in Chat, Working folder, Allowed folders, Shell commands, Run commands without asking, Calls written as text (auto/ask/off), Search backend (DuckDuckGo/SearXNG/Brave),
-  Search address, Search API key, Web pages (search and fetch), Search without asking (`toolAutoSearch`: web_search only, off by default), Mode (ask/auto/plan), Read without asking, Steps per question (1–60).
+  Search address, Search API key, Web pages (search and fetch), Search and fetch without asking (`toolAutoSearch`: web_search and fetch_url, off by default), Mode (ask/auto/plan), Read without asking, Steps per question (1–60).
 - **Prompts**: Memory file path, Memory file, System prompt, Summary prompt. **Oracul**: Oracul model, More Oracul models (a tick list), Judge model, Oracul server, Skill planner, Skill worker, Skill reviewer (the role table for skills), Stuck: failed calls, Stuck: failing turns, Oracul may use tools, Automatic second opinion.
 - **Accessibility**: Interface scale, Screen-reader output. **Tabs**: order of the screens.
 
