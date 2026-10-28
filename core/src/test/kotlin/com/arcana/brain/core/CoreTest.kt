@@ -740,6 +740,26 @@ class CoreTest {
     }
 
     @Test
+    fun theModelsTaskListIsParsedShownAndKeptInTheChat() {
+        val items = Todos.parse("[x] read the note\n- [~] write the summary\n3. [ ] save it\nplain line\n\n(x) odd mark")
+        assertEquals(listOf('x', '~', ' ', ' ', 'x'), items.map { it.state })
+        assertEquals("write the summary", items[1].text)
+        assertEquals("plain line", items[3].text)
+        val said = Todos.describe(items)
+        assertTrue(said.startsWith("1. [x] read the note") && "2 of 5 done" in said && "Carry on with: write the summary" in said, said)
+        assertTrue("Every item is done" in Todos.describe(Todos.parse("[x] a\n[x] b")))
+        assertTrue("only one should be in progress" in Todos.describe(Todos.parse("[~] a\n[~] b")))
+        assertEquals("Todo list cleared.", Todos.describe(emptyList()))
+        assertEquals(Todos.MAX_ITEMS, Todos.parse((1..50).joinToString("\n") { "[ ] item $it" }).size)
+        // the list in the chat is what the LAST todo call said; a later empty call clears it
+        fun call(list: String) = ChatMessage.assistantCalls("", listOf(ToolCall(ToolFunction(TODO, kotlinx.serialization.json.buildJsonObject { put("items", kotlinx.serialization.json.JsonPrimitive(list)) }))))
+        val chat = listOf(ChatMessage.user("go"), call("[ ] a\n[ ] b"), ChatMessage.toolResult(TODO, "ok"), call("[x] a\n[~] b"))
+        assertEquals(listOf('x', '~'), Todos.last(chat).map { it.state })
+        assertEquals(emptyList(), Todos.last(chat + call("")))
+        assertEquals(emptyList(), Todos.last(listOf(ChatMessage.user("hi"))))
+    }
+
+    @Test
     fun theInternalFolderIsFoundAutomaticallyAndAnOldLayoutKeepsWorking() {
         val root = Files.createTempDirectory("arcana-layout")
         // nothing yet: a new vault gets the hidden folder

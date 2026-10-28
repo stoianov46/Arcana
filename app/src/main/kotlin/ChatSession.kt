@@ -34,6 +34,10 @@ import com.arcana.brain.core.REQUEST_ACCESS_DEFINITION
 import com.arcana.brain.app.screens.contextUsage
 import com.arcana.brain.app.screens.effectiveContext
 import com.arcana.brain.core.CHAT_STATS
+import com.arcana.brain.core.TODO
+import com.arcana.brain.core.TODO_DEFINITION
+import com.arcana.brain.core.TodoItem
+import com.arcana.brain.core.Todos
 import com.arcana.brain.core.Compaction
 import com.arcana.brain.core.Oracul
 import com.arcana.brain.core.OllamaClient
@@ -322,11 +326,12 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         for (call in calls) {
             // read again for every call: an earlier call of this round may have switched the mode, which rebuilds the toolbox
             val box = toolbox
-            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || call.name == CHAT_STATS || box == null) {
+            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || call.name == CHAT_STATS || call.name == TODO || box == null) {
                 val message = ChatMessage.toolResult(call.name, when {
                     call.name == ASK_USER -> askUser(call, text)
                     call.name == REQUEST_ACCESS -> requestAccess(call)
                     call.name == REQUEST_MODE -> requestMode(call)
+                    call.name == TODO -> Todos.describe(Todos.parse((call.arguments["items"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()))
                     call.name == CHAT_STATS -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList())
                     else -> "Error: tools are off. Call request_access to ask the user for them."
                 })
@@ -480,7 +485,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** What the model is offered when it has a toolbox: the tools, a way to ask for another mode, and (in plan mode) a way to ask to leave it. */
     private fun definitionsFor(box: ToolBox): JsonArray =
-        JsonArray(box.definitions() + REQUEST_MODE_DEFINITION + CHAT_STATS_DEFINITION + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
+        JsonArray(box.definitions() + REQUEST_MODE_DEFINITION + CHAT_STATS_DEFINITION + TODO_DEFINITION + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
 
     /** The model asks to switch the tool mode: the user always decides; when they agree the mode, the toolbox and the model's tools change at once. */
     private suspend fun requestMode(call: ToolCall): String {
@@ -560,6 +565,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     val title: String get() = ChatStore.titleOf(messages)
+
+    /** The model's own task list: what its latest `todo` call said (so it survives reopening the chat). */
+    val todos: List<TodoItem> get() = Todos.last(messages)
 
     fun add(message: ChatMessage) {
         messages += message

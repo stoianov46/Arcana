@@ -53,7 +53,7 @@ Layout rules that bite: a screen's top-level children go inside `Stack { }` (Mos
 2. `./gradlew test installDist` is green; for UI changes, look at the real screen (pty snapshot) at a small and a large terminal size.
 3. **Docs in the same commit:** the matching `docs/*.md`, [roadmap.md](roadmap.md) status, the in-app Guide (`screens/Guide.kt`) and Changelog (`screens/Changelog.kt`, bump "Last updated"), `README.md` when the first-run or install story changes.
 4. **The Arcana vault notes** (`Arcana/Arcana LLM Reference.md` = what the model may do, `Arcana Reference Documentation.md`, `Arcana Distribution and Setup.md`, `Skills/Skills Guide.md`) and the memory template (`Vault.MEMORY_TEMPLATE`, plus the user's `ARCANA.md`, whose first 8,000 characters are the only part the model reads).
-5. Audit instead of assuming: list the real tools (`ToolBox.specs` names plus the pseudo-tools `ask_user`, `request_access`, `request_mode`, `chat_stats`) and grep every doc and note for each one.
+5. Audit instead of assuming: list the real tools (`ToolBox.specs` names plus the pseudo-tools `ask_user`, `request_access`, `request_mode`, `chat_stats`, `todo`) and grep every doc and note for each one.
 
 ## Release checklist
 

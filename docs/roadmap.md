@@ -38,6 +38,7 @@ Closing review (2026-10-28): #11 stays *needs repro* (skipped until a screenshot
 | 3 | Tags: `add_tags` and `list_tags` tools | done |
 | 4 | Tags added by the agent show in the Library "tags" tab (the index now reads `tag:`, `Tags:`, `a b` and `#a #b`) | done |
 | 24 | Tool for the model to read current chat statistics (`chat_stats`) | done |
+| 24a | A task list for the model (`todo`): the plan and its progress visible in the chat and the status bar | done |
 | 14 | Tool usage statistics: Usage → **Tools** page (calls, ≈ tokens of results put into the context, average time, failures, denials) | done |
 
 ## Phase 4: Context and memory

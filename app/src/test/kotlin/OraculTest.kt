@@ -182,6 +182,27 @@ class OraculTest {
     }
 
     @Test
+    fun theModelCanKeepATaskListWithTheTodoTool() {
+        val f = fake()
+        try {
+            val vault = Files.createDirectories(Files.createTempDirectory("arcana-todo-vault").resolve("v"))
+            f.script = { model, body ->
+                if (model == "worker" && "\"tools\"" in body && "\"role\":\"tool\"" !in body) call("todo", """{"items":"[x] read\n[~] write\n[ ] save"}""") else null
+            }
+            val app = app(f) { copy(toolsEnabled = true, toolAutoRead = true, vaultPath = vault.toString()) }
+            val chat = app.chat
+            chat.send("plan the job")
+            val deadline = System.currentTimeMillis() + 10_000
+            while (chat.messages.none { it.role == "assistant" && it.toolCalls.isEmpty() } && System.currentTimeMillis() < deadline) Thread.sleep(50)
+            val result = chat.messages.first { it.role == "tool" }
+            assertEquals("todo", result.toolName)
+            assertTrue("1 of 3 done" in result.content && "Carry on with: write" in result.content, result.content)
+            assertEquals(listOf('x', '~', ' '), chat.todos.map { it.state })
+            assertTrue(f.asked.first().second.contains("\"name\":\"todo\""), "the tool is offered to the model")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun aChangeByTheOraculAlwaysAsksEvenInAutoModeAndADenialChangesNothing() {
         val f = fake()
         try {

@@ -347,6 +347,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         Regex("(?i)^(head|tail|type|more|less|read|open)$").matches(name) -> " Use read_file, or cat to print a file."
         Regex("(?i)^(grep|rg|search)$").matches(name) -> " Use grep_files to search inside files, or search_notes for the vault."
         Regex("(?i)^(find|locate)$").matches(name) -> " Use find_files."
+        Regex("(?i)todo|task_?list|checklist|plan_?update|update_?plan").containsMatchIn(name) -> " For a task list use todo (one argument, items: the whole list, one [ ] / [~] / [x] item per line)."
         else -> ""
     }
 

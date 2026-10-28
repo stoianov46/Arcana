@@ -228,6 +228,11 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
             val text = "◆ ${run.name} ${run.done}/${run.total}" + (if (run.skippedCount > 0) " ✕${run.skippedCount} skipped" else if (run.done == run.total) " ✓" else "")
             add(pillSegment(text, state, 7))
         }
+        // the model's own task list: how many items are done
+        chat.todos.takeIf { it.isNotEmpty() }?.let { list ->
+            val done = com.arcana.brain.core.Todos.doneCount(list)
+            add(pillSegment((if (plain) "todo " else "☑ ") + "$done/${list.size}" + (if (done == list.size) " ✓" else ""), if (done == list.size) Palette.Green else Palette.Cta, 7))
+        }
         if (config.toolsEnabled) {
             if (app.tools == false) add(pillSegment("⚠ no tools", Palette.Red, 8))
             else add(pillSegment("⚙ ${config.toolMode}", when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }, 8))
@@ -1114,6 +1119,10 @@ private fun entriesOf(m: ChatMessage): List<String> = when (m.role) {
 /** The one thing a tool call is about, for its line in the chat: its path, query or title. */
 private fun callSummary(call: ToolCall): String {
     val args = call.arguments
+    if (call.name == com.arcana.brain.core.TODO) {
+        val list = com.arcana.brain.core.Todos.parse((args["items"] as? JsonPrimitive)?.contentOrNull.orEmpty())
+        return if (list.isEmpty()) "clear the list" else "${list.size} items, ${com.arcana.brain.core.Todos.doneCount(list)} done"
+    }
     val key = listOf("command", "url", "question", "from", "path", "query", "pattern", "name", "glob", "title", "folder", "reason", "seconds").filter { args[it] != null }
     if (key.isEmpty()) return ""
     // a search names what it looks for and where; the others have one subject
@@ -1123,6 +1132,13 @@ private fun callSummary(call: ToolCall): String {
 /** The result of a tool, as a quiet line (or two) under the call: ✓ with what happened, ✕ with why not. */
 private fun toolResultLines(message: ChatMessage, plain: Boolean, width: Int): List<Line> {
     val text = message.content.trim()
+    // the task list is shown whole: it is the plan the user follows along
+    if (message.toolName == com.arcana.brain.core.TODO && !text.startsWith("Error:")) {
+        val items = text.lineSequence().takeWhile { it.firstOrNull()?.isDigit() == true }.map { sanitizeForTerminal(it) }.toList()
+        val summary = text.lineSequence().drop(items.size).firstOrNull().orEmpty()
+        return items.map { l -> Line("    ${if (plain) l else l.replace("[x]", "☑").replace("[~]", "▸").replace("[ ]", "☐")}".take(width), if ("[x]" in l) Palette.Green else if ("[~]" in l) Palette.Cta else Palette.Muted) } +
+            listOf(Line("    ${sanitizeForTerminal(summary)}".take(width), Palette.Muted), Line(""))
+    }
     val failed = text.startsWith("Error:") || text.startsWith("The user denied") || text.startsWith("The user did not allow") ||
         text.startsWith("Timed out") || (text.startsWith("exit code ") && !text.startsWith("exit code 0"))
     val first = sanitizeForTerminal(text.lineSequence().firstOrNull().orEmpty())
