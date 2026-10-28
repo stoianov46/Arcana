@@ -58,6 +58,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `searchUrl` | `""` | address of the user's SearXNG server (used only by that backend) |
 | `searchKey` | `""` | Brave Search API key, stored in plain text in `config.json` (keep the file private); the Settings row shows only its last 4 characters |
 | `textCalls` | `auto` | a tool call written as text: `auto` runs it, `ask` shows it first, `off` leaves it |
+| `toolAutoSearch` | false | `web_search` runs without asking (Settings → Tools → *Search without asking*; needs `toolWeb`; pages and HTTP requests still ask, the Oracul always asks); the Chat status bar shows an orange `↗ auto-search` |
 | `toolFolders` | `""` | Settings → Tools → *Allowed folders* (was *Extra folders*): `;`-separated roots the file tools may read and write besides the vault, `~` expanded (the only place a home or hidden folder can be allowed) |
 | `toolAutoRead` | true | read-only tools run without asking |
 | `skillsEnabled` / `skillsFolder` | true / `Skills` | the model is told which skills exist and gets `use_skill`; the vault folder with one folder per skill |

@@ -83,6 +83,9 @@ Closing review (2026-10-28): #11 stays *needs repro* (skipped until a screenshot
 | Memory file limit raised to 8,000 characters, and the memory pill turns orange (`⚠ memory 8k of 11k: end cut`) when the file is longer than what is sent | [data-and-config.md](data-and-config.md) | done |
 | Cut notes are never silent: a marker for the model, `⚠ Only the start was read of: …` under the answer, and a dialog before a very long `@` note is sent | [functionality.md](functionality.md) | done |
 | Settings renamed: *Extra folders* → *Allowed folders*, *Project folder* → *Working folder*, with explanations (keys unchanged) | [tools-and-agent.md](tools-and-agent.md) | done |
+| Memory advice for chosen models (a warning and a better choice under the Settings row, after saving, and a `⚠` in the Chat status bar) | [oracul.md](oracul.md) | done |
+| *Search without asking*: `web_search` alone may run without a dialog (off by default; pages and HTTP requests and the Oracul still ask) | [tools-and-agent.md](tools-and-agent.md) | done |
+| Oracul concept review: mapped to standard agent patterns, caveats written down (not measured on real tasks yet) | [oracul.md](oracul.md) | done |
 | `search_notes` explains a miss and searches short or common words as written | [tools-and-agent.md](tools-and-agent.md) | done |
 
 ## Skipped

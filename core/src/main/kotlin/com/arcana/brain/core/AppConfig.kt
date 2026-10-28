@@ -118,6 +118,8 @@ data class AppConfig(
     val projectFolder: String = "",
     /** The model may ask to read web pages (fetch_url; every address asks first). Off by default. */
     val toolWeb: Boolean = false,
+    /** web_search runs without asking (only the search words leave the computer). Pages and HTTP requests still ask; the Oracul always asks. Off by default. */
+    val toolAutoSearch: Boolean = false,
     /** The model may ask to run shell commands (every one needs approval). Off by default. */
     val toolShell: Boolean = false,
     /** Shell commands run without asking (those [ShellPolicy] refuses never run). Off by default; the Chat status bar shows `▶ auto-run` while it is on. */

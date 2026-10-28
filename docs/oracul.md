@@ -16,6 +16,19 @@ user, see [functionality.md](functionality.md) "Oracul"; for the settings, [data
 5. **Visible.** Every consultation is a block in the chat with the model's name, shown in the bottom bar while it runs, recorded in
    Usage and reported by `chat_stats`.
 
+## Where this sits among agent patterns
+
+Arcana is an agent in the usual sense: a model in a loop that calls tools (the tool rounds in `Generation`, up to 40 per question), with a plan and a completion gate for skills, stuck detection and approvals before changes. It is a human-in-the-loop assistant on local models, lighter than coding agents. The Oracul is a product name for patterns that are well established (from general knowledge of the field, not a current survey):
+
+| In Arcana | Common name |
+|---|---|
+| `/oracul`, the automatic opinion, a skill's `reviewer:` | critic / reviewer, "reflection" |
+| `/compare` and the judge | LLM-as-judge, answer selection |
+| `/takeover` and the stuck step-in | escalation, model routing (a cascade) |
+| a skill's `planner:` and `worker:` | planner and executor |
+
+What differs: the Oracul is advisory and speaks only after problems or on a command, where many systems always run a verifier (a deliberate choice for speed on local models; *Judge automatically* gives the heavier form). Caveats to keep in mind: a reviewer of the same model family tends to agree with the worker, so a different or stronger model helps; a second opinion is not proof and is shown next to the answer, never applied by itself; more models cost time and memory (see the memory advice). It has been tested with fake servers and short real runs, not measured on real tasks, so how much it improves answers is not known yet.
+
 ## What exists
 
 | Feature | How it starts | What happens | Code |
@@ -114,6 +127,7 @@ ever written to the settings. The judge is only the judge: it sees all answers (
   (`columnCount`); more answers continue in further rows; a narrower window, `stacked`, or an unparsable block draws the answers one
   under another.
 - **Slash menu:** the highlighted entry shows a usage line (`SlashItem.usage`, `e.g. /oracul qwen3:30b`).
+- **Memory advice (`ModelFit.advice`, `AppContext.memoryAdvice`):** besides the picker labels, a standing note for the model already chosen: `advice(model, role, sizes, worker, ram)` returns null when it is fine, a note when it fits only alone (Ollama swaps it with the main model), and a `⚠` warning when it is too big (swap to disk, CPU or out of memory) with the better installed choice (`Better: …`, or `Install a smaller model`). Roles: main, Oracul (also a skill's planner and reviewer), judge (the judge should stay loaded with the main model). Sizes come from one cheap `/api/tags` call (`OllamaClient.modelSizes`, kept in `AppContext.modelSizes`, refreshed with the connection). It shows in three places: the hint under the selected Settings row, the notice after saving such a row (red for `⚠`), and an orange `⚠` after the Oracul text in the Chat status bar. No advice when the Oracul runs on another server (its memory is unknown).
 - **Memory fit (`ModelFit`):** size on disk × 1.2 against 70% of the physical memory (a rule of thumb, not a measurement) gives
   `fits with the main model` / `fits alone (swaps with the main model)` / `too big`. `★ suggested` marks the largest model that fits at all
   for the Oracul (with tools when needed, never the main model or an embedding model) and the largest that stays loaded with the main

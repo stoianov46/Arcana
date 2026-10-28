@@ -77,6 +77,8 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `web_search` | Web | `query`, `limit?` | same switch as `fetch_url`; see "Web"; returns title, address and snippet per result (≤10) |
 | `request_access` | pseudo-tool | `reason` | the only tool a model has when tools are off (plus `ask_user`); asks the user to turn tools on or leave plan mode |
 
+**Web access always asks, by design:** `ToolRisk.Web` is never allowed "always" and Auto mode does not cover it, because the address or query itself can carry data out. The one exception the user can switch on is `toolAutoSearch` (Settings → Tools → *Search without asking*): `web_search` then runs without a dialog (`ChatSession`, the `ask` rule); `fetch_url` and `http_request` still ask for every address, and the Oracul's own calls (`oraculCall`) always ask.
+
 Allowed roots = vault root + the **working folder** (`projectFolder`, Settings label *Working folder*) + `toolFolders` (`;`-separated, `~` expanded). Writes additionally refuse any path containing a `.git`
 or `.obsidian` segment. Backups: `<config dir>/backups/<yyyyMMdd-HHmmss>-<name>` (suffix `.2`, `.3` on collision).
 `ToolBox.cheatSheet()` lists every tool with its exact parameter names (optional ones end in `?`); it goes into the system prompt

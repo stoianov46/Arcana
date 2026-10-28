@@ -1781,4 +1781,21 @@ class CoreTest {
         assertEquals(0, whole.missing)
         assertTrue("cut" !in Prompts.hitText(whole), "a note shown whole has no marker")
     }
+
+    @Test
+    fun `the memory advice says what goes wrong and what to choose instead`() {
+        val gb = 1_000_000_000L
+        val ram = 32 * gb
+        val sizes = mapOf("worker" to 6 * gb, "small" to 3 * gb, "big" to 17 * gb, "huge" to 40 * gb)
+        val huge = ModelFit.advice("huge", ModelFit.Role.Oracul, sizes, "worker", ram)!!
+        assertTrue(huge.startsWith("⚠ huge is too big") && "Better: big" in huge, huge)
+        val big = ModelFit.advice("big", ModelFit.Role.Oracul, sizes, "worker", ram)!!
+        assertTrue(!big.startsWith("⚠") && "swaps" in big, "fits only alone: a note, not a warning")
+        assertEquals(null, ModelFit.advice("small", ModelFit.Role.Judge, sizes, "worker", ram), "fits with the worker: nothing to say")
+        assertTrue("To keep both loaded: small" in ModelFit.advice("big", ModelFit.Role.Judge, sizes, "worker", ram)!!, "the judge should stay loaded with the worker")
+        assertEquals(null, ModelFit.advice("huge", ModelFit.Role.Oracul, sizes, "worker", 0), "unknown memory: no advice")
+        assertEquals(null, ModelFit.advice("unknown", ModelFit.Role.Oracul, sizes, "worker", ram), "a model we have no size for: no advice")
+        assertTrue("Install a smaller model" in ModelFit.advice("huge", ModelFit.Role.Oracul, mapOf("huge" to 40 * gb), "worker", ram)!!)
+        assertTrue(ModelFit.advice("huge", ModelFit.Role.Main, sizes, "huge", ram)!!.contains("Better: big"))
+    }
 }

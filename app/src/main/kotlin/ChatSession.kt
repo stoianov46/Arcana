@@ -377,7 +377,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 ToolRisk.Write -> spec.alwaysAsk || app.config.toolMode != "auto" // deleting and moving ask even in Auto mode
                 ToolRisk.Read -> !app.config.toolAutoRead
                 ToolRisk.Shell -> !app.config.toolAutoShell && !(app.config.toolAutoRead && ShellPolicy.isSafe(command)) // never "always": each command is looked at, unless auto-run is on
-                ToolRisk.Web -> true // never "always": the address itself can carry data out
+                ToolRisk.Web -> !(call.name == "web_search" && app.config.toolAutoSearch) // never "always": the address itself can carry data out; only a search can be let through (Settings → Tools → Search without asking)
             }
             var allowed = !folderDenied && refusal == null
             if (ask && allowed) {

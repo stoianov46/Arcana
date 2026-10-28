@@ -167,7 +167,7 @@ internal fun contextMeter(messages: List<ChatMessage>, limit: Int): String {
  * The worker and the Oracul in one segment, so it is clear which model works now: that one is the filled pill (accent for the worker, orange for the Oracul or the judge, with `…`),
  * the other follows it quietly (the Oracul's setup while the worker works, `waiting` for the worker while the Oracul answers). The quiet part is dropped when the bar is narrow.
  */
-internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConfig, plain: Boolean, width: Int): StatusSegment {
+internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConfig, plain: Boolean, width: Int, oraculTooBig: Boolean = false): StatusSegment {
     val setup = Oracul.statusText(config, plain)
     if (asking != null) {
         val judging = asking == Oracul.judge(config) && asking != Oracul.model(config)
@@ -178,7 +178,11 @@ internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConf
         return StatusSegment(parts, 10)
     }
     val parts = mutableListOf(StatusPart(" $workerLabel ", Palette.Background, bold = true, background = Palette.Accent))
-    if (setup.isNotEmpty() && workerLabel.length + 2 + setup.length + 1 <= width / 2) parts += StatusPart(" $setup", Palette.Blue)
+    if (setup.isNotEmpty() && workerLabel.length + 2 + setup.length + 3 <= width / 2) {
+        parts += StatusPart(" $setup", Palette.Blue)
+        // the Oracul does not fit this machine's memory: it would swap to disk or run on the CPU (Settings → Oracul says what to choose instead)
+        if (oraculTooBig) parts += StatusPart(if (plain) " !" else " ⚠", Palette.Orange, bold = true)
+    }
     return StatusSegment(parts, 10)
 }
 
@@ -195,7 +199,7 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
     val compact = UsageStats::compact
     return buildList {
         // the models, one segment: whoever works now comes first as a filled pill, the other one after it, quiet
-        add(modelsSegment(ModelIcon.label(config.model, plain), chat.consulting, config, plain, width))
+        add(modelsSegment(ModelIcon.label(config.model, plain), chat.consulting, config, plain, width, app.memoryAdvice(Oracul.model(config), com.arcana.brain.core.ModelFit.Role.Oracul)?.startsWith("⚠") == true))
         add(statusSegment("temperature", "°${config.temperature}", Palette.Accent, 6))
         if (config.chatUseVault) add(pillSegment("◉ vault", Palette.Cta, 6))
         // the memory file the assistant reads in every chat: shown, so you can see that it is in use (and how much room it takes)
@@ -230,6 +234,7 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
             // the project the model works in: its folder name, so it is clear where relative paths and commands start
             if (config.projectFolder.isNotBlank()) add(pillSegment((if (plain) "project " else "▣ ") + java.nio.file.Path.of(config.projectFolder.trimEnd('/')).fileName, Palette.Cta, 5))
             // commands run without asking: said loudly, in the colour of high risk
+            if (config.toolWeb && config.toolAutoSearch && config.toolMode != "plan") add(pillSegment(if (plain) "auto-search" else "↗ auto-search", Palette.Orange, 8))
             if (config.toolShell && config.toolAutoShell && config.toolMode != "plan") add(pillSegment(if (plain) "! auto-run" else "▶ auto-run", Palette.Red, 9))
         }
     }

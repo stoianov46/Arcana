@@ -52,6 +52,34 @@ object ModelFit {
         return Suggestion(oracul?.name, judge?.name)
     }
 
+    /** Which seat a model is in, for [advice]: the main model, the Oracul (or a skill's planner / reviewer), or the judge. */
+    enum class Role { Main, Oracul, Judge }
+
+    /**
+     * A standing note about [model] in [role] on a machine with [ramBytes], from the installed [sizes]: null when it is fine (or unknown), else what goes wrong
+     * (swapping to disk, the CPU, or swapping with the main model) and which installed model to choose instead. A rule of thumb, see [fit].
+     */
+    fun advice(model: String, role: Role, sizes: Map<String, Long>, worker: String, ramBytes: Long, oraculTools: Boolean = true): String? {
+        val size = sizes[model]?.takeIf { it > 0 } ?: return null
+        if (ramBytes <= 0) return null
+        val workerBytes = if (role == Role.Main) 0L else sizes[worker] ?: 0L
+        val models = sizes.map { (name, bytes) -> ModelDetails(name, bytes, emptyList(), 0) }
+        val picks = suggest(models, worker, ramBytes, oraculTools)
+        val better = when (role) {
+            Role.Main -> models.filter { fit(it.sizeBytes, 0, ramBytes) != Fit.TooBig && "embed" !in it.name }.maxByOrNull { it.sizeBytes }?.name?.takeIf { it != model }
+            Role.Oracul -> picks.oracul
+            Role.Judge -> picks.judge
+        }?.takeIf { it != model }
+        val room = "${gb(need(size))} needed of about ${gb(budget(ramBytes))} usable"
+        return when (fit(size, workerBytes, ramBytes)) {
+            Fit.TooBig -> "⚠ $model is too big for this memory ($room): Ollama would swap to disk or run on the CPU, which is very slow, or run out of memory. " +
+                (better?.let { "Better: $it." } ?: "Install a smaller model.")
+            Fit.Alone -> if (role == Role.Main) null else "$model fits only when the main model is unloaded, so Ollama swaps the two (several seconds each time)." +
+                (better?.let { " To keep both loaded: $it." }.orEmpty())
+            Fit.Both -> null
+        }
+    }
+
     /** The physical memory of this machine in bytes, 0 when the JVM does not say. */
     fun physicalMemory(): Long = runCatching { (java.lang.management.ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean).totalMemorySize }.getOrDefault(0L)
 

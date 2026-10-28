@@ -272,6 +272,14 @@ class OllamaClient(private val config: () -> AppConfig) {
         }
     }
 
+    /** The installed models and their sizes in bytes (one cheap request, no per-model details), for the memory advice. */
+    suspend fun modelSizes(): Map<String, Long> = withContext(Dispatchers.IO) {
+        val cfg = config()
+        val request = HttpRequest.newBuilder(endpoint(cfg, "/api/tags")).timeout(Duration.ofSeconds(5)).GET().build()
+        val response = try { http.send(request, HttpResponse.BodyHandlers.ofString()) } catch (e: Exception) { return@withContext emptyMap() }
+        if (response.statusCode() != 200) emptyMap() else OllamaProtocol.parseModelSizes(response.body()).toMap()
+    }
+
     suspend fun listModels(): List<String> = withContext(Dispatchers.IO) {
         val cfg = config()
         val request = HttpRequest.newBuilder(endpoint(cfg, "/api/tags"))

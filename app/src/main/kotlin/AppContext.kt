@@ -60,6 +60,18 @@ class AppContext(
         loadedContext = runCatching { client.loadedContext(config.model) }.getOrDefault(0)
     }
 
+    /** The installed models' sizes in bytes (on the main server), for the memory advice; empty until read. */
+    var modelSizes by mutableStateOf<Map<String, Long>>(emptyMap())
+
+    /**
+     * A note when [model] in [role] does not suit this machine's memory, with a better installed choice (see [com.arcana.brain.core.ModelFit.advice]); null when it is fine,
+     * unknown, or when the Oracul runs on another server whose memory we cannot know.
+     */
+    fun memoryAdvice(model: String, role: com.arcana.brain.core.ModelFit.Role): String? {
+        if (model.isBlank() || (role != com.arcana.brain.core.ModelFit.Role.Main && config.oraculUrl.isNotBlank())) return null
+        return com.arcana.brain.core.ModelFit.advice(model, role, modelSizes, config.model, com.arcana.brain.core.ModelFit.physicalMemory(), config.oraculTools)
+    }
+
     var modelContext by mutableStateOf(0)
         private set
     val client = OllamaClient { config }
@@ -154,6 +166,7 @@ class AppContext(
         }
         val shown = if (connection is Connection.Online) runCatching { client.show(config.model) }.getOrNull() else null
         modelContext = shown?.second ?: 0
+        modelSizes = runCatching { client.modelSizes() }.getOrDefault(emptyMap())
         refreshLoadedContext()
         val capabilities = shown?.first?.takeIf { it.isNotEmpty() }
         vision = capabilities?.let { "vision" in it }
