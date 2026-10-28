@@ -28,6 +28,7 @@ import com.arcana.brain.core.ASK_USER_DEFINITION
 import com.arcana.brain.core.REQUEST_ACCESS
 import com.arcana.brain.core.looksLikeToolTask
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.sync.withLock
 import com.arcana.brain.core.REQUEST_ACCESS_DEFINITION
 import com.arcana.brain.app.screens.contextUsage
@@ -63,6 +64,18 @@ import kotlinx.coroutines.withContext
  */
 class ChatSession(private val app: AppContext, private val store: ChatStore) {
     val messages = mutableStateListOf<ChatMessage>()
+
+    /**
+     * Messages typed while the model works. A tool turn picks them up at its next round (they join it as your messages, so a correction or a
+     * clarification reaches the model before it goes further); a turn without tool rounds sends them one by one when its reply is done.
+     * Cancelling or a failure gives them back to the message field (see [takeQueued]).
+     */
+    val queued = mutableStateListOf<String>()
+
+    fun enqueue(text: String) { queued += text }
+
+    /** Empties the queue and returns what was in it, joined; empty when nothing waited. */
+    fun takeQueued(): String = queued.joinToString("\n\n").also { queued.clear() }
 
     /** What is typed in the message field but not sent yet: kept too, so leaving the screen does not lose it. */
     val input = TextFieldState(multiline = true)
@@ -419,6 +432,14 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }
         // the turn keeps failing: the Oracul reads the attempts and its advice joins the loop, so the next round starts from it
         stuckAdvice()?.let { add(it); added += it }
+        // what you typed while it worked joins the turn now, so the next round already knows
+        if (queued.isNotEmpty()) {
+            val text = takeQueued()
+            val message = ChatMessage.user(text)
+            add(message)
+            added += message
+            app.session.log(SessionKind.Asked, text)
+        }
         return added
     }
 
@@ -940,6 +961,11 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         pendingSources = emptyList()
         pendingCut = emptyList()
         gen.consume()
+        // typed while this reply was written and no tool round took it: it is the next question, sent after this one is out of the way
+        if (queued.isNotEmpty()) {
+            val next = queued.removeAt(0)
+            app.scope.launch { yield(); sendNow(next) }
+        }
     }
 
     /** Starts an empty conversation. The old one stays saved and can be opened again from the history. */
@@ -948,6 +974,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         clearRoles()
         toolsDeclined = false
         messages.clear(); wholeNotes.clear(); cutAccepted.clear()
+        queued.clear()
         input.clear()
         attachments.clear()
         savedMessages = 0

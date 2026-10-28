@@ -67,6 +67,33 @@ class OraculTest {
     }
 
     @Test
+    fun aMessageQueuedWhileTheModelWorksIsSentAfterItsReply() {
+        val f = fake()
+        try {
+            val chat = app(f).chat
+            chat.send("first")
+            chat.enqueue("second")
+            assertEquals(listOf("second"), chat.queued.toList())
+            val deadline = System.currentTimeMillis() + 10_000
+            while (chat.messages.count { it.role == "assistant" } < 2 && System.currentTimeMillis() < deadline) Thread.sleep(50)
+            assertEquals(listOf("first", "second"), chat.messages.filter { it.role == "user" }.map { it.content })
+            assertEquals(2, chat.messages.count { it.role == "assistant" })
+            assertTrue(chat.queued.isEmpty())
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun cancellingGivesTheQueueBack() {
+        val f = fake()
+        try {
+            val chat = app(f).chat
+            chat.enqueue("one"); chat.enqueue("two")
+            assertEquals("one\n\ntwo", chat.takeQueued())
+            assertTrue(chat.queued.isEmpty())
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun aSecondOpinionAsksTheOraculModelAndAddsItAsABlock() {
         val f = fake()
         try {

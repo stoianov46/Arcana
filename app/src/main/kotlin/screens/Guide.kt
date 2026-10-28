@@ -211,6 +211,8 @@ Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use
 ## Scrolling and copying
 `↑` `↓` scroll while typing. Chat opens with the field not focused (press `Enter` to start typing). `Esc` leaves the field again: then `j` `k` scroll, `Space` pages, and `s` starts **select mode** (`Space` ticks, `c` copies, `b` copies only code). `Enter` starts typing.
 
+**While the model works** you can keep typing: `Enter` puts your message in a queue (`⏳ queued` above the field). In a tool turn it joins at the next step, so a correction or a clarification reaches the model before it goes further; otherwise it is sent right after the reply. `Esc` `Esc` cancels the reply and gives the queued text back to the field. Commands and attachments cannot be queued.
+
 ## Chats
 `/new` starts a fresh chat, `/history` opens an older one, `/clear` erases this one. Every action is also in the palette (`Ctrl+P`). Chats are **kept in the history automatically**, so leaving never loses one and never asks; `Ctrl+S` **Save to vault** is only for turning a chat into a note.
 

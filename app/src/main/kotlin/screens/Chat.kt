@@ -271,6 +271,9 @@ private fun endsWithBackslash(field: com.arcana.brain.app.input.TextFieldState):
 private fun maxInputRows(): Int = (LocalContentHeight.current / 4).coerceIn(3, 8)
 private const val MaxNotes = 5
 
+/** How many queued messages are listed above the message field; the rest are counted. */
+private const val QUEUE_SHOWN = 3
+
 private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear }
 
 /** What happens to the last answer when it is sent to an existing note. */
@@ -544,7 +547,14 @@ fun ChatScreen(app: AppContext) {
 
     fun send() {
         var text = input.text.trim()
-        if ((text.isEmpty() && chat.attachments.isEmpty) || gen.state == GenState.Running) return
+        if (text.isEmpty() && chat.attachments.isEmpty) return
+        // while the model works a message is queued: it joins the turn at the next tool round, or follows the reply
+        if (gen.state == GenState.Running) {
+            if (text.isEmpty() || text.startsWith("/") || !chat.attachments.isEmpty) return toast("Only plain text can be queued while the model works. Wait for the reply, or cancel it with Esc Esc.", error = true)
+            input.clear()
+            chat.enqueue(text)
+            return
+        }
         if (text.startsWith("/") && chat.attachments.isEmpty) {
             val (word, args) = splitSlash(text)
             val known = slashItemsNow.firstOrNull { it.name.equals(word, ignoreCase = true) }
@@ -647,7 +657,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.PickTarget -> Hints("type  search", "↑↓  move", "Enter  ${target.verb.lowercase()}", "Esc  cancel")
         ChatMode.Chat -> when {
             output.selecting -> Hints("↑↓  move", "Space  tick", "c  copy", "b  code only", "Esc  leave")
-            gen.state == GenState.Running -> Hints("Esc Esc  cancel reply", "↑↓  scroll")
+            gen.state == GenState.Running -> Hints("Enter  queue a message", "Esc Esc  cancel reply", "↑↓  scroll")
             browsing -> Hints("Enter  type a message", "s  select & copy", "↑↓/Space  scroll", "1-9  screens")
             slashMatches.isNotEmpty() -> Hints("↑↓  choose", "Tab  complete", "Enter  run", "Esc  close")
             else -> Hints("Enter  send", "Alt+Enter  new line", "/  commands", "@  note", "Ctrl+O  attach", "Ctrl+S  save", "↑↓  scroll", "Esc  browse")
@@ -659,6 +669,14 @@ fun ChatScreen(app: AppContext) {
     // a skill asked for a model that cannot be used: say so once
     androidx.compose.runtime.LaunchedEffect(chat.roleNote) { chat.roleNote?.let { toast(it, error = true); chat.roleNote = null } }
     // the worker failed this turn: offer the Oracul (never automatic, it is one keystroke away)
+    // a reply that was cancelled or failed does not send what was queued behind it: it goes back to the message field
+    androidx.compose.runtime.LaunchedEffect(gen.state) {
+        if ((gen.state == GenState.Failed || gen.state == GenState.Cancelled) && chat.queued.isNotEmpty()) {
+            val back = chat.takeQueued()
+            input.set(if (input.text.isBlank()) back else back + "\n\n" + input.text)
+            toast("Your queued message is back in the field.")
+        }
+    }
     androidx.compose.runtime.LaunchedEffect(gen.state) {
         if (gen.state == GenState.Failed && com.arcana.brain.core.Oracul.model(app.config).isNotEmpty() && app.config.oraculAuto != "off") toast("The model failed this turn. Type /takeover to let ${com.arcana.brain.core.Oracul.model(app.config)} finish it.")
     }
@@ -934,7 +952,8 @@ fun ChatScreen(app: AppContext) {
                     val statusRow = if (gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled) 1 else 0
                     // what sits under the conversation: the message field, or the change waiting for an answer
                     val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
-                    val below = (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval, approvalMax()).size + 3 else 2 + inputRows + pendingRow + slashMatches.size + (if (slashUsage.isEmpty()) 0 else 1)) + statusRows + panelActionRows
+                    val queuedRows = if (question == null && approval == null) chat.queued.size.coerceAtMost(QUEUE_SHOWN + 1) else 0
+                    val below = queuedRows + (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval, approvalMax()).size + 3 else 2 + inputRows + pendingRow + slashMatches.size + (if (slashUsage.isEmpty()) 0 else 1)) + statusRows + panelActionRows
                     ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below + bottomGap, actions = actions), output)
                     ReplyStatus(app, gen, doubleEsc = true, consulting = chat.consulting, consultingSince = chat.consultingSince)
                 }
@@ -985,6 +1004,9 @@ fun ChatScreen(app: AppContext) {
                             Label(" " + fit(slashUsage, (LocalContentWidth.current - 30).coerceAtLeast(10)), color = Palette.Hint)
                         }
                     }
+                    // messages waiting for the model, above the field they were typed in
+                    chat.queued.take(QUEUE_SHOWN).forEach { q -> Label(fit("  ⏳ queued  " + q.replace('\n', ' '), LocalContentWidth.current), color = Palette.Muted) }
+                    if (chat.queued.size > QUEUE_SHOWN) Label("  ⏳ … and ${chat.queued.size - QUEUE_SHOWN} more queued", color = Palette.Muted)
                     TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = maxInputRows(), attachments = chat.attachments)
                     if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars, LocalContentWidth.current))
                     ActionBar(chatActions(browsing, entries.isNotEmpty()))

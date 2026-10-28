@@ -38,6 +38,7 @@ Built on 24–25 October 2026. Last updated 28 October 2026.
 - A reply that ended in a tool call shows a quiet `step` line, so only the final answer says **Done**.
 
 ## More tools
+- **Queued messages**: type while the model works and press Enter: your message waits above the field (`⏳ queued`). In a tool turn it joins at the next step, so a correction or a clarification changes what the model does next; otherwise it is sent right after the reply. Esc Esc (cancel) or a failed reply puts it back in the field. Commands and attachments cannot be queued.
 - **At the step limit (setting)**: Settings → Tools → *At the step limit*: **Ask** (the dialog, as before), **Auto** (more steps at once, up to 3 times per question, then it asks; logged) or **Stop** (the model answers with what it has). Extra steps never lift an approval: each change, command and web address still asks (Mode Auto aside).
 - **`fetch_url` follows the search rule**: Settings → Tools → *Search without asking* is now *Search and fetch without asking*. When it is on, `fetch_url` runs without a dialog just like `web_search` (private addresses are still refused). `http_request` and the Oracul's calls still ask every time. The setting warns that an address can carry data out.
 - **Usage shows the advisors**: Usage → Breakdown has a panel *Oracul, Planner, Judge* with calls, tokens, share of all tokens, average time per call and the models, so you can see what the second opinions cost.
