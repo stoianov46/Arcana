@@ -253,6 +253,7 @@ If a skill lists `requires:` steps, the Chat status bar shows `◆ coingecko-for
 - If the model tries to finish while a step is missing, Arcana does **not** accept it: it sends a hidden message ("STOP: … this step is still missing: …") and the model carries on. You do not see these messages. After three ignored tries on the same step, Arcana gives up on that step so the run can end.
 - Only skills that list steps get a badge and this protection; a skill without `requires:` simply runs from its text. The badge disappears at your next message or `/new`.
 - It checks that steps **happened**, not that their content is right. That is why good skills end with a verification command whose result must be `yes`.
+- **A controlled flow with roles** (example: `Skills/defi-pool-analysis`, a DeFi pool analysis): the **Planner** (`planner:` in the properties, or Settings → Oracul) writes a plan first, the **Worker** follows the required steps, and a **Validator** checks the result: a script command that compares the saved note with the real data and prints `VALID=yes` only when it matches (a `requires:` step waits for that text), plus the `reviewer:` model's second opinion. No code is needed: it is all in the skill.
 
 ## Where things live
 - The skills folder is `Skills/` (Settings → Tools → *Skills folder*). Results belong outside it: a skill names its results folder with `output:` (the forecast skill writes to `Reports/coingecko-forecast/`). This keeps the skill small and easy to share.

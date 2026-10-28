@@ -215,6 +215,18 @@ chart, a concentrated-liquidity range study, a verdict) and saves a report with 
 does HTTP and math, outputs handed over in small parts (`part --n`), `NEXT:` lines in tool results, a `check` command whose result is a `requires:`
 condition (`check`: content, and `check --final`: that the `status:` property tells the truth about it), an order enforced by the script itself (`analyze --note …`, then `part --n` refuses to skip an append; the note may be given by path or just by title), content-bound `append_to_note ~ ## …` steps, `elapsed_time` for the total work time, `set_properties` for the final status, and `output:` for the results folder.
 
+## 9a. A controlled flow: Planner, Worker, Validator (`defi-pool-analysis`)
+
+A second reference skill, written for the user's vault (not a starter skill): `Skills/defi-pool-analysis/` (`.skill.md`, `reference/` with the research notes and `API Notes (verified).md`, `scripts/dp_pool.py`, standard library only, Python 3.9+); results in `Reports/defi-pool-analysis/`. It analyses one Uniswap-style pool with DexPaprika (snapshot, server-side hourly indicators) and GeckoTerminal (about 120 daily candles, fee) and needs **no code in Arcana**: the roles use what exists.
+
+| Role | Realised by |
+|---|---|
+| **Planner** | the `planner:` property or the Settings → Oracul role table: a numbered plan before the worker starts (only with a chip) |
+| **Worker** | the main model, or `worker:`; follows nine `requires:` steps |
+| **Validator** | (1) the script's `validate` command: compares the saved note with the cached data (verdict line, price, P90, the three parts and their order, disclaimer, no placeholder, `status:`) and prints `VALID=yes` only on a match, with `FIX:` lines otherwise; `validate --final` also checks that `status` tells the truth (`FINAL_OK=yes`); both are `=>` steps, so the gate holds the worker to them. (2) the `reviewer:` model, a second opinion on the final answer |
+
+Lessons from building it against the live APIs: keyless DexPaprika serves only 24 h of candles (history comes from GeckoTerminal); the DexPaprika `fee` is `null` for Uniswap v3 (the fee comes from GeckoTerminal); `token=quote` is only right when the BASE token is the stablecoin, so the script reads both token prices and chooses the side; the hourly indicators of DexPaprika are only used when their price matches the analysed token. The forecast is a no-drift random walk whose 10-90 band is **calibrated against past windows** (the report states how often it held). Success tokens (`VALID=yes`, `FINAL_OK=yes`) appear only on success (tricky moment 18).
+
 ## 10. Changing the skills feature: checklist
 
 Update, in the same piece of work: this file; `tools-and-agent.md` (tool rows); `functionality.md`; `app-module.md` / `core-module.md`
