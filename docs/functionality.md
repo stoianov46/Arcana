@@ -72,7 +72,7 @@ Modes: ask / auto / plan. Shell commands and web pages are separate switches, of
 
 The memory file (the Chat status bar's `✎ memory 3k` pill turns orange, `⚠ memory 8k of 11k: end cut`, when the file is longer than `Vault.MEMORY_LIMIT`; the real length is `Vault.memoryLength()`) (by default the vault note `ARCANA.md`; **Settings → Prompts → Memory file path** can point it into another vault folder or anywhere on the computer, e.g. `~/Documents/arcana-memory.md`: `Vault.memoryFile()`, which `memory`, `ensureMemory` and `remember` all use; a missing folder is created) (first 8,000 characters, no frontmatter) is added to every chat's system prompt (`Vault.memory()` →
 `Prompts.chatMessages(memory = …)`; Settings → Prompts → *Memory file*; the status bar shows `✎ memory`). `ChatSession.offerMemory()` runs
-when Chat opens: if the vault has no `ARCANA.md` and `memoryOffered` is false it creates one from `Vault.MEMORY_TEMPLATE` (fourteen rules
+when Chat opens: if the vault has no `ARCANA.md` and `memoryOffered` is false it creates one from `Vault.MEMORY_TEMPLATE` (fifteen rules
 for using tools, plus empty sections) and shows "Memory file created" with an offer to open it; the flag then stays true, so a file the user
 deletes comes back only through `/memory`. The `remember` tool appends to its "Remembered" section (always asks). `ToolBox.cheatSheet()`
 adds the real tool list to the same prompt.

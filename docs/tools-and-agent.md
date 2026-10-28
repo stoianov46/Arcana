@@ -221,7 +221,7 @@ locate…") gets a hidden "continue now" message (≤2 **in a row**: the counter
 ## Memory file
 
 The vault note `ARCANA.md` is added to the system prompt (see [functionality.md](functionality.md)); the `remember` tool appends to it.
-The template holds fourteen rules for using tools. `ToolBox.cheatSheet()` supplies the exact tool list, so the note needs no copy of it.
+The template holds fifteen rules for using tools. `ToolBox.cheatSheet()` supplies the exact tool list, so the note needs no copy of it.
 
 ## Rendering in chat (`screens/Chat.kt`)
 
