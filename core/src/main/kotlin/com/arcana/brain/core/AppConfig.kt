@@ -5,6 +5,9 @@ import java.nio.file.Path
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
+/** With `stepLimit = "auto"`: how many times one question may be given more steps without asking. */
+const val STEP_LIMIT_AUTO_ROUNDS = 3
+
 @Serializable
 data class AppConfig(
     val ollamaUrl: String = "http://localhost:11434",
@@ -131,6 +134,8 @@ data class AppConfig(
     val toolMode: String = "ask",
     /** How many rounds of tool use one question may take before the model must answer. */
     val toolSteps: Int = 8,
+    /** What happens when a question uses up its steps while the model still wants tools: "ask" (a dialog), "auto" (more steps at once, at most [STEP_LIMIT_AUTO_ROUNDS] times, then ask) or "stop" (it answers with what it has). */
+    val stepLimit: String = "ask",
     /** Skills (runbooks in the vault, see Skills.kt): the model gets a list of them and can load one with use_skill; Chat's "/" menu offers them. */
     val skillsEnabled: Boolean = true,
     /** The vault folder that holds one folder per skill. */

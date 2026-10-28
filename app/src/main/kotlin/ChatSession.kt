@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.arcana.brain.app.input.TextFieldState
 import com.arcana.brain.core.AppConfig
+import com.arcana.brain.core.STEP_LIMIT_AUTO_ROUNDS
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.Requirement
@@ -516,6 +517,14 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** The step limit was reached while the model still wanted tools: let the user decide whether it may go on. */
     private suspend fun stepLimit(used: Int): Int {
+        when (app.config.stepLimit) {
+            "stop" -> return 0
+            // more steps at once, a few times; each call inside them keeps its own approval (a change, a command and a web address ask as usual)
+            "auto" -> if (used < app.config.toolSteps * (1 + STEP_LIMIT_AUTO_ROUNDS)) {
+                app.session.log(SessionKind.Tool, "step limit: ${app.config.toolSteps} more steps (automatic, $used used)")
+                return app.config.toolSteps
+            }
+        }
         val pending = Approval(
             "steps", "The model has used $used steps and wants to continue.",
             listOf("Allow ${app.config.toolSteps} more steps, or stop here and let it answer with what it has.", "Change the default in Settings → Tools → Steps per question."),

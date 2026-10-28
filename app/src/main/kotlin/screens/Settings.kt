@@ -18,6 +18,7 @@ import com.arcana.brain.app.navigation.Hints
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.ModelFit.Role as FitRole
 import com.arcana.brain.core.AppConfig
+import com.arcana.brain.core.STEP_LIMIT_AUTO_ROUNDS
 import com.arcana.brain.core.Skills
 import com.jakewharton.mosaic.layout.background
 import com.jakewharton.mosaic.layout.fillMaxWidth
@@ -213,6 +214,7 @@ private val settings: List<Setting> = listOf(
     text(Group.Tools, "Skills folder", "The vault folder that holds one folder per skill. Default Skills.", { it.skillsFolder }, { c, v -> c.copy(skillsFolder = v.trim('/').ifEmpty { Skills.DEFAULT_FOLDER }) }),
     choice(Group.Tools, "Mode", "Ask: every change waits for your y / n. Auto: changes run at once (the old file is always backed up). Plan: read-only, the model investigates and writes a plan without changing anything. Also /mode in Chat.", listOf("ask" to "Ask", "auto" to "Auto", "plan" to "Plan"), { it.toolMode }, { c, v -> c.copy(toolMode = v) }),
     toggle(Group.Tools, "Read without asking", "On: searching and reading run at once. Off: every tool call waits for your y / n. Changes always ask.", { it.toolAutoRead }, { c, v -> c.copy(toolAutoRead = v) }),
+    choice(Group.Tools, "At the step limit", "What happens when a question has used its steps and the model still wants tools. Ask: a dialog offers more steps. Auto: more steps are given at once, up to ${STEP_LIMIT_AUTO_ROUNDS} times (then it asks); warning: a long run can take a lot of time and tokens, and in Mode Auto its changes run without asking. Changes, commands and web addresses keep their own approval (see Mode and the web settings). Stop: the model answers with what it has.", listOf("ask" to "Ask", "auto" to "Auto", "stop" to "Stop"), { it.stepLimit }, { c, v -> c.copy(stepLimit = v) }),
     stepper(Group.Tools, "Steps per question", "How many rounds of tool use one question may take before the model has to answer. A round may read several files; raise this for big reviews.", 1..60, 1, { it.toolSteps }, { c, n -> c.copy(toolSteps = n) }),
 
     stepper(Group.Ollama, "Price: prompt tokens", "Only for the estimated price in the status bars: what a million prompt tokens would cost on a paid service, in US dollars. Local models cost nothing; this shows what the same work would cost elsewhere.", 0..200, 1, { it.estPriceIn }, { c, n -> c.copy(estPriceIn = n) }, " $/M"),
