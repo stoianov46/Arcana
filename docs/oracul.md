@@ -40,6 +40,10 @@ What differs: the Oracul is advisory and speaks only after problems or on a comm
 | **Skill roles** | `worker:`, `reviewer:`, `planner:` in a skill's properties, or the role table in Settings | a skill run uses another worker model, gets a plan first, and a review at the end | `ChatSession.applyRoles` / `plan`, `Skills.roles`, `SkillRoles.withDefaults` |
 | **Memory fit** | the model pickers in Settings | each model is marked as fitting this machine or not, with a suggested Oracul and judge | `core/ModelFit.kt` |
 
+## What the Oracul is shown of the conversation
+
+A request to the Oracul, the judge or the planner is built from the last question, and the answer or attempts, plus **`Oracul.background(messages)`**: the last messages of the user and replies of the assistant before that question (`oraculContextMessages`, default 6, 0 = off, up to 200, and `oraculContextChars`, default 1,500 each; each is shortened in the middle so the end of a reply, where its options sit, stays, and the total is messages x characters, nothing else cuts it; no tool output, no Oracul blocks; a compaction summary counts), under the header `EARLIER IN THE CHAT (context only…)`. Without it a short follow-up such as "do option C" or "yes" meant nothing to the reviewer (found in a real chat: the stuck step-in declared "option B and C are undefined" and the worker believed it). Every request builder takes it (`reviewRequest`, `answerRequest`, `judgeRequest`, `stuckRequest`, `planRequest`). An Oracul block also tells the worker, in `CAVEAT`, that the reviewer saw only part of the conversation and that it should check the block against the chat before agreeing; `Oracul.body` hides that line from the reader and still reads older chats.
+
 ## How a consultation works
 
 ```
@@ -143,6 +147,7 @@ ever written to the settings. The judge is only the judge: it sees all answers (
 | `oraculUrl` | blank = main server | a second Ollama server for the Oracul, the judge, planner and reviewer |
 | `oraculAuto` | `problems` | `off` / `problems` / `always` |
 | `stuckCalls` / `stuckTurns` | `4` / `3` | failed calls in one turn per step-in; failing turns in a row for an automatic review (`0` = never) |
+| `oraculContextMessages` / `oraculContextChars` | `6` / `1500` | how many earlier chat messages, and how many characters of each, the Oracul, judge and planner are shown besides the last question (Settings → Oracul → Chat context); 0 messages = none |
 | `oraculJudgeAuto` | `false` | when an automatic opinion is due, run `compare()` (Oracul answer plus judge verdict) instead; mid-turn stuck advice and skill reviewers stay single opinions |
 | `oraculTools` | `true` | the Oracul may use the worker's tools |
 | `rolePlanner` / `roleWorker` / `roleReviewer` | blank | the role table for skill runs |

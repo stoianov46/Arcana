@@ -1798,4 +1798,52 @@ class CoreTest {
         assertTrue("Install a smaller model" in ModelFit.advice("huge", ModelFit.Role.Oracul, mapOf("huge" to 40 * gb), "worker", ram)!!)
         assertTrue(ModelFit.advice("huge", ModelFit.Role.Main, sizes, "huge", ram)!!.contains("Better: big"))
     }
+
+    @Test
+    fun `the Oracul sees what came before a short follow-up`() {
+        val chat = listOf(
+            ChatMessage.user("Which pools are good?"),
+            ChatMessage.assistantCalls("", listOf(ToolCall(ToolFunction("web_search", kotlinx.serialization.json.buildJsonObject { }))), null),
+            ChatMessage.toolResult("web_search", "a very long tool result ".repeat(50)),
+            ChatMessage.assistant("Pool table...\n" + "x".repeat(3000) + "\n**Option A:** one\n**Option B:** two\n**Option C:** check DefiLlama"),
+            Oracul.opinionMessage("big", "an old opinion"),
+            ChatMessage.user("do option C and that option B"),
+        )
+        val background = Oracul.background(chat)
+        assertTrue("Which pools are good?" in background && "Option C" in background, "the options at the END of a long reply are kept: $background")
+        assertTrue("shortened" in background, "a long reply is cut in the middle")
+        assertTrue("tool result" !in background && "old opinion" !in background && "do option C" !in background, "no tool output, no Oracul blocks, not the last question itself")
+        assertEquals("", Oracul.background(listOf(ChatMessage.user("first question"))), "nothing before the first question")
+        val request = Oracul.stuckRequest("do option C and that option B", chat.takeLast(1), background = background)
+        assertTrue(request.last().content.startsWith("EARLIER IN THE CHAT") && "TASK:\ndo option C" in request.last().content)
+        assertTrue("EARLIER" !in Oracul.reviewRequest("Q?", "A.", emptyList()).last().content, "without a background the request is as before")
+        val long = (1..40).flatMap { listOf(ChatMessage.user("question $it " + "y".repeat(1400)), ChatMessage.assistant("answer $it " + "z".repeat(1400))) } + ChatMessage.user("now")
+        assertTrue(Oracul.background(long).length < 10_000, "capped by messages times characters")
+        assertEquals(6, Oracul.background(long).split("\n\n").size, "six messages by default")
+        assertEquals(30, Oracul.background(long, maxMessages = 30).split("\n\n").size, "as many as the setting says, beyond 20")
+        assertEquals("", Oracul.background(long, maxMessages = 0), "0 turns it off")
+        assertTrue("shortened" in Oracul.background(long, maxMessages = 2, perMessage = 300), "the characters per message are a setting too")
+    }
+
+    @Test
+    fun `a long tool run never pushes the users request out of what the model sees`() {
+        val calls = (1..40).flatMap { listOf(ChatMessage.assistant("step $it"), ChatMessage.toolResult("run_command", "result $it")) }
+        val history = listOf(ChatMessage.user("old question"), ChatMessage.assistant("old answer"), ChatMessage.user("the real task")) + calls
+        val window = Prompts.window(10, history)
+        assertEquals("the real task", window.first().content, "the whole current turn is kept")
+        assertEquals(history.size - 2, window.size)
+        val short = listOf(ChatMessage.user("a"), ChatMessage.assistant("b"), ChatMessage.user("c"), ChatMessage.assistant("d"))
+        assertEquals(2, Prompts.window(2, short).size, "an ordinary chat is still cut to the limit")
+        assertEquals(4, Prompts.window(30, short).size)
+    }
+
+    @Test
+    fun `an Oracul block tells the worker the reviewer saw only part of the chat`() {
+        val message = Oracul.opinionMessage("big", "Looks wrong.")
+        assertTrue("check what it says against the chat" in message.content)
+        assertEquals("Looks wrong.", Oracul.body(message), "the reader does not see the line meant for the worker")
+        assertEquals("Looks wrong.", Oracul.body(Oracul.stuckMessage("big", "Looks wrong.")))
+        val old = ChatMessage.user("[Second opinion · big]\nA reviewer (another model) read your last answer and says:\n\nLooks wrong.")
+        assertEquals("Looks wrong.", Oracul.body(old), "chats saved before still show cleanly")
+    }
 }

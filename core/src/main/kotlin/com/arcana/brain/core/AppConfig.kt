@@ -96,6 +96,9 @@ data class AppConfig(
     val oraculAuto: String = "problems",
     /** When an automatic second opinion is due, run a full comparison instead (the Oracul answers too, the judge compares). Slower: three model runs. Off by default. */
     val oraculJudgeAuto: Boolean = false,
+    /** How many earlier messages of the chat the Oracul, the judge and the planner are shown besides the last question (0 = none), and how many characters of each. */
+    val oraculContextMessages: Int = 6,
+    val oraculContextChars: Int = 1500,
     /** The worker counts as stuck, and the Oracul steps into its tool loop, after this many failed tool calls in one turn (and again after every further such number); 0 = never. */
     val stuckCalls: Int = 4,
     /** An automatic review is due after this many turns in a row that each had a failed tool call; 0 = never. */

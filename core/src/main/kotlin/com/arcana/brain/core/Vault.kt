@@ -445,6 +445,16 @@ object Prompts {
      */
     private const val OLD_TOOL_RESULT = 1200
 
+    /**
+     * The part of [history] that is sent: at least the last [limit] messages, and never less than the whole current turn (from the user's last message on). Tool calls
+     * and their results are messages too, so a long tool run would otherwise push the user's own request out of what the model sees.
+     */
+    fun window(limit: Int, history: List<ChatMessage>): List<ChatMessage> {
+        val turnStart = history.indexOfLast { Oracul.isRealUser(it) }.coerceAtLeast(0)
+        val start = minOf(history.size - limit, turnStart).coerceAtLeast(0)
+        return history.subList(start, history.size)
+    }
+
     fun chatMessages(config: AppConfig, history: List<ChatMessage>, hits: List<SearchHit>?, noteTexts: Map<String, String>, tools: Boolean = false, toolsNote: String = "", canRequestTools: Boolean = false, memory: String = "", today: java.time.ZonedDateTime? = java.time.ZonedDateTime.now()): List<ChatMessage> {
         // only the date, which changes once a day: a changing clock at the start of the prompt would make the model re-read the whole chat every message
         val date = today?.let { " Today is ${it.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", java.util.Locale.ENGLISH))} (time zone ${it.zone}). For the exact time use the current_time tool if you have it." }.orEmpty()
@@ -453,7 +463,7 @@ object Prompts {
             " Answer using the vault excerpts given with the latest question. Cite the notes you used as [[Note title]]. " +
                 "If the excerpts do not contain the answer, say so."
         }
-        val window = history.takeLast(config.chatHistory)
+        val window = window(config.chatHistory, history)
         val lastUser = window.indexOfLast { it.role == "user" }
         val converted = window.mapIndexed { i, m ->
             // old tool output (whole directory trees, files) would fill the model's context; the answer built on it stays

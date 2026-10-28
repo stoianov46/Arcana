@@ -149,7 +149,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val vault = app.openVault().getOrNull() ?: return
         consulting = planner
         try {
-            val text = Oracul.ask(clientFor(planner), Oracul.planRequest(question, Skills.loadEntry(vault, entry).orEmpty())) { app.recordUsage("Planner", it, planner) }
+            val text = Oracul.ask(clientFor(planner), Oracul.planRequest(question, Skills.loadEntry(vault, entry).orEmpty(), oraculBackground())) { app.recordUsage("Planner", it, planner) }
             if (text.isEmpty()) roleNote = "$planner returned an empty plan: the worker starts without one." else add(Oracul.planMessage(planner, text))
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             throw e
@@ -691,8 +691,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val turn = Oracul.lastTurn(messages.toList())
             val question = turn.firstOrNull()?.content.orEmpty()
             val box = oraculToolbox(model)
-            val (text, used) = if (box != null) oraculAgent(model, box, Oracul.stuckRequest(question, turn, withTools = true))
-            else Oracul.ask(clientFor(model), Oracul.stuckRequest(question, turn)) { app.recordUsage("Oracul", it, model) } to emptyList()
+            val (text, used) = if (box != null) oraculAgent(model, box, Oracul.stuckRequest(question, turn, withTools = true, background = oraculBackground()))
+            else Oracul.ask(clientFor(model), Oracul.stuckRequest(question, turn, background = oraculBackground())) { app.recordUsage("Oracul", it, model) } to emptyList()
             return if (text.isEmpty()) null else Oracul.stuckMessage(model, text + Oracul.toolsLine(used))
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             throw e
@@ -720,10 +720,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val box = oraculToolbox(model)
             val used: List<String>
             val text = if (box != null) {
-                oraculAgent(model, box, Oracul.reviewRequest(question, answer, facts.toolNames, withTools = true)).also { used = it.second }.first
+                oraculAgent(model, box, Oracul.reviewRequest(question, answer, facts.toolNames, withTools = true, background = oraculBackground())).also { used = it.second }.first
             } else {
                 used = emptyList()
-                Oracul.ask(clientFor(model), Oracul.reviewRequest(question, answer, facts.toolNames)) { app.recordUsage("Oracul", it, model) }
+                Oracul.ask(clientFor(model), Oracul.reviewRequest(question, answer, facts.toolNames, background = oraculBackground())) { app.recordUsage("Oracul", it, model) }
             }
             require(text.isNotEmpty()) { "$model returned an empty opinion; nothing was added." }
             add(Oracul.opinionMessage(model, text + Oracul.toolsLine(used)))
@@ -752,10 +752,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                     val box = oraculToolbox(model)
                     val usedTools: List<String>
                     val other = if (box != null) {
-                        oraculAgent(model, box, Oracul.answerRequest(question, withTools = true)).also { usedTools = it.second }.first
+                        oraculAgent(model, box, Oracul.answerRequest(question, withTools = true, background = oraculBackground())).also { usedTools = it.second }.first
                     } else {
                         usedTools = emptyList()
-                        Oracul.ask(clientFor(model), Oracul.answerRequest(question)) { app.recordUsage("Oracul", it, model) }
+                        Oracul.ask(clientFor(model), Oracul.answerRequest(question, background = oraculBackground())) { app.recordUsage("Oracul", it, model) }
                     }
                     require(other.isNotEmpty()) { "$model returned an empty answer." }
                     answers += model to other + Oracul.toolsLine(usedTools)
@@ -767,7 +767,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 }
             }
             consulting = judge
-            val verdict = Oracul.ask(clientFor(judge), Oracul.judgeRequest(question, app.config.model, answer, answers)) { app.recordUsage("Judge", it, judge) }
+            val verdict = Oracul.ask(clientFor(judge), Oracul.judgeRequest(question, app.config.model, answer, answers, oraculBackground())) { app.recordUsage("Judge", it, judge) }
             require(verdict.isNotEmpty()) { "$judge returned an empty verdict; nothing was added." }
             add(Oracul.comparisonMessage(app.config.model, answers, judge, answer, verdict + if (skipped.isEmpty()) "" else "\n\n_Left out: ${skipped.joinToString("; ")}_"))
             return "Comparison added: ${answers.joinToString(", ") { it.first }} against ${app.config.model}, judged by $judge." + if (skipped.isEmpty()) "" else " Left out: ${skipped.joinToString { it.substringBefore(" (") }}."
@@ -791,7 +791,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val vault = app.openVault().getOrNull()
             val history = Compaction.forModel(messages.toList())
             val box = oraculToolbox(model)
-            val request = Prompts.chatMessages(config, history, null, noteTexts(vault, history.takeLast(config.chatHistory)), tools = box != null, toolsNote = box?.describe().orEmpty(), memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "")
+            val request = Prompts.chatMessages(config, history, null, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, toolsNote = box?.describe().orEmpty(), memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "")
             val (text, used) = if (box != null) oraculAgent(model, box, request) else Oracul.ask(clientFor(model), request) { app.recordUsage("Oracul", it, model) } to emptyList()
             require(text.isNotEmpty()) { "$model returned an empty answer; nothing was added." }
             add(ChatMessage.assistant(Oracul.takeoverHeading(model) + text + Oracul.toolsLine(used)))
@@ -819,6 +819,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         // opt-in (Settings → Oracul → Judge automatically): a full comparison with a verdict instead of one opinion
         autoConsult = if (config.oraculJudgeAuto) app.scope.launch { runCatching { compare() } } else app.scope.launch { runCatching { secondOpinion() } }
     }
+
+    /** The recent conversation the Oracul, the judge and the planner are shown (Settings → Oracul → Chat context). */
+    private fun oraculBackground() = Oracul.background(messages.toList(), app.config.oraculContextMessages, app.config.oraculContextChars)
 
     /** The automatic opinion or comparison that runs after a reply; a new message of the user cancels it. */
     private var autoConsult: kotlinx.coroutines.Job? = null
@@ -906,7 +909,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val hits = if (config.chatUseVault && vault != null) vault.search(body, config.contextNotes, config.contextCharsPerNote) else null
             pendingSources = hits?.map { it.note.path }.orEmpty()
             pendingCut = hits?.filter { it.missing > 0 }?.map { it.note.path }.orEmpty()
-            Prompts.chatMessages(config, history, hits, noteTexts(vault, history.takeLast(config.chatHistory)), tools = box != null, toolsNote = box?.describe().orEmpty(), canRequestTools = canRequest, memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "")
+            Prompts.chatMessages(config, history, hits, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, toolsNote = box?.describe().orEmpty(), canRequestTools = canRequest, memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "")
         }
     }
 

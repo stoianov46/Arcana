@@ -72,16 +72,50 @@ object Oracul {
     private const val PLAN_INTRO = "A planner (another model) wrote this plan for the task. Follow it where it is right; if a step is wrong, say why in one line and do the right thing."
     private const val REVIEW_INTRO = "A reviewer (another model) read your last answer and says:"
 
+    /** Said to the worker after a reviewer's intro: the reviewer saw only part of the conversation, so it can be wrong about what the user meant. */
+    private const val CAVEAT = "It was shown only part of the conversation: check what it says against the chat before you agree."
+
     fun planMessage(model: String, plan: String): ChatMessage = ChatMessage.user("$MARK_PLAN · $model]\n$PLAN_INTRO\n\n${plan.trim()}")
 
     const val PLAN_INSTRUCTIONS = "You plan work for another assistant that has tools. Read the task and the skill's instructions and write a short numbered plan " +
         "(at most 8 steps): what to look at first, what to do in which order, what to check at the end, and where the result goes. Do not do the work and do not answer " +
         "the task yourself. Keep the language of the task."
 
-    fun planRequest(question: String, skillText: String): List<ChatMessage> = listOf(
+    fun planRequest(question: String, skillText: String, background: String = ""): List<ChatMessage> = listOf(
         ChatMessage.system(PLAN_INSTRUCTIONS),
-        ChatMessage.user("TASK:\n${question.trim().take(MAX_PART)}\n\nSKILL INSTRUCTIONS:\n${skillText.trim().take(MAX_PART)}"),
+        ChatMessage.user(earlier(background) + "TASK:\n${question.trim().take(MAX_PART)}\n\nSKILL INSTRUCTIONS:\n${skillText.trim().take(MAX_PART)}"),
     )
+
+    /** The recent conversation as a header for a request, so a short question ("do option C", "yes") makes sense to the model that answers it; empty when there is none. */
+    private fun earlier(background: String): String =
+        if (background.isBlank()) "" else "EARLIER IN THE CHAT (context only, so the question below makes sense; do not answer it):\n$background\n\n"
+
+    /**
+     * What came before the user's last message, for the requests that go to the Oracul, the judge and the planner (they otherwise see only the last question and
+     * would not know what "option C" or "that file" means): the last few messages of the user and replies of the assistant, without tool output, each shortened in the
+     * middle (the end of a reply, where its options or questions are, is kept), newest last: at most [maxMessages] messages of at most [perMessage] characters each (Settings → Oracul → Chat context), so the size is bounded by their product and nothing else cuts it. Empty when there is nothing before or [maxMessages] is 0.
+     */
+    fun background(messages: List<ChatMessage>, maxMessages: Int = 6, perMessage: Int = 1500): String {
+        val at = messages.indexOfLast { isRealUser(it) }
+        if (at <= 0 || maxMessages <= 0) return ""
+        val lines = ArrayList<String>()
+        for (m in messages.subList(0, at).asReversed()) {
+            val who = when {
+                Compaction.isSummary(m) -> "SUMMARY OF THE EARLIER CHAT"
+                isOpinion(m) -> continue
+                m.role == "user" -> "USER"
+                m.role == "assistant" && m.content.isNotBlank() && m.toolCalls.isEmpty() -> "ASSISTANT"
+                else -> continue
+            }
+            lines += "$who: ${squeeze(m.content.trim(), perMessage.coerceAtLeast(100))}"
+            if (lines.size >= maxMessages) break
+        }
+        return lines.asReversed().joinToString("\n\n")
+    }
+
+    /** [text] limited to [limit] characters by cutting the middle (its start and its end are what matter). */
+    private fun squeeze(text: String, limit: Int): String =
+        if (text.length <= limit) text else text.take(limit / 4) + "\n… (shortened) …\n" + text.takeLast(limit - limit / 4)
 
     /** One part of a comparison: the model's name, whether it is the main model (the answer above), and its text. */
     class Part(val name: String, val main: Boolean, val text: String)
@@ -118,7 +152,7 @@ object Oracul {
     }
 
     /** An Oracul message as the reader sees it: without the line that is addressed to the worker model. */
-    fun body(message: ChatMessage): String = text(message).removePrefix(REVIEW_INTRO).removePrefix(PLAN_INTRO).removePrefix(STUCK_INTRO).trim()
+    fun body(message: ChatMessage): String = text(message).removePrefix(REVIEW_INTRO).removePrefix(PLAN_INTRO).removePrefix(STUCK_INTRO).trim().removePrefix(CAVEAT).trim()
 
     /** An Oracul message without its first line. */
     fun text(message: ChatMessage): String = message.content.substringAfter('\n', "").trim()
@@ -131,7 +165,7 @@ object Oracul {
      * the chat shows it as a block of its own.
      */
     fun opinionMessage(model: String, text: String): ChatMessage =
-        ChatMessage.user("$MARK · $model]\nA reviewer (another model) read your last answer and says:\n\n${text.trim()}")
+        ChatMessage.user("$MARK · $model]\n$REVIEW_INTRO $CAVEAT\n\n${text.trim()}")
 
     /** A comparison block: every answer under its model's name (the worker's first), then the judge's verdict. [others] are the Oracul models' answers in order. */
     fun comparisonMessage(worker: String, others: List<Pair<String, String>>, judge: String, workerAnswer: String, verdict: String): ChatMessage =
@@ -149,21 +183,21 @@ object Oracul {
     const val TOOLS_NOTE = " You have the same tools as the assistant. Use them to CHECK the answer (read the files, search the notes, run a harmless check) instead of guessing. " +
         "Do not change anything unless the user asked for it; if something should be fixed, say what to do. Every change, command or web access you try asks the user first."
 
-    fun reviewRequest(question: String, answer: String, toolsUsed: List<String>, withTools: Boolean = false): List<ChatMessage> = listOf(
+    fun reviewRequest(question: String, answer: String, toolsUsed: List<String>, withTools: Boolean = false, background: String = ""): List<ChatMessage> = listOf(
         ChatMessage.system(REVIEW_INSTRUCTIONS + if (withTools) TOOLS_NOTE else ""),
-        ChatMessage.user("QUESTION:\n${question.trim().take(MAX_PART)}\n\nANSWER:\n${answer.trim().take(MAX_PART)}" +
+        ChatMessage.user(earlier(background) + "QUESTION:\n${question.trim().take(MAX_PART)}\n\nANSWER:\n${answer.trim().take(MAX_PART)}" +
             if (toolsUsed.isEmpty()) "" else "\n\nTOOLS THE ANSWERING ASSISTANT USED: ${toolsUsed.distinct().joinToString()}"),
     )
 
-    fun answerRequest(question: String, withTools: Boolean = false): List<ChatMessage> = listOf(
+    fun answerRequest(question: String, withTools: Boolean = false, background: String = ""): List<ChatMessage> = listOf(
         ChatMessage.system("Answer the user's question carefully and concisely. If you cannot know something, say so." + if (withTools) " You have tools: use them to look things up instead of guessing; do not change anything unless the user asked for it." else ""),
-        ChatMessage.user(question.trim().take(MAX_PART)),
+        ChatMessage.user(if (background.isBlank()) question.trim().take(MAX_PART) else earlier(background) + "QUESTION:\n" + question.trim().take(MAX_PART)),
     )
 
     /** The judge sees the question and every answer, the worker's first; [others] are the Oracul models' answers. */
-    fun judgeRequest(question: String, worker: String, workerAnswer: String, others: List<Pair<String, String>>): List<ChatMessage> = listOf(
+    fun judgeRequest(question: String, worker: String, workerAnswer: String, others: List<Pair<String, String>>, background: String = ""): List<ChatMessage> = listOf(
         ChatMessage.system(JUDGE_INSTRUCTIONS),
-        ChatMessage.user("QUESTION:\n${question.trim().take(MAX_PART)}\n\nANSWER 1 ($worker):\n${workerAnswer.trim().take(MAX_PART)}" +
+        ChatMessage.user(earlier(background) + "QUESTION:\n${question.trim().take(MAX_PART)}\n\nANSWER 1 ($worker):\n${workerAnswer.trim().take(MAX_PART)}" +
             others.withIndex().joinToString("") { (i, o) -> "\n\nANSWER ${i + 2} (${o.first}):\n${o.second.trim().take(MAX_PART)}" }),
     )
 
@@ -186,7 +220,7 @@ object Oracul {
     fun isFailure(message: ChatMessage): Boolean =
         message.role == "tool" && (message.content.startsWith("Error:") || message.content.startsWith("Timed out") || message.content.startsWith("exit code ") && !message.content.startsWith("exit code 0"))
 
-    private fun isRealUser(message: ChatMessage) = message.role == "user" && !isOpinion(message) && !Compaction.isSummary(message)
+    internal fun isRealUser(message: ChatMessage) = message.role == "user" && !isOpinion(message) && !Compaction.isSummary(message)
 
     /** The messages from the user's last real message to the end. */
     fun lastTurn(messages: List<ChatMessage>): List<ChatMessage> = messages.subList(messages.indexOfLast { isRealUser(it) }.coerceAtLeast(0), messages.size)
@@ -219,7 +253,7 @@ object Oracul {
     private const val STUCK_INTRO = "A reviewer (another model) read your attempts so far, which keep failing, and says:"
 
     /** What the worker is told in the middle of its own tool loop: the Oracul's advice on the attempts so far. A review block, so it is shown and stored like one. */
-    fun stuckMessage(model: String, text: String): ChatMessage = ChatMessage.user("$MARK · $model]\n$STUCK_INTRO\n\n${text.trim()}")
+    fun stuckMessage(model: String, text: String): ChatMessage = ChatMessage.user("$MARK · $model]\n$STUCK_INTRO $CAVEAT\n\n${text.trim()}")
 
     const val STUCK_INSTRUCTIONS = "An assistant is trying to do what the user asked and keeps failing. Read the attempts below. Say briefly: what is really going wrong (the " +
         "cause, not the symptom), which of the attempts repeat the same mistake or cannot work, and what to do differently next, concretely. If it is stuck in a loop, " +
@@ -239,9 +273,9 @@ object Oracul {
         return if (all.length <= MAX_PART) all else "…\n" + all.takeLast(MAX_PART)
     }
 
-    fun stuckRequest(question: String, turn: List<ChatMessage>, withTools: Boolean = false): List<ChatMessage> = listOf(
+    fun stuckRequest(question: String, turn: List<ChatMessage>, withTools: Boolean = false, background: String = ""): List<ChatMessage> = listOf(
         ChatMessage.system(STUCK_INSTRUCTIONS + if (withTools) TOOLS_NOTE else ""),
-        ChatMessage.user("TASK:\n${question.trim().take(MAX_PART)}\n\nATTEMPTS SO FAR:\n${attempts(turn)}"),
+        ChatMessage.user(earlier(background) + "TASK:\n${question.trim().take(MAX_PART)}\n\nATTEMPTS SO FAR:\n${attempts(turn)}"),
     )
 
     /**
