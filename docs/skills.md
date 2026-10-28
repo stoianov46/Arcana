@@ -228,6 +228,10 @@ A second reference skill, written for the user's vault (not a starter skill): `.
 
 Lessons from building it against the live APIs: keyless DexPaprika serves only 24 h of candles (history comes from GeckoTerminal); the DexPaprika `fee` is `null` for Uniswap v3 (the fee comes from GeckoTerminal); the search result lists tokens without symbols; GeckoTerminal's own symbol search is full of noise, so symbols are resolved to addresses first; `token=quote` is only right when the BASE token is the stablecoin, so the script reads both token prices and picks the side (and for a pair with no stablecoin it charts the pair's own ratio, `currency=token`); GeckoTerminal's free tier answers 429 quickly, so the script spaces its calls and waits a 429 out itself (a run takes 15 s to a few minutes: `timeout_seconds` 300). The forecast is a no-drift random walk whose 10-90 band is **calibrated against past windows**; the fee yield of a concentrated range is shown both as a theoretical ceiling and as a rule of thumb (efficiency capped at 5x, times the share of past windows the price stayed inside). Success tokens (`VALID=yes`, `FINAL_OK=yes`) appear only on success (tricky moment 18).
 
+### Links out of a skill that lives in `.arcana/`
+
+A report or any other visible note must not contain a `[[wikilink]]` to a skill or its reference notes when the skills folder is hidden: Obsidian shows it as unresolved. A skill's text should tell the model to write the skill's name in backticks, and a script that builds report text should write plain text (as `gt_forecast.py` does). Links from a skill to visible notes (research, the DeFi notes in `Research/DeFi/`) resolve by name and are fine.
+
 ## 10. Changing the skills feature: checklist
 
 Update, in the same piece of work: this file; `tools-and-agent.md` (tool rows); `functionality.md`; `app-module.md` / `core-module.md`
