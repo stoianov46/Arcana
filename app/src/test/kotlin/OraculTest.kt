@@ -83,6 +83,20 @@ class OraculTest {
     }
 
     @Test
+    fun aQueuedMessageCanBeDismissedNewestFirst() {
+        val f = fake()
+        try {
+            val chat = app(f).chat
+            assertTrue(!chat.dismissQueued(), "nothing queued, nothing to remove")
+            chat.enqueue("one"); chat.enqueue("two")
+            assertTrue(chat.dismissQueued())
+            assertEquals(listOf("one"), chat.queued.toList())
+            assertTrue(chat.dismissQueued() && !chat.dismissQueued())
+            assertEquals("", chat.takeQueued())
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun cancellingGivesTheQueueBack() {
         val f = fake()
         try {

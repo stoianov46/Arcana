@@ -662,7 +662,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.PickTarget -> Hints("type  search", "↑↓  move", "Enter  ${target.verb.lowercase()}", "Esc  cancel")
         ChatMode.Chat -> when {
             output.selecting -> Hints("↑↓  move", "Space  tick", "c  copy", "b  code only", "Esc  leave")
-            gen.state == GenState.Running -> Hints("Enter  queue a message", "Esc Esc  cancel reply", "↑↓  scroll")
+            gen.state == GenState.Running -> Hints("Enter  queue a message", *(if (chat.queued.isNotEmpty()) arrayOf("Backspace  remove queued") else emptyArray()), "Esc Esc  cancel reply", "↑↓  scroll")
             browsing -> Hints("Enter  type a message", "s  select & copy", "↑↓/Space  scroll", "1-9  screens")
             slashMatches.isNotEmpty() -> Hints("↑↓  choose", "Tab  complete", "Enter  run", "Esc  close")
             else -> Hints("Enter  send", "Alt+Enter  new line", "/  commands", "@  note", "Ctrl+O  attach", "Ctrl+S  save", "↑↓  scroll", "Esc  browse")
@@ -833,6 +833,8 @@ fun ChatScreen(app: AppContext) {
                 key == Key.Enter -> { send(); true }
                 // Backspace on an empty message takes back the last attachment.
                 key == Key.Backspace && input.text.isEmpty() && chat.attachments.removeLast() -> true
+                // ...and then the newest queued message (typed while the model worked, not sent yet): dismissed
+                key == Key.Backspace && input.text.isEmpty() && chat.dismissQueued() -> { toast("Queued message removed."); true }
                 else -> input.onKey(key)
             }
         }
@@ -1010,7 +1012,12 @@ fun ChatScreen(app: AppContext) {
                         }
                     }
                     // messages waiting for the model, above the field they were typed in
-                    chat.queued.take(QUEUE_SHOWN).forEach { q -> Label(fit("  ⏳ queued  " + q.replace('\n', ' '), LocalContentWidth.current), color = Palette.Muted) }
+                    val queueHint = if (app.config.plainGlyphs) "   Backspace on an empty field removes the newest" else "   ⌫ on an empty field removes the newest"
+                    chat.queued.take(QUEUE_SHOWN).forEachIndexed { i, q ->
+                        val lastShown = i == chat.queued.lastIndex.coerceAtMost(QUEUE_SHOWN - 1) && chat.queued.size <= QUEUE_SHOWN
+                        val room = LocalContentWidth.current - (if (lastShown) queueHint.length else 0)
+                        Label(fit("  ⏳ queued  " + q.replace('\n', ' '), room.coerceAtLeast(20)) + (if (lastShown) queueHint else ""), color = Palette.Muted)
+                    }
                     if (chat.queued.size > QUEUE_SHOWN) Label("  ⏳ … and ${chat.queued.size - QUEUE_SHOWN} more queued", color = Palette.Muted)
                     TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = maxInputRows(), attachments = chat.attachments)
                     if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars, LocalContentWidth.current))

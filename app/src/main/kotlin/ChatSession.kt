@@ -78,6 +78,13 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     fun enqueue(text: String) { queued += text }
 
+    /** Drops the newest queued message (it is not sent and not kept); false when nothing was queued. */
+    fun dismissQueued(): Boolean {
+        if (queued.isEmpty()) return false
+        queued.removeAt(queued.lastIndex)
+        return true
+    }
+
     /** Empties the queue and returns what was in it, joined; empty when nothing waited. */
     fun takeQueued(): String = queued.joinToString("\n\n").also { queued.clear() }
 
