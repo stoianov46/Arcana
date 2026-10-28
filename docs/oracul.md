@@ -69,7 +69,7 @@ trigger ──► model/server resolved ──► request built ──► (tool 
   ("The Oracul is already working"). The bottom bar and the Chat status bar read it.
 - **Usage:** every request is recorded under the model that spent the tokens, as feature `Oracul` (opinions, its answers in a comparison,
   takeovers, stepping in), `Judge` (the verdict) or `Planner` (the plan): `app.recordUsage(feature, chunk, model)`. The usage file keeps them, so
-  *how many times each was called* survives restarts; Usage → By feature shows them and `chat_stats` reports them (`ChatStats.spendLines`: spend per
+  *how many times each was called* survives restarts; Usage → By feature shows them, Usage → Breakdown has a panel *Oracul, Planner, Judge* (`UsageStats.advisors`, `AdvisorsPanel`: calls, tokens, share of all tokens, average time, models) and `chat_stats` reports them (`ChatStats.spendLines`: spend per
   model and in total, and the all-time call counts). Its tool calls go in the tool statistics.
 
 ## Message conventions (do not break these)

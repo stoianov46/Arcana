@@ -129,7 +129,7 @@ Whenever a limit is hit the user gets a dialog instead of a model saying "I cann
   (the directory, or its nearest existing parent) → "Allow this folder?". Not offered: the home folder, anything with fewer than 3 path
   segments (`/etc`), hidden folders. `y`/`a` → `box.allow(folder)` and the folder is appended to `config.toolFolders`. The error otherwise
   names Settings → Tools → Allowed folders.
-- **Step limit**: `Generation.onStepLimit` asks "N more steps?".
+- **Step limit**: `Generation.onStepLimit` calls `ChatSession.stepLimit`, which follows `AppConfig.stepLimit`: `ask` (default) shows "N more steps?", `auto` returns `toolSteps` more at once (at most `STEP_LIMIT_AUTO_ROUNDS` = 3 times per question, logged with `SessionKind.Tool`, then it asks), `stop` returns 0 so the model answers with what it has. Extra steps never lift a per-call approval. The Oracul's own loop (`oraculAgent`) has a fixed cap and no dialog.
 - **Shell / web off**: the first call asks to turn them on (below).
 - **Model without tool support**: toast on send and the `⚠ no tools` pill.
 
