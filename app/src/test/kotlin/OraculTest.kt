@@ -83,6 +83,26 @@ class OraculTest {
     }
 
     @Test
+    fun theThoughtsOfAReasoningModelAreFollowedLiveAndKeptWithTheAnswer() {
+        val f = fake()
+        try {
+            f.script = { model, _ ->
+                if (model != "worker") null else listOf(
+                    """{"message":{"role":"assistant","content":"","thinking":"let me "},"done":false}""",
+                    """{"message":{"role":"assistant","content":"","thinking":"ponder this"},"done":false}""",
+                    """{"message":{"role":"assistant","content":"Done."},"done":true,"prompt_eval_count":5,"eval_count":4}""",
+                ).joinToString("\n")
+            }
+            val chat = app(f).chat
+            chat.send("think about it")
+            val deadline = System.currentTimeMillis() + 10_000
+            while (chat.messages.none { it.role == "assistant" } && System.currentTimeMillis() < deadline) Thread.sleep(50)
+            assertEquals("let me ponder this", chat.gen.liveThinking, "the pane has the whole round's thoughts, also the chunks the throttle skipped")
+            assertEquals("let me ponder this", chat.messages.last { it.role == "assistant" }.thinking)
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun aQueuedMessageCanBeDismissedNewestFirst() {
         val f = fake()
         try {

@@ -64,6 +64,11 @@ class Generation(
     var error by mutableStateOf<String?>(null)
         private set
 
+    /** The thoughts of the round being streamed, following the stream (updated every 100 ms at most): what the Chat's thinking pane shows live. Cleared when a new reply starts. */
+    var liveThinking by mutableStateOf("")
+        private set
+    private var liveThinkingAt = 0L
+
     /** What the model thought during the round that just ended; [takeThinking] hands it to whoever records the round, once. */
     private var roundThinking = ""
 
@@ -97,6 +102,7 @@ class Generation(
     fun start(json: Boolean = false, tools: JsonArray? = null, maxSteps: Int = 0, prepare: suspend () -> List<ChatMessage>) {
         job?.cancel()
         text = ""
+        liveThinking = ""
         error = null
         stats = null
         streamed = 0
@@ -151,6 +157,8 @@ class Generation(
                             if (chunk.thinking.isNotEmpty()) {
                                 if (thoughts.length < MAX_THINKING_CHARS) thoughts.append(chunk.thinking)
                                 if (chunk.content.isEmpty()) thinking = true
+                                val now = System.currentTimeMillis()
+                                if (now - liveThinkingAt >= 100) { liveThinking = thoughts.toString(); liveThinkingAt = now }
                             }
                         }
                     } finally {
@@ -158,6 +166,7 @@ class Generation(
                         if (liveAdded != 0) onLive(-liveAdded)
                     }
                     roundThinking = thoughts.toString().trim()
+                    if (roundThinking.isNotEmpty()) liveThinking = roundThinking // the last chunks, which the throttle may have skipped
                     // a call the model wrote as text instead of making it: run it as the real thing
                     var roundText = buffer.toString().trim()
                     if (calls.isEmpty() && onToolRound != null && offered != null && textCalls() != "off") {

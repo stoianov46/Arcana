@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import com.arcana.brain.app.AppContext
 import com.arcana.brain.app.ChatSession
 import com.arcana.brain.app.GenState
+import com.arcana.brain.app.Generation
 import com.arcana.brain.app.design.*
 import com.arcana.brain.app.input.Key
 import com.arcana.brain.app.input.KeyHandler
@@ -100,6 +101,7 @@ internal val SlashCommands = listOf(
     SlashItem("/autorun", "Run shell commands without asking (toggle)", false),
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false),
     SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
+    SlashItem("/thinking", "Thinking pane: watch the model think under the conversation (toggle)", false),
     SlashItem("/append", "Add the last answer to a note", false),
     SlashItem("/replace", "Replace a note with the last answer", false),
     SlashItem("/clear", "Erase this chat", false),
@@ -119,6 +121,7 @@ internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean
     "/autorun" -> if (!config.toolShell) "SHELL OFF" to Palette.Dim else if (config.toolAutoShell) "ON" to Palette.Red else "OFF" to Palette.Dim
     "/memory" -> if (config.memoryEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/skills" -> if (config.skillsEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
+    "/thinking" -> if (config.thinkingPane) "ON" to Palette.Green else "OFF" to Palette.Dim
     else -> null
 }
 
@@ -454,6 +457,12 @@ fun ChatScreen(app: AppContext) {
         }
     }
 
+    fun toggleThinkingPane() {
+        val on = !app.config.thinkingPane
+        app.update(app.config.copy(thinkingPane = on))
+        toast(if (on) "Thinking pane on: it follows the model's thoughts under the conversation (needs a model that can think and a terminal at least 26 rows tall)." else "Thinking pane off.")
+    }
+
     fun toggleSkills() {
         val on = !app.config.skillsEnabled
         app.update(app.config.copy(skillsEnabled = on))
@@ -537,6 +546,7 @@ fun ChatScreen(app: AppContext) {
             "/tools" -> toggleTools()
             "/memory" -> openMemory()
             "/skills" -> toggleSkills()
+            "/thinking" -> toggleThinkingPane()
             "/mode" -> cycleMode()
             "/autorun" -> toggleAutoRun()
             "/compact" -> runCompact()
@@ -589,6 +599,7 @@ fun ChatScreen(app: AppContext) {
             Command("Attach a file or picture…", "Chat", "Ctrl+O") { openAttach() },
             Command("Memory file (ARCANA.md): open and edit", "Chat", "/memory") { openMemory() },
             Command(if (app.config.skillsEnabled) "Skills: turn off" else "Skills: turn on (list them)", "Chat", "/skills") { toggleSkills() },
+            Command(if (app.config.thinkingPane) "Thinking pane: turn off" else "Thinking pane: show the model's thoughts live", "Chat", "/thinking") { toggleThinkingPane() },
             Command("Tools mode: ${app.config.toolMode} → next (ask, auto, plan)", "Chat", "/mode", app.config.toolsEnabled) { cycleMode() },
             Command("Oracul: second opinion on the last answer", "Chat", "/oracul", lastAnswer != null) { runOracul(compare = false) },
             Command("Oracul: compare with another model's answer", "Chat", "/compare", lastAnswer != null) { runOracul(compare = true) },
@@ -931,6 +942,8 @@ fun ChatScreen(app: AppContext) {
                 val statusRows = if (rememberDensity().tiny) 0 else 1
                 val bottomGap = if (rememberDensity().tiny) 0 else 1
                 VGap()
+                // the thinking pane: a split window under the conversation (counted exactly, like everything else on the screen)
+                val paneRows = if (app.config.thinkingPane && question == null && approval == null && LocalContentHeight.current >= 26) app.config.thinkingPaneRows.coerceIn(3, 15) + 2 else 0
                 Panel("Conversation") {
                     val width = outputWidth()
                     val lines = buildList {
@@ -961,9 +974,10 @@ fun ChatScreen(app: AppContext) {
                     val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
                     val queuedRows = if (question == null && approval == null) chat.queued.size.coerceAtMost(QUEUE_SHOWN + 1) else 0
                     val below = queuedRows + (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval, approvalMax()).size + 3 else 2 + inputRows + pendingRow + slashMatches.size + (if (slashUsage.isEmpty()) 0 else 1)) + statusRows + panelActionRows
-                    ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below + bottomGap, actions = actions), output)
+                    ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below + bottomGap + paneRows, actions = actions), output)
                     ReplyStatus(app, gen, doubleEsc = true, consulting = chat.consulting, consultingSince = chat.consultingSince)
                 }
+                if (paneRows > 0) ThinkingPane(gen, chat, paneRows - 2, app.config.model)
                 if (question != null) {
                     val qLines = questionLines(question, panelWidth())
                     Panel("Question", accent = Palette.Cta) {
@@ -1027,6 +1041,41 @@ fun ChatScreen(app: AppContext) {
                 if (bottomGap > 0) Label(" ")
             }
         }
+    }
+}
+
+/** [text] cut into rows of at most [width] characters at spaces (a word longer than a row is cut), a line break starting a new row. */
+internal fun wrapWords(text: String, width: Int): List<String> {
+    val w = width.coerceAtLeast(8)
+    val rows = ArrayList<String>()
+    for (line in text.lines()) {
+        var row = StringBuilder()
+        for (word in line.split(' ').filter { it.isNotEmpty() }) {
+            var rest = word
+            while (rest.length > w) {
+                if (row.isNotEmpty()) { rows += row.toString(); row = StringBuilder() }
+                rows += rest.take(w); rest = rest.drop(w)
+            }
+            if (row.isNotEmpty() && row.length + 1 + rest.length > w) { rows += row.toString(); row = StringBuilder() }
+            if (row.isNotEmpty()) row.append(' ')
+            row.append(rest)
+        }
+        rows += row.toString()
+    }
+    return rows
+}
+
+/** The split window under the conversation: the model's thoughts as they stream (the end of them, [rows] rows), or the last thoughts it had when it is idle. */
+@Composable
+private fun ThinkingPane(gen: Generation, chat: ChatSession, rows: Int, model: String) {
+    val running = gen.state == GenState.Running
+    val text = (if (running) gen.liveThinking else chat.messages.lastOrNull { it.role == "assistant" && it.thinking.isNotBlank() }?.thinking.orEmpty()).trim()
+    val width = panelWidth()
+    val wrapped = if (text.isEmpty()) emptyList() else wrapWords(sanitizeForTerminal(text), width)
+    val shown = wrapped.takeLast(rows)
+    Panel("Thinking · $model" + (if (running) " · live" else "") + (if (text.isEmpty()) "" else " · ${UsageStats.compact(text.length.toLong())} characters")) {
+        if (shown.isEmpty()) Label(fit(if (running) "Waiting for the model's thoughts… (a model without a thinking mode shows none)" else "The thoughts of a reasoning model appear here while it works.", width), color = Palette.Dim)
+        for (i in 0 until rows) if (shown.isNotEmpty() || i > 0) Label(shown.getOrNull(i)?.takeIf { it.isNotEmpty() } ?: " ", color = Palette.Muted)
     }
 }
 

@@ -134,6 +134,10 @@ data class AppConfig(
     val toolMode: String = "ask",
     /** How many rounds of tool use one question may take before the model must answer. */
     val toolSteps: Int = 8,
+    /** A pane under the Chat conversation that shows what a reasoning model is thinking while it streams (and the last thoughts when it is idle). Off by default. */
+    val thinkingPane: Boolean = false,
+    /** How many text rows the thinking pane shows (it follows the end of the stream). */
+    val thinkingPaneRows: Int = 6,
     /** What happens to the results of tools from earlier turns when the chat is sent again: "whole" (kept as they were; the default, nothing is cut silently) or "shorten" (each cut to 1,200 characters, for small context windows). */
     val oldToolOutput: String = "whole",
     /** How many seconds an identical read, search or page fetch of the current question is answered from memory instead of being run (and asked about) again; 0 = every call runs. */

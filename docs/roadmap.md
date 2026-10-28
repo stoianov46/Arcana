@@ -16,6 +16,7 @@ Closing review (2026-10-28): #11 stays *needs repro* (skipped until a screenshot
 | 9 | Cancel a reply with `Esc` twice instead of once (no misclicks) | done |
 | 11 | Console output fills the remaining chat height | needs repro: the conversation panel fills the height in every state tried (idle, a 150-message chat, running reply, approval dialog, question dialog, finished reply) at 24, 30, 36, 40 and 60 rows and after resizing the terminal live. If it still happens, send the terminal size, the Settings → Appearance → Interface scale value and what the screen looked like |
 | 30 | Split the thinking process from the answer (`ChatMessage.thinking`, setting *Thinking in Chat*) | done |
+| 30a | A live thinking pane under the conversation (`thinkingPane`, `/thinking`) | done |
 | 31 | Handle `The model returned an empty response`: one hidden retry before the error (not a setting yet) | done |
 | 33 | Library: narrower notes list, wider note content (30 % / 70 %) | done |
 

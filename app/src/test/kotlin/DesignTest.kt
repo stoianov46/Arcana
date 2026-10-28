@@ -36,6 +36,14 @@ import kotlin.test.assertTrue
 private fun t(c: Char) = Key.Text(c)
 
 class DesignTest {
+    @Test
+    fun theThinkingPaneWrapsAtWordsAndCutsOnlyWordsThatAreTooLong() {
+        assertEquals(listOf("weighing the", "options and", "fees"), com.arcana.brain.app.screens.wrapWords("weighing the options and fees", 12))
+        assertEquals(listOf("first line", "second"), com.arcana.brain.app.screens.wrapWords("first line\nsecond", 20))
+        assertEquals(listOf("abcdefgh", "ijkl"), com.arcana.brain.app.screens.wrapWords("abcdefghijkl", 8))
+        assertEquals(listOf(""), com.arcana.brain.app.screens.wrapWords("", 10))
+    }
+
     private val items = listOf("alpha.md", "beta.md", "gamma.md")
 
     @Test
