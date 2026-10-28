@@ -87,10 +87,10 @@ private fun stepper(group: Group, label: String, help: String, range: IntRange, 
         },
     )
 
-private fun text(group: Group, label: String, help: String, get: (AppConfig) -> String, set: (AppConfig, String) -> AppConfig, allowEmpty: Boolean = false, emptyLabel: String = "(none)") =
+private fun text(group: Group, label: String, help: String, get: (AppConfig) -> String, set: (AppConfig, String) -> AppConfig, allowEmpty: Boolean = false, emptyLabel: String = "(none)", emptyShown: ((AppConfig) -> String)? = null) =
     Setting(
         group, label, help,
-        value = { get(it).ifEmpty { emptyLabel } },
+        value = { c -> get(c).ifEmpty { emptyShown?.invoke(c) ?: emptyLabel } },
         editor = Editor.Text { c, v ->
             require(allowEmpty || v.isNotBlank()) { "$label cannot be empty" }
             set(c, v.trim())
@@ -109,6 +109,16 @@ private fun soundSetting(label: String, help: String, event: com.arcana.brain.co
         hear(c, next)
         set(c, next)
     }
+
+private fun tilde(path: String) = path.replace(System.getProperty("user.home"), "~")
+
+private fun vaultRoot(c: AppConfig): Path? = c.vaultPath.trim().takeIf { it.isNotEmpty() }?.let { AppContext.expandHome(it) }?.takeIf { Files.isDirectory(it) }
+
+/** Where the skills really are for these settings: the automatic choice resolved to a path, so the user sees it. */
+private fun skillsWhere(c: AppConfig): String = vaultRoot(c)?.let { tilde(it.resolve(com.arcana.brain.core.Layout.skillsFolder(it, c.skillsFolder)).toString()) } ?: "(no vault yet)"
+
+/** Where the memory file really is for these settings. */
+private fun memoryWhere(c: AppConfig): String = vaultRoot(c)?.let { runCatching { tilde(com.arcana.brain.core.Vault(it, c.memoryPath).memoryFile().toString()) }.getOrNull() } ?: "(no vault yet)"
 
 /** The folder that holds Arcana's own files (`config.json` and the rest). */
 private fun storageRoot(): Path = com.arcana.brain.core.ConfigStore.defaultPath().toAbsolutePath().parent
@@ -163,7 +173,15 @@ private val settings: List<Setting> = listOf(
         value = { it.vaultPath.ifEmpty { "(not set)" } }, editor = Editor.Folder,
     ),
     toggle(Group.Vault, "Library as a tree", "The Library shows your notes as folders that fold and unfold (Enter or h / l). Off: one flat list with the full path of every note. You can also press t in the Library.", { it.libraryTree }, { c, v -> c.copy(libraryTree = v) }),
-    text(Group.Vault, "Output folder", "Folder inside the vault where new notes go. Empty = the vault root.", { it.outputFolder }, { c, v -> c.copy(outputFolder = v.trim('/')) }, allowEmpty = true),
+    text(Group.Vault, "Output folder", "What Arcana writes FOR you (AI notes, saved chats, session summaries) goes to this visible folder inside the vault. Reports and research from skills go to the folders their skills name (for example Reports/…). Arcana's own working files (skills, the memory file) are not content and live apart, hidden: see the next three rows. Empty = the vault root.", { it.outputFolder }, { c, v -> c.copy(outputFolder = v.trim('/')) }, allowEmpty = true),
+    Setting(
+        Group.Vault, "Where Arcana's own files are (this vault)", "Arcana's working files for THIS vault live in the hidden folder .arcana/ inside it (Obsidian, the note search and the graph do not show it): skills in .arcana/skills/ and the memory file .arcana/ARCANA.md. An older vault that still has Skills/ or a root ARCANA.md keeps using them until you run arcana --migrate in a terminal (it moves them, never overwrites). Show hidden files in Finder with Cmd+Shift+. This row only shows the place; change it with the Skills folder and Memory file path settings.",
+        value = { c -> vaultRoot(c)?.let { tilde(it.resolve(com.arcana.brain.core.Layout.INTERNAL).toString()) + "/" } ?: "(no vault yet)" },
+    ),
+    Setting(
+        Group.Vault, "Where YOUR files are (every vault)", "Next to the settings, in ~/.config/arcana/ (or where ARCANA_CONFIG points): config.json, chats, usage logs, backups and the trash, and, for every vault: skills/ (skills that apply everywhere; a skill of the same name in the vault wins) and ARCANA.md (your own memory file, read before the vault's). Settings → Storage lists and clears the logs and caches. This row only shows the place.",
+        value = { tilde(storageRoot().toString()) + "/" },
+    ),
     stepper(Group.Vault, "Context notes", "How many notes Ask your vault sends to the model.", 1..20, 1, { it.contextNotes }, { c, n -> c.copy(contextNotes = n) }),
     text(Group.Vault, "Inbox folder", "Where new, unprocessed notes land. The Brain screen counts what is waiting there.", { it.inboxFolder }, { c, v -> c.copy(inboxFolder = v.trim('/')) }, allowEmpty = true),
     text(Group.Vault, "Daily notes folder", "Where capture (Ctrl+N) writes today's note. Used only when Obsidian's Daily notes plugin has no setting of its own for the vault. Empty = the vault root.", { it.dailyFolder }, { c, v -> c.copy(dailyFolder = v.trim('/')) }, allowEmpty = true),
@@ -211,7 +229,7 @@ private val settings: List<Setting> = listOf(
     toggle(Group.Tools, "Web pages", "Lets the model ask to search the web (web_search) and to read a public web page (documentation, articles, JSON). Every address waits for your y / n and is shown in full; pages on your own computer or network are never fetched, and what a page says is treated as text, not as instructions. Plan mode never offers it. Off by default.", { it.toolWeb }, { c, v -> c.copy(toolWeb = v) }),
     toggle(Group.Tools, "Search and fetch without asking", "On: web_search and fetch_url run at once, without your y / n, even in Ask mode (the Chat status bar shows an orange ↗ auto-search). Warning: the search words and the address of a page can carry what the model has read to the outside, so use it for research chats, not with private notes in play. Private addresses are still refused, HTTP requests (http_request) still ask for every one, and the Oracul always asks. Needs Web pages on; Plan mode never offers it. Off by default.", { it.toolAutoSearch }, { c, v -> c.copy(toolAutoSearch = v) }),
     toggle(Group.Tools, "Skills", "Skills are runbooks in your vault, one folder each (Skills/<name>/<name>.skill.md with its scripts and reference notes). On: the model is told which skills exist and can load one with use_skill, and Chat's / menu lists them. Needs Tools in Chat. Also /skills.", { it.skillsEnabled }, { c, v -> c.copy(skillsEnabled = v) }),
-    text(Group.Tools, "Skills folder", "The vault folder that holds one folder per skill. Empty = automatic: .arcana/skills (a hidden folder, kept apart from your notes), or an existing Skills/. Skills in ~/.config/arcana/skills apply to every vault. Move an old Skills/ with: arcana --migrate.", { it.skillsFolder }, { c, v -> c.copy(skillsFolder = v.trim('/')) }, allowEmpty = true, emptyLabel = "(automatic)"),
+    text(Group.Tools, "Skills folder", "The vault folder that holds one folder per skill. Empty = automatic: .arcana/skills (a hidden folder, kept apart from your notes), or an existing Skills/; the row shows the folder in use. Skills in ~/.config/arcana/skills apply to every vault. Move an old Skills/ with: arcana --migrate.", { it.skillsFolder }, { c, v -> c.copy(skillsFolder = v.trim('/')) }, allowEmpty = true, emptyLabel = "(automatic)", emptyShown = { c -> "(automatic) " + skillsWhere(c) }),
     choice(Group.Tools, "Mode", "Ask: every change waits for your y / n. Auto: changes run at once (the old file is always backed up). Plan: read-only, the model investigates and writes a plan without changing anything. Also /mode in Chat.", listOf("ask" to "Ask", "auto" to "Auto", "plan" to "Plan"), { it.toolMode }, { c, v -> c.copy(toolMode = v) }),
     toggle(Group.Tools, "Read without asking", "On: searching and reading run at once. Off: every tool call waits for your y / n. Changes always ask.", { it.toolAutoRead }, { c, v -> c.copy(toolAutoRead = v) }),
     choice(Group.Tools, "At the step limit", "What happens when a question has used its steps and the model still wants tools. Ask: a dialog offers more steps. Auto: more steps are given at once, up to ${STEP_LIMIT_AUTO_ROUNDS} times (then it asks); warning: a long run can take a lot of time and tokens, and in Mode Auto its changes run without asking. Changes, commands and web addresses keep their own approval (see Mode and the web settings). Stop: the model answers with what it has.", listOf("ask" to "Ask", "auto" to "Auto", "stop" to "Stop"), { it.stepLimit }, { c, v -> c.copy(stepLimit = v) }),
@@ -219,13 +237,13 @@ private val settings: List<Setting> = listOf(
 
     stepper(Group.Ollama, "Price: prompt tokens", "Only for the estimated price in the status bars: what a million prompt tokens would cost on a paid service, in US dollars. Local models cost nothing; this shows what the same work would cost elsewhere.", 0..200, 1, { it.estPriceIn }, { c, n -> c.copy(estPriceIn = n) }, " $/M"),
     stepper(Group.Ollama, "Price: reply tokens", "The same for a million reply tokens (they usually cost more).", 0..400, 1, { it.estPriceOut }, { c, n -> c.copy(estPriceOut = n) }, " $/M"),
-    text(Group.Prompts, "Memory file path", "Where the memory file is. Empty = ARCANA.md at the vault root. A path inside the vault (Notes/Memory.md) or anywhere on this computer (~/Documents/arcana-memory.md); a missing file is created from the template the first time you open it with /memory. The Memory file switch below turns its use on or off.", { it.memoryPath }, { c, v ->
+    text(Group.Prompts, "Memory file path", "Where the memory file is. Empty = automatic: .arcana/ARCANA.md in the vault (a hidden folder; an older ARCANA.md at the vault root is still used); the row shows the file in use. Your own ~/.config/arcana/ARCANA.md is read first, for every vault. A path inside the vault (Notes/Memory.md) or anywhere on this computer (~/Documents/arcana-memory.md); a missing file is created from the template the first time you open it with /memory. The Memory file switch below turns its use on or off.", { it.memoryPath }, { c, v ->
         val path = v.trim()
         require(path.isEmpty() || path.startsWith("/") || path.startsWith("~/") || ".." !in path.split('/')) { "A path inside the vault cannot contain .." }
         require(path.isEmpty() || !path.endsWith("/")) { "Give the file, not a folder (…/ARCANA.md)" }
         c.copy(memoryPath = path)
-    }, allowEmpty = true, emptyLabel = "(ARCANA.md at the vault root)"),
-    toggle(Group.Prompts, "Memory file", "Adds your vault note ARCANA.md (at the vault root; standing instructions and facts, like a CLAUDE.md) to every chat, up to 8,000 characters. Its text is not shown here: it is sent with each message, and the Chat status bar shows ✎ memory while it is in use. /memory in Chat opens it, and creates it from a template the first time. It counts against the context window.", { it.memoryEnabled }, { c, v -> c.copy(memoryEnabled = v) }),
+    }, allowEmpty = true, emptyLabel = "(automatic)", emptyShown = { c -> "(automatic) " + memoryWhere(c) }),
+    toggle(Group.Prompts, "Memory file", "Adds your memory file (see Memory file path for where it is: by default .arcana/ARCANA.md in the vault; standing instructions and facts, like a CLAUDE.md) to every chat, after your own ~/.config/arcana/ARCANA.md, up to 8,000 characters. Its text is not shown here: it is sent with each message, and the Chat status bar shows ✎ memory while it is in use. /memory in Chat opens it, and creates it from a template the first time. It counts against the context window.", { it.memoryEnabled }, { c, v -> c.copy(memoryEnabled = v) }),
     text(Group.Prompts, "System prompt", "Tells the model who it is. Sent with every request.", { it.systemPrompt }, { c, v -> c.copy(systemPrompt = v) }),
     text(Group.Prompts, "Summary prompt", "The instruction used by Summarize.", { it.summaryPrompt }, { c, v -> c.copy(summaryPrompt = v) }),
 
