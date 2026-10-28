@@ -762,12 +762,15 @@ class CoreTest {
     fun migrateMovesSkillsAndMemoryIntoTheHiddenFolderAndTouchesNothingElse() {
         val root = Files.createTempDirectory("arcana-migrate")
         skillNote(root.resolve("Skills"), "alpha")
+        Files.writeString(root.resolve("Skills/alpha/alpha.skill.md"), Files.readString(root.resolve("Skills/alpha/alpha.skill.md")) + "run python3 $root/Skills/alpha/scripts/a.py\n")
         Files.writeString(root.resolve("ARCANA.md"), "my rules")
         Files.createDirectories(root.resolve("Reports")); Files.writeString(root.resolve("Reports/r.md"), "report")
         val result = Layout.migrate(root, AppConfig(skillsFolder = "Skills", memoryPath = "ARCANA.md"))
         assertTrue(result.lines.any { it.startsWith("Moved Skills/") } && result.lines.any { it.startsWith("Moved ARCANA.md") }, result.lines.toString())
         assertTrue(Files.exists(root.resolve(".arcana/skills/alpha/alpha.skill.md")) && !Files.exists(root.resolve("Skills")))
         assertEquals("my rules", Files.readString(root.resolve(".arcana/ARCANA.md")))
+        assertTrue("python3 $root/.arcana/skills/alpha/scripts/a.py" in Files.readString(root.resolve(".arcana/skills/alpha/alpha.skill.md")), "the skill's own path follows it")
+        assertTrue(result.lines.any { it.startsWith("Rewrote the old path") })
         assertEquals("report", Files.readString(root.resolve("Reports/r.md")), "generated content stays where it is")
         assertEquals("", result.config.skillsFolder + result.config.memoryPath, "the settings go back to automatic")
         // a second run has nothing to do, and a target that exists is never overwritten

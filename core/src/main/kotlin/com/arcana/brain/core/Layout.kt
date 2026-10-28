@@ -50,9 +50,21 @@ object Layout {
         return if (!Files.exists(internal) && Files.exists(legacy)) legacy else internal
     }
 
+    /** In the text files (notes, scripts) under [dir]: [from] becomes [to]. Returns how many files changed. */
+    private fun rewritePaths(dir: Path, from: String, to: String): Int {
+        var changed = 0
+        Files.walk(dir).use { s ->
+            s.filter { Files.isRegularFile(it) && it.fileName.toString().substringAfterLast('.', "") in setOf("md", "py", "sh", "json", "txt") && Files.size(it) < 2_000_000 }.forEach { f ->
+                val text = runCatching { Files.readString(f) }.getOrNull() ?: return@forEach
+                if (from in text) { Files.writeString(f, text.replace(from, to)); changed++ }
+            }
+        }
+        return changed
+    }
+
     /**
      * Moves `Skills/` to `.arcana/skills/` and a root `ARCANA.md` to `.arcana/ARCANA.md` (a target that already exists is left alone and
-     * reported), and clears the settings that pointed at the old places. Notes that mention them by a link are not rewritten.
+     * reported), and clears the settings that pointed at the old places. `[[links]]` to them are not rewritten, but the absolute path `<vault>/Skills/` inside the skills' own files is.
      */
     fun migrate(root: Path, config: AppConfig): Migration {
         val lines = ArrayList<String>()
@@ -67,7 +79,11 @@ object Layout {
         val skillsSetting = config.skillsFolder.trim().trim('/')
         if (skillsSetting.isEmpty() || skillsSetting == LEGACY_SKILLS) {
             move(root.resolve(LEGACY_SKILLS), root.resolve("$INTERNAL/$SKILLS_DIR"), "$LEGACY_SKILLS/")
-            if (!Files.exists(root.resolve(LEGACY_SKILLS))) updated = updated.copy(skillsFolder = "")
+            if (!Files.exists(root.resolve(LEGACY_SKILLS))) {
+                updated = updated.copy(skillsFolder = "")
+                val fixed = rewritePaths(root.resolve("$INTERNAL/$SKILLS_DIR"), "$root/$LEGACY_SKILLS/", "$root/$INTERNAL/$SKILLS_DIR/")
+                if (fixed > 0) lines += "Rewrote the old path of the skills in $fixed file(s) ($root/Skills/ -> $root/.arcana/skills/)."
+            }
         } else lines += "Left the skills where the setting puts them ($skillsSetting)."
         if (config.memoryPath.isBlank() || config.memoryPath.trim() == Vault.MEMORY_FILE) {
             move(root.resolve(Vault.MEMORY_FILE), root.resolve("$INTERNAL/${Vault.MEMORY_FILE}"), Vault.MEMORY_FILE)
