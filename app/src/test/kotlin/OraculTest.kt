@@ -182,6 +182,29 @@ class OraculTest {
     }
 
     @Test
+    fun anIdenticalReadInTheSameTurnIsNotRunAgain() {
+        val f = fake()
+        try {
+            val vault = Files.createDirectories(Files.createTempDirectory("arcana-repeat-vault").resolve("v"))
+            Files.writeString(vault.resolve("facts.md"), "seven is prime")
+            f.script = { model, body ->
+                val tools = Regex("\"role\":\"tool\"").findAll(body).count()
+                if (model == "worker" && "\"tools\"" in body && tools < 2) call("read_note", """{"path":"facts.md"}""") else null
+            }
+            val app = app(f) { copy(toolsEnabled = true, toolAutoRead = true, vaultPath = vault.toString()) }
+            val chat = app.chat
+            chat.send("what do the facts say?")
+            val deadline = System.currentTimeMillis() + 10_000
+            while (chat.messages.none { it.role == "assistant" && it.toolCalls.isEmpty() } && System.currentTimeMillis() < deadline) Thread.sleep(50)
+            val results = chat.messages.filter { it.role == "tool" }
+            assertEquals(2, results.size)
+            assertTrue("seven is prime" in results[0].content)
+            assertTrue("already made this exact call" in results[1].content && "seven is prime" in results[1].content, results[1].content)
+            assertEquals(1, app.toolUsage.size, "the repeat was not run, so it is not counted as a tool use")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun theModelCanKeepATaskListWithTheTodoTool() {
         val f = fake()
         try {

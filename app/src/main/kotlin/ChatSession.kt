@@ -341,6 +341,16 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 continue
             }
             val spec = box.find(call.name)
+            // the same read, search or page asked for again in this turn, with nothing changed since: answer it from what the turn already has (no run, no dialog)
+            val callKey = call.name + " " + call.arguments
+            val earlier = if (spec != null && repeatable(spec)) turnCalls[callKey] else null
+            if (earlier != null) {
+                val message = ChatMessage.toolResult(call.name, "You already made this exact call earlier in this turn and nothing has changed since, so the result is the same as the one above in this conversation (it began: $earlier). Use that result instead of asking again; if you need something different, change the arguments.")
+                add(message)
+                added += message
+                skillRun?.let { it.observe(call.name, call.arguments.toString(), message.content); skillTick++ }
+                continue
+            }
             // a folder that is not allowed yet: ask the user, and when they agree remember it for good
             val grant = box.folderToGrant(call)
             var folderDenied = false
@@ -416,6 +426,11 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 allowed -> runInterruptible(Dispatchers.IO) { box.execute(call) }
                 refusal != null -> refusal
                 else -> "The user denied this action. Do not try it again; ask what they want instead."
+            }
+            // remember a read for the rest of the turn; anything that changes or runs something makes an older read untrustworthy
+            if (allowed && spec != null) {
+                if (!repeatable(spec)) turnCalls.clear()
+                else if (!result.startsWith("Error:")) turnCalls[callKey] = result.take(160).replace('\n', ' ')
             }
             if (allowed && spec != null && !result.startsWith("Error:")) {
                 app.session.log(SessionKind.Tool, "${call.name} ${spec.summary(call.arguments)}")
@@ -711,6 +726,12 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** How many times the Oracul has already stepped in during this turn because the worker kept failing (reset by the next message). */
     private var stuckAdvised = 0
 
+    /** The reads, searches and page fetches of the current turn, with the start of what each returned: an identical repeat is not run (or asked about) again. Cleared with every new question and by anything that changes or runs something. */
+    private val turnCalls = HashMap<String, String>()
+
+    /** What may be answered from [turnCalls]: tools that only look (and the web reads, which would ask the user again for the same address). */
+    private fun repeatable(spec: com.arcana.brain.core.ToolSpec) = spec.risk == ToolRisk.Read || spec.name == "fetch_url" || spec.name == "web_search"
+
     /**
      * The worker is in its tool loop and keeps failing (every [AppConfig.stuckCalls] failed calls of this turn): the Oracul reads the attempts so far and
      * says what is going wrong and what to do differently. Returns the advice as a review block for the loop to carry on from, or null when it is not
@@ -926,6 +947,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         if (skillRun != null) { skillRun = null; skillTick++ }
         clearRoles()
         stuckAdvised = 0
+        turnCalls.clear()
         // ...and a skill chip on it starts a run of that skill (its required steps are then watched)
         history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }?.let { entry ->
             val vault = app.openVault().getOrNull()
