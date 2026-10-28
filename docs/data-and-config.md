@@ -63,6 +63,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `toolAutoRead` | true | read-only tools run without asking |
 | `skillsEnabled` / `skillsFolder` | true / `` (automatic) | the model is told which skills exist and gets `use_skill`; the vault folder with one folder per skill. Blank = `Layout.skillsFolder`: `.arcana/skills`, or an existing `Skills/`; a name set here wins |
 | `libraryTree` | true | the Library lists notes as a tree of folders that fold and unfold (false: one flat list with full paths) |
+| `repeatMemorySeconds` | 45 | how long an identical read, search or web fetch of the current question is answered from memory (0 = off); Settings → Tools → *Remember repeated reads* |
 | `oldToolOutput` | `whole` | tool results from earlier questions are sent as they were (`whole`) or cut to 1,200 characters with a marker (`shorten`); Settings → Tools → *Old tool output* |
 | `toolSteps` | 8 | max tool rounds per question (1–60); at the limit `stepLimit` decides |
 | `stepLimit` | `ask` | at the step limit: `ask` shows a dialog offering that many more steps, `auto` gives them at once (up to `STEP_LIMIT_AUTO_ROUNDS` = 3 times per question, logged in the session, then it asks), `stop` makes the model answer with what it has. Each change, command and web address inside the extra steps keeps its own approval |

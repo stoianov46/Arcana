@@ -136,6 +136,8 @@ data class AppConfig(
     val toolSteps: Int = 8,
     /** What happens to the results of tools from earlier turns when the chat is sent again: "whole" (kept as they were; the default, nothing is cut silently) or "shorten" (each cut to 1,200 characters, for small context windows). */
     val oldToolOutput: String = "whole",
+    /** How many seconds an identical read, search or page fetch of the current question is answered from memory instead of being run (and asked about) again; 0 = every call runs. */
+    val repeatMemorySeconds: Int = 45,
     /** What happens when a question uses up its steps while the model still wants tools: "ask" (a dialog), "auto" (more steps at once, at most [STEP_LIMIT_AUTO_ROUNDS] times, then ask) or "stop" (it answers with what it has). */
     val stepLimit: String = "ask",
     /** Skills (runbooks in the vault, see Skills.kt): the model gets a list of them and can load one with use_skill; Chat's "/" menu offers them. */

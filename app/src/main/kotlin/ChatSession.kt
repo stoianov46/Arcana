@@ -343,7 +343,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val spec = box.find(call.name)
             // the same read, search or page asked for again in this turn, with nothing changed since: answer it from what the turn already has (no run, no dialog)
             val callKey = call.name + " " + call.arguments
-            val earlier = if (spec != null && repeatable(spec)) turnCalls[callKey]?.takeIf { System.currentTimeMillis() - it.first < REPEAT_MEMORY_MS }?.second else null
+            val earlier = if (spec != null && repeatable(spec)) turnCalls[callKey]?.takeIf { System.currentTimeMillis() - it.first < app.config.repeatMemorySeconds * 1000L }?.second else null
             if (earlier != null) {
                 val message = ChatMessage.toolResult(call.name, "You already made this exact call earlier in this turn and nothing has changed since, so the result is the same as the one above in this conversation (it began: $earlier). Use that result instead of asking again; if you need something different, change the arguments.")
                 add(message)
@@ -1045,9 +1045,6 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     private companion object {
         const val MAX_NOTE_CHARS = 60_000
-
-        /** How long an identical read of the current turn is answered from memory: a note edited outside Arcana meanwhile is read again after this. */
-        const val REPEAT_MEMORY_MS = 45_000L
 
         /** Tools whose answer changes with time, or that are meant to be repeated: never answered from memory. */
         val NEVER_REMEMBERED = setOf("wait", "current_time", "elapsed_time")
