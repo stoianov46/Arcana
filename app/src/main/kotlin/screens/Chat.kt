@@ -1294,7 +1294,9 @@ private fun opinionLines(message: ChatMessage, entry: Int, config: AppConfig, wi
     // a comparison in the window is drawn as columns when the setting says so and every column is wide enough to read
     val comparison = if (config.comparisonView == "side") Oracul.comparisonParts(message) else null
     val columns = comparison != null && columnCount(comparison.answers.size, width) >= 2
-    val title = "${if (config.plainGlyphs) "*" else Oracul.GLYPH} ${sanitizeForTerminal(Oracul.title(message))}"
+    // a verdict is the judge model's own words: it wears that model's family glyph, like a reply does; the other helper blocks keep the Oracul's
+    val glyph = if (Oracul.isVerdict(message)) ModelIcon.of(Oracul.title(message).substringAfter("· ", "").trim(), config.plainGlyphs) else if (config.plainGlyphs) "*" else Oracul.GLYPH
+    val title = "$glyph ${sanitizeForTerminal(Oracul.title(message))}"
     // over columns the model names in the title wear the colours of their columns
     if (columns && comparison != null) add(Line(title, Palette.Blue, bold = true, entry = entry, runs = comparisonTitleRuns(title, comparison)))
     else add(Line(title, Palette.Blue, bold = true, entry = entry))

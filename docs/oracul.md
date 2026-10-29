@@ -167,7 +167,7 @@ runs unless *Flow* is set (`AppConfig.flow`).
 
 - **Judge verdict (the answer to "why did the judge run once").** The judge used to run only for `/compare` (and *Judge automatically*). Now, after every **automatic**
   opinion (`maybeConsult`), `verdictOnOpinion` asks the judge whether the opinion is right. It needs `judgeModel` set (a judge that is the Oracul model would grade its own
-  opinion) and `oraculVerdict` on. Block `Ψ Verdict · <model>` (`MARK_VERDICT`, advice, not a review: `/revise` ignores it), usage feature `Judge`. Manual `/oracul`, the
+  opinion) and `oraculVerdict` on. Block `<model glyph> Verdict · <model>` (the judge's family glyph, as on a reply, not the Oracul's `Ψ`; `MARK_VERDICT`, advice, not a review: `/revise` ignores it), usage feature `Judge`. Manual `/oracul`, the
   stuck advice and the flow's reviewer get no verdict (the flow has its controller).
 - **`/goal`** is the controller loop with a condition you write, as in Claude Code. `/goal <text>` sets it and starts the work (`startGoal` sends the goal as a message);
   `/goal` shows it, `/goal clear` drops it. After each reply `finishReply` waits for the reviewers (`autoConsult.join()`), then `checkGoal` asks the checker (usage feature
