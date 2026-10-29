@@ -24,6 +24,8 @@ import com.arcana.brain.app.navigation.LocalNavigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.Compaction
+import com.arcana.brain.app.navigation.LibraryFilter
+import com.arcana.brain.core.Artifacts
 import com.arcana.brain.core.Flow
 import com.arcana.brain.core.MemoryAudit
 import com.arcana.brain.core.Oracul
@@ -105,6 +107,7 @@ internal val SlashCommands = listOf(
     SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
     SlashItem("/flow", "Flow: every message goes analyst, planner, worker, reviewer, controller (toggle)", false, usage = "e.g. /flow careful   or   /flow off   (without a name it switches)"),
     SlashItem("/goal", "Set a goal: Arcana keeps working until a checker says it is met", false, usage = "e.g. /goal all notes in Inbox are tagged   (/goal alone shows it, /goal clear removes it)"),
+    SlashItem("/artifacts", "Files and notes the model wrote or changed in this chat", false),
     SlashItem("/thinking", "Thinking pane: watch the model think under the conversation (toggle)", false),
     SlashItem("/append", "Add the last answer to a note", false),
     SlashItem("/replace", "Replace a note with the last answer", false),
@@ -210,6 +213,8 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         add(modelsSegment(ModelIcon.label(config.model, plain), chat.consulting, config, plain, width, app.memoryAdvice(Oracul.model(config), com.arcana.brain.core.ModelFit.Role.Oracul)?.startsWith("⚠") == true))
         add(statusSegment("temperature", "°${config.temperature}", Palette.Accent, 6))
         if (config.chatUseVault) add(pillSegment("◉ vault", Palette.Cta, 6))
+        // what the tools wrote or changed in this chat (/artifacts lists it)
+        Artifacts.pill(chat.artifacts.toList(), plain)?.let { add(pillSegment(it, Palette.Purple, 5)) }
         // the memory file the assistant reads in every chat: shown, so you can see that it is in use (and how much room it takes)
         if (config.memoryEnabled) {
             if (memoryChars > Vault.MEMORY_LIMIT) add(pillSegment(memoryCutText(memoryChars, plain), Palette.Orange, 9))
@@ -287,7 +292,7 @@ private const val MaxNotes = 5
 /** How many queued messages are listed above the message field; the rest are counted. */
 private const val QUEUE_SHOWN = 3
 
-private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory }
+private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory, Artifacts }
 
 /** What happens to the last answer when it is sent to an existing note. */
 private enum class Target(val verb: String) { Append("Append"), Replace("Replace") }
@@ -582,6 +587,7 @@ fun ChatScreen(app: AppContext) {
             "/skills" -> toggleSkills()
             "/thinking" -> toggleThinkingPane()
             "/flow" -> setFlow(args)
+            "/artifacts" -> if (chat.artifacts.isEmpty()) toast("Nothing written or changed in this chat yet.") else mode = ChatMode.Artifacts
             "/goal" -> runGoal(args)
             "/mode" -> cycleMode()
             "/autorun" -> toggleAutoRun()
@@ -703,6 +709,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.Save -> Hints("Enter  save", "Tab  whole chat / last answer", "Ctrl+O  overwrite a note", "Esc  cancel")
         ChatMode.Leave -> Hints("w  save to vault", "Esc  leave chat", "any other key  stay")
         ChatMode.ConfirmClear -> Hints("y  erase this chat", "any other key  keep")
+        ChatMode.Artifacts -> Hints("1-9  open the note in the Library", "any other key  back")
         ChatMode.ConfirmMemory -> Hints("y  remove the repeated lines", "any other key  leave it as it is")
         ChatMode.ConfirmCancel -> Hints("Enter  cancel it", "y  cancel it", "any other key  keep going")
         ChatMode.ConfirmReplace -> Hints("y  replace", "any other key  keep the note")
@@ -798,6 +805,16 @@ fun ChatScreen(app: AppContext) {
                     toast("Chat erased")
                 }
                 mode = ChatMode.Chat
+                true
+            }
+            ChatMode.Artifacts -> {
+                val list = chat.artifacts.toList().asReversed()
+                val picked = key.char?.takeIf { it in '1'..'9' }?.let { list.getOrNull(it - '1') }
+                mode = ChatMode.Chat
+                if (picked != null) {
+                    if (picked.path.endsWith(".md") && picked.action != "deleted") navigator.openLibrary(LibraryFilter.All, note = picked.path)
+                    else toast("${picked.path} is not a note in the Library.", error = picked.action == "deleted")
+                }
                 true
             }
             ChatMode.ConfirmMemory -> {
@@ -949,6 +966,16 @@ fun ChatScreen(app: AppContext) {
                     Warning("“${chat.title}” (${chat.messages.size} messages) is deleted from the history. /new keeps it and starts a fresh chat instead.")
                 }
                 ActionBar(listOf(ActionItem("y", "Erase chat", accent = Palette.Red), ActionItem("any other key", "Keep it", accent = Palette.Cta)), style = ActionStyle.Button)
+            }
+            ChatMode.Artifacts -> {
+                val list = chat.artifacts.toList().asReversed()
+                ScreenHeader("Chat", "Written or changed in this chat")
+                VGap()
+                Panel("${list.map { it.path }.distinct().size} files and notes · newest first", accent = Palette.Purple) {
+                    list.take(9).forEachIndexed { i, a -> Label("${i + 1}  ${Artifacts.line(a)}", color = if (a.action == "deleted") Palette.Red else Palette.Text) }
+                    if (list.size > 9) Hint("… and ${list.size - 9} older")
+                }
+                ActionBar(listOf(ActionItem("1-9", "Open in the Library", accent = Palette.Cta), ActionItem("any other key", "Back")), style = ActionStyle.Button)
             }
             ChatMode.ConfirmMemory -> {
                 val audit = memoryAudit

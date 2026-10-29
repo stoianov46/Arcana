@@ -281,6 +281,24 @@ class OraculTest {
     }
 
     @Test
+    fun aFileTheWorkerWritesIsListedAsAnArtifactOfTheChat() {
+        val f = fake()
+        try {
+            val vault = Files.createDirectories(Files.createTempDirectory("arcana-artifact-vault").resolve("v"))
+            f.script = { model, body -> if (model == "worker" && "\"tools\"" in body && "\"role\":\"tool\"" !in body) call("write_file", """{"path":"out.txt","content":"hello"}""") else null }
+            val chat = app(f) { copy(toolsEnabled = true, toolMode = "auto", vaultPath = vault.toString()) }.chat
+            chat.send("Write it")
+            val deadline = System.currentTimeMillis() + 10_000
+            while (chat.artifacts.isEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            assertEquals(listOf("out.txt"), chat.artifacts.map { it.path })
+            assertEquals("created", chat.artifacts.single().action)
+            assertTrue(Files.exists(vault.resolve("out.txt")))
+            chat.startNew()
+            assertTrue(chat.artifacts.isEmpty(), "a new chat starts with none")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun aChangeByTheOraculAlwaysAsksEvenInAutoModeAndADenialChangesNothing() {
         val f = fake()
         try {

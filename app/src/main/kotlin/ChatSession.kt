@@ -11,6 +11,8 @@ import com.arcana.brain.core.STEP_LIMIT_AUTO_ROUNDS
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.Requirement
+import com.arcana.brain.core.Artifact
+import com.arcana.brain.core.Artifacts
 import com.arcana.brain.core.Flow
 import com.arcana.brain.core.SkillRoles
 import com.arcana.brain.core.StageKind
@@ -144,6 +146,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** True while the selected flow handles this message and ends with the controller's check; false for a short message that goes straight to the worker. */
     private var flowControl = false
+
+    /** The files and notes the model's tools wrote or changed in this chat, oldest first (the status bar pill and `/artifacts`); cleared by a new chat. */
+    val artifacts = androidx.compose.runtime.mutableStateListOf<Artifact>()
 
     /** What the model in [consulting] is doing for a flow ("analysing the request", "planning", "reviewing the answer", "checking the answer"); null = just answering. */
     var consultingStage by androidx.compose.runtime.mutableStateOf<String?>(null)
@@ -586,6 +591,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             }
             if (allowed && spec != null && !result.startsWith("Error:")) {
                 app.session.log(SessionKind.Tool, "${call.name} ${spec.summary(call.arguments)}")
+                Artifacts.of(call.name, { (call.arguments[it] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty() }, result, System.currentTimeMillis())?.let { artifacts += it }
                 if (spec.risk != ToolRisk.Read) app.brain.changed()
             }
             // what each tool costs: time, outcome and how much text it put into the context (shown on the Usage screen's Tools page)
@@ -1186,6 +1192,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         skillRun = null
         clearRoles()
         clearGoal()
+        artifacts.clear()
         toolsDeclined = false
         messages.clear(); wholeNotes.clear(); cutAccepted.clear()
         queued.clear()
@@ -1198,6 +1205,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     fun open(chat: StoredChat) {
         clearRoles()
         clearGoal()
+        artifacts.clear()
         skillRun = null // a run belongs to the conversation it started in (see docs/skills.md)
         skillTick++
         messages.clear(); wholeNotes.clear(); cutAccepted.clear()

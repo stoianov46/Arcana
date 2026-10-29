@@ -115,6 +115,8 @@ Size: S under half a day, M about a day, L several days, XL a week or more (roug
 
 ## N3. Indicator of generated artifacts
 
+**Status: done** (per chat, in memory; files and notes written or edited by tools, as decided).
+
 **Proposal.** A compact strip or a counter in the Chat status bar: *N files written · M notes created · K edits*, built from what the tools actually did in this session. A key (or `/artifacts`) opens a list: path, what happened, in which message. Selecting one opens it in the Library or shows the diff.
 
 **Open questions.** What counts as generated: files and notes only, or also command outputs and saved comparisons? Per session or per chat?

@@ -2112,4 +2112,20 @@ class CoreTest {
         assertEquals(0, vault.cleanMemory())
         assertTrue(Vault(java.nio.file.Files.createTempDirectory("arcana-mem3")).auditMemory().clean, "no memory file: nothing to report")
     }
+
+    @Test
+    fun onlyToolCallsThatLeaveAFileOrNoteBehindAreArtifacts() {
+        fun of(tool: String, args: Map<String, String>, result: String) = Artifacts.of(tool, { args[it].orEmpty() }, result, 1L)
+        assertEquals(Artifact("Notes/Plan.md", "created", "create_note", 1L), of("create_note", mapOf("title" to "Plan", "folder" to "Notes"), "Created Notes/Plan.md"))
+        assertEquals("replaced", of("write_file", mapOf("path" to "a.txt"), "Replaced a.txt (12 characters). The old")?.action)
+        assertEquals("created", of("write_file", mapOf("path" to "a.txt"), "Created a.txt (12 characters)")?.action)
+        assertEquals("edited", of("edit_file", mapOf("path" to "a.txt"), "Edited a.txt")?.action)
+        assertEquals("b.md", of("move_path", mapOf("from" to "a.md", "to" to "b.md"), "Moved")?.path, "a move is the new path")
+        assertEquals("deleted", of("delete_path", mapOf("path" to "a.md"), "Moved to trash")?.action)
+        assertEquals(null, of("read_note", mapOf("path" to "a.md"), "text"), "a read leaves nothing")
+        assertEquals(null, of("run_command", mapOf("command" to "ls"), "files"), "a command is not an artifact")
+        assertEquals(null, of("edit_file", mapOf("path" to "a.txt"), "Error: old text not found"), "a failed call leaves nothing")
+        assertEquals("✦ 2 changed", Artifacts.pill(listOf(Artifact("a", "created", "t", 1), Artifact("a", "edited", "t", 2), Artifact("b", "created", "t", 3)), false), "one path counts once")
+        assertEquals(null, Artifacts.pill(emptyList(), false))
+    }
 }
