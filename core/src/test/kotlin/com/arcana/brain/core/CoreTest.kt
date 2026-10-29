@@ -1979,10 +1979,11 @@ class CoreTest {
         assertTrue(request.last().content.startsWith("EARLIER IN THE CHAT") && "TASK:\ndo option C" in request.last().content)
         assertTrue("EARLIER" !in Oracul.reviewRequest("Q?", "A.", emptyList()).last().content, "without a background the request is as before")
         val long = (1..40).flatMap { listOf(ChatMessage.user("question $it " + "y".repeat(1400)), ChatMessage.assistant("answer $it " + "z".repeat(1400))) } + ChatMessage.user("now")
-        assertTrue(Oracul.background(long).length < 10_000, "capped by messages times characters")
-        assertEquals(6, Oracul.background(long).split("\n\n").size, "six messages by default")
-        assertEquals(30, Oracul.background(long, maxMessages = 30).split("\n\n").size, "as many as the setting says, beyond 20")
-        assertEquals("", Oracul.background(long, maxMessages = 0), "0 turns it off")
+        assertTrue(Oracul.background(long).length <= Oracul.MAX_BACKGROUND + 100, "capped in total, whatever the settings say")
+        assertTrue(Oracul.background(long).split("\n\n").size > 6, "all messages that fit by default, not six")
+        assertEquals(6, Oracul.background(long, maxMessages = 6).split("\n\n").size, "a number caps it")
+        assertEquals(20, Oracul.background(long, maxMessages = 20).split("\n\n").size, "as many as the setting says while they fit")
+        assertTrue(Oracul.background(long, maxMessages = 30).split("\n\n").size < 30, "the total cap wins over a larger number")
         assertTrue("shortened" in Oracul.background(long, maxMessages = 2, perMessage = 300), "the characters per message are a setting too")
     }
 
@@ -2059,5 +2060,19 @@ class CoreTest {
         assertTrue(Oracul.isGoal(m) && Oracul.isOpinion(m) && !Oracul.isReview(m) && Oracul.body(m).startsWith("Goal not met yet"))
         val v = Oracul.verdictMessage("j", "AGREE\nit is right")
         assertTrue(Oracul.isVerdict(v) && !Oracul.isReview(v) && Oracul.body(v).startsWith("AGREE"))
+    }
+
+    @Test
+    fun aHistoryLimitOfZeroSendsTheWholeChatAndTheOraculSeesAllEarlierMessages() {
+        val chat = (1..30).flatMap { listOf(ChatMessage.user("question $it"), ChatMessage.assistant("answer $it")) }
+        assertEquals(60, Prompts.window(0, chat).size, "0 = everything")
+        assertEquals(10, Prompts.window(10, chat).size, "a number still cuts")
+        assertEquals(0, AppConfig().chatHistory)
+        val background = Oracul.background(chat + ChatMessage.user("do option C"))
+        assertTrue("question 1" in background && "answer 30" in background, "all earlier messages, not the last 6")
+        assertEquals(6, Oracul.background(chat + ChatMessage.user("do option C"), maxMessages = 6).split("\n\n").size, "a number caps it")
+        val long = (1..40).flatMap { listOf(ChatMessage.user("q$it"), ChatMessage.assistant("x".repeat(2900))) }
+        assertTrue(Oracul.background(long + ChatMessage.user("next")).length <= Oracul.MAX_BACKGROUND + 100, "the total is capped")
+        assertTrue("x" in Oracul.background(long + ChatMessage.user("next")) && "q40" in Oracul.background(long + ChatMessage.user("next")), "newest first")
     }
 }

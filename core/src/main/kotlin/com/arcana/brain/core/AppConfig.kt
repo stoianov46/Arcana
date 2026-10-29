@@ -44,7 +44,7 @@ data class AppConfig(
     /** Compact the chat automatically (summarize the older part, see [Compaction]) before a message when the context window is this percent full; 0 turns it off. */
     val autoCompactPercent: Int = 80,
     /** How many of the latest chat messages are sent to the model as context. */
-    val chatHistory: Int = 20,
+    val chatHistory: Int = 0,
     /** Esc on a running reply (or an Oracul run) asks "Cancel this reply?" first; off = Esc cancels at once. */
     val confirmCancel: Boolean = true,
     /** Chats are saved to disk and the last one is reopened when Arcana starts. */
@@ -116,8 +116,8 @@ data class AppConfig(
     /** How many times `/goal` may continue the work by itself for one goal before it stops. */
     val goalTurns: Int = 5,
     /** How many earlier messages of the chat the Oracul, the judge and the planner are shown besides the last question (0 = none), and how many characters of each. */
-    val oraculContextMessages: Int = 6,
-    val oraculContextChars: Int = 1500,
+    val oraculContextMessages: Int = 0,
+    val oraculContextChars: Int = 3000,
     /** The worker counts as stuck, and the Oracul steps into its tool loop, after this many failed tool calls in one turn (and again after every further such number); 0 = never. */
     val stuckCalls: Int = 4,
     /** An automatic review is due after this many turns in a row that each had a failed tool call; 0 = never. */

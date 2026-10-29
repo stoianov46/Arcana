@@ -121,6 +121,8 @@ Size: S under half a day, M about a day, L several days, XL a week or more (roug
 
 ## N11. Context: send everything, compact at the limit
 
+**Status: done** (`chatHistory` and `oraculContextMessages` default to 0 = everything; Oracul background capped at 30,000 characters). The quiz mode is not designed and not built.
+
 **What is wrong** *(checked)*. The main chat sends only the latest `chatHistory` messages (default **20**, Settings → Console → *Chat history*, `Prompts.window`). Older messages are silently dropped from the request even when the model's window has plenty of room. The Oracul, judge and planner have their own cap (6 messages × 1500 characters, `oraculContextMessages` / `oraculContextChars`).
 
 **Decision.** Send the whole chat until the context limit is near, then compact the older part. Arcana already has the second half: `autoCompactDue` compacts at `autoCompactPercent` (default 80 %) of the window.

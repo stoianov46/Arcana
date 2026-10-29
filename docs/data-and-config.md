@@ -42,7 +42,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `thinkingView` | summary | how a reasoning model's thoughts show in Chat: `summary` (one dim line), `full`, `hidden`; the text is stored in `ChatMessage.thinking` (never sent back to the model) |
 | `comparisonView` | side | how a `/compare` result is drawn in Chat: `side` (answers in columns, verdict below) or `stacked`; narrow windows stack either way |
 | `autoCompactPercent` | 80 | compact the chat before a message when the context window is this percent full (0 = off); `/compact` always works (see `Compaction`) |
-| `chatHistory` | 20 | latest messages sent as context |
+| `chatHistory` | 0 | latest messages sent as context; 0 = everything (the chat is compacted at `autoCompactPercent`, not cut). Configs saved before this change keep their old 20 until it is changed in Settings → Console → Chat history |
 | `confirmCancel` | true | `Esc` on a running reply asks "Cancel this reply?" first (Settings → Console → *Confirm before cancelling*); false = `Esc` cancels at once |
 | `keepChats` / `chatsKept` | true / 50 | persist chats / how many to keep |
 | `chatUseVault` | false | answer from vault (also `/vault`) |
@@ -77,7 +77,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `stuckCalls` / `stuckTurns` | `4` / `3` | the stuck thresholds (Settings → Oracul → *Stuck: failed calls / failing turns*): the Oracul steps into a tool loop after every `stuckCalls` failed calls of one turn, and an automatic review is due after `stuckTurns` failing turns in a row; `0` = never |
 | `oraculUrl` | `` | another Ollama server for the Oracul and the judge (blank = the main one); `Oracul.serverConfig` swaps `ollamaUrl` for them, the model pickers of Settings → Oracul list what is installed there |
 | `oraculModel` / `judgeModel` / `oraculAuto` | `` / `` / `problems` | the Oracul (second opinion) model, the judge model (blank = the Oracul model), and when a second opinion is asked for by itself (`off`, `problems`, `always`); blank `oraculModel` turns the Oracul off |
-| `oraculContextMessages` / `oraculContextChars` | 6 / 1500 | how many earlier chat messages (0 = none, up to 200) and how many characters of each the Oracul, judge and planner are shown besides the last question; Settings → Oracul → *Chat context* |
+| `oraculContextMessages` / `oraculContextChars` | 0 / 3000 | how many earlier chat messages (0 = all, newest first, up to 30,000 characters in total; a number caps it, up to 200) and how many characters of each the Oracul, judge, planner, analyst and controller are shown besides the last question; Settings → Oracul → *Chat context* |
 | `oraculJudgeAuto` | false | when an automatic second opinion is due, run a full comparison (Oracul answers, judge compares) instead; slow, three model runs |
 | `oraculTools` | true | the Oracul may use the worker's tools to check an answer (reads follow *Read without asking*; every change, command and web access asks, even in Auto mode); needs `toolsEnabled` and a tools-capable Oracul model |
 | `setupDone` | false | the first-run setup was finished or skipped (it opens by itself only while there is no vault and this is false); set by the wizard and by `arcana --init` |

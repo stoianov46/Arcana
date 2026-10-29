@@ -455,6 +455,7 @@ object Prompts {
      * and their results are messages too, so a long tool run would otherwise push the user's own request out of what the model sees.
      */
     fun window(limit: Int, history: List<ChatMessage>): List<ChatMessage> {
+        if (limit <= 0) return history // everything: the chat is compacted when the window fills (Settings → Console → Auto-compact), not cut
         val turnStart = history.indexOfLast { Oracul.isRealUser(it) }.coerceAtLeast(0)
         val start = minOf(history.size - limit, turnStart).coerceAtLeast(0)
         return history.subList(start, history.size)

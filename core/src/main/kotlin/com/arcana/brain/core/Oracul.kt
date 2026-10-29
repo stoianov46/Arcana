@@ -207,10 +207,11 @@ object Oracul {
      * would not know what "option C" or "that file" means): the last few messages of the user and replies of the assistant, without tool output, each shortened in the
      * middle (the end of a reply, where its options or questions are, is kept), newest last: at most [maxMessages] messages of at most [perMessage] characters each (Settings → Oracul → Chat context), so the size is bounded by their product and nothing else cuts it. Empty when there is nothing before or [maxMessages] is 0.
      */
-    fun background(messages: List<ChatMessage>, maxMessages: Int = 6, perMessage: Int = 1500): String {
+    fun background(messages: List<ChatMessage>, maxMessages: Int = 0, perMessage: Int = 3000): String {
         val at = messages.indexOfLast { isRealUser(it) }
-        if (at <= 0 || maxMessages <= 0) return ""
+        if (at <= 0) return ""
         val lines = ArrayList<String>()
+        var total = 0
         for (m in messages.subList(0, at).asReversed()) {
             val who = when {
                 Compaction.isSummary(m) -> "SUMMARY OF THE EARLIER CHAT"
@@ -219,8 +220,12 @@ object Oracul {
                 m.role == "assistant" && m.content.isNotBlank() && m.toolCalls.isEmpty() -> "ASSISTANT"
                 else -> continue
             }
-            lines += "$who: ${squeeze(m.content.trim(), perMessage.coerceAtLeast(100))}"
-            if (lines.size >= maxMessages) break
+            val line = "$who: ${squeeze(m.content.trim(), perMessage.coerceAtLeast(100))}"
+            // the newest messages first: stop at the cap, or when the whole is too long for a model that is not the chat's (its window is unknown)
+            if (lines.isNotEmpty() && total + line.length > MAX_BACKGROUND) break
+            lines += line
+            total += line.length
+            if (maxMessages > 0 && lines.size >= maxMessages) break
         }
         return lines.asReversed().joinToString("\n\n")
     }
@@ -324,6 +329,9 @@ object Oracul {
     }
 
     private const val MAX_PART = 12_000
+
+    /** The most characters of earlier chat the Oracul, the judge and the planner are shown (about 8k tokens), whatever the settings say. */
+    const val MAX_BACKGROUND = 30_000
 
     /** What happened in the last turn (from the user's last message to now): the facts [due] decides on. */
     data class TurnFacts(val toolErrors: Int, val skippedSteps: Int, val toolNames: List<String>, val failedTurns: Int = 0)
