@@ -1231,12 +1231,12 @@ private fun ThinkingPane(gen: Generation, chat: ChatSession, rows: Int, model: S
 }
 
 /** The lines of one message; [entry] is the number of its first select-mode entry (a reply uses one per Markdown block). */
-private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, width: Int, applyHint: Boolean = false): List<Line> {
+internal fun messageLines(app: AppContext, message: ChatMessage, entry: Int, width: Int, applyHint: Boolean = false): List<Line> {
     if (Compaction.isSummary(message)) return summaryLines(message, entry, app.config.plainGlyphs, width)
     if (Oracul.isOpinion(message)) return opinionLines(message, entry, app.config, width, applyHint)
     val user = message.role == "user"
     val config = app.config
-    if (message.role == "tool") return toolResultLines(message, config.plainGlyphs, width)
+    if (message.role == "tool") return toolResultLines(message, config.plainGlyphs, width, entry)
     return buildList {
         if (user) {
             // Your messages sit on an amber band, so they stand apart from the model's answers.
@@ -1251,11 +1251,13 @@ private fun messageLines(app: AppContext, message: ChatMessage, entry: Int, widt
             }
             add(Line("", background = band, entry = entry))
         } else {
-            add(Line(ModelIcon.label(config.model, config.plainGlyphs), Palette.Accent, bold = true, entry = entry))
+            // the header belongs to the reply's first entry (its first block, else its first tool call); a reply with neither has none, so it never borrows the next message's entry
+            val blocks = parseMarkdown(message.content).size
+            add(Line(ModelIcon.label(config.model, config.plainGlyphs), Palette.Accent, bold = true, entry = if (blocks > 0 || message.toolCalls.isNotEmpty()) entry else -1))
             addAll(thinkingLines(message.thinking, config.thinkingView, config.plainGlyphs, width))
             addAll(renderMarkdown(parseMarkdown(message.content), width, entry = { entry + it }, rich = config.renderMarkdown, plainGlyphs = config.plainGlyphs))
-            // the tools it asked for, one line each
-            message.toolCalls.forEach { call -> add(Line("${if (config.plainGlyphs) "[tool]" else "⚙"} ${call.name}  ${sanitizeForTerminal(callSummary(call))}".take(width), Palette.ConsoleTool, bold = true)) }
+            // the tools it asked for, one line and one select entry each
+            message.toolCalls.forEachIndexed { i, call -> add(Line("${if (config.plainGlyphs) "[tool]" else "⚙"} ${call.name}  ${sanitizeForTerminal(callSummary(call))}".take(width), Palette.ConsoleTool, bold = true, entry = entry + blocks + i)) }
             // the notes the answer was built from, when the vault was searched
             if (message.sources.isNotEmpty()) {
                 wrap("Sources  " + message.sources.joinToString("  ") { "▤ ${sanitizeForTerminal(it.removeSuffix(".md"))}" }, width).forEach { add(Line(it, Palette.Accent)) }
@@ -1317,10 +1319,12 @@ private fun summaryLines(message: ChatMessage, entry: Int, plain: Boolean, width
 }
 
 /** What select mode can pick in [m]: your message as one entry, a reply as its Markdown blocks, tool results as none. */
-private fun entriesOf(m: ChatMessage): List<String> = when (m.role) {
+internal fun entriesOf(m: ChatMessage): List<String> = when (m.role) {
     "user" -> listOf(m.content)
-    "tool" -> emptyList()
-    else -> parseMarkdown(m.content).map { it.raw }
+    // a tool result is one entry, so it can be selected and copied like an answer
+    "tool" -> listOf("${m.toolName ?: "tool"} result:\n${m.content.trim()}")
+    // a reply: its Markdown blocks, then one entry per tool call (what it asked for), in the order they are drawn
+    else -> parseMarkdown(m.content).map { it.raw } + m.toolCalls.map { "${it.name}  ${callSummary(it)}".trim() }
 }
 
 /** The one thing a tool call is about, for its line in the chat: its path, query or title. */
@@ -1337,14 +1341,14 @@ private fun callSummary(call: ToolCall): String {
 }
 
 /** The result of a tool, as a quiet line (or two) under the call: ✓ with what happened, ✕ with why not. */
-private fun toolResultLines(message: ChatMessage, plain: Boolean, width: Int): List<Line> {
+private fun toolResultLines(message: ChatMessage, plain: Boolean, width: Int, entry: Int = -1): List<Line> {
     val text = message.content.trim()
     // the task list is shown whole: it is the plan the user follows along
     if (message.toolName == com.arcana.brain.core.TODO && !text.startsWith("Error:")) {
         val items = text.lineSequence().takeWhile { it.firstOrNull()?.isDigit() == true }.map { sanitizeForTerminal(it) }.toList()
         val summary = text.lineSequence().drop(items.size).firstOrNull().orEmpty()
-        return items.map { l -> Line("    ${if (plain) l else l.replace("[x]", "☑").replace("[~]", "▸").replace("[ ]", "☐")}".take(width), if ("[x]" in l) Palette.Green else if ("[~]" in l) Palette.Cta else Palette.Muted) } +
-            listOf(Line("    ${sanitizeForTerminal(summary)}".take(width), Palette.Muted), Line(""))
+        return items.map { l -> Line("    ${if (plain) l else l.replace("[x]", "☑").replace("[~]", "▸").replace("[ ]", "☐")}".take(width), if ("[x]" in l) Palette.Green else if ("[~]" in l) Palette.Cta else Palette.Muted, entry = entry) } +
+            listOf(Line("    ${sanitizeForTerminal(summary)}".take(width), Palette.Muted, entry = entry), Line(""))
     }
     val failed = text.startsWith("Error:") || text.startsWith("The user denied") || text.startsWith("The user did not allow") ||
         text.startsWith("Timed out") || (text.startsWith("exit code ") && !text.startsWith("exit code 0"))
@@ -1354,8 +1358,8 @@ private fun toolResultLines(message: ChatMessage, plain: Boolean, width: Int): L
     val body = "  ${if (plain) "->" else "↳"} $mark ${first.take((width - 8 - size.length).coerceAtLeast(10))}$size"
     // what the tool left out, said plainly: the model was not given it, and a character count hides that
     val cut = com.arcana.brain.core.ToolCuts.marker(text)
-    val lines = mutableListOf(Line(body.take(width), if (failed) Palette.Red else Palette.Muted))
-    if (cut != null) lines += Line("    ${if (plain) "[cut]" else "✂"} ${sanitizeForTerminal(cut)}".take(width), Palette.Orange)
+    val lines = mutableListOf(Line(body.take(width), if (failed) Palette.Red else Palette.Muted, entry = entry))
+    if (cut != null) lines += Line("    ${if (plain) "[cut]" else "✂"} ${sanitizeForTerminal(cut)}".take(width), Palette.Orange, entry = entry)
     return lines + Line("")
 }
 
