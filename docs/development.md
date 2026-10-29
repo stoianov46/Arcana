@@ -58,6 +58,6 @@ Layout rules that bite: a screen's top-level children go inside `Stack { }` (Mos
 ## Release checklist
 
 1. `./gradlew clean test installDist distZip`; unpack `arcana.zip` in a temp folder and run `arcana --help` and `arcana --init <temp vault>`.
-2. Start it once in a terminal against an isolated home: the first-run setup appears, a chat works against a real model, `Esc` twice cancels, Settings → Storage lists files.
+2. Start it once in a terminal against an isolated home: the first-run setup appears, a chat works against a real model, `Esc` then `Enter` cancels, Settings → Storage lists files.
 3. Changelog page and README say what is new; roadmap statuses are current.
 4. Tag and attach `arcana.zip`. There is no auto-update: users re-run `make install` or unpack the new zip; settings and chats are not touched by either.

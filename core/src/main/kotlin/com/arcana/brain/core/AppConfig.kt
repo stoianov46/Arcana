@@ -45,6 +45,8 @@ data class AppConfig(
     val autoCompactPercent: Int = 80,
     /** How many of the latest chat messages are sent to the model as context. */
     val chatHistory: Int = 20,
+    /** Esc on a running reply (or an Oracul run) asks "Cancel this reply?" first; off = Esc cancels at once. */
+    val confirmCancel: Boolean = true,
     /** Chats are saved to disk and the last one is reopened when Arcana starts. */
     /** The folder where new, unprocessed notes land; Arcana counts what is waiting there. */
     val inboxFolder: String = "Inbox",
@@ -89,10 +91,10 @@ data class AppConfig(
     val rolePlanner: String = "",
     val roleWorker: String = "",
     val roleReviewer: String = "",
-    /** More models that answer a comparison (`/compare`) besides the Oracul model, comma-separated; the judge then compares all the answers. */
-    val oraculExtra: String = "",
     /** Where the role table applies: "skills" (only a run that carries a skill) or "all" (every message: plan, worker, review). */
     val rolesScope: String = "skills",
+    /** More models that answer a comparison (`/compare`) besides the Oracul model, comma-separated; the judge then compares all the answers. */
+    val oraculExtra: String = "",
     /** Another Ollama server for the Oracul and the judge (a bigger machine on your network); blank = the same server as the main model. */
     val oraculUrl: String = "",
     /** The model that judges a comparison; blank = the Oracul model. */

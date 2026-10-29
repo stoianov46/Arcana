@@ -282,7 +282,7 @@ private const val MaxNotes = 5
 /** How many queued messages are listed above the message field; the rest are counted. */
 private const val QUEUE_SHOWN = 3
 
-private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear }
+private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel }
 
 /** What happens to the last answer when it is sent to an existing note. */
 private enum class Target(val verb: String) { Append("Append"), Replace("Replace") }
@@ -337,7 +337,7 @@ fun ChatScreen(app: AppContext) {
 
     fun startNew() {
         if (gen.state == GenState.Running) {
-            toast("Wait for the reply to finish (or press Esc twice to cancel it) before starting a new chat.", error = true)
+            toast("Wait for the reply to finish (or press Esc to cancel it) before starting a new chat.", error = true)
             return
         }
         gen.reset()
@@ -667,6 +667,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.Save -> Hints("Enter  save", "Tab  whole chat / last answer", "Ctrl+O  overwrite a note", "Esc  cancel")
         ChatMode.Leave -> Hints("w  save to vault", "Esc  leave chat", "any other key  stay")
         ChatMode.ConfirmClear -> Hints("y  erase this chat", "any other key  keep")
+        ChatMode.ConfirmCancel -> Hints("Enter  cancel it", "y  cancel it", "any other key  keep going")
         ChatMode.ConfirmReplace -> Hints("y  replace", "any other key  keep the note")
         ChatMode.History -> Hints("↑↓  move", "Enter  open", "/  filter", "Esc  back")
         ChatMode.PickNote -> Hints("type  search", "↑↓  move", "Enter  attach", "Esc  cancel")
@@ -762,6 +763,12 @@ fun ChatScreen(app: AppContext) {
                 mode = ChatMode.Chat
                 true
             }
+            ChatMode.ConfirmCancel -> {
+                // the reply may have finished while the question was open: then there is nothing left to cancel
+                if (key == Key.Enter || key.char == 'y' || key.char == 'Y') { if (gen.state == GenState.Running) gen.cancel() else chat.cancelOracul() }
+                mode = ChatMode.Chat
+                true
+            }
             ChatMode.ConfirmReplace -> {
                 if (key.char == 'y' || key.char == 'Y') replaceTarget?.let { applyToNote(it) } else { replaceTarget = null; overwriting = null; saving = null; mode = ChatMode.Chat }
                 true
@@ -823,9 +830,10 @@ fun ChatScreen(app: AppContext) {
                 slashMatches.isNotEmpty() && key == Key.Tab -> { input.set(slashMatches[slashIndex.coerceIn(0, slashMatches.size - 1)].name.let { if (it.startsWith("/")) it else "/$it" } + " "); true }
                 slashMatches.isNotEmpty() && key == Key.Enter -> { useSlash(slashMatches[slashIndex.coerceIn(0, slashMatches.size - 1)]); true }
                 key == Key.Escape -> when {
-                    gen.state == GenState.Running -> { gen.requestCancel(); true }
-                    // the Oracul or the judge working on its own (an opinion, a comparison, a takeover): one Esc stops it, nothing is added
-                    chat.cancelOracul() -> true
+                    // a running reply is never cancelled by a stray key: Esc asks first (Settings → Console → Confirm before cancelling)
+                    gen.state == GenState.Running -> { if (app.config.confirmCancel) mode = ChatMode.ConfirmCancel else gen.cancel(); true }
+                    // the Oracul or the judge working on its own (an opinion, a comparison, a takeover): the same question, then nothing is added
+                    chat.consulting != null -> { if (app.config.confirmCancel) mode = ChatMode.ConfirmCancel else chat.cancelOracul(); true }
                     browsing -> { browsing = false; true }
                     chat.messages.isNotEmpty() -> { browsing = true; true }
                     else -> false
@@ -895,6 +903,14 @@ fun ChatScreen(app: AppContext) {
                     Warning("“${chat.title}” (${chat.messages.size} messages) is deleted from the history. /new keeps it and starts a fresh chat instead.")
                 }
                 ActionBar(listOf(ActionItem("y", "Erase chat", accent = Palette.Red), ActionItem("any other key", "Keep it", accent = Palette.Cta)), style = ActionStyle.Button)
+            }
+            ChatMode.ConfirmCancel -> {
+                ScreenHeader("Chat", chat.title)
+                VGap()
+                Panel(if (gen.state == GenState.Running) "Cancel this reply?" else "Cancel the Oracul?", accent = Palette.Orange) {
+                    Warning(if (gen.state == GenState.Running) "The reply stops where it is and what was written so far is kept. It keeps running while you decide." else "The Oracul or the judge stops and nothing is added to the chat. It keeps running while you decide.")
+                }
+                ActionBar(listOf(ActionItem("Enter", "Cancel it", accent = Palette.Orange), ActionItem("any other key", "Keep going", accent = Palette.Cta)), style = ActionStyle.Button)
             }
             ChatMode.ConfirmReplace -> {
                 ScreenHeader("Chat", "Replace “${replaceTarget}”")
@@ -975,7 +991,7 @@ fun ChatScreen(app: AppContext) {
                     val queuedRows = if (question == null && approval == null) chat.queued.size.coerceAtMost(QUEUE_SHOWN + 1) else 0
                     val below = queuedRows + (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval, approvalMax()).size + 3 else 2 + inputRows + pendingRow + slashMatches.size + (if (slashUsage.isEmpty()) 0 else 1)) + statusRows + panelActionRows
                     ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below + bottomGap + paneRows, actions = actions), output)
-                    ReplyStatus(app, gen, doubleEsc = true, consulting = chat.consulting, consultingSince = chat.consultingSince)
+                    ReplyStatus(app, gen, consulting = chat.consulting, consultingSince = chat.consultingSince)
                 }
                 if (paneRows > 0) ThinkingPane(gen, chat, paneRows - 2, app.config.model)
                 if (question != null) {

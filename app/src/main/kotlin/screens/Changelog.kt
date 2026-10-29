@@ -26,6 +26,9 @@ private fun changePages() = listOf(
 # The latest work
 Built on 24–25 October 2026. Last updated 28 October 2026.
 
+## Cancel asks first
+- `Esc` on a running reply (or an Oracul run) opens *Cancel this reply?*: `Enter` cancels, any other key keeps going, and the reply keeps streaming meanwhile. The double `Esc` is gone; **Settings → Console → Confirm before cancelling** turns the question off.
+
 ## Models as a pipeline
 - **Settings → Oracul → Roles apply to → Every message** runs the planner, worker and reviewer for all chat, not only skills: a plan first (messages of 60+ characters), the worker answers, the reviewer checks.
 
@@ -71,7 +74,7 @@ Built on 24–25 October 2026. Last updated 28 October 2026.
 - **A little air above the footer in Chat**: one empty row now sits between the Chat's last row (its key hints) and the bottom bar, so they no longer touch. The conversation is one row shorter to make room; very small windows keep the old layout.
 - **Clearer folder settings**: *Extra folders* is now *Allowed folders* (where the model may read and write besides the vault: `~/Projects;~/Documents`, or `~` for the whole home folder) and *Project folder* is now *Working folder* (optional: the one folder you work in right now, where relative paths and commands start, with its own instruction file and a status-bar pill). The working folder is allowed automatically; it grants nothing outside itself. The settings and their saved values are unchanged.
 - **A bigger memory file**: the first 8,000 characters of `ARCANA.md` are sent to the model in every chat (it was 4,000). The text is part of every request, so a long file uses part of the context window each time; the `✎ memory` pill shows how much is sent.
-- **Esc cancels the Oracul**: while the Oracul or the judge works on its own (an automatic opinion, `/oracul`, `/compare`, `/takeover`), one Esc stops it and nothing is added. While it works inside the worker's turn the usual double Esc still cancels the turn.
+- **Esc cancels the Oracul**: while the Oracul or the judge works on its own (an automatic opinion, `/oracul`, `/compare`, `/takeover`), Esc (after the *Cancel?* question) stops it and nothing is added. While it works inside the worker's turn Esc asks to cancel the turn.
 - **Coloured model names in a comparison's title**: over the columns the names in `Ψ Comparison · A vs B, judged by J` wear the colour of their column pill, and the judge's is the verdict's orange.
 - **No stale Oracul pill**: an automatic opinion on the previous answer kept running (and the Oracul pill stayed lit) through your next question, and for minutes if the Oracul model is slow. A new message now cancels it, since you have moved on.
 - **Judge automatically (optional)**: Settings → Oracul → *Judge automatically*. When an automatic second opinion is due, the Oracul answers too and the judge compares both answers, as `/compare` does, instead of one opinion. Off by default: it is three model runs instead of one.
@@ -113,7 +116,7 @@ Built on 24–25 October 2026. Last updated 28 October 2026.
 - **Library gives the note more room**: the notes list takes 30 % of the width (it was 42 %) and the note preview the rest, with the divider line under its header running the whole width.
 - **Who is speaking**: in Chat, replies are labelled `◆ qwen3:30b` and your messages `● You`; the glyph follows the model family (`◆` gemma, `◈` qwen, `▲` llama, `◐` mistral, `◇` phi, `◉` deepseek, …) and the status bar uses it too. The name is always exactly what Ollama calls the model.
 - **Empty replies get a second chance**: a model that answers with nothing (after a tool result or a finished skill) is asked once more, out of sight, for a short answer; only a second empty reply shows "The model returned an empty response."
-- **Cancelling a reply takes two `Esc` presses** in Chat (`Esc twice to cancel` in the status line, `Esc again to cancel` after the first), so a stray key does not throw away a long reply.
+- **Cancelling a reply asks first** (replaced the double `Esc`): `Esc` in Chat opens *Cancel this reply?*, `Enter` cancels, any other key keeps going. Settings → Console → *Confirm before cancelling* turns the question off.
 - **Real model names**: the thinking line in Chat shows the model exactly as Ollama names it (`gemma4:12b is thinking…`), the same as the status bar, not a prettified "Gemma4".
 - **Git tools**: `git_diff` (the patch, `stat`, or just the file names; staged or not; one path), `git_status` and `git_log`. All read-only and without approval, so they also work in Plan mode; a commit or push still goes through `run_command`, which asks.
 - **`run_command`** (shell), off by default, every command asks first; harmless ones such as `git status` run at once; `sudo`, `rm -rf /` and similar are never run.

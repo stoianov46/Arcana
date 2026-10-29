@@ -76,7 +76,7 @@ fun GenerationView(app: AppContext, gen: Generation, output: OutputState, rows: 
 
 /** The line under a reply: a spinner while generating, or why it stopped. */
 @Composable
-fun ReplyStatus(app: AppContext, gen: Generation, doubleEsc: Boolean = false, consulting: String? = null, consultingSince: Long = 0L) {
+fun ReplyStatus(app: AppContext, gen: Generation, consulting: String? = null, consultingSince: Long = 0L) {
     when (gen.state) {
         GenState.Running -> Spinner {
             // while the Oracul (or the judge) works inside the turn the line is about that model, not the worker that waits for it
@@ -94,12 +94,7 @@ fun ReplyStatus(app: AppContext, gen: Generation, doubleEsc: Boolean = false, co
                 else -> "Generating…"
             }
             val tokens = if (gen.streamed > 0 && consulting == null && !reading) " · ${if (app.config.plainGlyphs) "" else "↓ "}${gen.streamed} tokens" else ""
-            val cancel = when {
-                !doubleEsc -> "Esc to cancel"
-                gen.cancelArmed() -> "Esc again to cancel"
-                else -> "Esc twice to cancel"
-            }
-            "$what ${seconds}s$tokens · $cancel"
+            "$what ${seconds}s$tokens · Esc to cancel"
         }
         GenState.Failed -> Label((if (app.config.plainGlyphs) "Error: " else "✕ ") + gen.error, color = Palette.Red, wrap = true)
         GenState.Cancelled -> Label("Cancelled.", color = Palette.Warn)

@@ -13,7 +13,7 @@ Closing review (2026-10-28): #11 stays *needs repro* (skipped until a screenshot
 |---|---|---|
 | 27 | Show the original model name in the thinking line (and anywhere else a prettified name appears) | done |
 | 17 | Chat labels `◆ model` and a user glyph; per-family icon set in the design system (`ModelIcon`) | done |
-| 9 | Cancel a reply with `Esc` twice instead of once (no misclicks) | done |
+| 9 | Cancel a reply: first `Esc` twice; replaced (N7, [plan-next.md](plan-next.md)) by `Esc` opening a *Cancel this reply?* question (`Enter` confirms; setting *Confirm before cancelling*) | done |
 | 11 | Console output fills the remaining chat height | needs repro: the conversation panel fills the height in every state tried (idle, a 150-message chat, running reply, approval dialog, question dialog, finished reply) at 24, 30, 36, 40 and 60 rows and after resizing the terminal live. If it still happens, send the terminal size, the Settings → Appearance → Interface scale value and what the screen looked like |
 | 30 | Split the thinking process from the answer (`ChatMessage.thinking`, setting *Thinking in Chat*) | done |
 | 30a | A live thinking pane under the conversation (`thinkingPane`, `/thinking`) | done |

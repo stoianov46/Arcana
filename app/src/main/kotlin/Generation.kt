@@ -22,9 +22,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** How long after the first `Esc` the second one still cancels a reply. */
-const val CANCEL_WINDOW_MS = 3_000L
-
 enum class GenState { Idle, Running, Done, Failed, Cancelled }
 
 /** Streams one model reply into observable state. */
@@ -229,22 +226,7 @@ class Generation(
         }
     }
 
-    /** When `Esc` was last pressed to cancel (0 = not armed): a reply is only cancelled by a second press soon after, so a slip of the finger does not lose it. */
-    var cancelArmedAt by mutableStateOf(0L)
-        private set
-
-    /** True while the first `Esc` is waiting for its second. */
-    fun cancelArmed(now: Long = System.currentTimeMillis()) = cancelArmedAt != 0L && now - cancelArmedAt < CANCEL_WINDOW_MS
-
-    /** First call arms and returns false; a second call within [CANCEL_WINDOW_MS] cancels and returns true. */
-    fun requestCancel(now: Long = System.currentTimeMillis()): Boolean {
-        if (!cancelArmed(now)) { cancelArmedAt = now; return false }
-        cancel()
-        return true
-    }
-
     fun cancel() {
-        cancelArmedAt = 0L
         job?.cancel()
         job = null
         if (state == GenState.Running) transition(GenState.Cancelled)

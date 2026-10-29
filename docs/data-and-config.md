@@ -43,6 +43,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `comparisonView` | side | how a `/compare` result is drawn in Chat: `side` (answers in columns, verdict below) or `stacked`; narrow windows stack either way |
 | `autoCompactPercent` | 80 | compact the chat before a message when the context window is this percent full (0 = off); `/compact` always works (see `Compaction`) |
 | `chatHistory` | 20 | latest messages sent as context |
+| `confirmCancel` | true | `Esc` on a running reply asks "Cancel this reply?" first (Settings → Console → *Confirm before cancelling*); false = `Esc` cancels at once |
 | `keepChats` / `chatsKept` | true / 50 | persist chats / how many to keep |
 | `chatUseVault` | false | answer from vault (also `/vault`) |
 | `copyAs` | `markdown` | select-mode copy format: `markdown` / `plain` |
@@ -68,8 +69,8 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `oldToolOutput` | `whole` | tool results from earlier questions are sent as they were (`whole`) or cut to 1,200 characters with a marker (`shorten`); Settings → Tools → *Old tool output* |
 | `toolSteps` | 8 | max tool rounds per question (1–60); at the limit `stepLimit` decides |
 | `stepLimit` | `ask` | at the step limit: `ask` shows a dialog offering that many more steps, `auto` gives them at once (up to `STEP_LIMIT_AUTO_ROUNDS` = 3 times per question, logged in the session, then it asks), `stop` makes the model answer with what it has. Each change, command and web address inside the extra steps keeps its own approval |
-| `rolePlanner` / `roleWorker` / `roleReviewer` | `` | the role table for skill runs (Settings → Oracul → Skill planner / worker / reviewer): used when a skill does not name its own (`SkillRoles.withDefaults`); blank = not used |
 | `rolesScope` | `skills` | `skills` or `all`: where the role table below applies (only a run with a skill, or every message) |
+| `rolePlanner` / `roleWorker` / `roleReviewer` | `` | the role table for skill runs (Settings → Oracul → Skill planner / worker / reviewer): used when a skill does not name its own (`SkillRoles.withDefaults`); blank = not used |
 | `oraculExtra` | `` | more models that answer a `/compare` besides the Oracul model, comma-separated (`Oracul.models`; the Settings picker ticks them with Space); the judge compares every answer |
 | `stuckCalls` / `stuckTurns` | `4` / `3` | the stuck thresholds (Settings → Oracul → *Stuck: failed calls / failing turns*): the Oracul steps into a tool loop after every `stuckCalls` failed calls of one turn, and an automatic review is due after `stuckTurns` failing turns in a row; `0` = never |
 | `oraculUrl` | `` | another Ollama server for the Oracul and the judge (blank = the main one); `Oracul.serverConfig` swaps `ollamaUrl` for them, the model pickers of Settings → Oracul list what is installed there |

@@ -37,7 +37,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
   Every cut a tool itself makes (`read_file` after 20,000 characters, long lists, shell output, web pages) ends in a marker line, and the chat shows it under the result in orange (`✂ …`, `ToolCuts.marker`) so the user sees what the model was not given.
 - State stays `GenState.Running` for the whole loop; the generation belongs to `ChatSession`, so leaving the Chat screen does not stop it.
   Each round's tokens are recorded to usage. A round that ended in a tool call shows a quiet `· step` footer; only the last says `✓ Done`.
-- Cancelling (`Esc` twice in Chat, `Generation.requestCancel`) cancels the coroutine; pending dialogs are cancelled and a running command is interrupted.
+- Cancelling (`Esc` in Chat, after the *Cancel this reply?* question; `Generation.cancel`) cancels the coroutine; pending dialogs are cancelled and a running command is interrupted.
 - The model's capability is checked (`AppContext.tools`); without it Chat sends without tools and says so (toast, `⚠ no tools` pill).
 
 ## The tools
