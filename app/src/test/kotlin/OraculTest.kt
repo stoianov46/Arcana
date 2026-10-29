@@ -460,6 +460,23 @@ class OraculTest {
     }
 
     @Test
+    fun withRolesForEveryMessageAPlainQuestionIsPlannedAnsweredAndReviewed() {
+        val f = fake()
+        try {
+            val long = "Please explain in some detail how the two sorting algorithms differ in practice"
+            val chat = app(f) { copy(roleWorker = "big", roleReviewer = "worker", rolePlanner = "judge", rolesScope = "all", toolsEnabled = false) }.chat
+            chat.send(long)
+            Thread.sleep(800)
+            assertEquals(listOf("judge", "big", "worker"), f.asked.map { it.first }, "plan, then the worker, then the review")
+            f.asked.clear()
+            val short = app(f) { copy(roleWorker = "big", rolePlanner = "judge", rolesScope = "all", toolsEnabled = false) }.chat
+            short.send("thanks")
+            Thread.sleep(500)
+            assertEquals(listOf("big"), f.asked.map { it.first }, "a short message gets the worker but no plan")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun reviseTakesAnExtraNoteAndCompareCanUseOneModelForOneCall() {
         val f = fake()
         try {

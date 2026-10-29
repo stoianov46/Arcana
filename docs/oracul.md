@@ -106,7 +106,7 @@ The Oracul's blocks are stored in the chat like any message, so they survive sav
 ## Models and roles
 
 Resolution for a skill run: **the skill's own property → the role table in Settings (`rolePlanner` / `roleWorker` / `roleReviewer`) →
-nothing** (`SkillRoles.withDefaults`). Roles apply only to a message that carries a skill; the next message goes back to the settings.
+nothing** (`SkillRoles.withDefaults`). Roles apply only to a message that carries a skill (the next message goes back to the settings), unless `rolesScope` is `all`: then the table is a pipeline for every message.
 
 | Role | Does | Server | Validated by |
 |---|---|---|---|
@@ -150,6 +150,7 @@ ever written to the settings. The judge is only the judge: it sees all answers (
 | `oraculContextMessages` / `oraculContextChars` | `6` / `1500` | how many earlier chat messages, and how many characters of each, the Oracul, judge and planner are shown besides the last question (Settings → Oracul → Chat context); 0 messages = none |
 | `oraculJudgeAuto` | `false` | when an automatic opinion is due, run `compare()` (Oracul answer plus judge verdict) instead; mid-turn stuck advice and skill reviewers stay single opinions |
 | `oraculTools` | `true` | the Oracul may use the worker's tools |
+| `rolesScope` | `skills` | `skills` or `all`: with `all` the role table also runs for messages without a skill (`ChatSession.applyRoles(null)`; no plan under `PLAN_MIN_CHARS` = 60 characters) |
 | `rolePlanner` / `roleWorker` / `roleReviewer` | blank | the role table for skill runs |
 | `comparisonView` | `side` | `side` or `stacked` |
 

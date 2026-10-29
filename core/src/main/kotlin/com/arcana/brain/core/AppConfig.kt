@@ -91,6 +91,8 @@ data class AppConfig(
     val roleReviewer: String = "",
     /** More models that answer a comparison (`/compare`) besides the Oracul model, comma-separated; the judge then compares all the answers. */
     val oraculExtra: String = "",
+    /** Where the role table applies: "skills" (only a run that carries a skill) or "all" (every message: plan, worker, review). */
+    val rolesScope: String = "skills",
     /** Another Ollama server for the Oracul and the judge (a bigger machine on your network); blank = the same server as the main model. */
     val oraculUrl: String = "",
     /** The model that judges a comparison; blank = the Oracul model. */

@@ -26,6 +26,9 @@ private fun changePages() = listOf(
 # The latest work
 Built on 24–25 October 2026. Last updated 28 October 2026.
 
+## Models as a pipeline
+- **Settings → Oracul → Roles apply to → Every message** runs the planner, worker and reviewer for all chat, not only skills: a plan first (messages of 60+ characters), the worker answers, the reviewer checks.
+
 ## Usage became a dashboard
 - Five periods (session, today, 7 days, 30 days, all time) and three pages: **Overview**, **Breakdown**, **Recent replies**.
 - Overview: totals tiles, a column chart of tokens by hour or day, and insights (busiest day, peak hour, streak, week on week, typical and slowest reply, context load).

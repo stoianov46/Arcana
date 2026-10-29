@@ -11,6 +11,7 @@ import com.arcana.brain.core.STEP_LIMIT_AUTO_ROUNDS
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.Requirement
+import com.arcana.brain.core.SkillRoles
 import com.arcana.brain.core.Skills
 import com.arcana.brain.core.SkillRun
 import com.arcana.brain.core.FileAttachment
@@ -145,36 +146,41 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /**
      * Applies the roles of the skill whose entry note is [entry]: an installed model replaces the chat model for the rest of this message
      * (it must be able to call tools when tools are on), the reviewer is asked when the answer is done. A model that is not usable is
-     * skipped with a note, and the settings' model is used. Nothing is changed in the settings.
+     * skipped with a note, and the settings' model is used. Nothing is changed in the settings. A null [entry] is a message without a skill
+     * ([AppConfig.rolesScope] = "all"): only the role table in the settings applies.
      */
-    private suspend fun applyRoles(entry: String): String? {
-        val vault = app.openVault().getOrNull() ?: return null
-        val roles = runCatching { Skills.roles(vault.read(entry)).withDefaults(app.config) }.getOrNull()?.takeIf { it.any } ?: return null
+    private suspend fun applyRoles(entry: String?): String? {
+        val roles = if (entry == null) SkillRoles().withDefaults(app.config) else {
+            val vault = app.openVault().getOrNull() ?: return null
+            runCatching { Skills.roles(vault.read(entry)).withDefaults(app.config) }.getOrNull() ?: return null
+        }.takeIf { it.any } ?: return null
         val installed = runCatching { app.client.listModels() }.getOrNull() ?: return null
         val onOracul = if (app.config.oraculUrl.isBlank()) installed else runCatching { clientFor("").listModels() }.getOrDefault(emptyList())
         fun has(m: String, among: List<String> = installed) = among.any { it == m || it == "$m:latest" }
-        val skill = Skills.nameOfEntry(entry)
+        val skill = if (entry == null) "roles" else "Skill ${Skills.nameOfEntry(entry)}"
         if (roles.worker.isNotEmpty()) when {
-            !has(roles.worker) -> roleNote = "Skill $skill asks for the worker model ${roles.worker}, which is not installed: ${app.config.model} is used."
-            app.config.toolsEnabled && "tools" !in runCatching { app.client.capabilities(roles.worker) }.getOrDefault(listOf("tools")) -> roleNote = "Skill $skill asks for ${roles.worker}, which cannot use tools: ${app.config.model} is used."
+            !has(roles.worker) -> roleNote = "$skill asks for the worker model ${roles.worker}, which is not installed: ${app.config.model} is used."
+            app.config.toolsEnabled && "tools" !in runCatching { app.client.capabilities(roles.worker) }.getOrDefault(listOf("tools")) -> roleNote = "$skill asks for ${roles.worker}, which cannot use tools: ${app.config.model} is used."
             else -> runWorker = roles.worker.takeIf { it != app.config.model }
         }
         if (roles.reviewer.isNotEmpty()) {
-            if (has(roles.reviewer, onOracul)) runReviewer = roles.reviewer else roleNote = "Skill $skill asks ${roles.reviewer} to review, which is not installed: no review."
+            if (has(roles.reviewer, onOracul)) runReviewer = roles.reviewer else roleNote = "$skill asks ${roles.reviewer} to review, which is not installed: no review."
         }
         // the planner is returned, not remembered: a plan is written once, when the run starts
         if (roles.planner.isEmpty()) return null
         if (has(roles.planner, onOracul)) return roles.planner
-        roleNote = "Skill $skill asks ${roles.planner} to plan, which is not installed: no plan."
+        roleNote = "$skill asks ${roles.planner} to plan, which is not installed: no plan."
         return null
     }
 
     /** The planner model writes a short plan for [question] from the skill's instructions; it is added to the chat as a block the worker then sees. A failure is only a note. */
-    private suspend fun plan(planner: String, entry: String, question: String) {
-        val vault = app.openVault().getOrNull() ?: return
+    private suspend fun plan(planner: String, entry: String?, question: String) {
+        val vault = app.openVault().getOrNull()
+        if (entry != null && vault == null) return
         consulting = planner
         try {
-            val text = Oracul.ask(clientFor(planner), Oracul.planRequest(question, Skills.loadEntry(vault, entry).orEmpty(), oraculBackground())) { app.recordUsage("Planner", it, planner) }
+            val skillText = if (entry == null || vault == null) "" else Skills.loadEntry(vault, entry).orEmpty()
+            val text = Oracul.ask(clientFor(planner), Oracul.planRequest(question, skillText, oraculBackground())) { app.recordUsage("Planner", it, planner) }
             if (text.isEmpty()) roleNote = "$planner returned an empty plan: the worker starts without one." else add(Oracul.planMessage(planner, text))
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             throw e
@@ -968,7 +974,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }
         gen.start(tools = offered, maxSteps = Skills.stepsFor(history, app.config.toolSteps)) {
             // a skill that names its models: the chip's roles apply from the first round
-            history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }?.let { entry -> applyRoles(entry)?.let { plan(it, entry, body) } }
+            val chipEntry = history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }
+            if (chipEntry != null) applyRoles(chipEntry)?.let { plan(it, chipEntry, body) }
+            // every message, not only skills: the role table runs as a pipeline (a short message is not planned)
+            else if (app.config.rolesScope == "all") applyRoles(null)?.takeIf { body.length >= PLAN_MIN_CHARS }?.let { plan(it, null, body) }
             // a nearly full window: summarize the older part first, so this question is not sent with a chat that no longer fits
             if (autoCompactDue(messages.toList())) runCatching { compact() }
             val history = Compaction.forModel(messages.toList())
@@ -1052,6 +1061,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     private companion object {
         const val MAX_NOTE_CHARS = 60_000
+
+        /** With roles for every message, a message shorter than this ("thanks", "yes") is answered without a plan. */
+        const val PLAN_MIN_CHARS = 60
 
         /** Tools whose answer changes with time, or that are meant to be repeated: never answered from memory. */
         val NEVER_REMEMBERED = setOf("wait", "current_time", "elapsed_time")
