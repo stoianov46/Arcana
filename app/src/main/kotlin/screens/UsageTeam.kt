@@ -59,6 +59,7 @@ internal fun teamLines(stats: TeamStats, width: Int, plain: Boolean, priceIn: In
         if (opinions > 0) row("  Second opinions: $opinions (" + stats.opinions.entries.sortedByDescending { it.value }.joinToString(", ") { "${it.key} ${it.value}" } + ")")
         if (stats.verdicts.isNotEmpty()) {
             row("  Judge verdicts: agree ${stats.verdicts["agree"] ?: 0} · partly ${stats.verdicts["partly"] ?: 0} · disagree ${stats.verdicts["disagree"] ?: 0}" + (stats.verdicts["unclear"]?.let { " · unclear $it" } ?: ""))
+            if (stats.autoRevises > 0) row("  Answers revised after the judge agreed (automatically or by your choice): ${stats.autoRevises}×")
             stats.opinionsConfirmed?.let { row("  The judge confirmed ${pct(it)} of the opinions it saw: ${if (it < 0.5) "most opinions were wrong or unneeded, so the Oracul model may be too weak or too eager" else "the second opinions are mostly worth having"}.", Palette.Muted) }
         }
     }
@@ -74,7 +75,7 @@ internal fun teamLines(stats: TeamStats, width: Int, plain: Boolean, priceIn: In
     }
 
     heading("HOUSEKEEPING")
-    row("  Cancelled ${stats.cancels}× · compacted ${stats.compacts}×")
+    row("  Cancelled ${stats.cancels}× · compacted ${stats.compacts}×" + (if (stats.todoNudges > 0) " · sent back to open todo steps ${stats.todoNudges}×" else ""))
     row("  Memory: ${stats.memoryDuplicates} duplicate${if (stats.memoryDuplicates == 1) "" else "s"} skipped · ${stats.memoryRefused} dead path${if (stats.memoryRefused == 1) "" else "s"} refused")
     row("  Files and notes: " + (if (stats.artifacts.isEmpty()) "none written" else stats.artifacts.joinToString(" · ") { "${it.first} ${it.second}" }))
     return out

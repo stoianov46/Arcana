@@ -33,6 +33,10 @@ object Events {
     const val VERDICT = "verdict"
     /** A second opinion was given: detail `auto`, `flow` or `manual`. */
     const val OPINION = "opinion"
+    /** The chat model was sent to revise its answer by itself after the judge agreed (detail `auto`). */
+    const val REVISE = "revise"
+    /** The model ended its turn with open todo steps and was sent back (detail = how many were open). */
+    const val TODO_NUDGE = "todo-nudge"
     /** The user cancelled a reply or a helper. */
     const val CANCEL = "cancel"
     /** The chat was compacted: detail `auto` or `manual`. */
@@ -81,6 +85,7 @@ data class TeamStats(
     val opinions: Map<String, Int>, val verdicts: Map<String, Int>,
     val goalsSet: Int, val goalsMet: Int, val goalsStopped: Int,
     val routes: List<Pair<String, Int>>, val consults: List<Pair<String, Int>>,
+    val autoRevises: Int, val todoNudges: Int,
     val cancels: Int, val compacts: Int, val memoryDuplicates: Int, val memoryRefused: Int, val artifacts: List<Pair<String, Int>>,
 ) {
     val helperShare: Double get() = (chatTokens + helperTokens).let { if (it == 0L) 0.0 else helperTokens.toDouble() / it }
@@ -124,6 +129,7 @@ object TeamStatsBuilder {
             verdicts = events.filter { it.kind == Events.VERDICT }.groupingBy { it.detail }.eachCount(),
             goalsSet = count(Events.GOAL, "set"), goalsMet = count(Events.GOAL, "met"), goalsStopped = count(Events.GOAL, "stopped"),
             routes = counts(Events.ROUTE) { "${it.detail} → ${it.model}" }, consults = counts(Events.CONSULT) { "${it.detail} (${it.model})" },
+            autoRevises = count(Events.REVISE), todoNudges = count(Events.TODO_NUDGE),
             cancels = count(Events.CANCEL), compacts = count(Events.COMPACT),
             memoryDuplicates = count(Events.MEMORY, "duplicate"), memoryRefused = count(Events.MEMORY, "refused"),
             artifacts = counts(Events.ARTIFACT) { it.detail },

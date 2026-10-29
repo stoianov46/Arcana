@@ -126,6 +126,10 @@ data class AppConfig(
     val oraculJudgeAuto: Boolean = false,
     /** After an automatic opinion, the judge model (when [judgeModel] is set) says whether the opinion is right; advisory. */
     val oraculVerdict: Boolean = true,
+    /** What happens when the judge says AGREE or PARTLY on an automatic opinion: "ask" (a dialog with choices: revise, revise with a note of yours, leave it, revise automatically from now on), "auto" (the chat model revises by itself, once per message) or "advice" (only the blocks, you type /revise). */
+    val verdictAction: String = "ask",
+    /** When the model ends its turn with open steps on its own todo list, it is sent back once to finish them or close the list. */
+    val todoGuard: Boolean = true,
     /** How many times `/goal` may continue the work by itself for one goal before it stops. */
     val goalTurns: Int = 5,
     /** How many earlier messages of the chat the Oracul, the judge and the planner are shown besides the last question (0 = none), and how many characters of each. */

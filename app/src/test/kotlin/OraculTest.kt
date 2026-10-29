@@ -745,6 +745,83 @@ class OraculTest {
     }
 
     @Test
+    fun anAgreeingVerdictRevisesTheAnswerOnceWhenThatIsSwitchedOn() {
+        val f = fake()
+        f.script = { model, _ -> if (model == "judge") """{"message":{"role":"assistant","content":"AGREE\\nit is right"},"done":true,"prompt_eval_count":5,"eval_count":5}""" else null }
+        try {
+            val a = app(f) { copy(oraculModel = "big", oraculAuto = "always", judgeModel = "judge", verdictAction = "auto", toolsEnabled = false) }
+            a.chat.send("Is 7 prime?")
+            Thread.sleep(3500)
+            assertEquals(1, a.chat.messages.count { it.content.startsWith(Oracul.REVISE_PROMPT) }, "revised once, and the revised answer's own opinion does not start another")
+            assertEquals(2, f.asked.count { it.first == "worker" }, "the answer and the revision")
+            assertEquals(1, a.events.count { it.kind == Events.REVISE })
+            f.asked.clear()
+            val off = app(f) { copy(oraculModel = "big", oraculAuto = "always", judgeModel = "judge", verdictAction = "advice", toolsEnabled = false) }
+            off.chat.send("Is 7 prime?")
+            Thread.sleep(2500)
+            assertEquals(1, f.asked.count { it.first == "worker" }, "off by default: the opinion is advice and waits for /revise")
+            assertTrue(AppConfig().verdictAction == "ask" && AppConfig().todoGuard)
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun anAgreeingVerdictAsksWhatToDoAndTheChoiceIsCarriedOut() {
+        val f = fake()
+        f.script = { model, _ -> if (model == "judge") """{"message":{"role":"assistant","content":"AGREE\\nit is right"},"done":true,"prompt_eval_count":5,"eval_count":5}""" else null }
+        try {
+            fun waitForQuestion(chat: ChatSession): ChatSession.Question? {
+                val end = System.currentTimeMillis() + 8_000
+                while (chat.question == null && System.currentTimeMillis() < end) Thread.sleep(20)
+                return chat.question
+            }
+            val a = app(f) { copy(oraculModel = "big", oraculAuto = "always", judgeModel = "judge", toolsEnabled = false) }   // verdictAction = "ask" by default
+            a.chat.send("Is 7 prime?")
+            val q = waitForQuestion(a.chat)
+            assertTrue(q != null, "a dialog appears after the verdict")
+            assertEquals(listOf(Oracul.CHOICE_REVISE, Oracul.CHOICE_LEAVE, Oracul.CHOICE_ALWAYS), q!!.options)
+            assertTrue("judge" in q.text && "agrees" in q.text)
+            q.answer.complete("check the edge case")           // a note of your own on the last row
+            Thread.sleep(2500)
+            val revise = a.chat.messages.single { it.content.startsWith(Oracul.REVISE_PROMPT) }
+            assertTrue("The user adds: check the edge case" in revise.content, "the note went to the model: ${revise.content}")
+            f.asked.clear()
+            val b = app(f) { copy(oraculModel = "big", oraculAuto = "always", judgeModel = "judge", toolsEnabled = false) }
+            b.chat.send("Is 7 prime?")
+            waitForQuestion(b.chat)!!.answer.complete(Oracul.CHOICE_LEAVE)
+            Thread.sleep(1500)
+            assertTrue(b.chat.messages.none { it.content.startsWith(Oracul.REVISE_PROMPT) }, "leave it: nothing is revised")
+            f.asked.clear()
+            val c = app(f) { copy(oraculModel = "big", oraculAuto = "always", judgeModel = "judge", toolsEnabled = false) }
+            c.chat.send("Is 7 prime?")
+            waitForQuestion(c.chat)!!.answer.complete(Oracul.CHOICE_ALWAYS)
+            Thread.sleep(2500)
+            assertEquals("auto", c.config.verdictAction, "from now on it revises by itself")
+            assertEquals(1, c.chat.messages.count { it.content.startsWith(Oracul.REVISE_PROMPT) })
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun aModelThatEndsItsTurnWithOpenTodoStepsIsSentBackOnce() {
+        val f = fake()
+        f.script = { model, body -> if (model == "worker" && "\"tools\"" in body && "\"role\":\"tool\"" !in body) call("todo", """{"items":"[x] read\n[ ] write\n[~] check"}""") else null }
+        try {
+            val vault = Files.createDirectories(Files.createTempDirectory("arcana-todo").resolve("v"))
+            val a = app(f) { copy(toolsEnabled = true, toolMode = "auto", vaultPath = vault.toString()) }
+            a.chat.send("Please do three things")
+            Thread.sleep(3000)
+            val nudges = a.chat.messages.filter { it.content.startsWith(Oracul.TODO_PROMPT) }
+            assertEquals(1, nudges.size, "sent back once, not again when it stops with the steps still open")
+            assertTrue("write" in nudges[0].content && "check" in nudges[0].content && "read" !in nudges[0].content.substringAfter(":"), "it names the open steps only: ${nudges[0].content}")
+            assertEquals(1, a.events.count { it.kind == Events.TODO_NUDGE })
+            f.asked.clear()
+            val off = app(f) { copy(toolsEnabled = true, toolMode = "auto", vaultPath = vault.toString(), todoGuard = false) }
+            off.chat.send("Please do three things")
+            Thread.sleep(2000)
+            assertTrue(off.chat.messages.none { it.content.startsWith(Oracul.TODO_PROMPT) }, "switched off: it may stop with steps open")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun theHelperSwitchAndTheSkillRolesSwitchWorkApart() {
         val f = fake()
         try {

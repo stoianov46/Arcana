@@ -175,6 +175,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** How many times the controller has sent the worker back for the message being worked on; reset by a message of the user. */
     private var flowRedos = 0
 
+    /** How many times a verdict has sent the chat model to revise, and how many times it was sent back to its open todo steps, for the message being worked on (one each at most). */
+    private var autoRevises = 0
+    private var todoNudges = 0
+
     /** The `/goal` of this chat: after every finished reply a checker compares the answer with it and, while it is not met, the work goes on by itself; null = no goal. */
     var goal by androidx.compose.runtime.mutableStateOf<String?>(null)
         private set
@@ -321,10 +325,34 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val text = Oracul.ask(clientFor(judge), Oracul.verdictRequest(question, answer, Oracul.body(opinion), oraculBackground())) { app.recordUsage("Judge", it, judge) }
             if (text.isNotEmpty()) {
                 add(Oracul.verdictMessage(judge, text))
-                app.recordEvent(Events.VERDICT, Regex("^\\W*(AGREE|PARTLY|DISAGREE)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.lowercase() ?: "unclear", judge)
+                val said = Regex("^\\W*(AGREE|PARTLY|DISAGREE)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.lowercase() ?: "unclear"
+                app.recordEvent(Events.VERDICT, said, judge)
+                // the judge says the opinion is right: by the setting, a dialog with choices, a revision by itself (once per message), or nothing
+                if ((said == "agree" || said == "partly") && autoRevises < 1 && Oracul.hasOpenOpinion(messages.toList())) when (app.config.verdictAction) {
+                    "auto" -> { autoRevises++; app.recordEvent(Events.REVISE, "auto", judge); app.scope.launch { yield(); runCatching { revise("The judge agreed with the reviewer: fix what it names.") } } }
+                    "ask" -> { autoRevises++; app.scope.launch { askWhatNow(judge, said) } }
+                }
             }
         } finally {
             consulting = null
+        }
+    }
+
+    /**
+     * The explicit alternative to typing `/revise`: after the judge agrees with an opinion, a dialog says what was found and offers the choices. Pick one (↑↓ Enter, or its digit), or type
+     * a note of your own on the last row and the chat model revises with it. Nothing is asked while a reply is being written or another dialog is open.
+     */
+    private suspend fun askWhatNow(judge: String, verdict: String) {
+        if (question != null || approval != null || gen.state == GenState.Running) return
+        val options = listOf(Oracul.CHOICE_REVISE, Oracul.CHOICE_LEAVE, Oracul.CHOICE_ALWAYS)
+        val q = Question("The reviewer found problems with the last answer and the judge ($judge) ${if (verdict == "agree") "agrees" else "partly agrees"}. What now? You can also type a note of your own below: the model then revises with it.", options, false, fromArcana = true)
+        question = q
+        val answer = try { q.answer.await() } finally { question = null }
+        when {
+            answer == null || answer == Oracul.CHOICE_LEAVE -> Unit
+            answer == Oracul.CHOICE_REVISE -> { app.recordEvent(Events.REVISE, "chosen", judge); runCatching { revise("") } }
+            answer == Oracul.CHOICE_ALWAYS -> { app.update(app.config.copy(verdictAction = "auto")); app.recordEvent(Events.REVISE, "chosen", judge); runCatching { revise("") } }
+            else -> { app.recordEvent(Events.REVISE, "note", judge); runCatching { revise(answer) } }
         }
     }
 
@@ -377,7 +405,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      */
     private suspend fun route(history: List<ChatMessage>) {
         if (runWorker != null || !app.config.oraculEnabled) return
-        val last = history.lastOrNull { it.role == "user" && !Oracul.isOpinion(it) && !Compaction.isSummary(it) && !it.content.startsWith(Oracul.REDO_PROMPT) && !it.content.startsWith(Oracul.GOAL_PROMPT) && !it.content.startsWith(Oracul.REVISE_PROMPT) } ?: return
+        val last = history.lastOrNull { it.role == "user" && !Oracul.isOpinion(it) && !Compaction.isSummary(it) && !it.content.startsWith(Oracul.REDO_PROMPT) && !it.content.startsWith(Oracul.TODO_PROMPT) && !it.content.startsWith(Oracul.GOAL_PROMPT) && !it.content.startsWith(Oracul.REVISE_PROMPT) } ?: return
         val kind = Router.kindOf(last.content, last.images.isNotEmpty()) ?: return
         val model = Router.modelFor(app.config, kind).ifEmpty { return }
         if (model == app.config.model) return
@@ -1268,8 +1296,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             // a selected flow, or the role table for every message, runs for plain messages too (a short message is neither analysed nor planned)
             val flow = Flow.of(app.config)
             // the controller's redo is the worker's own turn: same models, no new analysis or plan
-            val redo = body.startsWith(Oracul.REDO_PROMPT)
+            val redo = body.startsWith(Oracul.REDO_PROMPT) || body.startsWith(Oracul.TODO_PROMPT)
             if (!redo) flowRedos = 0
+            // a message of yours (not one of Arcana's own prompts) starts the counts again
+            if (!redo && !body.startsWith(Oracul.REVISE_PROMPT) && !body.startsWith(Oracul.GOAL_PROMPT)) { autoRevises = 0; todoNudges = 0 }
             if (!redo) consults = 0
             if (!redo && !body.startsWith(Oracul.GOAL_PROMPT)) goalTurns = 0
             val planned = !redo && (chipEntry != null || body.length >= PLAN_MIN_CHARS)
@@ -1317,6 +1347,13 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         pendingSources = emptyList()
         pendingCut = emptyList()
         gen.consume()
+        // the model ends its turn with open steps on its own todo list: back once, to finish them or close the list
+        val open = todos.filter { !it.done }
+        if (app.config.todoGuard && open.isNotEmpty() && todoNudges < 1 && toolbox != null && skillRun == null) {
+            todoNudges++
+            app.recordEvent(Events.TODO_NUDGE, open.size.toString())
+            app.scope.launch { yield(); send(Oracul.todoNudge(open.map { it.text })) }
+        }
         // typed while this reply was written and no tool round took it: it is the next question, sent after this one is out of the way
         if (queued.isNotEmpty()) {
             val next = queued.removeAt(0)

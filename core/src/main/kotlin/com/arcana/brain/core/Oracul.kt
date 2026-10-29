@@ -185,6 +185,17 @@ object Oracul {
     )
 
     /** What the worker is told when the controller wants a redo: the verdict is already in its history. */
+    /** The choices of the dialog that follows an agreeing verdict (`ChatSession.askWhatNow`). */
+    const val CHOICE_REVISE = "Revise the answer now"
+    const val CHOICE_LEAVE = "Leave it as it is"
+    const val CHOICE_ALWAYS = "Revise automatically from now on"
+
+    /** The start of what the worker is told when it ended its turn with open steps on its own todo list; the open steps follow. */
+    const val TODO_PROMPT = "You still have open steps on your todo list"
+
+    fun todoNudge(open: List<String>): String =
+        "$TODO_PROMPT: ${open.joinToString("; ")}. Finish them now, or, if one is no longer needed, mark it done or clear the list with the todo tool, and then give the final answer."
+
     const val REDO_PROMPT = "The controller says your last answer is not good enough yet (see its verdict above). Fix what it names, use your tools to check where you need to, " +
         "and give the complete corrected answer."
 
@@ -438,7 +449,7 @@ object Oracul {
     fun lastExchange(messages: List<ChatMessage>): Pair<String, String>? {
         val answerAt = messages.indexOfLast { it.role == "assistant" && it.content.isNotBlank() && it.toolCalls.isEmpty() }
         if (answerAt < 0) return null
-        val question = messages.subList(0, answerAt).lastOrNull { it.role == "user" && !isOpinion(it) && !Compaction.isSummary(it) && !it.content.startsWith(REDO_PROMPT) && !it.content.startsWith(GOAL_PROMPT) && !it.content.startsWith(REVISE_PROMPT) } ?: return null
+        val question = messages.subList(0, answerAt).lastOrNull { it.role == "user" && !isOpinion(it) && !Compaction.isSummary(it) && !it.content.startsWith(REDO_PROMPT) && !it.content.startsWith(TODO_PROMPT) && !it.content.startsWith(GOAL_PROMPT) && !it.content.startsWith(REVISE_PROMPT) } ?: return null
         return question.content to messages[answerAt].content
     }
 

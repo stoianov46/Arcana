@@ -76,6 +76,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `flowTools` | false | the chat model may call the analyst, planner and reviewer as the `consult` tool (Settings → Flow → *Specialists as tools*) |
 | `routeVision` / `routeCode` | `` / `` | the models the router sends a message with an image / with code to (blank = the chat model); see [oracul.md](oracul.md#router) |
 | `oraculEnabled` / `skillRolesEnabled` | true / true | Settings → Helpers → *Helper models* (`/helpers`): every helper model on or off (the models stay set); *Skill roles* (`/roles`): the worker, planner and reviewer of a skill run on or off; independent of each other |
+| `verdictAction` / `todoGuard` | `ask` / true | Settings → Opinions → *When the judge agrees* (`ask` a dialog with choices and a note field, `auto`, `advice`); Settings → Tools → *Finish open todos* |
 | `oraculVerdict` / `goalTurns` | `true` / `5` | the judge's verdict on each automatic opinion (needs `judgeModel`); automatic turns `/goal` may take per goal |
 | `rolesScope` | `skills` | `skills` or `all`: where the role table below applies (only a run with a skill, or every message) |
 | `rolePlanner` / `roleWorker` / `roleReviewer` | `` | the role table for skill runs (Settings → Skills → Skill planner / worker / reviewer): used when a skill does not name its own (`SkillRoles.withDefaults`); blank = not used |
