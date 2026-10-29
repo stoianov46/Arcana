@@ -2049,4 +2049,15 @@ class CoreTest {
         assertEquals("Ψ big · auto ⇉ careful", Oracul.statusText(AppConfig(oraculModel = "big", flow = "careful")))
         assertEquals("oracul big · auto flow careful", Oracul.statusText(AppConfig(oraculModel = "big", flow = "careful"), plain = true))
     }
+
+    @Test
+    fun aGoalCheckIsMetOnlyWhenItSaysSo() {
+        assertEquals(Oracul.GoalCheck(true, ""), Oracul.parseGoal("VERDICT: MET"))
+        assertEquals(Oracul.GoalCheck(false, "- tags missing"), Oracul.parseGoal("verdict: not met\n- tags missing"))
+        assertTrue(!Oracul.parseGoal("Looks fine to me").met, "no verdict line: a goal is never assumed reached")
+        val m = Oracul.goalMessage("m", Oracul.GoalCheck(false, "- tags missing"))
+        assertTrue(Oracul.isGoal(m) && Oracul.isOpinion(m) && !Oracul.isReview(m) && Oracul.body(m).startsWith("Goal not met yet"))
+        val v = Oracul.verdictMessage("j", "AGREE\nit is right")
+        assertTrue(Oracul.isVerdict(v) && !Oracul.isReview(v) && Oracul.body(v).startsWith("AGREE"))
+    }
 }

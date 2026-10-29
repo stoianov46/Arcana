@@ -111,6 +111,10 @@ data class AppConfig(
     val oraculAuto: String = "problems",
     /** When an automatic second opinion is due, run a full comparison instead (the Oracul answers too, the judge compares). Slower: three model runs. Off by default. */
     val oraculJudgeAuto: Boolean = false,
+    /** After an automatic opinion, the judge model (when [judgeModel] is set) says whether the opinion is right; advisory. */
+    val oraculVerdict: Boolean = true,
+    /** How many times `/goal` may continue the work by itself for one goal before it stops. */
+    val goalTurns: Int = 5,
     /** How many earlier messages of the chat the Oracul, the judge and the planner are shown besides the last question (0 = none), and how many characters of each. */
     val oraculContextMessages: Int = 6,
     val oraculContextChars: Int = 1500,

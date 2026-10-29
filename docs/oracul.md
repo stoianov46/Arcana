@@ -38,6 +38,8 @@ What differs: the Oracul is advisory and speaks only after problems or on a comm
 | **Revise** | `/revise [note]` | the chat model revises its last answer with the open opinion | `ChatSession.revise`, `Oracul.REVISE_PROMPT` |
 | **Takeover** (escalation) | `/takeover`, offered by a toast after a failed turn | the Oracul continues the unanswered turn from the same history, with its own model and tools | `ChatSession.takeOver`, `Oracul.takeoverHeading` |
 | **Skill roles** | `worker:`, `reviewer:`, `planner:` in a skill's properties, or the role table in Settings | a skill run uses another worker model, gets a plan first, and a review at the end | `ChatSession.applyRoles` / `plan`, `Skills.roles`, `SkillRoles.withDefaults` |
+| **Judge verdict** | after an automatic opinion, when `judgeModel` is set (`oraculVerdict`, default on) | the judge says `AGREE` / `PARTLY` / `DISAGREE` and why, as a block under the opinion; advisory | `ChatSession.verdictOnOpinion`, `Oracul.verdictRequest` |
+| **Goal** | `/goal <condition>` | the work starts; after every finished reply a checker (Oracul model, else the chat model) says `VERDICT: MET` or `NOT MET`; while not met the worker is sent on by itself, at most `goalTurns` times | `ChatSession.startGoal` / `checkGoal`, `Oracul.goalRequest`, `parseGoal` |
 | **Flow** | Settings → Oracul → *Flow* = Careful | every message goes through a fixed sequence: analyst → planner → worker → reviewer, each its own model | `Flow`, `ChatSession.analyse` / `plan` / `applyRoles` |
 | **Memory fit** | the model pickers in Settings | each model is marked as fitting this machine or not, with a suggested Oracul and judge | `core/ModelFit.kt` |
 
@@ -151,6 +153,19 @@ runs unless *Flow* is set (`AppConfig.flow`).
 - **Cost:** up to four model runs per message, and on a local machine several large models swap in and out of memory (the memory advice in Settings applies to the
   analyst too). Not built yet: command-based checks, `/flow <name>`, more presets and a router.
 
+## Judge verdict and goals
+
+- **Judge verdict (the answer to "why did the judge run once").** The judge used to run only for `/compare` (and *Judge automatically*). Now, after every **automatic**
+  opinion (`maybeConsult`), `verdictOnOpinion` asks the judge whether the opinion is right. It needs `judgeModel` set (a judge that is the Oracul model would grade its own
+  opinion) and `oraculVerdict` on. Block `Ψ Verdict · <model>` (`MARK_VERDICT`, advice, not a review: `/revise` ignores it), usage feature `Judge`. Manual `/oracul`, the
+  stuck advice and the flow's reviewer get no verdict (the flow has its controller).
+- **`/goal`** is the controller loop with a condition you write, as in Claude Code. `/goal <text>` sets it and starts the work (`startGoal` sends the goal as a message);
+  `/goal` shows it, `/goal clear` drops it. After each reply `finishReply` waits for the reviewers (`autoConsult.join()`), then `checkGoal` asks the checker (usage feature
+  `Controller`). **Met** clears the goal; **not met** (a text without a clear `VERDICT:` counts as not met, unlike the controller) adds a `Ψ Goal` block and sends
+  `Oracul.goalContinue`. Limits: `goalTurns` (default 5) automatic turns per goal, reset by a message of yours; then it stops with a toast. Nothing runs while a reply is being
+  written (`gen.state == Running`), so a redo or a queued message is never talked over. The goal belongs to the chat in memory: `/new` and opening another chat clear it, and it is
+  not saved.
+
 ## Interface
 
 - **Bottom bar badge:** `Ψ <oracul> ⚖ <judge> · auto|always|manual`, the judge only when it differs; orange `Ψ <model>…` while it works;
@@ -183,6 +198,7 @@ runs unless *Flow* is set (`AppConfig.flow`).
 | `oraculJudgeAuto` | `false` | when an automatic opinion is due, run `compare()` (Oracul answer plus judge verdict) instead; mid-turn stuck advice and skill reviewers stay single opinions |
 | `oraculTools` | `true` | the Oracul may use the worker's tools |
 | `flow` / `flowAnalyst` / `flowController` / `flowRedos` | `off` / blank / blank / `2` | the selected flow (`off`, `careful`), the models of its analyst and controller (blank = the Oracul model) and how many redos the controller may ask for (0–5); while a flow is on the role table applies to every message |
+| `oraculVerdict` / `goalTurns` | `true` / `5` | the judge's verdict after an automatic opinion (needs `judgeModel`); how many times `/goal` may continue the work by itself |
 | `rolesScope` | `skills` | `skills` or `all`: with `all` the role table also runs for messages without a skill (`ChatSession.applyRoles(null)`; no plan under `PLAN_MIN_CHARS` = 60 characters) |
 | `rolePlanner` / `roleWorker` / `roleReviewer` | blank | the role table for skill runs |
 | `comparisonView` | `side` | `side` or `stacked` |

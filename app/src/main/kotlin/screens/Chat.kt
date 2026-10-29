@@ -103,6 +103,7 @@ internal val SlashCommands = listOf(
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false),
     SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
     SlashItem("/flow", "Flow: every message goes analyst, planner, worker, reviewer, controller (toggle)", false, usage = "e.g. /flow careful   or   /flow off   (without a name it switches)"),
+    SlashItem("/goal", "Set a goal: Arcana keeps working until a checker says it is met", false, usage = "e.g. /goal all notes in Inbox are tagged   (/goal alone shows it, /goal clear removes it)"),
     SlashItem("/thinking", "Thinking pane: watch the model think under the conversation (toggle)", false),
     SlashItem("/append", "Add the last answer to a note", false),
     SlashItem("/replace", "Replace a note with the last answer", false),
@@ -533,6 +534,16 @@ fun ChatScreen(app: AppContext) {
         toast(if (wanted == Flow.OFF) "Flow off: the chat model answers alone." else "Flow $wanted: every message goes analyst → planner → worker → reviewer → controller (several models run for each message; messages under 60 characters go straight to the worker).")
     }
 
+    /** `/goal text` sets the goal and starts on it, `/goal` shows it, `/goal clear` drops it. */
+    fun runGoal(args: String) {
+        when {
+            args.isEmpty() -> toast(chat.goal?.let { "Goal: $it" } ?: "No goal. Set one with /goal <what must be true>.")
+            args.equals("clear", ignoreCase = true) -> { chat.clearGoal(); toast("Goal cleared.") }
+            gen.state == GenState.Running -> toast("Wait for the reply to finish before setting a goal.", error = true)
+            else -> chat.startGoal(args)
+        }
+    }
+
     fun cycleMode() {
         val next = when (app.config.toolMode) { "ask" -> "auto"; "auto" -> "plan"; else -> "ask" }
         app.update(app.config.copy(toolMode = next))
@@ -545,7 +556,7 @@ fun ChatScreen(app: AppContext) {
 
     fun runCommand(command: String, args: String = "") {
         // text after a command is only meaningful for these; anywhere else say so instead of guessing
-        if (args.isNotEmpty() && command !in setOf("/oracul", "/compare", "/revise", "/flow")) return toast("$command takes no text after it. Type just $command.", error = true)
+        if (args.isNotEmpty() && command !in setOf("/oracul", "/compare", "/revise", "/flow", "/goal")) return toast("$command takes no text after it. Type just $command.", error = true)
         when (command) {
             "/new" -> startNew()
             "/history" -> openHistory()
@@ -559,6 +570,7 @@ fun ChatScreen(app: AppContext) {
             "/skills" -> toggleSkills()
             "/thinking" -> toggleThinkingPane()
             "/flow" -> setFlow(args)
+            "/goal" -> runGoal(args)
             "/mode" -> cycleMode()
             "/autorun" -> toggleAutoRun()
             "/compact" -> runCompact()

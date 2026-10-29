@@ -556,6 +556,66 @@ class OraculTest {
         } finally { f.server.stop(0) }
     }
 
+    private fun goalCheckSays(vararg verdicts: String): (String, String) -> String? {
+        var n = 0
+        return { _, body ->
+            if ("check whether a goal has been reached" in body) """{"message":{"role":"assistant","content":"${verdicts[minOf(n++, verdicts.size - 1)]}"},"done":true,"prompt_eval_count":5,"eval_count":5}""" else null
+        }
+    }
+
+    @Test
+    fun theJudgeGivesAVerdictOnEveryAutomaticOpinionWhenItHasItsOwnModel() {
+        val f = fake()
+        try {
+            val chat = app(f) { copy(oraculModel = "big", oraculAuto = "always", judgeModel = "judge", toolsEnabled = false) }.chat
+            chat.send("Is 7 prime?")
+            Thread.sleep(1500)
+            assertEquals(listOf("worker", "big", "judge"), f.asked.map { it.first }, "answer, opinion, then the judge's verdict on the opinion")
+            val verdict = chat.messages.first { Oracul.isVerdict(it) }
+            assertTrue(Oracul.isOpinion(verdict) && !Oracul.isReview(verdict), "a verdict is advice, not a review")
+            f.asked.clear()
+            val off = app(f) { copy(oraculModel = "big", oraculAuto = "always", judgeModel = "judge", oraculVerdict = false, toolsEnabled = false) }.chat
+            off.send("Is 7 prime?")
+            Thread.sleep(1200)
+            assertEquals(listOf("worker", "big"), f.asked.map { it.first }, "the setting off: no verdict")
+            f.asked.clear()
+            val noJudge = app(f) { copy(oraculModel = "big", oraculAuto = "always", toolsEnabled = false) }.chat
+            noJudge.send("Is 7 prime?")
+            Thread.sleep(1200)
+            assertEquals(listOf("worker", "big"), f.asked.map { it.first }, "no judge model of its own: no verdict")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun aGoalKeepsTheWorkGoingUntilTheCheckerSaysItIsMet() {
+        val f = fake()
+        f.script = goalCheckSays("VERDICT: NOT MET\\n- the tags are missing", "VERDICT: MET")
+        try {
+            val chat = app(f) { copy(oraculModel = "judge", toolsEnabled = false) }.chat
+            chat.startGoal("every note is tagged")
+            Thread.sleep(2500)
+            assertEquals(listOf("worker", "judge", "worker", "judge"), f.asked.map { it.first }, "work, check (not met), work again, check (met)")
+            assertTrue(chat.messages.any { it.content.startsWith(Oracul.GOAL_PROMPT) }, "the worker was sent on")
+            assertTrue(chat.messages.filter { Oracul.isGoal(it) }.let { it.size == 2 && it[0].content.contains("Goal not met yet") && it[1].content.contains("Goal met.") })
+            assertEquals(null, chat.goal, "a met goal is cleared")
+            assertTrue(f.asked.last().second.contains("GOAL:\\nevery note is tagged"), "the checker sees the goal")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun aGoalThatIsNeverMetStopsAfterTheTurnLimit() {
+        val f = fake()
+        f.script = goalCheckSays("VERDICT: NOT MET\\nstill missing")
+        try {
+            val chat = app(f) { copy(oraculModel = "judge", goalTurns = 1, toolsEnabled = false) }.chat
+            chat.startGoal("impossible")
+            Thread.sleep(2500)
+            assertEquals(2, f.asked.count { it.first == "worker" }, "the first answer and one automatic turn")
+            assertEquals(null, chat.goal)
+            assertTrue(chat.roleNote?.contains("not met after 1 automatic") == true, "the user is told it stopped")
+        } finally { f.server.stop(0) }
+    }
+
     @Test
     fun anAnalystThatIsNotInstalledOnlyLeavesTheAnalysisOut() {
         val f = fake()

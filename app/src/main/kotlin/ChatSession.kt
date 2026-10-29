@@ -152,6 +152,11 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** How many times the controller has sent the worker back for the message being worked on; reset by a message of the user. */
     private var flowRedos = 0
 
+    /** The `/goal` of this chat: after every finished reply a checker compares the answer with it and, while it is not met, the work goes on by itself; null = no goal. */
+    var goal by androidx.compose.runtime.mutableStateOf<String?>(null)
+        private set
+    private var goalTurns = 0
+
     /** What the skill's roles did that the user should know (a model that is not installed, or cannot call tools); the Chat shows it once. */
     var roleNote by androidx.compose.runtime.mutableStateOf<String?>(null)
 
@@ -259,6 +264,66 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             throw e
         } catch (e: Exception) {
             roleNote = "The controller $controller failed (${e.message}): the answer stands."
+        } finally {
+            consulting = null
+        }
+    }
+
+    /**
+     * After an automatic opinion: the judge model ([AppConfig.judgeModel], when it is set and [AppConfig.oraculVerdict] is on) says whether the opinion is right
+     * (`AGREE`, `PARTLY`, `DISAGREE` and why). Advisory, shown as a block under the opinion; the worker sees it if the user goes on. A failure is ignored.
+     */
+    private suspend fun verdictOnOpinion() {
+        val judge = app.config.judgeModel.trim().takeIf { it.isNotEmpty() && app.config.oraculVerdict } ?: return
+        val all = messages.toList()
+        val opinion = all.lastOrNull { Oracul.isReview(it) } ?: return
+        val (question, answer) = Oracul.lastExchange(all) ?: return
+        if (missingOnOracul(judge)) return
+        consulting = judge; consultingStage = "judging the opinion"
+        try {
+            val text = Oracul.ask(clientFor(judge), Oracul.verdictRequest(question, answer, Oracul.body(opinion), oraculBackground())) { app.recordUsage("Judge", it, judge) }
+            if (text.isNotEmpty()) add(Oracul.verdictMessage(judge, text))
+        } finally {
+            consulting = null
+        }
+    }
+
+    /** `/goal text`: sets the goal and starts the work toward it; the checker runs after every reply. */
+    fun startGoal(text: String) {
+        goal = text.trim().ifEmpty { return }
+        goalTurns = 0
+        send("Goal: ${goal}\nWork toward it until it is reached; tell me when you think it is.")
+    }
+
+    fun clearGoal() { goal = null; goalTurns = 0 }
+
+    /**
+     * The `/goal` check, after a finished reply: the Oracul model (else the chat model) compares the answer with the goal. Met: the goal is cleared. Not met: the notes are added
+     * and the worker is sent on with [Oracul.goalContinue], at most [AppConfig.goalTurns] times for one goal (a message of yours resets the count); then it stops with a note.
+     * Nothing runs while a reply is being written, so a redo or a queued message is never talked over.
+     */
+    private suspend fun checkGoal() {
+        val wanted = goal ?: return
+        if (gen.state == GenState.Running || consulting != null) return
+        val answer = Oracul.lastExchange(messages.toList())?.second ?: return
+        val oracul = Oracul.model(app.config)
+        val model = oracul.ifEmpty { app.config.model }
+        if (oracul.isNotEmpty() && missingOnOracul(model)) { roleNote = "The goal checker $model is not installed: the goal is not checked."; return }
+        consulting = model; consultingStage = "checking the goal"
+        try {
+            val client = if (oracul.isEmpty()) app.client else clientFor(model)
+            val text = Oracul.ask(client, Oracul.goalRequest(wanted, answer, oraculBackground())) { app.recordUsage("Controller", it, model) }
+            if (text.isEmpty()) { roleNote = "$model returned an empty goal check: the goal stays set."; return }
+            val check = Oracul.parseGoal(text)
+            add(Oracul.goalMessage(model, check))
+            if (check.met) { clearGoal(); return }
+            if (goalTurns >= app.config.goalTurns) { clearGoal(); roleNote = "The goal was not met after ${app.config.goalTurns} automatic turns: stopped. Set it again with /goal, or carry on yourself."; return }
+            goalTurns++
+            app.scope.launch { yield(); send(Oracul.goalContinue(wanted)) }
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            roleNote = "The goal check failed (${e.message}): the goal stays set."
         } finally {
             consulting = null
         }
@@ -973,7 +1038,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         if (Oracul.model(config).isEmpty() || config.oraculAuto == "off" || consulting != null) return
         if (!Oracul.due(config, Oracul.turnFacts(messages.toList(), skillRun?.skippedCount ?: 0))) return
         // opt-in (Settings → Oracul → Judge automatically): a full comparison with a verdict instead of one opinion
-        autoConsult = if (config.oraculJudgeAuto) app.scope.launch { runCatching { compare() } } else app.scope.launch { runCatching { secondOpinion() } }
+        autoConsult = if (config.oraculJudgeAuto) app.scope.launch { runCatching { compare() } } else app.scope.launch {
+            runCatching { secondOpinion() }.onSuccess { runCatching { verdictOnOpinion() } }
+        }
     }
 
     /** The recent conversation the Oracul, the judge and the planner are shown (Settings → Oracul → Chat context). */
@@ -1063,6 +1130,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             // the controller's redo is the worker's own turn: same models, no new analysis or plan
             val redo = body.startsWith(Oracul.REDO_PROMPT)
             if (!redo) flowRedos = 0
+            if (!redo && !body.startsWith(Oracul.GOAL_PROMPT)) goalTurns = 0
             val planned = !redo && (chipEntry != null || body.length >= PLAN_MIN_CHARS)
             val planner = when {
                 chipEntry != null -> applyRoles(chipEntry)
@@ -1099,6 +1167,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private fun finishReply(text: String, stats: ReplyStats?) {
         add(ChatMessage.assistant(text, stats, pendingSources, gen.takeThinking(), pendingCut))
         maybeConsult()
+        // a goal: once the reviewers are done, a checker says whether it is met; if not, the work goes on
+        if (goal != null) app.scope.launch { autoConsult?.join(); runCatching { checkGoal() } }
         // the model is loaded now: ask Ollama which window it really got
         app.scope.launch { app.refreshLoadedContext() }
         pendingSources = emptyList()
@@ -1115,6 +1185,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     fun startNew() {
         skillRun = null
         clearRoles()
+        clearGoal()
         toolsDeclined = false
         messages.clear(); wholeNotes.clear(); cutAccepted.clear()
         queued.clear()
@@ -1126,6 +1197,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     fun open(chat: StoredChat) {
         clearRoles()
+        clearGoal()
         skillRun = null // a run belongs to the conversation it started in (see docs/skills.md)
         skillTick++
         messages.clear(); wholeNotes.clear(); cutAccepted.clear()

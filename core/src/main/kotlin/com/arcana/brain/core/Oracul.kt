@@ -22,6 +22,12 @@ object Oracul {
     /** The flow's controller deciding whether the answer is good enough: `Verdict: done` or `Verdict: redo` with what must change. */
     const val MARK_CONTROL = "[Control"
 
+    /** The judge's verdict on a reviewer's opinion (is it right, is it worth acting on); advice, not a review. */
+    const val MARK_VERDICT = "[Verdict"
+
+    /** A `/goal` check: the goal is met, or what is still missing. */
+    const val MARK_GOAL = "[Goal"
+
     /** What [AppConfig.oraculAuto] may be. */
     val AUTO_MODES = listOf("off", "problems", "always")
 
@@ -68,7 +74,7 @@ object Oracul {
     /** The model that judges a comparison: its own setting, else the Oracul model. */
     fun judge(config: AppConfig): String = config.judgeModel.trim().ifEmpty { model(config) }
 
-    fun isOpinion(message: ChatMessage): Boolean = message.role == "user" && (message.content.startsWith(MARK) || message.content.startsWith(MARK_COMPARE) || message.content.startsWith(MARK_PLAN) || message.content.startsWith(MARK_ANALYSIS) || message.content.startsWith(MARK_CONTROL))
+    fun isOpinion(message: ChatMessage): Boolean = message.role == "user" && (message.content.startsWith(MARK) || message.content.startsWith(MARK_COMPARE) || message.content.startsWith(MARK_PLAN) || message.content.startsWith(MARK_ANALYSIS) || message.content.startsWith(MARK_CONTROL) || message.content.startsWith(MARK_VERDICT) || message.content.startsWith(MARK_GOAL))
 
     fun isPlan(message: ChatMessage): Boolean = message.role == "user" && message.content.startsWith(MARK_PLAN)
 
@@ -76,12 +82,18 @@ object Oracul {
 
     fun isControl(message: ChatMessage): Boolean = message.role == "user" && message.content.startsWith(MARK_CONTROL)
 
-    /** A second opinion or a comparison: an Oracul block that [REVISE_PROMPT] can act on (a plan, an analysis or a control verdict is not one). */
-    fun isReview(message: ChatMessage): Boolean = isOpinion(message) && !isPlan(message) && !isAnalysis(message) && !isControl(message)
+    fun isVerdict(message: ChatMessage): Boolean = message.role == "user" && message.content.startsWith(MARK_VERDICT)
+
+    fun isGoal(message: ChatMessage): Boolean = message.role == "user" && message.content.startsWith(MARK_GOAL)
+
+    /** A second opinion or a comparison: an Oracul block that [REVISE_PROMPT] can act on (a plan, an analysis, a control verdict, a judge verdict or a goal check is not one). */
+    fun isReview(message: ChatMessage): Boolean = isOpinion(message) && !isPlan(message) && !isAnalysis(message) && !isControl(message) && !isVerdict(message) && !isGoal(message)
 
     /** What the worker is told about a plan, in the plan block itself. */
     private const val PLAN_INTRO = "A planner (another model) wrote this plan for the task. Follow it where it is right; if a step is wrong, say why in one line and do the right thing."
     private const val ANALYSIS_INTRO = "An analyst (another model) read the user's request before the work began. Use it to see what is really asked; if it is wrong, say why in one line and do the right thing."
+    private const val VERDICT_INTRO = "A judge (another model) checked the reviewer's opinion about your last answer:"
+    private const val GOAL_INTRO = "A checker (another model) compared your last answer with the goal:"
     private const val CONTROL_INTRO = "A controller (another model) checked your last answer against the request:"
     private const val REVIEW_INTRO = "A reviewer (another model) read your last answer and says:"
 
@@ -98,6 +110,46 @@ object Oracul {
         ChatMessage.system(ANALYSIS_INSTRUCTIONS),
         ChatMessage.user(earlier(background) + "REQUEST:\n${question.trim().take(MAX_PART)}"),
     )
+
+    // ---- the judge's verdict on an opinion
+
+    fun verdictMessage(model: String, text: String): ChatMessage = ChatMessage.user("$MARK_VERDICT · $model]\n$VERDICT_INTRO\n\n${text.trim()}")
+
+    const val VERDICT_INSTRUCTIONS = "You judge a reviewer's opinion about an answer. You are given the request, the answer and the opinion. Decide whether the opinion is right and worth acting on. " +
+        "Your first line must be exactly one of: `AGREE` (the opinion is right, the answer should change), `PARTLY` (some of it is right) or `DISAGREE` (the answer was fine or the opinion is wrong). " +
+        "Then say in at most 3 short lines why, and name which points are right. Keep the language of the request."
+
+    fun verdictRequest(question: String, answer: String, opinion: String, background: String = ""): List<ChatMessage> = listOf(
+        ChatMessage.system(VERDICT_INSTRUCTIONS),
+        ChatMessage.user(earlier(background) + "REQUEST:\n${question.trim().take(MAX_PART)}\n\nANSWER:\n${answer.trim().take(MAX_PART)}\n\nREVIEWER'S OPINION:\n${opinion.trim().take(MAX_PART)}"),
+    )
+
+    // ---- /goal
+
+    /** What a goal check found: [met], or [notes] saying what is still missing. */
+    data class GoalCheck(val met: Boolean, val notes: String)
+
+    fun goalMessage(model: String, check: GoalCheck): ChatMessage =
+        ChatMessage.user("$MARK_GOAL · $model]\n$GOAL_INTRO\n\n${if (check.met) "Goal met." else "Goal not met yet."}" + if (check.notes.isBlank()) "" else "\n\n${check.notes.trim()}")
+
+    const val GOAL_INSTRUCTIONS = "You check whether a goal has been reached. You are given the goal and the assistant's latest answer. Be strict about what the goal says and nothing else. " +
+        "Your first line must be exactly `VERDICT: MET` or `VERDICT: NOT MET`. After NOT MET, say in at most 4 short lines what is still missing. After MET you may add one line."
+
+    /** The check's verdict from its text: the first `VERDICT: MET|NOT MET` decides. A text without one is **not** met (the text becomes the notes): unlike the controller, a goal is never assumed reached. */
+    fun parseGoal(text: String): GoalCheck {
+        val match = Regex("VERDICT:\\s*(NOT MET|MET)", RegexOption.IGNORE_CASE).find(text) ?: return GoalCheck(false, text.trim())
+        return GoalCheck(!match.groupValues[1].contains("NOT", ignoreCase = true), text.substring(match.range.last + 1).trimStart('.', ':', ' ').trim())
+    }
+
+    fun goalRequest(goal: String, answer: String, background: String = ""): List<ChatMessage> = listOf(
+        ChatMessage.system(GOAL_INSTRUCTIONS),
+        ChatMessage.user(earlier(background) + "GOAL:\n${goal.trim().take(MAX_PART)}\n\nLATEST ANSWER:\n${answer.trim().take(MAX_PART)}"),
+    )
+
+    /** The start of what the worker is told when a goal is not met; the check's notes and the goal follow. */
+    const val GOAL_PROMPT = "The goal is not met yet (see the checker's notes above)."
+
+    fun goalContinue(goal: String): String = "$GOAL_PROMPT Goal: ${goal.trim()}\nKeep working toward it: do what is missing, use your tools to check, and give the complete result."
 
     /** What a controller decided: [done] = the answer stands; otherwise [notes] say what must change. */
     data class Control(val done: Boolean, val notes: String)
@@ -212,7 +264,7 @@ object Oracul {
     }
 
     /** An Oracul message as the reader sees it: without the line that is addressed to the worker model. */
-    fun body(message: ChatMessage): String = text(message).removePrefix(REVIEW_INTRO).removePrefix(PLAN_INTRO).removePrefix(ANALYSIS_INTRO).removePrefix(CONTROL_INTRO).removePrefix(STUCK_INTRO).trim().removePrefix(CAVEAT).trim()
+    fun body(message: ChatMessage): String = text(message).removePrefix(REVIEW_INTRO).removePrefix(PLAN_INTRO).removePrefix(ANALYSIS_INTRO).removePrefix(CONTROL_INTRO).removePrefix(VERDICT_INTRO).removePrefix(GOAL_INTRO).removePrefix(STUCK_INTRO).trim().removePrefix(CAVEAT).trim()
 
     /** An Oracul message without its first line. */
     fun text(message: ChatMessage): String = message.content.substringAfter('\n', "").trim()
@@ -367,7 +419,7 @@ object Oracul {
     fun lastExchange(messages: List<ChatMessage>): Pair<String, String>? {
         val answerAt = messages.indexOfLast { it.role == "assistant" && it.content.isNotBlank() && it.toolCalls.isEmpty() }
         if (answerAt < 0) return null
-        val question = messages.subList(0, answerAt).lastOrNull { it.role == "user" && !isOpinion(it) && !Compaction.isSummary(it) && !it.content.startsWith(REDO_PROMPT) && !it.content.startsWith(REVISE_PROMPT) } ?: return null
+        val question = messages.subList(0, answerAt).lastOrNull { it.role == "user" && !isOpinion(it) && !Compaction.isSummary(it) && !it.content.startsWith(REDO_PROMPT) && !it.content.startsWith(GOAL_PROMPT) && !it.content.startsWith(REVISE_PROMPT) } ?: return null
         return question.content to messages[answerAt].content
     }
 
