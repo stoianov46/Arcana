@@ -923,6 +923,8 @@ fun ChatScreen(app: AppContext) {
                 }
             }
             ChatMode.Chat -> when {
+                // `?` on an empty field is the key map, as the footer says ("? keys"), also while the field has the keyboard; with text in the field it is just a question mark
+                key.char == '?' && input.text.isEmpty() && !browsing && slashMatches.isEmpty() -> false
                 // a digit with an empty field during a reply is a screen number: leave it to the shell
                 gen.state == GenState.Running && input.text.isEmpty() && !browsing && key.char?.let { it in '0'..'9' } == true -> false
                 key == Key.Save -> { openSave(null); true }
