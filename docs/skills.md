@@ -238,3 +238,7 @@ Update, in the same piece of work: this file; `tools-and-agent.md` (tool rows); 
 (file tables); `data-and-config.md` (config, vault conventions); `testing.md`; the in-app **Guide** page "Skills" and the **Changelog**;
 the vault notes `Skills/Skills Guide.md`, `.arcana/reference/Arcana LLM Reference.md`, `.arcana/reference/Arcana Reference Documentation.md`; the user's `ARCANA.md`
 and `Vault.MEMORY_TEMPLATE` when a rule for the model changes. Keep the reference skill's note under 18,000 characters.
+
+## A script must not count folders to find the vault
+
+Skills moved from `<vault>/Skills/` to `<vault>/.arcana/skills/` (the default of `Layout.skillsFolder`), one level deeper. A script that finds the vault with `Path(__file__).resolve().parents[3]` then points at `.arcana`, and every note it is given is "not found" although `read_note` opens it. This happened to `coingecko-forecast` (fixed by walking up to the folder that holds `.arcana/` or `.obsidian/`). In a skill's script, find the vault by walking up, never by a fixed number of `parents`; and when a tool says "not found" for a path another tool just read, suspect the script before the model.
