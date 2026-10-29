@@ -202,6 +202,10 @@ internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConf
     return StatusSegment(parts, 10)
 }
 
+/** `⚠ mistral-small3.2 35% on CPU: slow, lower the context window or use a smaller model`: a model that does not fit in memory. */
+internal fun offloadText(offload: com.arcana.brain.core.Offload, plain: Boolean): String =
+    "${if (plain) "!" else "⚠"} ${offload.model} ${offload.cpuPercent}% on CPU: slow, lower the context window or use a smaller model"
+
 /** The memory pill when the file is longer than what is sent: how much goes to the model of how much there is, in warning colours (the end is not read). */
 internal fun memoryCutText(total: Int, plain: Boolean): String =
     "${if (plain) "!" else "⚠"} memory ${UsageStats.compact(Vault.MEMORY_LIMIT.toLong())} of ${UsageStats.compact(total.toLong())}: end cut"
@@ -232,6 +236,8 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         contextUsage(chat.messages, window)?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
         if (chat.compacting) add(pillSegment(if (plain) "compacting" else "◌ compacting…", Palette.Blue, 10))
         // a small window drops the oldest text without a word: say so before it matters (Settings → Ollama → Context window)
+        // a loaded model that does not fit in memory runs partly on the CPU: several times slower, and a long prompt can run into the timeout
+        app.offloads.firstOrNull()?.let { add(pillSegment(offloadText(it, plain), Palette.Red, 10)) }
         // asking for more than the model is built for: memory for nothing, and a risk of swapping
         if (config.contextTokens > 0 && app.modelContext > 0 && config.contextTokens > app.modelContext) add(pillSegment(if (plain) "! ctx asks ${UsageStats.contextSize(config.contextTokens.toLong())}, model ${UsageStats.contextSize(app.modelContext.toLong())}" else "⚠ ctx asks ${UsageStats.contextSize(config.contextTokens.toLong())}, model ${UsageStats.contextSize(app.modelContext.toLong())}", Palette.Orange, 9))
         if (window in 1 until COMFORTABLE_CONTEXT) add(pillSegment(if (plain) "! small ctx ${UsageStats.contextSize(window.toLong())}" else "⚠ ctx ${UsageStats.contextSize(window.toLong())}", Palette.Orange, 9))

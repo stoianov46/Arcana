@@ -924,7 +924,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         private set(value) {
             if (value != consultingNow) consultingSince = System.currentTimeMillis()
             // a helper model at work keeps the logo animated, like a reply does (the count goes up once when the first one starts and down once when none is left)
-            if (consultingNow == null && value != null) app.busy++ else if (consultingNow != null && value == null) app.busy = (app.busy - 1).coerceAtLeast(0)
+            if (consultingNow == null && value != null) app.busy++ else if (consultingNow != null && value == null) { app.busy = (app.busy - 1).coerceAtLeast(0); app.scope.launch { app.refreshLoadedContext() } }
             consultingNow = value
             if (value == null) consultingStage = null
         }

@@ -63,7 +63,11 @@ class AppContext(
 
     suspend fun refreshLoadedContext() {
         loadedContext = runCatching { client.loadedContext(config.model) }.getOrDefault(0)
+        offloads = runCatching { client.offloads() }.getOrDefault(emptyList())
     }
+
+    /** The loaded models that run partly on the CPU because they do not fit in memory (slow; the Chat status bar warns). Read with the loaded context, after replies and helper work. */
+    var offloads by mutableStateOf<List<com.arcana.brain.core.Offload>>(emptyList())
 
     /** The installed models' sizes in bytes (on the main server), for the memory advice; empty until read. */
     var modelSizes by mutableStateOf<Map<String, Long>>(emptyMap())

@@ -2235,4 +2235,18 @@ class CoreTest {
         assertEquals("o", off.oraculModel, "the models stay set")
         assertTrue(AppConfig().oraculEnabled && AppConfig().skillRolesEnabled)
     }
+
+    @Test
+    fun aModelThatDoesNotFitInGraphicsMemoryIsReportedAsRunningOnTheCpu() {
+        val body = """{"models":[
+            {"name":"big:latest","size":38654705664,"size_vram":25000000000,"context_length":131072},
+            {"name":"small:latest","size":8000000000,"size_vram":8000000000},
+            {"name":"edge:latest","size":10000000000,"size_vram":9500000000}]}"""
+        val offloads = OllamaProtocol.parseOffloads(body)
+        assertEquals(listOf("big:latest"), offloads.map { it.model }, "a model fully on the GPU, or with under 10 % on the CPU, is not reported")
+        assertEquals(35, offloads.single().cpuPercent)
+        assertEquals(listOf("big:latest", "edge:latest"), OllamaProtocol.parseOffloads(body, minPercent = 1).map { it.model }, "with a lower threshold the 5 % model is listed too, the biggest share first")
+        assertEquals(emptyList(), OllamaProtocol.parseOffloads("""{"models":[]}"""))
+        assertEquals(emptyList(), OllamaProtocol.parseOffloads("not json"))
+    }
 }

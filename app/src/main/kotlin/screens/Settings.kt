@@ -354,7 +354,8 @@ private fun contextNote(app: AppContext): String {
     val loaded = app.loadedContext
     val real = com.arcana.brain.core.UsageStats::contextSize
     val tooBig = config.contextTokens > 0 && app.modelContext > 0 && config.contextTokens > app.modelContext
-    return (if (tooBig) "\n⚠ You ask for ${real(config.contextTokens.toLong())} but ${config.model} is built for ${real(app.modelContext.toLong())}: the rest is wasted memory (the cache for the window is allocated up front) and can make your Mac swap. Choose ${real(app.modelContext.toLong())} or less." else "") + "\nRight now: " + when {
+    val slow = app.offloads.joinToString("") { "\n⚠ ${it.model} runs ${it.cpuPercent}% on the CPU because it does not fit in memory with this window (${com.arcana.brain.core.UsageStats.compact(it.sizeBytes / 1_000_000)} MB): replies are several times slower and a long prompt can time out. Choose a smaller window or a smaller model." }
+    return slow + (if (tooBig) "\n⚠ You ask for ${real(config.contextTokens.toLong())} but ${config.model} is built for ${real(app.modelContext.toLong())}: the rest is wasted memory (the cache for the window is allocated up front) and can make your Mac swap. Choose ${real(app.modelContext.toLong())} or less." else "") + "\nRight now: " + when {
         loaded > 0 -> "Ollama runs ${config.model} with a window of ${real(loaded.toLong())}" +
             (if (config.contextTokens > 0 && loaded != config.contextTokens) " (you asked for ${real(config.contextTokens.toLong())}; Ollama's figure is the one that counts)" else "") +
             (if (loaded < COMFORTABLE_CONTEXT) ". ⚠ That is small: long chats, notes and tool results get cut. Choose 32k or more." else ".")

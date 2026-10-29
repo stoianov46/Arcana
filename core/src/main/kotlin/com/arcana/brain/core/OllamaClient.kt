@@ -95,6 +95,9 @@ data class ReplyStats(val promptTokens: Int, val completionTokens: Int, val tota
     val seconds: Double get() = totalMillis / 1000.0
 }
 
+/** A loaded model that runs partly on the CPU: [cpuPercent] of its [sizeBytes] (the model with its context cache) did not fit in the graphics memory. */
+data class Offload(val model: String, val cpuPercent: Int, val sizeBytes: Long)
+
 /** An installed model: what it can do and how big it is, as Ollama reports it. */
 data class ModelDetails(val name: String, val sizeBytes: Long, val capabilities: List<String>, val contextLength: Int) {
     /** `19 GB · tools · vision · thinking`, or just the size when Ollama named no capabilities. */
@@ -182,6 +185,21 @@ object OllamaProtocol {
             ?.get("context_length")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() } ?: 0
     }.getOrDefault(0)
 
+    /**
+     * The loaded models that do not fit in the graphics memory, from `/api/ps` (`size` is the whole model with its cache, `size_vram` the part on the GPU): the rest runs on the CPU, which
+     * is several times slower. Only models with at least [minPercent] % on the CPU are listed, biggest share first.
+     */
+    fun parseOffloads(body: String, minPercent: Int = 10): List<Offload> = runCatching {
+        val models = (json.parseToJsonElement(body) as? kotlinx.serialization.json.JsonObject)?.get("models") as? kotlinx.serialization.json.JsonArray ?: return emptyList()
+        models.mapNotNull { it as? kotlinx.serialization.json.JsonObject }.mapNotNull { m ->
+            fun long(key: String) = (m[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() ?: 0L
+            val size = long("size")
+            val onGpu = long("size_vram")
+            val name = listOf("name", "model").firstNotNullOfOrNull { (m[it] as? kotlinx.serialization.json.JsonPrimitive)?.content } ?: return@mapNotNull null
+            if (size <= 0) null else Offload(name, ((size - onGpu).coerceAtLeast(0) * 100 / size).toInt(), size)
+        }.filter { it.cpuPercent >= minPercent }.sortedByDescending { it.cpuPercent }
+    }.getOrDefault(emptyList())
+
     /** Installed models with their size in bytes. */
     fun parseModelSizes(body: String): List<Pair<String, Long>> =
         runCatching { json.decodeFromString<WireTags>(body).models.map { it.name to it.size } }.getOrDefault(emptyList())
@@ -254,6 +272,14 @@ class OllamaClient(private val config: () -> AppConfig) {
         val request = HttpRequest.newBuilder(endpoint(cfg, "/api/ps")).timeout(Duration.ofSeconds(5)).GET().build()
         val response = try { http.send(request, HttpResponse.BodyHandlers.ofString()) } catch (e: Exception) { return@withContext 0 }
         if (response.statusCode() != 200) 0 else OllamaProtocol.parseLoadedContext(response.body(), model)
+    }
+
+    /** The loaded models that run partly on the CPU (see [OllamaProtocol.parseOffloads]); empty when none, when nothing is loaded or when this Ollama does not say. */
+    suspend fun offloads(): List<Offload> = withContext(Dispatchers.IO) {
+        val cfg = config()
+        val request = HttpRequest.newBuilder(endpoint(cfg, "/api/ps")).timeout(Duration.ofSeconds(5)).GET().build()
+        val response = try { http.send(request, HttpResponse.BodyHandlers.ofString()) } catch (e: Exception) { return@withContext emptyList() }
+        if (response.statusCode() != 200) emptyList() else OllamaProtocol.parseOffloads(response.body())
     }
 
     /** The installed models with what each can do (tools, vision, thinking) and its size, for choosing one; a model whose details cannot be read is still listed. */
