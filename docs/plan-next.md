@@ -10,7 +10,7 @@ Facts below that come from reading the code are marked *(checked)*. Everything e
 
 | What | Where |
 |---|---|
-| **Roles apply to → Every message**: the planner, worker and reviewer of the role table run for every message, not only skills. A message under 60 characters gets no plan. Default stays *Skills only*. | Settings → Oracul; `rolesScope`; `ChatSession.applyRoles(null)`; test in `OraculTest` |
+| **Roles apply to → Every message**: the planner, worker and reviewer of the role table run for every message, not only skills. A message under 60 characters gets no plan. Default stays *Skills only*. | Settings → Helpers; `rolesScope`; `ChatSession.applyRoles(null)`; test in `OraculTest` |
 
 Known issue, not caused by this work: `CoreTest.webSearchParsesAllThreeBackendsAndAsksBeforeEverySearch` fails with and without these changes.
 
@@ -145,7 +145,7 @@ Size: S under half a day, M about a day, L several days, XL a week or more (roug
 
 ## N10. Orchestration: the flow core (reworked to industry practice)
 
-**Status: steps 1–5 done, including the command-based check.** 1 `Flow`, the analyst and the *Careful* preset; 2 the controller, the redo loop and the objective check command; 3 `/flow`, stage names in the reply line, `⇉` in the status bars; 4 the judge verdict (N9) and `/goal` (N5); 5 the rule-based router. **Step 6, stages as callable tools (the `consult` tool, Settings → Oracul → *Specialists as tools*), is built too.** Nothing here has been measured on real models yet: how much a flow or a specialist improves answers is not known.
+**Status: steps 1–5 done, including the command-based check.** 1 `Flow`, the analyst and the *Careful* preset; 2 the controller, the redo loop and the objective check command; 3 `/flow`, stage names in the reply line, `⇉` in the status bars; 4 the judge verdict (N9) and `/goal` (N5); 5 the rule-based router. **Step 6, stages as callable tools (the `consult` tool, Settings → Flow → *Specialists as tools*), is built too.** Nothing here has been measured on real models yet: how much a flow or a specialist improves answers is not known.
 
 **Correction.** The first draft of this section turned your example (analyse prompt → plan → execute → analyse result → control) into one fixed five-stage pipeline with gating rules. That was my invention. Your list is **one possible flow**, not the design. The design is a small set of building blocks that can express that flow and others, as other agents do.
 

@@ -5,7 +5,7 @@ enum class Route(val label: String) { Vision("an image"), Code("code") }
 
 /**
  * The router block of the orchestration design, rules first: no model decides, so it costs nothing and can be understood. An image is attached → [Route.Vision]; a code block
- * or a source file name in the text → [Route.Code]; anything else → null (the chat model answers). The models are set in Settings → Oracul (*Route: images to* / *code to*).
+ * or a source file name in the text → [Route.Code]; anything else → null (the chat model answers). The models are set in Settings → Helpers (*Route: images to* / *code to*).
  */
 object Router {
     private val CODE_FILE = Regex("\\b[\\w./-]+\\.(kt|kts|java|py|js|jsx|ts|tsx|go|rs|c|h|cpp|cs|rb|php|swift|sql|sh|gradle)\\b")

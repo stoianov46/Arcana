@@ -11,7 +11,7 @@ Models: chat `gemma4:e4b`, helpers `qwen3.5:9b`, judge `gemma4:12b`, code `qwen2
    val x: Int = "5"
    ``` ````
    You get a toast `Routed to qwen2.5-coder:7b`.
-5. **Verdict:** Settings → Oracul → Automatic second opinion = Always; ask `Is 91 a prime number?`; after the reply a Verdict block (AGREE / PARTLY / DISAGREE).
+5. **Verdict:** Settings → Opinions → Automatic second opinion = Always; ask `Is 91 a prime number?`; after the reply a Verdict block (AGREE / PARTLY / DISAGREE).
 6. **Context:** ask 4-5 short questions, then `/compact`; Settings → Console shows Chat history = everything, Keep after compacting = 30 %.
 7. **Memory:** `/memory check`. **Files:** ask `Create a note "Test" in my vault with three bullet points about sorting`, then `/artifacts`.
 8. **Library:** `3` opens on All; Settings → Library has the options.

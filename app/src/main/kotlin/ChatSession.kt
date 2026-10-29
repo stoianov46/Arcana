@@ -371,7 +371,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     /**
-     * The router: a message with an image goes to the vision model, one with code to the code model (Settings → Oracul → *Route*), unless a skill or the flow already named the
+     * The router: a message with an image goes to the vision model, one with code to the code model (Settings → Helpers → *Route*), unless a skill or the flow already named the
      * worker. The model must be installed, have the `vision` capability for an image and be able to use tools when tools are on; otherwise the chat model answers, with a note.
      * Only the first round of a message routes, and a redo or a goal turn looks at the message it continues.
      */
@@ -432,7 +432,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val kind = Flow.consultKind(arg("stage")) ?: return "Error: stage must be analyst, planner or reviewer."
         val brief = arg("brief").ifEmpty { return "Error: give a brief: everything the specialist needs." }
         if (consults >= MAX_CONSULTS) return "Error: you have already consulted $MAX_CONSULTS times in this message; carry on with what you have."
-        val model = Flow.careful(app.config).model(kind).ifEmpty { return "Error: no model is set for the ${kind.label.lowercase()} (Settings → Oracul); work without it." }
+        val model = Flow.careful(app.config).model(kind).ifEmpty { return "Error: no model is set for the ${kind.label.lowercase()} (Settings → Helpers); work without it." }
         if (consulting != null) return "Error: another model is working right now; try again in a moment."
         if (missingOnOracul(model)) return "Error: the model $model is not installed; work without the ${kind.label.lowercase()}."
         consults++
@@ -1077,7 +1077,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     /**
-     * The Oracul model (and the extra models of Settings → Oracul → *More Oracul models*) answer the same question as the worker did, and the
+     * The Oracul model (and the extra models of Settings → Helpers → *More Oracul models*) answer the same question as the worker did, and the
      * judge model compares all the answers and says which is best (with a best final answer). One block is added to the chat with every answer
      * and the verdict. An extra model that cannot answer is left out with a line saying so; the Oracul model itself must answer.
      */
@@ -1168,13 +1168,13 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         if (stuckAdvised > 0) return
         if (Oracul.model(config).isEmpty() || config.oraculAuto == "off" || consulting != null) return
         if (!Oracul.due(config, Oracul.turnFacts(messages.toList(), skillRun?.skippedCount ?: 0))) return
-        // opt-in (Settings → Oracul → Judge automatically): a full comparison with a verdict instead of one opinion
+        // opt-in (Settings → Opinions → Judge automatically): a full comparison with a verdict instead of one opinion
         autoConsult = if (config.oraculJudgeAuto) app.scope.launch { runCatching { compare() } } else app.scope.launch {
             runCatching { secondOpinion(source = "auto") }.onSuccess { runCatching { verdictOnOpinion() } }
         }
     }
 
-    /** The recent conversation the Oracul, the judge and the planner are shown (Settings → Oracul → Chat context). */
+    /** The recent conversation the Oracul, the judge and the planner are shown (Settings → Helpers → Chat context). */
     private fun oraculBackground() = Oracul.background(messages.toList(), app.config.oraculContextMessages, app.config.oraculContextChars)
 
     /** The automatic opinion or comparison that runs after a reply; a new message of the user cancels it. */

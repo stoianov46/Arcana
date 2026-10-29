@@ -38,10 +38,10 @@ What differs: the Oracul is advisory and speaks only after problems or on a comm
 | **Revise** | `/revise [note]` | the chat model revises its last answer with the open opinion | `ChatSession.revise`, `Oracul.REVISE_PROMPT` |
 | **Takeover** (escalation) | `/takeover`, offered by a toast after a failed turn | the Oracul continues the unanswered turn from the same history, with its own model and tools | `ChatSession.takeOver`, `Oracul.takeoverHeading` |
 | **Skill roles** | `worker:`, `reviewer:`, `planner:` in a skill's properties, or the role table in Settings | a skill run uses another worker model, gets a plan first, and a review at the end | `ChatSession.applyRoles` / `plan`, `Skills.roles`, `SkillRoles.withDefaults` |
-| **Router** | `routeVision` / `routeCode` set in Settings → Oracul | a message with an image goes to the vision model, one with code to the code model, by rules, no model involved | `Router`, `ChatSession.route` |
+| **Router** | `routeVision` / `routeCode` set in Settings → Helpers | a message with an image goes to the vision model, one with code to the code model, by rules, no model involved | `Router`, `ChatSession.route` |
 | **Judge verdict** | after an automatic opinion, when `judgeModel` is set (`oraculVerdict`, default on) | the judge says `AGREE` / `PARTLY` / `DISAGREE` and why, as a block under the opinion; advisory | `ChatSession.verdictOnOpinion`, `Oracul.verdictRequest` |
 | **Goal** | `/goal <condition>` | the work starts; after every finished reply a checker (Oracul model, else the chat model) says `VERDICT: MET` or `NOT MET`; while not met the worker is sent on by itself, at most `goalTurns` times | `ChatSession.startGoal` / `checkGoal`, `Oracul.goalRequest`, `parseGoal` |
-| **Flow** | Settings → Oracul → *Flow* = Careful | every message goes through a fixed sequence: analyst → planner → worker → reviewer, each its own model | `Flow`, `ChatSession.analyse` / `plan` / `applyRoles` |
+| **Flow** | Settings → Flow → *Flow* = Careful | every message goes through a fixed sequence: analyst → planner → worker → reviewer, each its own model | `Flow`, `ChatSession.analyse` / `plan` / `applyRoles` |
 | **Memory fit** | the model pickers in Settings | each model is marked as fitting this machine or not, with a suggested Oracul and judge | `core/ModelFit.kt` |
 
 ## What the Oracul is shown of the conversation
@@ -178,7 +178,7 @@ runs unless *Flow* is set (`AppConfig.flow`).
 
 ## Specialists as tools (`consult`)
 
-The *subagent* way to use the same stages, as in Claude Code: with **Settings → Oracul → Specialists as tools** (`flowTools`, off by default) and tools on, the chat model is offered one
+The *subagent* way to use the same stages, as in Claude Code: with **Settings → Flow → Specialists as tools** (`flowTools`, off by default) and tools on, the chat model is offered one
 more pseudo-tool, `consult` (`CONSULT_DEFINITION`, handled by `ChatSession.consult` like `ask_user`, not by the `ToolBox`). It names a `stage` (`analyst`, `planner`, `reviewer`; not the controller
 or the worker) and writes a `brief`; the stage's model (`Flow.careful(config).model(kind)`: *Flow analyst*, *Skill planner*, *Skill reviewer*, else the Oracul model) is asked with the stage's own
 instructions (`Oracul.consultRequest`) and **sees only the brief** (plus the usual earlier-chat header), and its text comes back as the tool's result: `Planner (model) says: …`. So the model
@@ -189,7 +189,7 @@ besides the tool call and its result. It is independent of *Flow*: both can be o
 ## Router
 
 The *router* block of the orchestration design, **rules first** (`core/Router.kt`): `Router.kindOf(text, hasImages)` says *image* when an image is attached, *code* when the text has a
-fenced code block or a source file name (`.kt`, `.py`, `.js`, `.sql`, … not `.md`), else nothing. `routeVision` and `routeCode` (Settings → Oracul → *Route: images to* / *code to*) name the
+fenced code block or a source file name (`.kt`, `.py`, `.js`, `.sql`, … not `.md`), else nothing. `routeVision` and `routeCode` (Settings → Helpers → *Route: images to* / *code to*) name the
 model for each kind; blank = no routing. `ChatSession.route` runs in the first round's `prepare`, **after** the roles, and only when no worker is named yet (a skill's `worker:`, the
 role table and a flow's worker win). The model must be installed, have the `vision` capability for an image and the `tools` capability when tools are on; otherwise the chat model answers and a toast says why (`roleNote`). A routed message shows `Routed to <model>: the message has …` (`routeNote`); the next message routes again from scratch. A redo or a goal turn routes by the message it
 continues, so a vision answer is not redone by the chat model. A model-based selector is a possible later step; it is not built, and rules are enough to start.
@@ -222,7 +222,7 @@ continues, so a vision answer is not redone by the chat model. A model-based sel
 | `oraculUrl` | blank = main server | a second Ollama server for the Oracul, the judge, planner and reviewer |
 | `oraculAuto` | `problems` | `off` / `problems` / `always` |
 | `stuckCalls` / `stuckTurns` | `4` / `3` | failed calls in one turn per step-in; failing turns in a row for an automatic review (`0` = never) |
-| `oraculContextMessages` / `oraculContextChars` | `0` / `3000` | how many earlier chat messages (0 = all, up to 30,000 characters in total) and how many characters of each the Oracul, judge, planner, analyst and controller are shown besides the last question (Settings → Oracul → Chat context) |
+| `oraculContextMessages` / `oraculContextChars` | `0` / `3000` | how many earlier chat messages (0 = all, up to 30,000 characters in total) and how many characters of each the Oracul, judge, planner, analyst and controller are shown besides the last question (Settings → Helpers → Chat context) |
 | `oraculJudgeAuto` | `false` | when an automatic opinion is due, run `compare()` (Oracul answer plus judge verdict) instead; mid-turn stuck advice and skill reviewers stay single opinions |
 | `oraculTools` | `true` | the Oracul may use the worker's tools |
 | `flow` / `flowAnalyst` / `flowController` / `flowRedos` / `flowCheckCommand` | `off` / blank / blank / `2` / blank | the selected flow (`off`, `careful`), the models of its analyst and controller (blank = the Oracul model) how many redos the controller may ask for (0–5) and an objective check command (blank = none; needs shell + auto-run); while a flow is on the role table applies to every message |

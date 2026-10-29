@@ -68,7 +68,7 @@ Closing review (2026-10-28): #11 stays *needs repro* (skipped until a screenshot
 | 21 | Decomposition skill as in CosmoCLI: `decompose` (quiz with `ask_user`, plan note, one item at a time) | done |
 | 25 | Manage Arcana's own files in Settings → Storage (size per area, clear, prune backups and trash by age) | done |
 | 26 | Distributable build (`make dist` → arcana.zip) with a configurable init: the wizard, or `arcana --init <vault> [--skip …]` | done |
-| 16 | Oracul: levels 0-1 built (`/oracul`, `/compare`, `/revise`, automatic trigger, models in Settings → Oracul, bottom-bar badge), with the worker's tools (changes always ask). Escalation built (`/takeover`). Roles per skill built (`worker:`/`reviewer:` in a skill). Second Ollama server built (`oraculUrl`). Judge for more than two built (`oraculExtra`). Complete, with the planner role, the role table and a multi-select picker (architecture: [oracul.md](oracul.md)) | done |
+| 16 | Oracul: levels 0-1 built (`/oracul`, `/compare`, `/revise`, automatic trigger, models in Settings → Helpers, bottom-bar badge), with the worker's tools (changes always ask). Escalation built (`/takeover`). Roles per skill built (`worker:`/`reviewer:` in a skill). Second Ollama server built (`oraculUrl`). Judge for more than two built (`oraculExtra`). Complete, with the planner role, the role table and a multi-select picker (architecture: [oracul.md](oracul.md)) | done |
 
 ## Added later (not on the original list)
 
@@ -88,7 +88,7 @@ Closing review (2026-10-28): #11 stays *needs repro* (skipped until a screenshot
 | Memory advice for chosen models (a warning and a better choice under the Settings row, after saving, and a `⚠` in the Chat status bar) | [oracul.md](oracul.md) | done |
 | *Search and fetch without asking*: `web_search` and `fetch_url` may run without a dialog (off by default; HTTP requests and the Oracul still ask) | [tools-and-agent.md](tools-and-agent.md) | done |
 | Oracul concept review: mapped to standard agent patterns, caveats written down (not measured on real tasks yet) | [oracul.md](oracul.md) | done |
-| Context fixes found in a real chat: the Oracul, judge and planner see the recent conversation (`Oracul.background`; Settings → Oracul → Chat context: messages and characters each, no fixed cap); the worker's window never cuts into the current turn (`Prompts.window`); a reviewer block tells the worker it saw only part of the chat | [oracul.md](oracul.md) | done |
+| Context fixes found in a real chat: the Oracul, judge and planner see the recent conversation (`Oracul.background`; Settings → Helpers → Chat context: messages and characters each, no fixed cap); the worker's window never cuts into the current turn (`Prompts.window`); a reviewer block tells the worker it saw only part of the chat | [oracul.md](oracul.md) | done |
 | `search_notes` explains a miss and searches short or common words as written | [tools-and-agent.md](tools-and-agent.md) | done |
 
 ## Skipped

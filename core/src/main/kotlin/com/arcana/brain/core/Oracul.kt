@@ -76,7 +76,7 @@ object Oracul {
 
     /** Why there is no Oracul model: switched off (the master switch), or not chosen yet. */
     fun missingModelMessage(config: AppConfig): String =
-        if (!config.oraculEnabled) "Helper models are switched off: turn them on with /helpers (Settings → Oracul → Helper models)." else "Choose an Oracul model first: Settings → Oracul → Model."
+        if (!config.oraculEnabled) "Helper models are switched off: turn them on with /helpers (Settings → Helpers → Helper models)." else "Choose an Oracul model first: Settings → Helpers → Model."
 
     fun isOpinion(message: ChatMessage): Boolean = message.role == "user" && (message.content.startsWith(MARK) || message.content.startsWith(MARK_COMPARE) || message.content.startsWith(MARK_PLAN) || message.content.startsWith(MARK_ANALYSIS) || message.content.startsWith(MARK_CONTROL) || message.content.startsWith(MARK_VERDICT) || message.content.startsWith(MARK_GOAL))
 
@@ -210,7 +210,7 @@ object Oracul {
     /**
      * What came before the user's last message, for the requests that go to the Oracul, the judge and the planner (they otherwise see only the last question and
      * would not know what "option C" or "that file" means): the last few messages of the user and replies of the assistant, without tool output, each shortened in the
-     * middle (the end of a reply, where its options or questions are, is kept), newest last: at most [maxMessages] messages of at most [perMessage] characters each (Settings → Oracul → Chat context), so the size is bounded by their product and nothing else cuts it. Empty when there is nothing before or [maxMessages] is 0.
+     * middle (the end of a reply, where its options or questions are, is kept), newest last: at most [maxMessages] messages of at most [perMessage] characters each (Settings → Helpers → Chat context), so the size is bounded by their product and nothing else cuts it. Empty when there is nothing before or [maxMessages] is 0.
      */
     fun background(messages: List<ChatMessage>, maxMessages: Int = 0, perMessage: Int = 3000): String {
         val at = messages.indexOfLast { isRealUser(it) }

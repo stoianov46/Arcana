@@ -108,6 +108,10 @@ a dialog (approval or question), its panel instead of the field: `lines + 3` plu
 passed to `outputRows`; the message field keeps its buttons below the status bar (`actions = chatActions(…)`). Add a row to any of these and
 add it to the count.
 
+## Settings tabs
+
+`Group` (in `Settings.kt`) is the list of tabs, each with a title and a one-line `about` shown at the top of its panel. `GroupBar` wraps the tabs onto as many rows as the width needs (none is ever cut off). The helper-model settings are split in four tabs (**Helpers**, **Opinions**, **Flow**, **Skills**); `inactive(config, setting)` greys a row and adds `· off` while its switch (*Helper models* or *Skill roles*) is off. `OptionList` draws every row of a tab without scrolling, so a tab must stay short (about 12 rows) to fit a 24-row terminal.
+
 ## Status bar (`design/StatusBar.kt`)
 
 A reusable summary (one row when it fits, more when it does not): `StatusSegment(parts, priority)` (a part is coloured text, optionally bold or on a background), built with

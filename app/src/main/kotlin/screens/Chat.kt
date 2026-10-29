@@ -196,7 +196,7 @@ internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConf
     val parts = mutableListOf(StatusPart(" $workerLabel ", Palette.Background, bold = true, background = Palette.Accent))
     if (setup.isNotEmpty()) {
         parts += StatusPart(" $setup", Palette.Blue)
-        // the Oracul does not fit this machine's memory: it would swap to disk or run on the CPU (Settings → Oracul says what to choose instead)
+        // the Oracul does not fit this machine's memory: it would swap to disk or run on the CPU (Settings → Helpers says what to choose instead)
         if (oraculTooBig) parts += StatusPart(if (plain) " !" else " ⚠", Palette.Orange, bold = true)
     }
     return StatusSegment(parts, 10)

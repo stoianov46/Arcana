@@ -25,6 +25,7 @@ import com.jakewharton.mosaic.layout.background
 import com.jakewharton.mosaic.layout.fillMaxWidth
 import com.jakewharton.mosaic.modifier.Modifier
 import com.jakewharton.mosaic.ui.Color
+import com.jakewharton.mosaic.ui.Column
 import com.jakewharton.mosaic.ui.Row
 import com.jakewharton.mosaic.ui.TextStyle
 import java.nio.file.Files
@@ -34,8 +35,8 @@ import kotlinx.coroutines.launch
 /** Backups and trash are pruned by age: what is older than this many days. */
 private const val PRUNE_DAYS = 30
 
-private enum class Group(val title: String) {
-    Ollama("Ollama"), Vault("Vault"), Library("Library"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Oracul("Oracul"), Sounds("Sounds"), Storage("Storage"), Accessibility("Accessibility"), Tabs("Tabs"),
+private enum class Group(val title: String, val about: String = "") {
+    Ollama("Ollama"), Vault("Vault"), Library("Library"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Helpers("Helpers", "Models other than the chat model, and the master switch that turns them all off. The Oracul gives second opinions; the router sends images and code to their own models."), Opinions("Opinions", "When the Oracul speaks up by itself, the judge's verdict on it, and when it steps in because the chat model keeps failing."), Flow("Flow", "Every message through analyst, planner, worker, reviewer and controller, each its own model; specialists as tools; /goal."), Skills("Skills", "The worker, planner and reviewer a skill run uses (its own properties win), with their own on/off switch."), Sounds("Sounds"), Storage("Storage"), Accessibility("Accessibility"), Tabs("Tabs"),
 }
 
 /** How Enter edits a setting that is not simply stepped with ←/→. */
@@ -263,39 +264,39 @@ private val settings: List<Setting> = listOf(
     text(Group.Prompts, "System prompt", "Tells the model who it is. Sent with every request.", { it.systemPrompt }, { c, v -> c.copy(systemPrompt = v) }),
     text(Group.Prompts, "Summary prompt", "The instruction used by Summarize.", { it.summaryPrompt }, { c, v -> c.copy(summaryPrompt = v) }),
 
-    toggle(Group.Oracul, "Helper models", "The master switch for every helper model: the Oracul and its second opinions, the judge, the flow, the specialists (consult tool) and the router. Off: only the chat model works; the models below stay set, so switching back loses nothing. Skill roles have their own switch below. /helpers in Chat does the same.", { it.oraculEnabled }, { c, v -> c.copy(oraculEnabled = v) }),
-    toggle(Group.Oracul, "Skill roles", "On: a skill run uses the worker, planner and reviewer the skill names (its worker:, planner:, reviewer: properties) or the role table below. Off: a skill is run by the chat model alone. Independent of Helper models, so you can test one model plus skill roles. /roles in Chat does the same.", { it.skillRolesEnabled }, { c, v -> c.copy(skillRolesEnabled = v) }),
-    Setting(Group.Oracul, "Oracul model", "A second model that reads the worker's answer and says what is wrong or missing (a second opinion), and answers the same question for a comparison. It advises only; its text appears in the chat as a Ψ block. None = the Oracul is off. Enter lists the installed models; a bigger or different one from the worker is the point (loading it replaces the worker in memory for a while on a small machine).", { it.oraculModel.ifEmpty { "(none: off)" } }, editor = OraculModel),
-    Setting(Group.Oracul, "More Oracul models", "Optional. Enter lists the installed models: Space ticks several, Enter saves. /compare then asks all of them and the judge compares every answer. More models, longer wait: each one is loaded in turn.", { it.oraculExtra.ifEmpty { "(none)" } }, editor = ExtraModels),
-    Setting(Group.Oracul, "Judge model", "The model that compares the answers (/compare) and writes the best final answer. None = the Oracul model judges.", { it.judgeModel.ifEmpty { "(same as the Oracul)" } }, editor = JudgeModel),
-    text(Group.Oracul, "Oracul server", "Another Ollama server for the Oracul and the judge, for example a bigger machine on your network (http://host:11434). Blank: the same server as the main model. Only Ollama; what the Oracul reads from your chat goes to that server.", { it.oraculUrl }, { c, v ->
+    toggle(Group.Helpers, "Helper models", "The master switch for every helper model: the Oracul and its second opinions, the judge, the flow, the specialists (consult tool) and the router. Off: only the chat model works; the models below stay set, so switching back loses nothing. Skill roles have their own switch below. /helpers in Chat does the same.", { it.oraculEnabled }, { c, v -> c.copy(oraculEnabled = v) }),
+    Setting(Group.Helpers, "Oracul model", "A second model that reads the worker's answer and says what is wrong or missing (a second opinion), and answers the same question for a comparison. It advises only; its text appears in the chat as a Ψ block. None = the Oracul is off. Enter lists the installed models; a bigger or different one from the worker is the point (loading it replaces the worker in memory for a while on a small machine).", { it.oraculModel.ifEmpty { "(none: off)" } }, editor = OraculModel),
+    Setting(Group.Helpers, "More Oracul models", "Optional. Enter lists the installed models: Space ticks several, Enter saves. /compare then asks all of them and the judge compares every answer. More models, longer wait: each one is loaded in turn.", { it.oraculExtra.ifEmpty { "(none)" } }, editor = ExtraModels),
+    Setting(Group.Helpers, "Judge model", "The model that compares the answers (/compare) and writes the best final answer. None = the Oracul model judges.", { it.judgeModel.ifEmpty { "(same as the Oracul)" } }, editor = JudgeModel),
+    text(Group.Helpers, "Oracul server", "Another Ollama server for the Oracul and the judge, for example a bigger machine on your network (http://host:11434). Blank: the same server as the main model. Only Ollama; what the Oracul reads from your chat goes to that server.", { it.oraculUrl }, { c, v ->
         require(v.isEmpty() || v.startsWith("http://") || v.startsWith("https://")) { "URL must start with http:// or https://" }
         c.copy(oraculUrl = v.trim().trimEnd('/'))
     }),
-    choice(Group.Oracul, "Roles apply to", "Skills only: the planner, worker and reviewer below run for a message that carries a skill. Every message: they run as a pipeline for all chat (a plan first, for messages of 60 characters or more; the worker answers; the reviewer checks). Slower, but each model does what it is best at. A skill's own properties still win.", listOf("skills" to "Skills only", "all" to "Every message"), { it.rolesScope }, { c, v -> c.copy(rolesScope = v) }),
-    choice(Group.Oracul, "Flow", "A fixed sequence of models that handles every message: the analyst says what is really asked, the planner plans, the worker does it, the reviewer checks. Careful uses the models below (an unset stage takes the Oracul model; the worker is the chat model unless Skill worker is set) and a message under 60 characters goes straight to the worker. Off: the chat model answers, and skills use the role table. Slow and heavy: several models run for each message.", listOf("off" to "Off", "careful" to "Careful"), { it.flow }, { c, v -> c.copy(flow = v) }),
-    Setting(Group.Oracul, "Flow analyst", "The model that reads your request first and writes what is really asked, what is unclear and what a good result looks like (needs Flow: Careful). Blank: the Oracul model.", { it.flowAnalyst.ifEmpty { "(the Oracul model)" } }, editor = AnalystRole),
-    Setting(Group.Oracul, "Flow controller", "The model that checks the finished answer against your request and the reviewer's notes and says done or redo (needs Flow: Careful). On redo the worker is sent back with what to fix. Blank: the Oracul model.", { it.flowController.ifEmpty { "(the Oracul model)" } }, editor = ControllerRole),
-    Setting(Group.Oracul, "Flow check command", "A shell command the flow runs in the project folder after each answer, as an objective check (for example ./gradlew test). Exit code 0: passed, and the controller is told. Anything else: the output goes back to the worker as a redo, without asking a model. It runs WITHOUT asking, so it needs Settings → Tools → shell commands and auto-run to be on; commands Arcana never runs (sudo, rm -r /, …) are refused. Blank: no command.", { it.flowCheckCommand.ifEmpty { "(none)" } }, editor = Editor.Text { c, v -> c.copy(flowCheckCommand = v.trim()) }),
-    toggle(Group.Oracul, "Specialists as tools", "On: the chat model itself may call the analyst, the planner or the reviewer (the models of Flow analyst, Skill planner, Skill reviewer, else the Oracul model) as a tool called consult, when it finds a task hard or unclear: it writes a brief, the specialist answers, and it carries on. At most 3 times per message, only with tools on. Unlike Flow, the chat model decides when; most messages call nobody.", { it.flowTools }, { c, v -> c.copy(flowTools = v) }),
-    stepper(Group.Oracul, "Flow redos", "How many times the controller may send the worker back for one message (0 = it only gives its verdict, never a redo). Each redo runs the worker, the reviewer and the controller again, so it is slow. ←/→ step by 1.", 0..Flow.MAX_REDOS, 1, { it.flowRedos }, { c, n -> c.copy(flowRedos = n) }),
-    Setting(Group.Oracul, "Route: images to", "The model that answers a message with an image attached (it must read images; the model list says which can). Blank: the chat model. A skill's or a flow's own worker wins.", { it.routeVision.ifEmpty { "(the chat model)" } }, editor = RouteVisionRole),
-    Setting(Group.Oracul, "Route: code to", "The model that answers a message with a code block or a source file name in it (with tools on it must be able to use them). Blank: the chat model. A skill's or a flow's own worker wins.", { it.routeCode.ifEmpty { "(the chat model)" } }, editor = RouteCodeRole),
-    Setting(Group.Oracul, "Skill planner", "The model that writes a short plan before a skill starts (the worker then sees it). A skill's own `planner:` property wins. Blank: no plan.", { it.rolePlanner.ifEmpty { "(no plan)" } }, editor = PlannerRole),
-    Setting(Group.Oracul, "Skill worker", "The model that runs skills instead of the chat model. A skill's own `worker:` property wins. Blank: the chat model.", { it.roleWorker.ifEmpty { "(the chat model)" } }, editor = WorkerRole),
-    Setting(Group.Oracul, "Skill reviewer", "The model that gives a second opinion when a skill's run is done, whatever the automatic setting says. A skill's own `reviewer:` property wins. Blank: none.", { it.roleReviewer.ifEmpty { "(no review)" } }, editor = ReviewerRole),
-    choice(Group.Oracul, "Stuck: failed calls", "The main model counts as stuck after this many failed tool calls in one turn (errors, timeouts, commands that exit with an error). The Oracul then reads the attempts and its advice goes into the main model's loop, and again after every further such number. Needs an Oracul model and an automatic setting other than Off.", listOf("0" to "Never", "3" to "After 3", "4" to "After 4", "6" to "After 6", "8" to "After 8"), { it.stuckCalls.toString() }, { c, v -> c.copy(stuckCalls = v.toInt()) }),
-    choice(Group.Oracul, "Stuck: failing turns", "An automatic review is due when this many turns in a row each had a failed tool call, even if each had only one (you keep coming back, the main model keeps failing). Used by On problems.", listOf("0" to "Never", "2" to "After 2", "3" to "After 3", "4" to "After 4", "5" to "After 5"), { it.stuckTurns.toString() }, { c, v -> c.copy(stuckTurns = v.toInt()) }),
-    stepper(Group.Oracul, "Chat context: messages", "How many earlier messages of the chat (yours and the model's replies, without tool output) the Oracul, the judge, the planner, the analyst and the controller are shown besides the last question, so a short follow-up like \"do option C\" makes sense to them. 0 = all of them, newest first, up to about 30 000 characters in total (these models' windows are not known). A number caps it. ←/→ step by 2.", 0..200, 2, { it.oraculContextMessages }, { c, n -> c.copy(oraculContextMessages = n) }, zero = "all"),
-    stepper(Group.Oracul, "Chat context: characters each", "How much of each of those messages is sent: a longer one is cut in the middle, so its start and its end stay (about 4 characters per token). ←/→ step by 500.", 500..20_000, 500, { it.oraculContextChars }, { c, n -> c.copy(oraculContextChars = n) }),
-    toggle(Group.Oracul, "Judge verdict on opinions", "On: after an automatic second opinion the judge model (Settings → Oracul → Judge model; it must be set) says whether the opinion is right: AGREE, PARTLY or DISAGREE and why. One more model run per opinion. Advisory: shown under the opinion, never applied by itself.", { it.oraculVerdict }, { c, v -> c.copy(oraculVerdict = v) }),
-    stepper(Group.Oracul, "Goal turns", "How many times /goal may continue the work by itself for one goal before it stops (a message of yours resets the count). Each turn runs the worker and the goal check. ←/→ step by 1.", 1..20, 1, { it.goalTurns }, { c, n -> c.copy(goalTurns = n) }),
-    toggle(Group.Oracul, "Judge automatically", "On: when an automatic second opinion is due (see above), run a full comparison instead of one opinion: the Oracul answers the question too and the judge model compares both answers (as /compare does; the judge is shown as ⚖). Slow: three model runs instead of one, and more tokens. Off: the judge works only on /compare. The Oracul stepping in mid-turn and skill reviewers stay single opinions.", { it.oraculJudgeAuto }, { c, v -> c.copy(oraculJudgeAuto = v) }),
-    toggle(Group.Oracul, "Oracul may use tools", "On: the Oracul can use the same tools as the main model to CHECK an answer (read files, search notes, run a harmless command). Reading follows Read without asking; every change, command and web access asks you first, even in Auto mode, in a dialog marked Ψ Oracul. Needs Tools in Chat on and an Oracul model that supports tools; Plan mode keeps it read-only. Off: it only reads the question and the answer.", { it.oraculTools }, { c, v -> c.copy(oraculTools = v) }),
-    choice(Group.Oracul, "Automatic second opinion", "Off: only when you type /oracul. On problems: after a turn where two or more tool calls failed, a skill had to skip a required step, or three turns in a row had a failed call; and in the middle of a turn, every 4th failed call (the worker keeps failing: the Oracul reads the attempts and its advice goes into the loop). Always: after every finished reply (slow: the Oracul model runs each time). Needs an Oracul model.", listOf("off" to "Off", "problems" to "On problems", "always" to "Always"), { it.oraculAuto }, { c, v -> c.copy(oraculAuto = v) }),
+    toggle(Group.Helpers, "Oracul may use tools", "On: the Oracul can use the same tools as the main model to CHECK an answer (read files, search notes, run a harmless command). Reading follows Read without asking; every change, command and web access asks you first, even in Auto mode, in a dialog marked Ψ Oracul. Needs Tools in Chat on and an Oracul model that supports tools; Plan mode keeps it read-only. Off: it only reads the question and the answer.", { it.oraculTools }, { c, v -> c.copy(oraculTools = v) }),
+    Setting(Group.Helpers, "Route: images to", "The model that answers a message with an image attached (it must read images; the model list says which can). Blank: the chat model. A skill's or a flow's own worker wins.", { it.routeVision.ifEmpty { "(the chat model)" } }, editor = RouteVisionRole),
+    Setting(Group.Helpers, "Route: code to", "The model that answers a message with a code block or a source file name in it (with tools on it must be able to use them). Blank: the chat model. A skill's or a flow's own worker wins.", { it.routeCode.ifEmpty { "(the chat model)" } }, editor = RouteCodeRole),
+    stepper(Group.Helpers, "Chat context: messages", "How many earlier messages of the chat (yours and the model's replies, without tool output) the Oracul, the judge, the planner, the analyst and the controller are shown besides the last question, so a short follow-up like \"do option C\" makes sense to them. 0 = all of them, newest first, up to about 30 000 characters in total (these models' windows are not known). A number caps it. ←/→ step by 2.", 0..200, 2, { it.oraculContextMessages }, { c, n -> c.copy(oraculContextMessages = n) }, zero = "all"),
+    stepper(Group.Helpers, "Chat context: characters each", "How much of each of those messages is sent: a longer one is cut in the middle, so its start and its end stay (about 4 characters per token). ←/→ step by 500.", 500..20_000, 500, { it.oraculContextChars }, { c, n -> c.copy(oraculContextChars = n) }),
+    choice(Group.Opinions, "Automatic second opinion", "Off: only when you type /oracul. On problems: after a turn where two or more tool calls failed, a skill had to skip a required step, or three turns in a row had a failed call; and in the middle of a turn, every 4th failed call (the worker keeps failing: the Oracul reads the attempts and its advice goes into the loop). Always: after every finished reply (slow: the Oracul model runs each time). Needs an Oracul model.", listOf("off" to "Off", "problems" to "On problems", "always" to "Always"), { it.oraculAuto }, { c, v -> c.copy(oraculAuto = v) }),
     soundSetting("Needs you", "Plays when the model waits for you: an approval or a question.", com.arcana.brain.core.ChatSoundEvent.Attention, { it.soundAttention }, { c, v -> c.copy(soundAttention = v) }),
     soundSetting("Reply finished", "Plays when a reply, with all its tool steps, is finished.", com.arcana.brain.core.ChatSoundEvent.Done, { it.soundDone }, { c, v -> c.copy(soundDone = v) }),
     soundSetting("Reply failed", "Plays when a reply ends with an error.", com.arcana.brain.core.ChatSoundEvent.Failed, { it.soundFailed }, { c, v -> c.copy(soundFailed = v) }),
+    toggle(Group.Opinions, "Judge verdict on opinions", "On: after an automatic second opinion the judge model (Settings → Helpers → Judge model; it must be set) says whether the opinion is right: AGREE, PARTLY or DISAGREE and why. One more model run per opinion. Advisory: shown under the opinion, never applied by itself.", { it.oraculVerdict }, { c, v -> c.copy(oraculVerdict = v) }),
+    toggle(Group.Opinions, "Judge automatically", "On: when an automatic second opinion is due (see above), run a full comparison instead of one opinion: the Oracul answers the question too and the judge model compares both answers (as /compare does; the judge is shown as ⚖). Slow: three model runs instead of one, and more tokens. Off: the judge works only on /compare. The Oracul stepping in mid-turn and skill reviewers stay single opinions.", { it.oraculJudgeAuto }, { c, v -> c.copy(oraculJudgeAuto = v) }),
+    choice(Group.Opinions, "Stuck: failed calls", "The main model counts as stuck after this many failed tool calls in one turn (errors, timeouts, commands that exit with an error). The Oracul then reads the attempts and its advice goes into the main model's loop, and again after every further such number. Needs an Oracul model and an automatic setting other than Off.", listOf("0" to "Never", "3" to "After 3", "4" to "After 4", "6" to "After 6", "8" to "After 8"), { it.stuckCalls.toString() }, { c, v -> c.copy(stuckCalls = v.toInt()) }),
+    choice(Group.Opinions, "Stuck: failing turns", "An automatic review is due when this many turns in a row each had a failed tool call, even if each had only one (you keep coming back, the main model keeps failing). Used by On problems.", listOf("0" to "Never", "2" to "After 2", "3" to "After 3", "4" to "After 4", "5" to "After 5"), { it.stuckTurns.toString() }, { c, v -> c.copy(stuckTurns = v.toInt()) }),
+    choice(Group.Flow, "Flow", "A fixed sequence of models that handles every message: the analyst says what is really asked, the planner plans, the worker does it, the reviewer checks. Careful uses the models below (an unset stage takes the Oracul model; the worker is the chat model unless Skill worker is set) and a message under 60 characters goes straight to the worker. Off: the chat model answers, and skills use the role table. Slow and heavy: several models run for each message.", listOf("off" to "Off", "careful" to "Careful"), { it.flow }, { c, v -> c.copy(flow = v) }),
+    Setting(Group.Flow, "Flow analyst", "The model that reads your request first and writes what is really asked, what is unclear and what a good result looks like (needs Flow: Careful). Blank: the Oracul model.", { it.flowAnalyst.ifEmpty { "(the Oracul model)" } }, editor = AnalystRole),
+    Setting(Group.Flow, "Flow controller", "The model that checks the finished answer against your request and the reviewer's notes and says done or redo (needs Flow: Careful). On redo the worker is sent back with what to fix. Blank: the Oracul model.", { it.flowController.ifEmpty { "(the Oracul model)" } }, editor = ControllerRole),
+    Setting(Group.Flow, "Flow check command", "A shell command the flow runs in the project folder after each answer, as an objective check (for example ./gradlew test). Exit code 0: passed, and the controller is told. Anything else: the output goes back to the worker as a redo, without asking a model. It runs WITHOUT asking, so it needs Settings → Tools → shell commands and auto-run to be on; commands Arcana never runs (sudo, rm -r /, …) are refused. Blank: no command.", { it.flowCheckCommand.ifEmpty { "(none)" } }, editor = Editor.Text { c, v -> c.copy(flowCheckCommand = v.trim()) }),
+    stepper(Group.Flow, "Flow redos", "How many times the controller may send the worker back for one message (0 = it only gives its verdict, never a redo). Each redo runs the worker, the reviewer and the controller again, so it is slow. ←/→ step by 1.", 0..Flow.MAX_REDOS, 1, { it.flowRedos }, { c, n -> c.copy(flowRedos = n) }),
+    toggle(Group.Flow, "Specialists as tools", "On: the chat model itself may call the analyst, the planner or the reviewer (the models of Flow analyst, Skill planner, Skill reviewer, else the Oracul model) as a tool called consult, when it finds a task hard or unclear: it writes a brief, the specialist answers, and it carries on. At most 3 times per message, only with tools on. Unlike Flow, the chat model decides when; most messages call nobody.", { it.flowTools }, { c, v -> c.copy(flowTools = v) }),
+    stepper(Group.Flow, "Goal turns", "How many times /goal may continue the work by itself for one goal before it stops (a message of yours resets the count). Each turn runs the worker and the goal check. ←/→ step by 1.", 1..20, 1, { it.goalTurns }, { c, n -> c.copy(goalTurns = n) }),
+    toggle(Group.Skills, "Skill roles", "On: a skill run uses the worker, planner and reviewer the skill names (its worker:, planner:, reviewer: properties) or the role table below. Off: a skill is run by the chat model alone. Independent of Helper models, so you can test one model plus skill roles. /roles in Chat does the same.", { it.skillRolesEnabled }, { c, v -> c.copy(skillRolesEnabled = v) }),
+    choice(Group.Skills, "Roles apply to", "Skills only: the planner, worker and reviewer below run for a message that carries a skill. Every message: they run as a pipeline for all chat (a plan first, for messages of 60 characters or more; the worker answers; the reviewer checks). Slower, but each model does what it is best at. A skill's own properties still win.", listOf("skills" to "Skills only", "all" to "Every message"), { it.rolesScope }, { c, v -> c.copy(rolesScope = v) }),
+    Setting(Group.Skills, "Skill planner", "The model that writes a short plan before a skill starts (the worker then sees it). A skill's own `planner:` property wins. Blank: no plan.", { it.rolePlanner.ifEmpty { "(no plan)" } }, editor = PlannerRole),
+    Setting(Group.Skills, "Skill worker", "The model that runs skills instead of the chat model. A skill's own `worker:` property wins. Blank: the chat model.", { it.roleWorker.ifEmpty { "(the chat model)" } }, editor = WorkerRole),
+    Setting(Group.Skills, "Skill reviewer", "The model that gives a second opinion when a skill's run is done, whatever the automatic setting says. A skill's own `reviewer:` property wins. Blank: none.", { it.roleReviewer.ifEmpty { "(no review)" } }, editor = ReviewerRole),
     choice(Group.Sounds, "Play when", "Away: only while another screen than Chat is showing (you are not looking at the reply). Always: also while you are in Chat.", listOf("away" to "Away from Chat", "always" to "Always"), { it.soundWhere }, { c, v -> c.copy(soundWhere = v) }),
     stepper(Group.Sounds, "Volume", "Volume of system sounds and your own file, in percent (the terminal bell has none). ←/→ step by 10 and play a sample.", 0..100, 10, { it.soundVolume }, { c, n ->
         val next = c.copy(soundVolume = n)
@@ -624,6 +625,7 @@ fun SettingsScreen(app: AppContext) {
                     if (group == Group.Tabs) {
                         TabList(index.coerceIn(0, Screen.sidebar.lastIndex))
                     } else {
+                        if (group.about.isNotEmpty()) { Label(group.about, color = Palette.Muted, wrap = true); VGap() }
                         OptionList(app.config, inGroup, index.coerceIn(0, inGroup.lastIndex))
                     }
                     if (group == Group.Appearance) {
@@ -708,13 +710,34 @@ fun SettingsScreen(app: AppContext) {
 /** The groups as a row of tabs; the one on show is lit. */
 @Composable
 private fun GroupBar(current: Group) {
-    Row {
-        Group.entries.forEach { g ->
-            val on = g == current
-            Label(" ${g.title} ", color = if (on) Palette.Background else Palette.Muted, background = if (on) Palette.Cta else Color.Unspecified, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
-            Label(" ")
+    // the tabs wrap onto more rows instead of running off the edge: none is ever hidden
+    val width = LocalContentWidth.current
+    val rows = mutableListOf(mutableListOf<Group>())
+    var used = 0
+    Group.entries.forEach { g ->
+        val w = g.title.length + 3
+        if (rows.last().isNotEmpty() && used + w > width) { rows.add(mutableListOf()); used = 0 }
+        rows.last().add(g)
+        used += w
+    }
+    Column {
+        rows.forEach { row ->
+            Row {
+                row.forEach { g ->
+                    val on = g == current
+                    Label(" ${g.title} ", color = if (on) Palette.Background else Palette.Muted, background = if (on) Palette.Cta else Color.Unspecified, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
+                    Label(" ")
+                }
+            }
         }
     }
+}
+
+/** A row that does nothing while its switch is off: the helper-model rows (but not the master switch itself or the goal) and the skill-role rows. */
+private fun inactive(config: AppConfig, s: Setting): Boolean = when (s.group) {
+    Group.Helpers, Group.Opinions, Group.Flow -> !config.oraculEnabled && s.label != "Helper models" && s.label != "Goal turns"
+    Group.Skills -> !config.skillRolesEnabled && s.label != "Skill roles"
+    else -> false
 }
 
 @Composable
@@ -724,12 +747,13 @@ private fun OptionList(config: AppConfig, items: List<Setting>, selected: Int) {
     items.forEachIndexed { i, s ->
         val on = i == selected
         val bg = if (on) Palette.Selected else if (i % 2 == 0) Palette.EntryBg else Palette.Surface
-        val value = s.value(config)
+        val off = inactive(config, s)
+        val value = s.value(config) + if (off) "  · off" else ""
         Row(Modifier.fillMaxWidth().background(bg)) {
             Label(if (on) "▌" else " ", color = Palette.Accent)
-            Label(" " + fit(s.label, labelWidth), color = if (on) Palette.Cta else Palette.FieldLabel, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
+            Label(" " + fit(s.label, labelWidth), color = if (on) Palette.Cta else if (off) Palette.Dim else Palette.FieldLabel, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
             Label(if (on && s.step != null) "‹ " else "  ", color = Palette.Muted)
-            Label(if (value.length > valueWidth) value.take(valueWidth - 1) + "…" else value, color = Palette.Text, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
+            Label(if (value.length > valueWidth) value.take(valueWidth - 1) + "…" else value, color = if (off) Palette.Dim else Palette.Text, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
             Label(if (on && s.step != null) " ›" else "", color = Palette.Muted)
         }
     }
