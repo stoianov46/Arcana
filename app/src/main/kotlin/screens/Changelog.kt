@@ -31,6 +31,7 @@ Built on 24–25 October 2026. Last updated 28 October 2026.
 
 ## Models as a pipeline
 - **Flow: Careful** (Settings → Oracul → Flow): every message goes through an **analyst** (what is really asked, what is unclear), a **planner**, the **worker** and a **reviewer**, each its own model. Short messages skip the analysis and the plan. New *Analysis* block in the chat and an *Analyst* line in Usage. First step of the orchestration work.
+- **Library settings** (new Settings → Library page): which view it opens on (**All** by default; it used to keep the last view a link had set, which is why it opened on Tags), the list/preview width, sort order, preview pane on/off and tab counts. *Library as a tree* moved there from Vault.
 - **The whole chat is sent**: *Chat history* is now 0 = everything (it was the last 20 messages): the chat is compacted when the window fills (Auto-compact, 80 %), not cut. The Oracul and the other models see all earlier messages too (up to 30,000 characters). **A config saved before keeps the old 20 until you set Settings → Console → Chat history to 0.**
 - **`/goal <condition>`** (like Claude Code): sets a goal and starts the work; a checker runs after every reply and the work goes on by itself until the goal is met or *Goal turns* (5) are used. `/goal` shows, `/goal clear` drops it.
 - **Judge verdict**: why the judge ran only once: it only ran for `/compare`. Now it also says AGREE / PARTLY / DISAGREE on every automatic opinion (needs a Judge model; Settings → Oracul → Judge verdict on opinions).

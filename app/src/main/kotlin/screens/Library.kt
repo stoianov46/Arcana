@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.arcana.brain.app.AppContext
+import com.arcana.brain.core.AppConfig
 import com.arcana.brain.app.SystemOpen
 import com.arcana.brain.app.design.*
 import com.arcana.brain.app.input.Key
@@ -31,23 +32,31 @@ import com.jakewharton.mosaic.ui.Row
 private enum class LibraryMode { List, Reading, ConfirmDelete, Rename }
 
 /** Notes in view [filter]; [tag] narrows the Tags view to one tag. */
-private fun notesFor(index: VaultIndex, filter: LibraryFilter, tag: String?, inbox: String, staleDays: Int): List<NoteInfo> = when (filter) {
-    LibraryFilter.All -> index.notes.sortedByDescending { it.modified }
+private fun notesFor(index: VaultIndex, filter: LibraryFilter, tag: String?, inbox: String, staleDays: Int, sort: String = "modified"): List<NoteInfo> = when (filter) {
+    LibraryFilter.All -> byDate(index.notes, sort)
     LibraryFilter.Recent -> index.touchedSince(14)
-    LibraryFilter.Inbox -> index.inFolder(inbox).sortedByDescending { it.modified }
+    LibraryFilter.Inbox -> byDate(index.inFolder(inbox), sort)
     LibraryFilter.Orphans -> index.orphans.sortedBy { it.title.lowercase() }
-    LibraryFilter.Untagged -> index.untagged.sortedByDescending { it.modified }
+    LibraryFilter.Untagged -> byDate(index.untagged, sort)
     LibraryFilter.Broken -> index.notes.filter { it.unresolved.isNotEmpty() }.sortedBy { it.title.lowercase() }
     LibraryFilter.Stale -> index.stale(staleDays).sortedBy { it.modified }
-    LibraryFilter.Tags -> if (tag == null) emptyList() else index.notes.filter { tag in it.tags }.sortedByDescending { it.modified }
+    LibraryFilter.Tags -> if (tag == null) emptyList() else byDate(index.notes.filter { tag in it.tags }, sort)
 }
+
+/** The lists that are ordered by date: newest first, or by title when Settings → Library → Sort says so. */
+private fun byDate(notes: List<NoteInfo>, sort: String): List<NoteInfo> =
+    if (sort == "title") notes.sortedBy { it.title.lowercase() } else notes.sortedByDescending { it.modified }
+
+/** The view the Library opens on (Settings → Library → Opens on); All when the setting names none. */
+internal fun defaultLibraryFilter(config: AppConfig): LibraryFilter = LibraryFilter.entries.firstOrNull { it.name.equals(config.libraryTab, ignoreCase = true) } ?: LibraryFilter.All
 
 @Composable
 fun LibraryScreen(app: AppContext) {
     val navigator = LocalNavigator.current
     val index = app.brain.index
     val vault = remember(app.config.vaultPath) { app.openVault() }
-    var filter by remember { mutableStateOf(navigator.libraryFilter) }
+    // a link from the dashboard names its view once; a visit from the sidebar opens the view of Settings → Library → Opens on (it used to keep the last view a link had set)
+    var filter by remember { mutableStateOf(navigator.libraryFilter ?: defaultLibraryFilter(app.config)).also { navigator.libraryFilter = null } }
     var tag by remember { mutableStateOf(navigator.libraryTag.also { navigator.libraryTag = null }) }
     var mode by remember { mutableStateOf(LibraryMode.List) }
     val picker = remember { PickerState() }
@@ -60,7 +69,7 @@ fun LibraryScreen(app: AppContext) {
     val inbox = app.config.inboxFolder
     val staleDays = app.config.staleDays
     val showingTags = filter == LibraryFilter.Tags && tag == null
-    val shown = if (index == null) emptyList() else notesFor(index, filter, tag, inbox, staleDays)
+    val shown = if (index == null) emptyList() else notesFor(index, filter, tag, inbox, staleDays, app.config.librarySort)
     val tags = index?.tagCounts.orEmpty()
     // The notes as a tree of folders (fold with Enter, h, l) unless the user chose the flat list, is typing a filter (matches are listed with their paths) or is in the tag list.
     val tree = app.config.libraryTree && !showingTags && picker.filter.isEmpty()
@@ -92,7 +101,7 @@ fun LibraryScreen(app: AppContext) {
     val currentRow = if (showingTags) null else picker.selected(rows, labelOf)
     val current = (currentRow as? LibraryRow.Note)?.info
     val folder = currentRow as? LibraryRow.Folder
-    val wide = LocalContentWidth.current >= 96
+    val wide = LocalContentWidth.current >= 96 && app.config.libraryPreview
 
     FocusMode(mode == LibraryMode.Rename || (mode == LibraryMode.List && (if (showingTags) tagPicker.filtering else picker.filtering)))
     when (mode) {
@@ -238,7 +247,7 @@ fun LibraryScreen(app: AppContext) {
             LibraryFilter.Stale -> health?.stale
             LibraryFilter.Tags -> health?.tags
         }
-        if (n == null) f.title else "${f.title} $n"
+        if (n == null || !app.config.libraryCounts) f.title else "${f.title} $n"
     }
 
     Stack {
@@ -294,10 +303,11 @@ fun LibraryScreen(app: AppContext) {
             }
             mode == LibraryMode.Reading && current != null && !wide -> Panel(current.title) { NotePreview(app, vault.getOrNull(), index, current, preview, previewRows) }
             wide -> {
-                val left = ((width - 1) * 30 / 100).coerceAtLeast(28)
+                val percent = app.config.libraryListPercent.coerceIn(20, 60)
+                val left = ((width - 1) * percent / 100).coerceAtLeast(28)
                 val right = (width - 1 - left).coerceAtLeast(30)
                 Row(Modifier.fillMaxWidth()) {
-                    Box(Modifier.weight(0.30f)) {
+                    Box(Modifier.weight(percent / 100f)) {
                         CompositionLocalProvider(LocalContentWidth provides left) {
                             Panel(if (showingTags) "Tags" else "Notes · ${shown.size}", Modifier.height(listRows + 3), accent = if (mode == LibraryMode.List) Palette.Accent else Palette.Dim) {
                                 NoteList(showingTags, tags, tagPicker, shown, rows, labelOf, picker, listRows, filter)
@@ -305,7 +315,7 @@ fun LibraryScreen(app: AppContext) {
                         }
                     }
                     HGap()
-                    Box(Modifier.weight(0.70f)) {
+                    Box(Modifier.weight((100 - percent) / 100f)) {
                         CompositionLocalProvider(LocalContentWidth provides right) {
                             Panel(current?.title ?: "Preview", Modifier.height(listRows + 3), accent = if (mode == LibraryMode.Reading) Palette.Accent else Palette.Dim) {
                                 if (folder != null) FolderSummary(folder) else if (current == null) Hint("Choose a note to see its links and content.") else NotePreview(app, vault.getOrNull(), index, current, preview, previewRows)

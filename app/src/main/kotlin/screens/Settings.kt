@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
 private const val PRUNE_DAYS = 30
 
 private enum class Group(val title: String) {
-    Ollama("Ollama"), Vault("Vault"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Oracul("Oracul"), Sounds("Sounds"), Storage("Storage"), Accessibility("Accessibility"), Tabs("Tabs"),
+    Ollama("Ollama"), Vault("Vault"), Library("Library"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Oracul("Oracul"), Sounds("Sounds"), Storage("Storage"), Accessibility("Accessibility"), Tabs("Tabs"),
 }
 
 /** How Enter edits a setting that is not simply stepped with ←/→. */
@@ -175,7 +175,7 @@ private val settings: List<Setting> = listOf(
         Group.Vault, "Vault path", "Your Obsidian vault folder. Enter opens a folder browser.",
         value = { it.vaultPath.ifEmpty { "(not set)" } }, editor = Editor.Folder,
     ),
-    toggle(Group.Vault, "Library as a tree", "The Library shows your notes as folders that fold and unfold (Enter or h / l). Off: one flat list with the full path of every note. You can also press t in the Library.", { it.libraryTree }, { c, v -> c.copy(libraryTree = v) }),
+    toggle(Group.Library, "Library as a tree", "The Library shows your notes as folders that fold and unfold (Enter or h / l). Off: one flat list with the full path of every note. You can also press t in the Library.", { it.libraryTree }, { c, v -> c.copy(libraryTree = v) }),
     text(Group.Vault, "Output folder", "What Arcana writes FOR you (AI notes, saved chats, session summaries) goes to this visible folder inside the vault. Reports and research from skills go to the folders their skills name (for example Reports/…). Arcana's own working files (skills, the memory file) are not content and live apart, hidden: see the next three rows. Empty = the vault root.", { it.outputFolder }, { c, v -> c.copy(outputFolder = v.trim('/')) }, allowEmpty = true),
     Setting(
         Group.Vault, "Where Arcana's own files are (this vault)", "Arcana's working files for THIS vault live in the hidden folder .arcana/ inside it (Obsidian, the note search and the graph do not show it): skills in .arcana/skills/ and the memory file .arcana/ARCANA.md. An older vault that still has Skills/ or a root ARCANA.md keeps using them until you run arcana --migrate in a terminal (it moves them, never overwrites). Show hidden files in Finder with Cmd+Shift+. This row only shows the place; change it with the Skills folder and Memory file path settings.",
@@ -208,6 +208,11 @@ private val settings: List<Setting> = listOf(
     toggle(Group.Console, "Answer from vault", "Chat searches your notes for each question and answers from what it finds, citing the notes. You can also switch this per chat with /vault.", { it.chatUseVault }, { c, v -> c.copy(chatUseVault = v) }),
     toggle(Group.Console, "Render Markdown", "On: headings, bullets and code are drawn as such. Off: the model's text exactly as written.", { it.renderMarkdown }, { c, v -> c.copy(renderMarkdown = v) }),
     toggle(Group.Console, "Confirm before cancelling", "On: Esc during a reply asks \"Cancel this reply?\" (Enter = yes, any other key = keep going), so a stray Esc never throws a reply away. Off: Esc cancels at once.", { it.confirmCancel }, { c, v -> c.copy(confirmCancel = v) }),
+    choice(Group.Library, "Opens on", "The view the Library shows when you open it from the sidebar. A link from the Brain screen (for example the inbox count) still opens its own view once.", listOf("all" to "All", "recent" to "Recent", "inbox" to "Inbox", "orphans" to "No links", "untagged" to "No tags", "broken" to "Broken links", "stale" to "Stale", "tags" to "Tags"), { it.libraryTab }, { c, v -> c.copy(libraryTab = v) }),
+    stepper(Group.Library, "List width", "How much of a wide Library the notes list takes, in percent; the preview gets the rest (a window under 96 columns shows one pane at a time). ←/→ step by 5.", 20..60, 5, { it.libraryListPercent }, { c, n -> c.copy(libraryListPercent = n) }, unit = " %"),
+    choice(Group.Library, "Sort by", "How the lists ordered by date (All, Inbox, No tags, a tag) are ordered: newest first, or by title A to Z. No links, Broken links and Stale keep their own order.", listOf("modified" to "Newest first", "title" to "Title A–Z"), { it.librarySort }, { c, v -> c.copy(librarySort = v) }),
+    toggle(Group.Library, "Preview pane", "On: a wide window shows the note beside the list. Off: the list takes the whole width and Enter opens the note.", { it.libraryPreview }, { c, v -> c.copy(libraryPreview = v) }),
+    toggle(Group.Library, "Tab counts", "Show how many notes each tab holds (All 120, Inbox 3).", { it.libraryCounts }, { c, v -> c.copy(libraryCounts = v) }),
     toggle(Group.Console, "Show thinking", "Show \"<model> is thinking…\" while a reasoning model works before its first words.", { it.showThinking }, { c, v -> c.copy(showThinking = v) }),
     choice(Group.Console, "Comparison view", "How /compare shows the answers in Chat. Side by side: the main model's answer and the Oracul models' answers in columns, each under a coloured name, the verdict below across the whole width (needs a window of about 80 columns for two answers, 120 for three, else they stack). Stacked: one under another.", listOf("side" to "Side by side", "stacked" to "Stacked"), { it.comparisonView }, { c, v -> c.copy(comparisonView = v) }),
     toggle(Group.Console, "Thinking pane", "A split window under the Chat conversation that follows what a reasoning model is thinking while it works (and shows its last thoughts when idle), so you can watch its reasoning without it filling the conversation. Needs a model that can think (the model list in Settings → Ollama says so) and a terminal at least 26 rows tall; /thinking in Chat toggles it. Off by default.", { it.thinkingPane }, { c, v -> c.copy(thinkingPane = v) }),

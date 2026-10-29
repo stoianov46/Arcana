@@ -166,6 +166,16 @@ data class AppConfig(
     val skillsFolder: String = "",
     /** The Library lists its notes as a tree of folders that fold and unfold (off: one flat list with the full paths). */
     val libraryTree: Boolean = true,
+    /** The view the Library opens on from the sidebar: a [LibraryFilter] name in lower case (`all`, `recent`, `inbox`, `orphans`, `untagged`, `broken`, `stale`, `tags`). */
+    val libraryTab: String = "all",
+    /** How much of a wide Library the list takes, in percent (the preview gets the rest). */
+    val libraryListPercent: Int = 30,
+    /** How the lists that are ordered by date are ordered: "modified" (newest first) or "title" (A to Z). */
+    val librarySort: String = "modified",
+    /** Show the note preview beside the list in a wide window (off: the list takes the whole width and Enter opens the note). */
+    val libraryPreview: Boolean = true,
+    /** Show the number of notes in each Library tab (`All 120`). */
+    val libraryCounts: Boolean = true,
     /** What select mode copies: "markdown" (as written) or "plain" (Markdown markers removed). */
     val copyAs: String = "markdown",
     val summaryPrompt: String = "Summarize the following note. Start with a one-sentence TL;DR, " +

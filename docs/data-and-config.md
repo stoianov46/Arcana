@@ -63,6 +63,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `toolFolders` | `""` | Settings → Tools → *Allowed folders* (was *Extra folders*): `;`-separated roots the file tools may read and write besides the vault, `~` expanded (the only place a home or hidden folder can be allowed) |
 | `toolAutoRead` | true | read-only tools run without asking |
 | `skillsEnabled` / `skillsFolder` | true / `` (automatic) | the model is told which skills exist and gets `use_skill`; the vault folder with one folder per skill. Blank = `Layout.skillsFolder`: `.arcana/skills`, or an existing `Skills/`; a name set here wins |
+| `libraryTab` / `libraryListPercent` / `librarySort` / `libraryPreview` / `libraryCounts` | `all` / 30 / `modified` / true / true | Settings → Library: the view the Library opens on from the sidebar, the list's share of a wide window (20-60 %), the order of the lists sorted by date (`modified` or `title`), the preview pane, the counts in the tabs |
 | `libraryTree` | true | the Library lists notes as a tree of folders that fold and unfold (false: one flat list with full paths) |
 | `repeatMemorySeconds` | 45 | how long an identical read, search or web fetch of the current question is answered from memory (0 = off); Settings → Tools → *Remember repeated reads* |
 | `thinkingPane` / `thinkingPaneRows` | false / 6 | the split window that follows the model's thinking (Settings → Console → *Thinking pane*, `/thinking`) and how many rows (3-15) it shows |

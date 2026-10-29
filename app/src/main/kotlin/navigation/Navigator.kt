@@ -145,8 +145,8 @@ class Navigator {
     /** What the Session screen should do as it opens: set by the palette, read once. */
     var sessionIntent by mutableStateOf<String?>(null)
 
-    /** What the Library should show when it opens: set by [openLibrary], read by the Library. */
-    var libraryFilter by mutableStateOf(LibraryFilter.All)
+    /** What the Library should show when it opens: set by [openLibrary], read (and cleared) by the Library; null = the view of Settings → Library → Opens on. */
+    var libraryFilter by mutableStateOf<LibraryFilter?>(null)
     var libraryNote by mutableStateOf<String?>(null)
 
     /** For the Tags view: the tag whose notes to show straight away. */

@@ -1,7 +1,10 @@
 package com.arcana.brain.app
 
 import com.arcana.brain.app.design.ActionItem
+import com.arcana.brain.app.navigation.LibraryFilter
 import com.arcana.brain.app.screens.SlashCommands
+import com.arcana.brain.app.screens.defaultLibraryFilter
+import com.arcana.brain.core.AppConfig
 import com.arcana.brain.app.screens.splitSlash
 import com.arcana.brain.app.screens.columnCount
 import com.arcana.brain.app.screens.sideBySide
@@ -652,5 +655,13 @@ class DesignTest {
         assertTrue(asking.parts[1].text.contains("small waiting"))
         assertTrue(com.arcana.brain.app.screens.modelsSegment("◆ small", "jdg", config, false, 120).parts[0].text.contains("⚖ jdg"))
         assertEquals(1, com.arcana.brain.app.screens.modelsSegment("◆ small", "big", config, false, 20).parts.size, "narrow: only the pill")
+    }
+
+    @Test
+    fun theLibraryOpensOnTheViewOfItsSettingAndAllWhenItNamesNone() {
+        assertEquals(LibraryFilter.All, defaultLibraryFilter(AppConfig()))
+        assertEquals(LibraryFilter.Tags, defaultLibraryFilter(AppConfig(libraryTab = "tags")))
+        assertEquals(LibraryFilter.Orphans, defaultLibraryFilter(AppConfig(libraryTab = "ORPHANS")))
+        assertEquals(LibraryFilter.All, defaultLibraryFilter(AppConfig(libraryTab = "nonsense")))
     }
 }

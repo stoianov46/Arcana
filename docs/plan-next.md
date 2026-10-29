@@ -84,6 +84,8 @@ Size: S under half a day, M about a day, L several days, XL a week or more (roug
 
 ## N8. Library: default tab and settings
 
+**Status: done.** The "default tab Tags" was a bug, not a default: the Library kept the filter a Brain link had set, so after one such link every sidebar visit opened on it. Now the link names its view once and the sidebar opens on *Settings → Library → Opens on* (All).
+
 **Proposal.**
 - The default tab is **All** instead of **Tags**.
 - A *Library* group in Settings with options such as: default tab, list/content width split (now fixed 30 % / 70 %, roadmap #33), default sort order, show note previews, show the tag count.
