@@ -69,7 +69,7 @@ trigger ──► model/server resolved ──► request built ──► (tool 
 - **Concurrency guard:** `consulting` (the model being asked) is non-null while any consultation runs; a second one is refused
   ("The Oracul is already working"). The bottom bar and the Chat status bar read it.
 - **Usage:** every request is recorded under the model that spent the tokens, as feature `Oracul` (opinions, its answers in a comparison,
-  takeovers, stepping in), `Judge` (the verdict) `Analyst` (the flow's analysis) or `Planner` (the plan): `app.recordUsage(feature, chunk, model)`. The usage file keeps them, so
+  takeovers, stepping in), `Judge` (the verdict) `Analyst` (the flow's analysis), `Controller` (its verdict) or `Planner` (the plan): `app.recordUsage(feature, chunk, model)`. The usage file keeps them, so
   *how many times each was called* survives restarts; Usage → By feature shows them, Usage → Breakdown has a panel *Oracul, Planner, Judge* (`UsageStats.advisors`, `AdvisorsPanel`: calls, tokens, share of all tokens, average time, models) and `chat_stats` reports them (`ChatStats.spendLines`: spend per
   model and in total, and the all-time call counts). Its tool calls go in the tool statistics.
 
@@ -132,16 +132,24 @@ runs unless *Flow* is set (`AppConfig.flow`).
 | Planner | `rolePlanner`, else the Oracul model | the plan, now also shown the analysis | `Ψ Plan · <model>` |
 | Worker | `roleWorker`, else the chat model | answers, with tools as usual | the answer |
 | Reviewer | `roleReviewer`, else the Oracul model | the second opinion when the run is done, whatever `oraculAuto` says | `Ψ Second opinion · <model>` |
+| Controller | `flowController`, else the Oracul model | reads the request, the analysis, the answer and the review and says `VERDICT: DONE` or `VERDICT: REDO` with what must change; no tools | `Ψ Control · <model>` (`Verdict: done` / `Verdict: redo`) |
 
 - **No second way to run a model.** The planner, worker and reviewer are applied through the roles of a skill run (`Flow.roles()` feeds
   `SkillRoles.withDefaults`; a skill's own properties still win). Only the analyst is new: `ChatSession.analyse` runs before `plan` in the first round's
   `prepare`, adds an *analysis block* (a user message, like a plan: `Oracul.MARK_ANALYSIS`, `isAnalysis`; advice, **not** a review, so `/revise` ignores it) and
   passes its text to `Oracul.planRequest(..., analysis)`.
-- **Short messages** (under `PLAN_MIN_CHARS` = 60) are neither analysed nor planned, so "thanks" costs one model run. A skill chip is always planned.
+- **Short messages** (under `PLAN_MIN_CHARS` = 60) are neither analysed, planned, reviewed nor checked, so "thanks" costs one model run. A skill chip is always planned.
+- **The loop (redo).** After the reviewer, `ChatSession.control` asks the controller (`maybeConsult` runs reviewer then controller as one job, `autoConsult`, so Esc and a new message cancel
+  it). `Oracul.parseControl` takes the first `VERDICT: DONE|REDO`; **text without one counts as done**, so a confused model never starts a loop. On *redo* the worker is sent back
+  with `Oracul.REDO_PROMPT` (a user message, like `/revise`; the verdict block is in its history) and the answer is reviewed and checked again. At most `flowRedos` (default 2, at most
+  `Flow.MAX_REDOS` = 5, 0 = verdict only) redos per message of the user (`flowRedos` in `ChatSession`, reset by a real message); when the limit is reached the last answer stands and a toast says so.
+  A redo is the worker's own turn: same models, **no new analysis or plan** (`prepare` checks for `REDO_PROMPT`), and `Oracul.lastExchange` skips the redo and revise prompts so the
+  reviewer and controller still see the user's original request.
+- **The controller's check is a model's opinion, not proof** (see the caveats above); an objective check (a command's exit code) is the next step of the plan.
 - **Failures are notes.** An analyst that is not installed, returns nothing or fails leaves the analysis out (`roleNote`, a toast); the rest goes on.
-- **Usage:** feature `Analyst` (Usage → Breakdown panel *Oracul, Analyst, Planner, Judge*, `chat_stats`).
+- **Usage:** features `Analyst` and `Controller` (Usage → Breakdown panel *Oracul, Analyst, Planner, Controller, Judge*, `chat_stats`).
 - **Cost:** up to four model runs per message, and on a local machine several large models swap in and out of memory (the memory advice in Settings applies to the
-  analyst too). Not built yet: the controller and the redo loop (N10 step 2), `/flow <name>`, more presets and a router.
+  analyst too). Not built yet: command-based checks, `/flow <name>`, more presets and a router.
 
 ## Interface
 
@@ -174,7 +182,7 @@ runs unless *Flow* is set (`AppConfig.flow`).
 | `oraculContextMessages` / `oraculContextChars` | `6` / `1500` | how many earlier chat messages, and how many characters of each, the Oracul, judge and planner are shown besides the last question (Settings → Oracul → Chat context); 0 messages = none |
 | `oraculJudgeAuto` | `false` | when an automatic opinion is due, run `compare()` (Oracul answer plus judge verdict) instead; mid-turn stuck advice and skill reviewers stay single opinions |
 | `oraculTools` | `true` | the Oracul may use the worker's tools |
-| `flow` / `flowAnalyst` | `off` / blank | the selected flow (`off`, `careful`) and the analyst's model (blank = the Oracul model); while a flow is on the role table applies to every message |
+| `flow` / `flowAnalyst` / `flowController` / `flowRedos` | `off` / blank / blank / `2` | the selected flow (`off`, `careful`), the models of its analyst and controller (blank = the Oracul model) and how many redos the controller may ask for (0–5); while a flow is on the role table applies to every message |
 | `rolesScope` | `skills` | `skills` or `all`: with `all` the role table also runs for messages without a skill (`ChatSession.applyRoles(null)`; no plan under `PLAN_MIN_CHARS` = 60 characters) |
 | `rolePlanner` / `roleWorker` / `roleReviewer` | blank | the role table for skill runs |
 | `comparisonView` | `side` | `side` or `stacked` |

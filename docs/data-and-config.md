@@ -69,7 +69,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `oldToolOutput` | `whole` | tool results from earlier questions are sent as they were (`whole`) or cut to 1,200 characters with a marker (`shorten`); Settings → Tools → *Old tool output* |
 | `toolSteps` | 8 | max tool rounds per question (1–60); at the limit `stepLimit` decides |
 | `stepLimit` | `ask` | at the step limit: `ask` shows a dialog offering that many more steps, `auto` gives them at once (up to `STEP_LIMIT_AUTO_ROUNDS` = 3 times per question, logged in the session, then it asks), `stop` makes the model answer with what it has. Each change, command and web address inside the extra steps keeps its own approval |
-| `flow` / `flowAnalyst` | `off` / `` | the selected flow (`off`, `careful`) and the model of its analyst stage (blank = the Oracul model); see [oracul.md](oracul.md#flows-orchestration) |
+| `flow` / `flowAnalyst` / `flowController` / `flowRedos` | `off` / `` / `` / `2` | the selected flow (`off`, `careful`), the models of its analyst and controller stages (blank = the Oracul model) and how many redos the controller may ask for (0-5); see [oracul.md](oracul.md#flows-orchestration) |
 | `rolesScope` | `skills` | `skills` or `all`: where the role table below applies (only a run with a skill, or every message) |
 | `rolePlanner` / `roleWorker` / `roleReviewer` | `` | the role table for skill runs (Settings → Oracul → Skill planner / worker / reviewer): used when a skill does not name its own (`SkillRoles.withDefaults`); blank = not used |
 | `oraculExtra` | `` | more models that answer a `/compare` besides the Oracul model, comma-separated (`Oracul.models`; the Settings picker ticks them with Space); the judge compares every answer |

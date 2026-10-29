@@ -142,6 +142,12 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private var runWorker: String? = null
     private var runReviewer: String? = null
 
+    /** True while the selected flow handles this message and ends with the controller's check; false for a short message that goes straight to the worker. */
+    private var flowControl = false
+
+    /** How many times the controller has sent the worker back for the message being worked on; reset by a message of the user. */
+    private var flowRedos = 0
+
     /** What the skill's roles did that the user should know (a model that is not installed, or cannot call tools); the Chat shows it once. */
     var roleNote by androidx.compose.runtime.mutableStateOf<String?>(null)
 
@@ -200,8 +206,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      */
     private suspend fun analyse(flow: Flow, question: String): String {
         val analyst = flow.model(StageKind.Analyst).ifEmpty { return "" }
-        val onOracul = if (app.config.oraculUrl.isBlank()) runCatching { app.client.listModels() }.getOrNull() else runCatching { clientFor("").listModels() }.getOrNull()
-        if (onOracul != null && onOracul.none { it == analyst || it == "$analyst:latest" }) { roleNote = "The analyst $analyst is not installed: the flow goes on without an analysis."; return "" }
+        if (missingOnOracul(analyst)) { roleNote = "The analyst $analyst is not installed: the flow goes on without an analysis."; return "" }
         consulting = analyst
         try {
             val text = Oracul.ask(clientFor(analyst), Oracul.analysisRequest(question, oraculBackground())) { app.recordUsage("Analyst", it, analyst) }
@@ -218,7 +223,44 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }
     }
 
-    private fun clearRoles() { runWorker = null; runReviewer = null }
+    /** True when [model] is known not to be installed on the server the Oracul's models run on; false when it is, or when the list cannot be read. */
+    private suspend fun missingOnOracul(model: String): Boolean {
+        val installed = runCatching { (if (app.config.oraculUrl.isBlank()) app.client else clientFor("")).listModels() }.getOrNull() ?: return false
+        return installed.none { it == model || it == "$model:latest" }
+    }
+
+    /**
+     * The controller stage of the selected [Flow], after the reviewer: its model reads the request, the analysis, the answer and the review and says `done` or
+     * `redo`. The verdict is added to the chat as a block. On `redo` the worker is sent back with [Oracul.REDO_PROMPT] (the verdict is in its history), at most
+     * [Flow.redos] times per message of the user; an answer that is still refused then stands, with a note. A failure, an empty text or an unreadable verdict never starts a loop.
+     */
+    private suspend fun control(flow: Flow) {
+        val controller = flow.model(StageKind.Controller).ifEmpty { return }
+        val (question, answer) = Oracul.lastExchange(messages.toList()) ?: return
+        if (missingOnOracul(controller)) { roleNote = "The controller $controller is not installed: the answer stands without a check."; return }
+        val all = messages.toList()
+        val review = all.lastOrNull { Oracul.isReview(it) }?.let { Oracul.body(it) }.orEmpty()
+        val analysis = all.lastOrNull { Oracul.isAnalysis(it) }?.let { Oracul.body(it) }.orEmpty()
+        consulting = controller
+        try {
+            val text = Oracul.ask(clientFor(controller), Oracul.controlRequest(question, answer, review, analysis, oraculBackground())) { app.recordUsage("Controller", it, controller) }
+            if (text.isEmpty()) { roleNote = "$controller returned an empty verdict: the answer stands."; return }
+            val verdict = Oracul.parseControl(text)
+            add(Oracul.controlMessage(controller, verdict))
+            if (verdict.done) return
+            if (flowRedos >= flow.redos) { if (flow.redos > 0) roleNote = "The controller still wanted a redo after ${flow.redos} tries: the last answer stands."; return }
+            flowRedos++
+            app.scope.launch { yield(); send(Oracul.REDO_PROMPT) }
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            roleNote = "The controller $controller failed (${e.message}): the answer stands."
+        } finally {
+            consulting = null
+        }
+    }
+
+    private fun clearRoles() { runWorker = null; runReviewer = null; flowControl = false }
 
     private fun startSkillRun(name: String, requirements: List<Requirement>) {
         skillRun = if (requirements.isEmpty()) null else SkillRun(name, requirements)
@@ -910,6 +952,15 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** After a finished reply: ask for a second opinion by itself when the settings say a turn like this deserves one. A failure is ignored. */
     private fun maybeConsult() {
         val config = app.config
+        // the flow: the reviewer (when it has a model), then the controller, whatever the automatic setting says
+        val flow = Flow.of(config)
+        if (flow != null && flowControl && consulting == null) {
+            autoConsult = app.scope.launch {
+                runReviewer?.let { runCatching { secondOpinion(it) } }
+                control(flow)
+            }
+            return
+        }
         // a skill that names a reviewer asks for the review itself, whatever the automatic setting says
         runReviewer?.let { reviewer -> if (consulting == null) autoConsult = app.scope.launch { runCatching { secondOpinion(reviewer) } }; return }
         // the Oracul already stepped in during this turn because the worker kept failing: one consultation per turn is enough
@@ -1004,13 +1055,20 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val chipEntry = history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }
             // a selected flow, or the role table for every message, runs for plain messages too (a short message is neither analysed nor planned)
             val flow = Flow.of(app.config)
+            // the controller's redo is the worker's own turn: same models, no new analysis or plan
+            val redo = body.startsWith(Oracul.REDO_PROMPT)
+            if (!redo) flowRedos = 0
+            val planned = !redo && (chipEntry != null || body.length >= PLAN_MIN_CHARS)
             val planner = when {
                 chipEntry != null -> applyRoles(chipEntry)
                 flow != null || app.config.rolesScope == "all" -> applyRoles(null)
                 else -> null
             }
-            val analysis = if (flow != null && body.length >= PLAN_MIN_CHARS) analyse(flow, body) else ""
-            if (planner != null && (chipEntry != null || body.length >= PLAN_MIN_CHARS)) plan(planner, chipEntry, body, analysis)
+            // a short message of a flow goes straight to the worker: no review and no check either
+            flowControl = flow != null && (redo || planned)
+            if (flow != null && !flowControl) runReviewer = null
+            val analysis = if (flow != null && planned && body.length >= PLAN_MIN_CHARS) analyse(flow, body) else ""
+            if (planner != null && planned) plan(planner, chipEntry, body, analysis)
             // a nearly full window: summarize the older part first, so this question is not sent with a chat that no longer fits
             if (autoCompactDue(messages.toList())) runCatching { compact() }
             val history = Compaction.forModel(messages.toList())

@@ -19,6 +19,9 @@ object Oracul {
     /** What the flow's analyst wrote before the planner: the task restated, what is unclear, what a good result looks like. Advice for the later stages, like a plan. */
     const val MARK_ANALYSIS = "[Analysis"
 
+    /** The flow's controller deciding whether the answer is good enough: `Verdict: done` or `Verdict: redo` with what must change. */
+    const val MARK_CONTROL = "[Control"
+
     /** What [AppConfig.oraculAuto] may be. */
     val AUTO_MODES = listOf("off", "problems", "always")
 
@@ -64,18 +67,21 @@ object Oracul {
     /** The model that judges a comparison: its own setting, else the Oracul model. */
     fun judge(config: AppConfig): String = config.judgeModel.trim().ifEmpty { model(config) }
 
-    fun isOpinion(message: ChatMessage): Boolean = message.role == "user" && (message.content.startsWith(MARK) || message.content.startsWith(MARK_COMPARE) || message.content.startsWith(MARK_PLAN) || message.content.startsWith(MARK_ANALYSIS))
+    fun isOpinion(message: ChatMessage): Boolean = message.role == "user" && (message.content.startsWith(MARK) || message.content.startsWith(MARK_COMPARE) || message.content.startsWith(MARK_PLAN) || message.content.startsWith(MARK_ANALYSIS) || message.content.startsWith(MARK_CONTROL))
 
     fun isPlan(message: ChatMessage): Boolean = message.role == "user" && message.content.startsWith(MARK_PLAN)
 
     fun isAnalysis(message: ChatMessage): Boolean = message.role == "user" && message.content.startsWith(MARK_ANALYSIS)
 
-    /** A second opinion or a comparison: an Oracul block that [REVISE_PROMPT] can act on (a plan or an analysis is not one). */
-    fun isReview(message: ChatMessage): Boolean = isOpinion(message) && !isPlan(message) && !isAnalysis(message)
+    fun isControl(message: ChatMessage): Boolean = message.role == "user" && message.content.startsWith(MARK_CONTROL)
+
+    /** A second opinion or a comparison: an Oracul block that [REVISE_PROMPT] can act on (a plan, an analysis or a control verdict is not one). */
+    fun isReview(message: ChatMessage): Boolean = isOpinion(message) && !isPlan(message) && !isAnalysis(message) && !isControl(message)
 
     /** What the worker is told about a plan, in the plan block itself. */
     private const val PLAN_INTRO = "A planner (another model) wrote this plan for the task. Follow it where it is right; if a step is wrong, say why in one line and do the right thing."
     private const val ANALYSIS_INTRO = "An analyst (another model) read the user's request before the work began. Use it to see what is really asked; if it is wrong, say why in one line and do the right thing."
+    private const val CONTROL_INTRO = "A controller (another model) checked your last answer against the request:"
     private const val REVIEW_INTRO = "A reviewer (another model) read your last answer and says:"
 
     /** Said to the worker after a reviewer's intro: the reviewer saw only part of the conversation, so it can be wrong about what the user meant. */
@@ -91,6 +97,38 @@ object Oracul {
         ChatMessage.system(ANALYSIS_INSTRUCTIONS),
         ChatMessage.user(earlier(background) + "REQUEST:\n${question.trim().take(MAX_PART)}"),
     )
+
+    /** What a controller decided: [done] = the answer stands; otherwise [notes] say what must change. */
+    data class Control(val done: Boolean, val notes: String)
+
+    fun controlMessage(model: String, control: Control): ChatMessage =
+        ChatMessage.user("$MARK_CONTROL · $model]\n$CONTROL_INTRO\n\nVerdict: ${if (control.done) "done" else "redo"}" + if (control.notes.isBlank()) "" else "\n\n${control.notes.trim()}")
+
+    const val CONTROL_INSTRUCTIONS = "You are the controller of a team of assistants. You are given a request, what a good result looks like (when an analyst wrote it), an answer and what a " +
+        "reviewer said about it. Decide whether the answer is good enough to give to the user. Answer DONE unless there is a real error, a missing part of the request or a claim " +
+        "that was not checked; do not ask for redoing because of style. Your first line must be exactly `VERDICT: DONE` or `VERDICT: REDO`. After REDO, list in at most 5 short lines what " +
+        "must change. After DONE you may add one line. Keep the language of the request."
+
+    /** The controller's verdict from its text: the first `VERDICT: DONE|REDO` decides; a text without one counts as done, so a confused model never starts a loop. */
+    fun parseControl(text: String): Control {
+        val match = Regex("VERDICT:\\s*(DONE|REDO)", RegexOption.IGNORE_CASE).find(text) ?: return Control(true, text.trim())
+        val notes = text.substring(match.range.last + 1).trimStart('.', ':', ' ').trim()
+        return Control(match.groupValues[1].equals("DONE", ignoreCase = true), notes)
+    }
+
+    fun controlRequest(question: String, answer: String, review: String, analysis: String, background: String = ""): List<ChatMessage> = listOf(
+        ChatMessage.system(CONTROL_INSTRUCTIONS),
+        ChatMessage.user(
+            earlier(background) + "REQUEST:\n${question.trim().take(MAX_PART)}" +
+                (if (analysis.isBlank()) "" else "\n\nWHAT A GOOD RESULT LOOKS LIKE (analyst):\n${analysis.trim().take(MAX_PART)}") +
+                "\n\nANSWER:\n${answer.trim().take(MAX_PART)}" +
+                (if (review.isBlank()) "" else "\n\nWHAT THE REVIEWER SAID:\n${review.trim().take(MAX_PART)}"),
+        ),
+    )
+
+    /** What the worker is told when the controller wants a redo: the verdict is already in its history. */
+    const val REDO_PROMPT = "The controller says your last answer is not good enough yet (see its verdict above). Fix what it names, use your tools to check where you need to, " +
+        "and give the complete corrected answer."
 
     fun planMessage(model: String, plan: String): ChatMessage = ChatMessage.user("$MARK_PLAN · $model]\n$PLAN_INTRO\n\n${plan.trim()}")
 
@@ -173,7 +211,7 @@ object Oracul {
     }
 
     /** An Oracul message as the reader sees it: without the line that is addressed to the worker model. */
-    fun body(message: ChatMessage): String = text(message).removePrefix(REVIEW_INTRO).removePrefix(PLAN_INTRO).removePrefix(ANALYSIS_INTRO).removePrefix(STUCK_INTRO).trim().removePrefix(CAVEAT).trim()
+    fun body(message: ChatMessage): String = text(message).removePrefix(REVIEW_INTRO).removePrefix(PLAN_INTRO).removePrefix(ANALYSIS_INTRO).removePrefix(CONTROL_INTRO).removePrefix(STUCK_INTRO).trim().removePrefix(CAVEAT).trim()
 
     /** An Oracul message without its first line. */
     fun text(message: ChatMessage): String = message.content.substringAfter('\n', "").trim()
@@ -328,7 +366,7 @@ object Oracul {
     fun lastExchange(messages: List<ChatMessage>): Pair<String, String>? {
         val answerAt = messages.indexOfLast { it.role == "assistant" && it.content.isNotBlank() && it.toolCalls.isEmpty() }
         if (answerAt < 0) return null
-        val question = messages.subList(0, answerAt).lastOrNull { it.role == "user" && !isOpinion(it) && !Compaction.isSummary(it) } ?: return null
+        val question = messages.subList(0, answerAt).lastOrNull { it.role == "user" && !isOpinion(it) && !Compaction.isSummary(it) && !it.content.startsWith(REDO_PROMPT) && !it.content.startsWith(REVISE_PROMPT) } ?: return null
         return question.content to messages[answerAt].content
     }
 

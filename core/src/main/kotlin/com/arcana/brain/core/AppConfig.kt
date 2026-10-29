@@ -97,6 +97,10 @@ data class AppConfig(
     val flow: String = "off",
     /** The model of the flow's analyst stage; blank = the Oracul model. */
     val flowAnalyst: String = "",
+    /** The model of the flow's controller stage; blank = the Oracul model. */
+    val flowController: String = "",
+    /** How many times the controller may send the worker back to redo an answer (0 = it only gives its verdict). */
+    val flowRedos: Int = 2,
     /** More models that answer a comparison (`/compare`) besides the Oracul model, comma-separated; the judge then compares all the answers. */
     val oraculExtra: String = "",
     /** Another Ollama server for the Oracul and the judge (a bigger machine on your network); blank = the same server as the main model. */

@@ -25,7 +25,7 @@ val CHAT_STATS_DEFINITION: JsonObject = buildJsonObject {
 /** What the current chat has used, worded for the model. */
 object ChatStats {
     /** The features that belong to the other models, in the order they are listed: the Oracul (opinions, answers, takeovers, stepping in), the judge, the planner. */
-    private val ORACUL_FEATURES = listOf("Oracul", "Judge", "Analyst", "Planner")
+    private val ORACUL_FEATURES = listOf("Oracul", "Judge", "Analyst", "Planner", "Controller")
 
     /**
      * Token spend per model and in total, from the Usage records: [session] (since Arcana started, every chat and feature) broken down by model with
@@ -61,12 +61,14 @@ object ChatStats {
         val comparisons = messages.filter { it.role == "user" && it.content.startsWith(Oracul.MARK_COMPARE) }
         val plans = messages.filter { Oracul.isPlan(it) }
         val analyses = messages.filter { Oracul.isAnalysis(it) }
+        val controls = messages.filter { Oracul.isControl(it) }
         val takeovers = messages.filter { it.role == "assistant" && it.content.startsWith(Oracul.TAKEOVER_MARK) }
         fun models(list: List<ChatMessage>, name: (ChatMessage) -> String) = list.map(name).groupingBy { it }.eachCount().entries.joinToString(", ") { if (it.value > 1) "${it.key} ×${it.value}" else it.key }
         return buildList {
             if (setup.isNotEmpty()) add("Oracul (other models): $setup")
             if (opinions.isNotEmpty()) add("Second opinions in this chat: ${opinions.size} (${models(opinions) { it.content.substringBefore(']').substringAfter("· ").trim() }})")
             if (comparisons.isNotEmpty()) add("Comparisons in this chat: ${comparisons.size} (${models(comparisons) { Oracul.title(it).substringAfter("judged by ").trim() }} judged)")
+            if (controls.isNotEmpty()) add("Verdicts of a controller model: ${controls.size} (${controls.count { it.content.contains("Verdict: redo") }} asked for a redo)")
             if (analyses.isNotEmpty()) add("Analyses written by an analyst model: ${analyses.size} (${models(analyses) { it.content.substringBefore(']').substringAfter("· ").trim() }})")
             if (plans.isNotEmpty()) add("Plans written by a planner model: ${plans.size} (${models(plans) { it.content.substringBefore(']').substringAfter("· ").trim() }})")
             if (takeovers.isNotEmpty()) add("Turns the Oracul took over after the main model failed: ${takeovers.size} (${models(takeovers) { it.content.substringBefore(" took over").substringAfter(Oracul.GLYPH + " ").trim() }})")

@@ -497,6 +497,65 @@ class OraculTest {
         } finally { f.server.stop(0) }
     }
 
+    private fun controllerSays(vararg verdicts: String): (String, String) -> String? {
+        var n = 0
+        return { _, body ->
+            if ("controller of a team" in body) """{"message":{"role":"assistant","content":"${verdicts[minOf(n++, verdicts.size - 1)]}"},"done":true,"prompt_eval_count":5,"eval_count":5}""" else null
+        }
+    }
+
+    private val longQuestion = "Please explain in some detail how the two sorting algorithms differ in practice"
+
+    @Test
+    fun theControllerSendsTheWorkerBackOnceAndThenAcceptsTheAnswer() {
+        val f = fake()
+        f.script = controllerSays("VERDICT: REDO\\n- name the edge case", "VERDICT: DONE")
+        try {
+            val chat = app(f) { copy(flow = "careful", flowAnalyst = "judge", flowController = "judge", rolePlanner = "big", roleReviewer = "big", toolsEnabled = false) }.chat
+            chat.send(longQuestion)
+            Thread.sleep(2500)
+            assertEquals(listOf("judge", "big", "worker", "big", "judge", "worker", "big", "judge"), f.asked.map { it.first }, "analyst, plan, answer, review, REDO, a second answer, review, DONE (no second analysis or plan)")
+            val verdicts = chat.messages.filter { Oracul.isControl(it) }
+            assertEquals(2, verdicts.size)
+            assertTrue(verdicts[0].content.contains("Verdict: redo") && verdicts[0].content.contains("name the edge case"))
+            assertTrue(verdicts[1].content.contains("Verdict: done"))
+            assertTrue(chat.messages.any { it.content.startsWith(Oracul.REDO_PROMPT) }, "the worker was told to redo")
+            assertTrue(Oracul.isControl(verdicts[0]) && !Oracul.isReview(verdicts[0]), "a verdict is not a review")
+            assertTrue(f.asked.last().second.contains("REQUEST:\\n$longQuestion"), "the controller sees the original request, not the redo prompt")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun theControllerCannotSendTheWorkerBackMoreOftenThanTheLimit() {
+        val f = fake()
+        f.script = controllerSays("VERDICT: REDO\\nstill wrong")
+        try {
+            val chat = app(f) { copy(flow = "careful", flowAnalyst = "judge", flowController = "judge", rolePlanner = "big", roleReviewer = "big", flowRedos = 1, toolsEnabled = false) }.chat
+            chat.send(longQuestion)
+            Thread.sleep(2500)
+            assertEquals(2, f.asked.count { it.first == "worker" }, "the answer and one redo")
+            assertEquals(2, chat.messages.count { Oracul.isControl(it) })
+            assertTrue(chat.roleNote?.contains("still wanted a redo") == true, "the user is told the last answer stands")
+            f.asked.clear()
+            val none = app(f) { copy(flow = "careful", flowAnalyst = "judge", flowController = "judge", rolePlanner = "big", roleReviewer = "big", flowRedos = 0, toolsEnabled = false) }.chat
+            none.send(longQuestion)
+            Thread.sleep(2000)
+            assertEquals(1, f.asked.count { it.first == "worker" }, "redos = 0: the controller only gives its verdict")
+            assertEquals(1, none.messages.count { Oracul.isControl(it) })
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun aShortMessageOfAFlowGetsNoReviewAndNoCheck() {
+        val f = fake()
+        try {
+            val chat = app(f) { copy(flow = "careful", flowAnalyst = "judge", flowController = "judge", rolePlanner = "big", roleReviewer = "big", toolsEnabled = false) }.chat
+            chat.send("thanks")
+            Thread.sleep(1200)
+            assertEquals(listOf("worker"), f.asked.map { it.first })
+        } finally { f.server.stop(0) }
+    }
+
     @Test
     fun anAnalystThatIsNotInstalledOnlyLeavesTheAnalysisOut() {
         val f = fake()

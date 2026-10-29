@@ -95,7 +95,7 @@ class CoreTest {
             UsageRecord(4, "Judge", "judge", 40, 10, 500),
         )
         val advisors = UsageStats.advisors(records).associateBy { it.feature }
-        assertEquals(listOf("Oracul", "Analyst", "Planner", "Judge"), UsageStats.advisors(records).map { it.feature })
+        assertEquals(listOf("Oracul", "Analyst", "Planner", "Controller", "Judge"), UsageStats.advisors(records).map { it.feature })
         assertEquals(2, advisors.getValue("Oracul").totals.requests)
         assertEquals(300L, advisors.getValue("Oracul").totals.totalTokens)
         assertEquals(listOf("big"), advisors.getValue("Oracul").models)
@@ -2012,7 +2012,7 @@ class CoreTest {
     fun theCarefulFlowTakesItsModelsFromItsSettingsThenTheRoleTableThenTheOracul() {
         assertEquals(null, Flow.of(AppConfig()))
         val flow = Flow.of(AppConfig(flow = "careful", oraculModel = "o", flowAnalyst = "a", rolePlanner = "p", roleWorker = "", roleReviewer = ""))!!
-        assertEquals(listOf(StageKind.Analyst, StageKind.Planner, StageKind.Worker, StageKind.Reviewer), flow.stages.map { it.kind })
+        assertEquals(listOf(StageKind.Analyst, StageKind.Planner, StageKind.Worker, StageKind.Reviewer, StageKind.Controller), flow.stages.map { it.kind })
         assertEquals("a", flow.model(StageKind.Analyst))
         assertEquals("p", flow.model(StageKind.Planner))
         assertEquals("", flow.model(StageKind.Worker), "blank worker = the chat model")
@@ -2029,5 +2029,17 @@ class CoreTest {
         assertEquals("Asked: X", Oracul.body(analysis))
         assertTrue("ANALYSIS OF THE TASK" in Oracul.planRequest("q", "", analysis = "Asked: X").last().content)
         assertTrue("ANALYSIS OF THE TASK" !in Oracul.planRequest("q", "").last().content)
+    }
+
+    @Test
+    fun theControllersVerdictIsReadFromItsFirstVerdictLineAndAnythingElseCountsAsDone() {
+        assertEquals(Oracul.Control(true, ""), Oracul.parseControl("VERDICT: DONE"))
+        assertEquals(Oracul.Control(false, "- add the edge case\n- check the path"), Oracul.parseControl("verdict: redo\n- add the edge case\n- check the path"))
+        assertEquals(Oracul.Control(false, "fix X"), Oracul.parseControl("Looking at it...\nVERDICT: REDO: fix X"))
+        assertTrue(Oracul.parseControl("I think it is fine").done, "no verdict line: done, so a confused model never starts a loop")
+        val message = Oracul.controlMessage("m", Oracul.Control(false, "fix X"))
+        assertTrue(Oracul.isControl(message) && Oracul.isOpinion(message) && !Oracul.isReview(message) && Oracul.body(message).startsWith("Verdict: redo"))
+        assertEquals(4, Flow.of(AppConfig(flow = "careful", oraculModel = "o"))!!.stages.count { it.model == "o" }, "analyst, planner, reviewer and controller default to the Oracul model")
+        assertEquals(5, Flow.of(AppConfig(flow = "careful", flowRedos = 99))!!.redos, "the redo limit is capped")
     }
 }
