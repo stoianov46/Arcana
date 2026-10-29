@@ -137,7 +137,7 @@ Size: S under half a day, M about a day, L several days, XL a week or more (roug
 
 ## N10. Orchestration: the flow core (reworked to industry practice)
 
-**Status: steps 1 and 2 done** (`Flow`, analyst stage, the *Careful* preset, Settings → Oracul → Flow; then the controller stage and the redo loop, model-based check only). Not started: the command-based check (rest of step 2) and steps 3–6.
+**Status: steps 1, 2 and 3 done** (step 3: `/flow`, stage names in the reply line, `⇉` in the status bars) (`Flow`, analyst stage, the *Careful* preset, Settings → Oracul → Flow; then the controller stage and the redo loop, model-based check only). Not started: the command-based check (rest of step 2) and steps 4–6.
 
 **Correction.** The first draft of this section turned your example (analyse prompt → plan → execute → analyse result → control) into one fixed five-stage pipeline with gating rules. That was my invention. Your list is **one possible flow**, not the design. The design is a small set of building blocks that can express that flow and others, as other agents do.
 

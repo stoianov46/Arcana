@@ -24,6 +24,7 @@ import com.arcana.brain.app.navigation.LocalNavigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.Compaction
+import com.arcana.brain.core.Flow
 import com.arcana.brain.core.Oracul
 import com.jakewharton.mosaic.ui.Color
 import com.jakewharton.mosaic.ui.TextStyle
@@ -101,6 +102,7 @@ internal val SlashCommands = listOf(
     SlashItem("/autorun", "Run shell commands without asking (toggle)", false),
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false),
     SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
+    SlashItem("/flow", "Flow: every message goes analyst, planner, worker, reviewer, controller (toggle)", false, usage = "e.g. /flow careful   or   /flow off   (without a name it switches)"),
     SlashItem("/thinking", "Thinking pane: watch the model think under the conversation (toggle)", false),
     SlashItem("/append", "Add the last answer to a note", false),
     SlashItem("/replace", "Replace a note with the last answer", false),
@@ -122,6 +124,7 @@ internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean
     "/memory" -> if (config.memoryEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/skills" -> if (config.skillsEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/thinking" -> if (config.thinkingPane) "ON" to Palette.Green else "OFF" to Palette.Dim
+    "/flow" -> if (config.flow == Flow.OFF) "OFF" to Palette.Dim else config.flow.uppercase() to Palette.Green
     else -> null
 }
 
@@ -522,6 +525,14 @@ fun ChatScreen(app: AppContext) {
         toast(if (on) "Auto-run: shell commands now run WITHOUT asking (sudo, rm -rf / and the like are still refused)." else "Commands ask before they run again.", error = on)
     }
 
+    /** `/flow` switches the flow on (the first preset) or off; `/flow careful` or `/flow off` sets it by name. */
+    fun setFlow(name: String) {
+        val wanted = name.trim().lowercase().ifEmpty { if (app.config.flow == Flow.OFF) Flow.CAREFUL else Flow.OFF }
+        if (wanted !in Flow.NAMES) return toast("There is no flow called “$wanted”. Flows: ${Flow.NAMES.joinToString(", ")}.", error = true)
+        app.update(app.config.copy(flow = wanted))
+        toast(if (wanted == Flow.OFF) "Flow off: the chat model answers alone." else "Flow $wanted: every message goes analyst → planner → worker → reviewer → controller (several models run for each message; messages under 60 characters go straight to the worker).")
+    }
+
     fun cycleMode() {
         val next = when (app.config.toolMode) { "ask" -> "auto"; "auto" -> "plan"; else -> "ask" }
         app.update(app.config.copy(toolMode = next))
@@ -534,7 +545,7 @@ fun ChatScreen(app: AppContext) {
 
     fun runCommand(command: String, args: String = "") {
         // text after a command is only meaningful for these; anywhere else say so instead of guessing
-        if (args.isNotEmpty() && command !in setOf("/oracul", "/compare", "/revise")) return toast("$command takes no text after it. Type just $command.", error = true)
+        if (args.isNotEmpty() && command !in setOf("/oracul", "/compare", "/revise", "/flow")) return toast("$command takes no text after it. Type just $command.", error = true)
         when (command) {
             "/new" -> startNew()
             "/history" -> openHistory()
@@ -547,6 +558,7 @@ fun ChatScreen(app: AppContext) {
             "/memory" -> openMemory()
             "/skills" -> toggleSkills()
             "/thinking" -> toggleThinkingPane()
+            "/flow" -> setFlow(args)
             "/mode" -> cycleMode()
             "/autorun" -> toggleAutoRun()
             "/compact" -> runCompact()
@@ -991,7 +1003,7 @@ fun ChatScreen(app: AppContext) {
                     val queuedRows = if (question == null && approval == null) chat.queued.size.coerceAtMost(QUEUE_SHOWN + 1) else 0
                     val below = queuedRows + (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval, approvalMax()).size + 3 else 2 + inputRows + pendingRow + slashMatches.size + (if (slashUsage.isEmpty()) 0 else 1)) + statusRows + panelActionRows
                     ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below + bottomGap + paneRows, actions = actions), output)
-                    ReplyStatus(app, gen, consulting = chat.consulting, consultingSince = chat.consultingSince)
+                    ReplyStatus(app, gen, consulting = chat.consulting, consultingSince = chat.consultingSince, consultingStage = chat.consultingStage)
                 }
                 if (paneRows > 0) ThinkingPane(gen, chat, paneRows - 2, app.config.model)
                 if (question != null) {

@@ -2042,4 +2042,11 @@ class CoreTest {
         assertEquals(4, Flow.of(AppConfig(flow = "careful", oraculModel = "o"))!!.stages.count { it.model == "o" }, "analyst, planner, reviewer and controller default to the Oracul model")
         assertEquals(5, Flow.of(AppConfig(flow = "careful", flowRedos = 99))!!.redos, "the redo limit is capped")
     }
+
+    @Test
+    fun aFlowShowsInTheStatusText() {
+        assertEquals("⇉ careful", Oracul.statusText(AppConfig(flow = "careful")))
+        assertEquals("Ψ big · auto ⇉ careful", Oracul.statusText(AppConfig(oraculModel = "big", flow = "careful")))
+        assertEquals("oracul big · auto flow careful", Oracul.statusText(AppConfig(oraculModel = "big", flow = "careful"), plain = true))
+    }
 }

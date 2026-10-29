@@ -76,7 +76,7 @@ fun GenerationView(app: AppContext, gen: Generation, output: OutputState, rows: 
 
 /** The line under a reply: a spinner while generating, or why it stopped. */
 @Composable
-fun ReplyStatus(app: AppContext, gen: Generation, consulting: String? = null, consultingSince: Long = 0L) {
+fun ReplyStatus(app: AppContext, gen: Generation, consulting: String? = null, consultingSince: Long = 0L, consultingStage: String? = null) {
     when (gen.state) {
         GenState.Running -> Spinner {
             // while the Oracul (or the judge) works inside the turn the line is about that model, not the worker that waits for it
@@ -87,7 +87,7 @@ fun ReplyStatus(app: AppContext, gen: Generation, consulting: String? = null, co
                 reading -> "${app.config.model} is reading the conversation again…"
                 consulting != null -> {
                     val judging = consulting == com.arcana.brain.core.Oracul.judge(app.config) && consulting != com.arcana.brain.core.Oracul.model(app.config)
-                    if (judging) "⚖ $consulting is judging the answers…" else "${com.arcana.brain.core.Oracul.GLYPH} $consulting is answering…"
+                    if (judging) "⚖ $consulting is judging the answers…" else "${com.arcana.brain.core.Oracul.GLYPH} $consulting is ${consultingStage ?: "answering"}…"
                 }
                 gen.thinking && app.config.showThinking -> "${app.config.model} is thinking…"
                 gen.text.isEmpty() -> "Waiting for the model…"

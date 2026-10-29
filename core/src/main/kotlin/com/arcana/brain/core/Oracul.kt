@@ -43,12 +43,13 @@ object Oracul {
 
     /**
      * What the status bars show while the Oracul is idle: `Ψ qwen3:30b ⚖ gemma4:12b · auto` (the judge only when it is another model than the
-     * Oracul; [plain] drops the glyphs). Empty when no Oracul model is set.
+     * Oracul; [plain] drops the glyphs). Empty when no Oracul model is set and no flow is on; a flow adds `⇉ careful`.
      */
     fun statusText(config: AppConfig, plain: Boolean = false): String {
-        val model = model(config).ifEmpty { return "" }
+        val flow = Flow.of(config)?.let { " ${if (plain) "flow" else "⇉"} ${it.name.lowercase()}" }.orEmpty()
+        val model = model(config).ifEmpty { return flow.trim() }
         val judge = judge(config).takeIf { it != model }?.let { " ${if (plain) "judge" else "⚖"} $it" }.orEmpty()
-        return "${if (plain) "oracul" else GLYPH} $model$judge · ${modeWord(config)}"
+        return "${if (plain) "oracul" else GLYPH} $model$judge · ${modeWord(config)}$flow"
     }
 
     /** How the Oracul is set, for `chat_stats`: models, server, trigger; empty when it is off. */

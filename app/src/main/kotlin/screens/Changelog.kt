@@ -31,6 +31,7 @@ Built on 24–25 October 2026. Last updated 28 October 2026.
 
 ## Models as a pipeline
 - **Flow: Careful** (Settings → Oracul → Flow): every message goes through an **analyst** (what is really asked, what is unclear), a **planner**, the **worker** and a **reviewer**, each its own model. Short messages skip the analysis and the plan. New *Analysis* block in the chat and an *Analyst* line in Usage. First step of the orchestration work.
+- **`/flow`** switches the flow on and off from Chat, the reply line names the working stage (`Ψ <model> is planning…`) and the status bars show `⇉ careful`.
 - **Flow controller and redo loop**: after the reviewer, a **controller** model says *done* or *redo*. On redo the worker is sent back with what to fix (the reviewer and controller check again), up to **Flow redos** times (default 2, 0 = verdict only). New *Control* block, *Controller* line in Usage, Settings → Oracul → Flow controller / Flow redos. A confused controller never starts a loop: no clear verdict counts as done.
 - **Settings → Oracul → Roles apply to → Every message** runs the planner, worker and reviewer for all chat, not only skills: a plan first (messages of 60+ characters), the worker answers, the reviewer checks.
 

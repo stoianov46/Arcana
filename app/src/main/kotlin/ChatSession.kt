@@ -145,6 +145,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** True while the selected flow handles this message and ends with the controller's check; false for a short message that goes straight to the worker. */
     private var flowControl = false
 
+    /** What the model in [consulting] is doing for a flow ("analysing the request", "planning", "reviewing the answer", "checking the answer"); null = just answering. */
+    var consultingStage by androidx.compose.runtime.mutableStateOf<String?>(null)
+        private set
+
     /** How many times the controller has sent the worker back for the message being worked on; reset by a message of the user. */
     private var flowRedos = 0
 
@@ -185,7 +189,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private suspend fun plan(planner: String, entry: String?, question: String, analysis: String = "") {
         val vault = app.openVault().getOrNull()
         if (entry != null && vault == null) return
-        consulting = planner
+        consulting = planner; consultingStage = "planning"
         try {
             val skillText = if (entry == null || vault == null) "" else Skills.loadEntry(vault, entry).orEmpty()
             val text = Oracul.ask(clientFor(planner), Oracul.planRequest(question, skillText, oraculBackground(), analysis)) { app.recordUsage("Planner", it, planner) }
@@ -207,7 +211,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private suspend fun analyse(flow: Flow, question: String): String {
         val analyst = flow.model(StageKind.Analyst).ifEmpty { return "" }
         if (missingOnOracul(analyst)) { roleNote = "The analyst $analyst is not installed: the flow goes on without an analysis."; return "" }
-        consulting = analyst
+        consulting = analyst; consultingStage = "analysing the request"
         try {
             val text = Oracul.ask(clientFor(analyst), Oracul.analysisRequest(question, oraculBackground())) { app.recordUsage("Analyst", it, analyst) }
             if (text.isEmpty()) { roleNote = "$analyst returned an empty analysis: the flow goes on without one."; return "" }
@@ -241,7 +245,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val all = messages.toList()
         val review = all.lastOrNull { Oracul.isReview(it) }?.let { Oracul.body(it) }.orEmpty()
         val analysis = all.lastOrNull { Oracul.isAnalysis(it) }?.let { Oracul.body(it) }.orEmpty()
-        consulting = controller
+        consulting = controller; consultingStage = "checking the answer"
         try {
             val text = Oracul.ask(clientFor(controller), Oracul.controlRequest(question, answer, review, analysis, oraculBackground())) { app.recordUsage("Controller", it, controller) }
             if (text.isEmpty()) { roleNote = "$controller returned an empty verdict: the answer stands."; return }
@@ -734,6 +738,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         private set(value) {
             if (value != consultingNow) consultingSince = System.currentTimeMillis()
             consultingNow = value
+            if (value == null) consultingStage = null
         }
 
     /** When [consulting] last changed, so the reply line can count the Oracul's own seconds. */
@@ -852,11 +857,11 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * A second opinion on the last answer from the Oracul model: it reads the question and the answer (and may check with the worker's tools, see [oraculAgent]) and says what is wrong or
      * missing. The result is added to the chat as a block of its own; returns a line for the user. Throws with a message when it cannot.
      */
-    suspend fun secondOpinion(reviewer: String? = null): String {
+    suspend fun secondOpinion(reviewer: String? = null, stage: String? = null): String {
         val model = (reviewer ?: Oracul.model(app.config)).ifEmpty { error("Choose an Oracul model first: Settings → Oracul → Model.") }
         val (question, answer) = Oracul.lastExchange(messages.toList()) ?: error("There is no answer to review yet.")
         check(consulting == null) { "The Oracul is already working." }
-        consulting = model
+        consulting = model; consultingStage = stage
         try {
             val facts = Oracul.turnFacts(messages.toList(), skillRun?.skippedCount ?: 0)
             val box = oraculToolbox(model)
@@ -956,7 +961,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val flow = Flow.of(config)
         if (flow != null && flowControl && consulting == null) {
             autoConsult = app.scope.launch {
-                runReviewer?.let { runCatching { secondOpinion(it) } }
+                runReviewer?.let { runCatching { secondOpinion(it, stage = "reviewing the answer") } }
                 control(flow)
             }
             return
