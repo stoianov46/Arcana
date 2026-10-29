@@ -2176,4 +2176,12 @@ class CoreTest {
         assertEquals(null, Compaction.cutPoint(chat, keepTokens = 1_000_000), "everything fits: nothing to summarize")
         assertEquals(30, AppConfig().compactKeepPercent)
     }
+
+    @Test
+    fun theGoalOfAChatIsInTheSystemPromptOfEveryRequest() {
+        val history = listOf(ChatMessage.user("go on"))
+        val with = Prompts.chatMessages(AppConfig(), history, null, emptyMap(), goal = "every note is tagged")
+        assertTrue("THE GOAL OF THIS CHAT" in with.first().content && "every note is tagged" in with.first().content)
+        assertTrue("THE GOAL OF THIS CHAT" !in Prompts.chatMessages(AppConfig(), history, null, emptyMap()).first().content, "no goal, no line")
+    }
 }

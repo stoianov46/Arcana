@@ -213,6 +213,8 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         add(modelsSegment(ModelIcon.label(config.model, plain), chat.consulting, config, plain, width, app.memoryAdvice(Oracul.model(config), com.arcana.brain.core.ModelFit.Role.Oracul)?.startsWith("⚠") == true))
         add(statusSegment("temperature", "°${config.temperature}", Palette.Accent, 6))
         if (config.chatUseVault) add(pillSegment("◉ vault", Palette.Cta, 6))
+        // the goal of this chat (/goal): shown so it is clear what the work is for
+        chat.goal?.let { add(pillSegment("◎ goal: ${it.replace('\n', ' ').take(40)}${if (it.length > 40) "…" else ""}", Palette.Cta, 8)) }
         // what the tools wrote or changed in this chat (/artifacts lists it)
         Artifacts.pill(chat.artifacts.toList(), plain)?.let { add(pillSegment(it, Palette.Purple, 5)) }
         // the memory file the assistant reads in every chat: shown, so you can see that it is in use (and how much room it takes)

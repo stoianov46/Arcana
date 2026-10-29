@@ -516,11 +516,12 @@ object Prompts {
         return history.subList(start, history.size)
     }
 
-    fun chatMessages(config: AppConfig, history: List<ChatMessage>, hits: List<SearchHit>?, noteTexts: Map<String, String>, tools: Boolean = false, toolsNote: String = "", canRequestTools: Boolean = false, memory: String = "", today: java.time.ZonedDateTime? = java.time.ZonedDateTime.now()): List<ChatMessage> {
+    fun chatMessages(config: AppConfig, history: List<ChatMessage>, hits: List<SearchHit>?, noteTexts: Map<String, String>, tools: Boolean = false, toolsNote: String = "", canRequestTools: Boolean = false, memory: String = "", goal: String = "", today: java.time.ZonedDateTime? = java.time.ZonedDateTime.now()): List<ChatMessage> {
         // only the date, which changes once a day: a changing clock at the start of the prompt would make the model re-read the whole chat every message
         val date = today?.let { " Today is ${it.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", java.util.Locale.ENGLISH))} (time zone ${it.zone}). For the exact time use the current_time tool if you have it." }.orEmpty()
         val system = config.systemPrompt + date + (if (tools) TOOLS_PROMPT + toolsNote else if (canRequestTools) REQUEST_ACCESS_PROMPT else NO_TOOLS_PROMPT) +
-            (if (memory.isBlank()) "" else "\n\nThe user's memory file (ARCANA.md), standing instructions and facts. Follow them; they outrank your usual habits:\n${memory.trim()}") + if (hits == null) "" else {
+            (if (memory.isBlank()) "" else "\n\nThe user's memory file (ARCANA.md), standing instructions and facts. Follow them; they outrank your usual habits:\n${memory.trim()}") +
+            (if (goal.isBlank()) "" else "\n\nTHE GOAL OF THIS CHAT (set by the user with /goal; keep it in mind in every answer): ${goal.trim()}\nWork toward it until it is reached. A checker compares your answers with it after each reply and sends you on while it is not met; when you think it is met, say so plainly.") + if (hits == null) "" else {
             " Answer using the vault excerpts given with the latest question. Cite the notes you used as [[Note title]]. " +
                 "If the excerpts do not contain the answer, say so."
         }

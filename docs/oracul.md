@@ -168,7 +168,7 @@ runs unless *Flow* is set (`AppConfig.flow`).
   `/goal` shows it, `/goal clear` drops it. After each reply `finishReply` waits for the reviewers (`autoConsult.join()`), then `checkGoal` asks the checker (usage feature
   `Controller`). **Met** clears the goal; **not met** (a text without a clear `VERDICT:` counts as not met, unlike the controller) adds a `Ψ Goal` block and sends
   `Oracul.goalContinue`. Limits: `goalTurns` (default 5) automatic turns per goal, reset by a message of yours; then it stops with a toast. Nothing runs while a reply is being
-  written (`gen.state == Running`), so a redo or a queued message is never talked over. The goal belongs to the chat in memory: `/new` and opening another chat clear it, and it is
+  written (`gen.state == Running`), so a redo or a queued message is never talked over. **The goal is also a standing reminder:** `Prompts.chatMessages(…, goal)` puts `THE GOAL OF THIS CHAT …` into the system prompt of every request (so it survives a long chat and a compaction), and the Chat status bar shows `◎ goal: …`. The goal belongs to the chat in memory: `/new` and opening another chat clear it, and it is
   not saved.
 
 ## Specialists as tools (`consult`)
