@@ -653,7 +653,7 @@ class DesignTest {
     fun `the models segment puts the model that works first`() {
         val config = com.arcana.brain.core.AppConfig(oraculModel = "big", judgeModel = "jdg")
         val idle = com.arcana.brain.app.screens.modelsSegment("◆ small", null, config, false, 120)
-        assertEquals(" ◆ small ", idle.parts[0].text)
+        assertEquals("◆ small", idle.parts[0].text)
         assertTrue(idle.parts[1].text.contains("Ψ big"))
         val asking = com.arcana.brain.app.screens.modelsSegment("◆ small", "big", config, false, 120)
         assertEquals(" Ψ big… ", asking.parts[0].text)

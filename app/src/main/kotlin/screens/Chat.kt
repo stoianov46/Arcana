@@ -193,7 +193,8 @@ internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConf
         parts += StatusPart(waiting, Palette.Muted)
         return StatusSegment(parts, 10)
     }
-    val parts = mutableListOf(StatusPart(" $workerLabel ", Palette.Background, bold = true, background = Palette.Accent))
+    // the model is a plain fact (bold accent text); a fill is kept for what needs attention
+    val parts = mutableListOf(StatusPart(workerLabel, Palette.Accent, bold = true))
     if (setup.isNotEmpty()) {
         parts += StatusPart(" $setup", Palette.Blue)
         // the Oracul does not fit this machine's memory: it would swap to disk or run on the CPU (Settings → Helpers says what to choose instead)
@@ -246,7 +247,7 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         // what the model is doing in Ollama: why it has not answered yet while we wait (loading, reading the prompt), else whether it is loaded and how much of it is on the GPU
         modelStateSegment(app, plain)?.let { add(it) }
         add(statusSegment("temperature", "°${config.temperature}", Palette.Accent, 6))
-        if (config.chatUseVault) add(pillSegment("◉ vault", Palette.Cta, 6))
+        if (config.chatUseVault) add(statusSegment("", "◉ vault", Palette.Cta, 6, bold = true))
         // the goal of this chat (/goal): shown so it is clear what the work is for
         chat.goal?.let { add(pillSegment("◎ goal: ${it.replace('\n', ' ').take(40)}${if (it.length > 40) "…" else ""}", Palette.Cta, 8)) }
         // what the tools wrote or changed in this chat (/artifacts lists it)
@@ -276,18 +277,19 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
                 else -> Palette.Purple
             }
             val text = "◆ ${run.name} ${run.done}/${run.total}" + (if (run.skippedCount > 0) " ✕${run.skippedCount} skipped" else if (run.done == run.total) " ✓" else "")
-            add(pillSegment(text, state, 7))
+            // plain while it runs, filled only when something went wrong (skipped steps)
+            if (run.skippedCount > 0) add(pillSegment(text, state, 7)) else add(statusSegment("", text, state, 7, bold = true))
         }
         // the model's own task list: how many items are done
         chat.todos.takeIf { it.isNotEmpty() }?.let { list ->
             val done = com.arcana.brain.core.Todos.doneCount(list)
-            add(pillSegment((if (plain) "todo " else "☑ ") + "$done/${list.size}" + (if (done == list.size) " ✓" else ""), if (done == list.size) Palette.Green else Palette.Cta, 7))
+            add(statusSegment("", (if (plain) "todo " else "☑ ") + "$done/${list.size}" + (if (done == list.size) " ✓" else ""), if (done == list.size) Palette.Green else Palette.Cta, 7))
         }
         if (config.toolsEnabled) {
             if (app.tools == false) add(pillSegment("⚠ no tools", Palette.Red, 8))
-            else add(pillSegment("⚙ ${config.toolMode}", when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }, 8))
+            else add(statusSegment("", "⚙ ${config.toolMode}", when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }, 8, bold = true))
             // the project the model works in: its folder name, so it is clear where relative paths and commands start
-            if (config.projectFolder.isNotBlank()) add(pillSegment((if (plain) "project " else "▣ ") + java.nio.file.Path.of(config.projectFolder.trimEnd('/')).fileName, Palette.Cta, 5))
+            if (config.projectFolder.isNotBlank()) add(statusSegment("", (if (plain) "project " else "▣ ") + java.nio.file.Path.of(config.projectFolder.trimEnd('/')).fileName, Palette.Cta, 5))
             // commands run without asking: said loudly, in the colour of high risk
             if (config.toolWeb && config.toolAutoSearch && config.toolMode != "plan") add(pillSegment(if (plain) "auto-search" else "↗ auto-search", Palette.Orange, 8))
             if (config.toolShell && config.toolAutoShell && config.toolMode != "plan") add(pillSegment(if (plain) "! auto-run" else "▶ auto-run", Palette.Red, 9))
