@@ -155,6 +155,13 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** True while the selected flow handles this message and ends with the controller's check; false for a short message that goes straight to the worker. */
     private var flowControl = false
 
+    /** About how many tokens the request being written is (characters / 4): for the waiting line, since Ollama does not say how far it has read. */
+    var promptEstimate = 0
+        private set
+
+    /** The model that answers right now: the one a skill, the flow or the router chose, else the chat model. */
+    val workerModel: String get() = runWorker ?: app.config.model
+
     /** What the router decided for this message ("Routed to qwen2.5vl:7b: the message has an image"); the Chat shows it once. */
     var routeNote by androidx.compose.runtime.mutableStateOf<String?>(null)
 
@@ -1286,7 +1293,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val hits = if (config.chatUseVault && vault != null) vault.search(body, config.contextNotes, config.contextCharsPerNote) else null
             pendingSources = hits?.map { it.note.path }.orEmpty()
             pendingCut = hits?.filter { it.missing > 0 }?.map { it.note.path }.orEmpty()
-            Prompts.chatMessages(config, history, hits, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, toolsNote = box?.describe().orEmpty(), canRequestTools = canRequest, memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "", goal = goal.orEmpty())
+            Prompts.chatMessages(config, history, hits, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, toolsNote = box?.describe().orEmpty(), canRequestTools = canRequest, memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "", goal = goal.orEmpty()).also { request -> promptEstimate = request.sumOf { it.content.length } / 4 }
         }
     }
 

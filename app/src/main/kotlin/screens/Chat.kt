@@ -202,6 +202,17 @@ internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConf
     return StatusSegment(parts, 10)
 }
 
+/** The model-state indicator of the Chat status bar: the reason for a wait (orange), or `● loaded 7.7 GB 100% GPU` when the chat model is loaded, or `○ not loaded` (it loads with the next message); null until Ollama has been asked. */
+internal fun modelStateSegment(app: AppContext, plain: Boolean): StatusSegment? {
+    if (app.modelWhy.isNotEmpty()) return pillSegment((if (plain) "wait: " else "◌ ") + app.modelWhy, Palette.Orange, 10)
+    val loaded = app.loaded ?: return null
+    val mine = loaded.firstOrNull { com.arcana.brain.core.ModelStatus.sameModel(it.name, app.config.model) }
+        ?: return statusSegment("", if (plain) "not loaded" else "○ not loaded", Palette.Muted, 4)
+    val slow = mine.cpuPercent >= 10
+    val detail = if (mine.sizeBytes <= 0) "" else " ${"%.1f GB".format(mine.sizeBytes / 1e9)} ${100 - mine.cpuPercent}% GPU"
+    return statusSegment("", (if (plain) "loaded" else "● loaded") + detail, if (slow) Palette.Orange else Palette.Green, 6)
+}
+
 /** `⚠ mistral-small3.2 35% on CPU: slow, lower the context window or use a smaller model`: a model that does not fit in memory. */
 internal fun offloadText(offload: com.arcana.brain.core.Offload, plain: Boolean): String =
     "${if (plain) "!" else "⚠"} ${offload.model} ${offload.cpuPercent}% on CPU: slow, lower the context window or use a smaller model"
@@ -220,6 +231,8 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
     return buildList {
         // the models, one segment: whoever works now comes first as a filled pill, the other one after it, quiet
         add(modelsSegment(ModelIcon.label(config.model, plain), chat.consulting, config, plain, width, app.memoryAdvice(Oracul.model(config), com.arcana.brain.core.ModelFit.Role.Oracul)?.startsWith("⚠") == true))
+        // what the model is doing in Ollama: why it has not answered yet while we wait (loading, reading the prompt), else whether it is loaded and how much of it is on the GPU
+        modelStateSegment(app, plain)?.let { add(it) }
         add(statusSegment("temperature", "°${config.temperature}", Palette.Accent, 6))
         if (config.chatUseVault) add(pillSegment("◉ vault", Palette.Cta, 6))
         // the goal of this chat (/goal): shown so it is clear what the work is for

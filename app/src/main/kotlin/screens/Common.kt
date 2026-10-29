@@ -1,7 +1,11 @@
 package com.arcana.brain.app.screens
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.arcana.brain.app.AppContext
 import com.arcana.brain.app.GenState
 import com.arcana.brain.app.Generation
@@ -77,6 +81,28 @@ fun GenerationView(app: AppContext, gen: Generation, output: OutputState, rows: 
 /** The line under a reply: a spinner while generating, or why it stopped. */
 @Composable
 fun ReplyStatus(app: AppContext, gen: Generation, consulting: String? = null, consultingSince: Long = 0L, consultingStage: String? = null) {
+    // why nothing has come yet: asked of Ollama and the machine every few seconds while we wait for a model (loading, reading the prompt, memory tight)
+    val target = consulting ?: app.chat.workerModel
+    val waiting = consulting != null || (gen.state == GenState.Running && gen.text.isEmpty() && !(gen.thinking && app.config.showThinking))
+    var why by remember { mutableStateOf("") }
+    LaunchedEffect(waiting, target, gen.startedAt, consultingSince) {
+        why = ""
+        app.modelWhy = ""
+        if (!waiting) return@LaunchedEffect
+        try {
+            kotlinx.coroutines.delay(4_000)
+            while (true) {
+                val loaded = runCatching { app.client.loadedModels() }.getOrNull()
+                val swap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.arcana.brain.core.SystemMemory.swapPercent() }
+                if (loaded != null) app.loaded = loaded
+                why = com.arcana.brain.core.ModelStatus.describe(target, loaded, if (consulting == null) app.chat.promptEstimate else 0, swap)
+                app.modelWhy = why
+                kotlinx.coroutines.delay(4_000)
+            }
+        } finally {
+            app.modelWhy = ""
+        }
+    }
     when (gen.state) {
         GenState.Running -> Spinner {
             // while the Oracul (or the judge) works inside the turn the line is about that model, not the worker that waits for it
@@ -90,11 +116,11 @@ fun ReplyStatus(app: AppContext, gen: Generation, consulting: String? = null, co
                     if (judging) "⚖ $consulting is judging the answers…" else "${com.arcana.brain.core.Oracul.GLYPH} $consulting is ${consultingStage ?: "answering"}…"
                 }
                 gen.thinking && app.config.showThinking -> "${app.config.model} is thinking…"
-                gen.text.isEmpty() -> "Waiting for the model…"
+                gen.text.isEmpty() -> "Waiting for ${app.chat.workerModel}…"
                 else -> "Generating…"
             }
             val tokens = if (gen.streamed > 0 && consulting == null && !reading) " · ${if (app.config.plainGlyphs) "" else "↓ "}${gen.streamed} tokens" else ""
-            "$what ${seconds}s$tokens · Esc to cancel"
+            "$what ${seconds}s$tokens${if (why.isEmpty()) "" else " · $why"} · Esc to cancel"
         }
         GenState.Failed -> Label((if (app.config.plainGlyphs) "Error: " else "✕ ") + gen.error, color = Palette.Red, wrap = true)
         GenState.Cancelled -> Label("Cancelled.", color = Palette.Warn)
@@ -102,7 +128,7 @@ fun ReplyStatus(app: AppContext, gen: Generation, consulting: String? = null, co
         else -> if (consulting != null) Spinner {
             val judging = consulting == com.arcana.brain.core.Oracul.judge(app.config) && consulting != com.arcana.brain.core.Oracul.model(app.config)
             val seconds = (System.currentTimeMillis() - consultingSince) / 1000
-            "${if (judging && consultingStage == null) "⚖" else com.arcana.brain.core.Oracul.GLYPH} $consulting is ${consultingStage ?: if (judging) "judging" else "answering"}… ${seconds}s · Esc to cancel"
+            "${if (judging && consultingStage == null) "⚖" else com.arcana.brain.core.Oracul.GLYPH} $consulting is ${consultingStage ?: if (judging) "judging" else "answering"}… ${seconds}s${if (why.isEmpty()) "" else " · $why"} · Esc to cancel"
         }
     }
 }

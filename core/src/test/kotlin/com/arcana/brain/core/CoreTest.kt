@@ -2249,4 +2249,21 @@ class CoreTest {
         assertEquals(emptyList(), OllamaProtocol.parseOffloads("""{"models":[]}"""))
         assertEquals(emptyList(), OllamaProtocol.parseOffloads("not json"))
     }
+
+    @Test
+    fun theWaitingLineSaysWhyTheModelHasNotAnsweredYet() {
+        fun m(name: String, size: Long = 10_000_000_000, vram: Long = 10_000_000_000) = LoadedModel(name, size, vram, 32768)
+        assertEquals("loading gemma4:e4b into memory", ModelStatus.describe("gemma4:e4b", emptyList(), 0, null))
+        assertTrue("mistral-small3.2:latest is loaded and may be unloaded first" in ModelStatus.describe("gemma4:e4b", listOf(m("mistral-small3.2:latest")), 0, null))
+        assertEquals("loaded, reading about 12k tokens of conversation", ModelStatus.describe("gemma4:e4b", listOf(m("gemma4:e4b")), 12_000, null))
+        assertEquals("loaded, reading about 12k tokens of conversation", ModelStatus.describe("mistral-small3.2", listOf(m("mistral-small3.2:latest")), 12_000, null).replace("12.0k", "12k"), "a name without :latest matches")
+        val slow = ModelStatus.describe("big", listOf(m("big", 36_000_000_000, 23_000_000_000)), 0, 88)
+        assertTrue("loaded, reading the prompt" in slow && "36% of it runs on the CPU" in slow && "memory is tight (swap 88% full)" in slow, slow)
+        assertTrue("does not answer" in ModelStatus.describe("x", null, 0, null))
+        assertEquals(88, SystemMemory.parseSwap("total = 12288.00M  used = 10872.44M  free = 1415.56M  (encrypted)"))
+        assertEquals(null, SystemMemory.parseSwap("nonsense"))
+        val body = """{"models":[{"name":"a:latest","size":38654705664,"size_vram":25000000000,"context_length":131072}]}"""
+        assertEquals(LoadedModel("a:latest", 38654705664, 25000000000, 131072), OllamaProtocol.parseLoaded(body).single())
+        assertEquals(35, OllamaProtocol.parseLoaded(body).single().cpuPercent)
+    }
 }

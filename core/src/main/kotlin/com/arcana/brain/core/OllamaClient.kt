@@ -95,6 +95,12 @@ data class ReplyStats(val promptTokens: Int, val completionTokens: Int, val tota
     val seconds: Double get() = totalMillis / 1000.0
 }
 
+/** A model Ollama has loaded, from `/api/ps`: its [sizeBytes] (with the context cache), the part in graphics memory ([vramBytes]) and the context it was loaded with. */
+data class LoadedModel(val name: String, val sizeBytes: Long, val vramBytes: Long, val context: Int) {
+    /** The share that runs on the CPU, in percent. */
+    val cpuPercent: Int get() = if (sizeBytes <= 0) 0 else ((sizeBytes - vramBytes).coerceAtLeast(0) * 100 / sizeBytes).toInt()
+}
+
 /** A loaded model that runs partly on the CPU: [cpuPercent] of its [sizeBytes] (the model with its context cache) did not fit in the graphics memory. */
 data class Offload(val model: String, val cpuPercent: Int, val sizeBytes: Long)
 
@@ -200,6 +206,16 @@ object OllamaProtocol {
         }.filter { it.cpuPercent >= minPercent }.sortedByDescending { it.cpuPercent }
     }.getOrDefault(emptyList())
 
+    /** Every model Ollama has loaded, from `/api/ps`; empty when none or when the answer cannot be read. */
+    fun parseLoaded(body: String): List<LoadedModel> = runCatching {
+        val models = (json.parseToJsonElement(body) as? kotlinx.serialization.json.JsonObject)?.get("models") as? kotlinx.serialization.json.JsonArray ?: return emptyList()
+        models.mapNotNull { it as? kotlinx.serialization.json.JsonObject }.mapNotNull { m ->
+            fun long(key: String) = (m[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() ?: 0L
+            val name = listOf("name", "model").firstNotNullOfOrNull { (m[it] as? kotlinx.serialization.json.JsonPrimitive)?.content } ?: return@mapNotNull null
+            LoadedModel(name, long("size"), long("size_vram"), long("context_length").toInt())
+        }
+    }.getOrDefault(emptyList())
+
     /** Installed models with their size in bytes. */
     fun parseModelSizes(body: String): List<Pair<String, Long>> =
         runCatching { json.decodeFromString<WireTags>(body).models.map { it.name to it.size } }.getOrDefault(emptyList())
@@ -272,6 +288,14 @@ class OllamaClient(private val config: () -> AppConfig) {
         val request = HttpRequest.newBuilder(endpoint(cfg, "/api/ps")).timeout(Duration.ofSeconds(5)).GET().build()
         val response = try { http.send(request, HttpResponse.BodyHandlers.ofString()) } catch (e: Exception) { return@withContext 0 }
         if (response.statusCode() != 200) 0 else OllamaProtocol.parseLoadedContext(response.body(), model)
+    }
+
+    /** Every model Ollama has loaded right now (see [OllamaProtocol.parseLoaded]); null when Ollama cannot be asked. */
+    suspend fun loadedModels(): List<LoadedModel>? = withContext(Dispatchers.IO) {
+        val cfg = config()
+        val request = HttpRequest.newBuilder(endpoint(cfg, "/api/ps")).timeout(Duration.ofSeconds(5)).GET().build()
+        val response = try { http.send(request, HttpResponse.BodyHandlers.ofString()) } catch (e: Exception) { return@withContext null }
+        if (response.statusCode() != 200) null else OllamaProtocol.parseLoaded(response.body())
     }
 
     /** The loaded models that run partly on the CPU (see [OllamaProtocol.parseOffloads]); empty when none, when nothing is loaded or when this Ollama does not say. */

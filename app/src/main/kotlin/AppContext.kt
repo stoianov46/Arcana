@@ -63,8 +63,16 @@ class AppContext(
 
     suspend fun refreshLoadedContext() {
         loadedContext = runCatching { client.loadedContext(config.model) }.getOrDefault(0)
-        offloads = runCatching { client.offloads() }.getOrDefault(emptyList())
+        val all = runCatching { client.loadedModels() }.getOrNull()
+        loaded = all
+        offloads = all.orEmpty().filter { it.cpuPercent >= 10 }.sortedByDescending { it.cpuPercent }.map { com.arcana.brain.core.Offload(it.name, it.cpuPercent, it.sizeBytes) }
     }
+
+    /** Every model Ollama has loaded (null = not known yet or Ollama cannot be asked): the model-state indicator in the Chat status bar. */
+    var loaded by mutableStateOf<List<com.arcana.brain.core.LoadedModel>?>(null)
+
+    /** Why the model being waited for has not answered yet (loading it, reading the prompt, memory tight); empty when nothing is being waited for. Set by the waiting line, shown in the status bar. */
+    var modelWhy by mutableStateOf("")
 
     /** The loaded models that run partly on the CPU because they do not fit in memory (slow; the Chat status bar warns). Read with the loaded context, after replies and helper work. */
     var offloads by mutableStateOf<List<com.arcana.brain.core.Offload>>(emptyList())
