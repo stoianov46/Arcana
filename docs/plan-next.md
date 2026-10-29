@@ -127,7 +127,7 @@ Size: S under half a day, M about a day, L several days, XL a week or more (roug
 
 ## N11. Context: send everything, compact at the limit
 
-**Status: done** (`chatHistory` and `oraculContextMessages` default to 0 = everything; Oracul background capped at 30,000 characters). The quiz mode is not designed and not built.
+**Status: done.** `chatHistory` and `oraculContextMessages` default to 0 = everything (Oracul background capped at 30,000 characters). Decided in the follow-up questions: compact at 80 %; keep the latest turns that fit in 30 % of the window (`compactKeepPercent`); the chat model writes the summary; a context window larger than the model supports gets a warning (Settings and status bar), not a silent change. "Quiz mode" was an instruction to me to ask you clarifying questions, not a feature, so nothing was built for it.
 
 **What is wrong** *(checked)*. The main chat sends only the latest `chatHistory` messages (default **20**, Settings → Console → *Chat history*, `Prompts.window`). Older messages are silently dropped from the request even when the model's window has plenty of room. The Oracul, judge and planner have their own cap (6 messages × 1500 characters, `oraculContextMessages` / `oraculContextChars`).
 

@@ -225,6 +225,8 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         contextUsage(chat.messages, window)?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
         if (chat.compacting) add(pillSegment(if (plain) "compacting" else "◌ compacting…", Palette.Blue, 10))
         // a small window drops the oldest text without a word: say so before it matters (Settings → Ollama → Context window)
+        // asking for more than the model is built for: memory for nothing, and a risk of swapping
+        if (config.contextTokens > 0 && app.modelContext > 0 && config.contextTokens > app.modelContext) add(pillSegment(if (plain) "! ctx asks ${UsageStats.contextSize(config.contextTokens.toLong())}, model ${UsageStats.contextSize(app.modelContext.toLong())}" else "⚠ ctx asks ${UsageStats.contextSize(config.contextTokens.toLong())}, model ${UsageStats.contextSize(app.modelContext.toLong())}", Palette.Orange, 9))
         if (window in 1 until COMFORTABLE_CONTEXT) add(pillSegment(if (plain) "! small ctx ${UsageStats.contextSize(window.toLong())}" else "⚠ ctx ${UsageStats.contextSize(window.toLong())}", Palette.Orange, 9))
         // ↑ (prompt) is exact and moves when a request ends; ↓ (reply) also counts the pieces streaming right now, until the exact figure replaces them
         if (stats.isNotEmpty() || app.liveTokens > 0) add(StatusSegment(listOf(StatusPart("↑${compact(stats.sumOf { it.promptTokens.toLong() })}", Palette.Blue), StatusPart(" ↓${compact(stats.sumOf { it.completionTokens.toLong() } + app.liveTokens)}", Palette.Green)), 3))

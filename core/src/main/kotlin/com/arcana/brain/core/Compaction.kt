@@ -34,15 +34,33 @@ object Compaction {
     }
 
     /**
-     * Where a new summary would go: the index in [messages] of the oldest of the user's last [KEEP_USER_TURNS] turns (which stay as they are),
+     * Where a new summary would go: the index in [messages] of the oldest of the user's last [KEEP_USER_TURNS] turns (which stay as they are; with [keepTokens] the latest turns that fit in that many tokens stay instead),
      * or null when there is too little before it to be worth a summary.
      */
-    fun cutPoint(messages: List<ChatMessage>): Int? {
+    fun cutPoint(messages: List<ChatMessage>, keepTokens: Int = 0): Int? {
         val from = messages.indexOfLast { isSummary(it) }.coerceAtLeast(0)
         val turns = messages.indices.filter { it >= from && messages[it].role == "user" && !isSummary(messages[it]) && !Oracul.isOpinion(messages[it]) }
-        if (turns.size < KEEP_USER_TURNS) return null
-        val cut = turns[turns.size - KEEP_USER_TURNS]
+        val keep = if (keepTokens > 0) keptTurns(messages, turns, keepTokens) else KEEP_USER_TURNS
+        if (keep < 1 || turns.size < keep) return null
+        val cut = turns[turns.size - keep]
         return if (cut - from >= MIN_MESSAGES) cut else null
+    }
+
+    /**
+     * How many of the latest turns fit in [keepTokens] (a turn runs from a message of the user to the next one; text counts about 4 characters per token): as many as fit, and
+     * always at least the latest turn, which is the one being worked on.
+     */
+    private fun keptTurns(messages: List<ChatMessage>, turns: List<Int>, keepTokens: Int): Int {
+        var tokens = 0
+        var kept = 0
+        for (i in turns.indices.reversed()) {
+            val end = if (i == turns.lastIndex) messages.size else turns[i + 1]
+            val size = messages.subList(turns[i], end).sumOf { (it.content.length + it.toolCalls.sumOf { c -> c.function.arguments.toString().length }) / 4 + 1 }
+            if (kept >= 1 && tokens + size > keepTokens) break
+            tokens += size
+            kept++
+        }
+        return kept
     }
 
     /** The part of [messages] a summary made at [cut] would replace for the model: from the latest summary (kept, so summaries chain) up to [cut]. */

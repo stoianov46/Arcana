@@ -43,6 +43,8 @@ data class AppConfig(
     val comparisonView: String = "side",
     /** Compact the chat automatically (summarize the older part, see [Compaction]) before a message when the context window is this percent full; 0 turns it off. */
     val autoCompactPercent: Int = 80,
+    /** When the chat is compacted, the latest turns that fit in this share of the context window stay word for word (the rest becomes the summary); 0 = the last [Compaction.KEEP_USER_TURNS] turns. */
+    val compactKeepPercent: Int = 30,
     /** How many of the latest chat messages are sent to the model as context. */
     val chatHistory: Int = 0,
     /** Esc on a running reply (or an Oracul run) asks "Cancel this reply?" first; off = Esc cancels at once. */

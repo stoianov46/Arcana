@@ -2164,4 +2164,16 @@ class CoreTest {
         assertTrue("analyst" in CONSULT_DEFINITION.toString() && CONSULT == "consult")
         assertTrue("TASK:\nx" in Oracul.consultRequest(StageKind.Planner, "x").last().content && "TO REVIEW:\nx" in Oracul.consultRequest(StageKind.Reviewer, "x").last().content)
     }
+
+    @Test
+    fun compactingKeepsAsManyLatestTurnsAsFitInTheShareOfTheWindow() {
+        // ten turns of about 100 tokens each (a short question and a 400-character answer)
+        val chat = (1..10).flatMap { listOf(ChatMessage.user("q$it"), ChatMessage.assistant("a".repeat(400))) }
+        assertEquals(16, Compaction.cutPoint(chat), "without a share: the last two turns stay")
+        assertEquals(14, Compaction.cutPoint(chat, keepTokens = 350), "350 tokens hold three turns of about 102")
+        assertEquals(10, Compaction.cutPoint(chat, keepTokens = 600), "600 tokens hold five turns")
+        assertEquals(18, Compaction.cutPoint(chat, keepTokens = 10), "the latest turn always stays, even when it alone is too big")
+        assertEquals(null, Compaction.cutPoint(chat, keepTokens = 1_000_000), "everything fits: nothing to summarize")
+        assertEquals(30, AppConfig().compactKeepPercent)
+    }
 }

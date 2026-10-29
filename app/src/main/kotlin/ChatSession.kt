@@ -1173,7 +1173,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     suspend fun compact(): String {
         check(!compacting) { "Already compacting." }
         val all = messages.toList()
-        val cut = Compaction.cutPoint(all) ?: error("The chat is too short to compact: your last ${Compaction.KEEP_USER_TURNS} messages stay as they are, and there must be a few messages before them.")
+        val cut = Compaction.cutPoint(all, keepTokens()) ?: error("The chat is too short to compact: your latest messages stay as they are, and there must be a few messages before them.")
         val part = Compaction.toSummarize(all, cut)
         compacting = true
         try {
@@ -1189,16 +1189,22 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             messages.add(at, Compaction.summaryMessage(summary))
             if (savedMessages >= at) savedMessages++
             persist()
-            return "Compacted ${part.size} messages into a summary of about ${UsageStats.compact(((summary.length + 3) / 4).toLong())} tokens. The model now sees the summary and your last ${Compaction.KEEP_USER_TURNS} messages; everything stays visible here."
+            return "Compacted ${part.size} messages into a summary of about ${UsageStats.compact(((summary.length + 3) / 4).toLong())} tokens. The model now sees the summary and your latest messages; everything stays visible here."
         } finally {
             compacting = false
         }
     }
 
+    /** How many tokens of the latest turns stay word for word when the chat is compacted ([AppConfig.compactKeepPercent] of the window; 0 = the last two turns, also while the window is not known). */
+    private fun keepTokens(): Int {
+        val percent = app.config.compactKeepPercent.takeIf { it > 0 } ?: return 0
+        return effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext) * percent / 100
+    }
+
     /** True when [all] fills the context window past the auto-compact threshold and has enough older messages to summarize. */
     private fun autoCompactDue(all: List<ChatMessage>): Boolean {
         val percent = app.config.autoCompactPercent
-        if (percent <= 0 || compacting || Compaction.cutPoint(all) == null) return false
+        if (percent <= 0 || compacting || Compaction.cutPoint(all, keepTokens()) == null) return false
         val usage = contextUsage(all, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext)) ?: return false
         return usage.first * 100 >= percent
     }
