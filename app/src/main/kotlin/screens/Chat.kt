@@ -692,6 +692,7 @@ fun ChatScreen(app: AppContext) {
             Command(if (app.config.toolAutoShell) "Shell commands: ask before running again" else "Shell commands: run without asking", "Chat", "/autorun", app.config.toolsEnabled && app.config.toolShell) { toggleAutoRun() },
             Command(if (app.config.toolsEnabled) "Tools: turn off" else "Tools: turn on (read and write notes and files)", "Chat", "/tools") { toggleTools() },
             Command(if (app.config.chatUseVault) "Answer from my vault: turn off" else "Answer from my vault: turn on", "Chat", "/vault") { toggleVault() },
+            Command("Files and notes changed in this chat", "Chat", "Esc then f", chat.artifacts.isNotEmpty()) { mode = ChatMode.Artifacts },
             Command("Select & copy", "Chat", "Esc then s", entries.isNotEmpty()) { browsing = true; output.beginSelect { toast(it.text) } },
             Command("Append the last answer to a note…", "Chat", "/append", lastAnswer != null) { openTargetPick(Target.Append) },
             Command("Replace a note with the last answer…", "Chat", "/replace", lastAnswer != null) { openTargetPick(Target.Replace) },
@@ -947,6 +948,8 @@ fun ChatScreen(app: AppContext) {
                 }
                 browsing -> when {
                     key == Key.Enter -> { browsing = false; true }
+                    // f: the files and notes the model wrote or changed in this chat (the ✦ pill)
+                    key.char == 'f' && chat.artifacts.isNotEmpty() -> { mode = ChatMode.Artifacts; true }
                     else -> output.handle(key, entries, letters = true, onNotice = { toast(it.text) })
                 }
                 // in a message of several lines Up/Down move the caret between them; on the first / last line they scroll the conversation
@@ -1118,7 +1121,7 @@ fun ChatScreen(app: AppContext) {
                     // the buttons of a dialog sit inside it, at the bottom; the message field keeps its buttons under the status bar
                     val panelActions = if (question != null) questionActions(question) else if (approval != null) approvalActions(approval) else null
                     val panelActionRows = panelActions?.let { breakIntoLines(it, panelWidth()).size + (if (rememberDensity().tiny) 0 else 1) } ?: 0
-                    val actions = if (panelActions != null) null else chatActions(browsing, entries.isNotEmpty())
+                    val actions = if (panelActions != null) null else chatActions(browsing, entries.isNotEmpty(), chat.artifacts.isNotEmpty())
                     val pendingRow = chat.attachments.rows
                     val statusRow = if (gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled || chat.consulting != null) 1 else 0
                     // what sits under the conversation: the message field, or the change waiting for an answer
@@ -1186,7 +1189,7 @@ fun ChatScreen(app: AppContext) {
                     if (chat.queued.size > QUEUE_SHOWN) Label("  ⏳ … and ${chat.queued.size - QUEUE_SHOWN} more queued", color = Palette.Muted)
                     TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = maxInputRows(), attachments = chat.attachments)
                     StatusBar(statusSegments)
-                    ActionBar(chatActions(browsing, entries.isNotEmpty()))
+                    ActionBar(chatActions(browsing, entries.isNotEmpty(), chat.artifacts.isNotEmpty()))
                 }
                 // one empty row under the whole screen, so the last row does not touch the footer (counted in the conversation's height above)
                 if (bottomGap > 0) Label(" ")
@@ -1392,9 +1395,9 @@ private fun transcript(messages: List<ChatMessage>, model: String): String =
     }
 
 /** The buttons under the message field. */
-private fun chatActions(browsing: Boolean, hasEntries: Boolean): List<ActionItem> =
+private fun chatActions(browsing: Boolean, hasEntries: Boolean, hasChanges: Boolean = false): List<ActionItem> =
     if (browsing) {
-        listOf(ActionItem("Enter", "Type a message", accent = Palette.Cta), ActionItem("s", "Select & copy", hasEntries), ActionItem("↑↓", "Scroll"))
+        listOf(ActionItem("Enter", "Type a message", accent = Palette.Cta), ActionItem("s", "Select & copy", hasEntries), ActionItem("f", "Files changed", hasChanges), ActionItem("↑↓", "Scroll"))
     } else {
         listOf(
             ActionItem("Enter", "Send"),
