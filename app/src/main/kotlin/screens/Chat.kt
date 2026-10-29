@@ -185,11 +185,11 @@ internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConf
         val pill = " ${if (plain) "${if (judging) "judge" else "oracul"} $asking" else "${if (judging) "⚖" else Oracul.GLYPH} $asking…"} "
         val waiting = " $workerLabel ${if (plain) "waits" else "waiting"}"
         val parts = mutableListOf(StatusPart(pill, Palette.Background, bold = true, background = Palette.Orange))
-        if (pill.length + waiting.length <= width / 2) parts += StatusPart(waiting, Palette.Muted)
+        parts += StatusPart(waiting, Palette.Muted)
         return StatusSegment(parts, 10)
     }
     val parts = mutableListOf(StatusPart(" $workerLabel ", Palette.Background, bold = true, background = Palette.Accent))
-    if (setup.isNotEmpty() && workerLabel.length + 2 + setup.length + 3 <= width / 2) {
+    if (setup.isNotEmpty()) {
         parts += StatusPart(" $setup", Palette.Blue)
         // the Oracul does not fit this machine's memory: it would swap to disk or run on the CPU (Settings → Oracul says what to choose instead)
         if (oraculTooBig) parts += StatusPart(if (plain) " !" else " ⚠", Palette.Orange, bold = true)
@@ -232,6 +232,8 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         if (window in 1 until COMFORTABLE_CONTEXT) add(pillSegment(if (plain) "! small ctx ${UsageStats.contextSize(window.toLong())}" else "⚠ ctx ${UsageStats.contextSize(window.toLong())}", Palette.Orange, 9))
         // ↑ (prompt) is exact and moves when a request ends; ↓ (reply) also counts the pieces streaming right now, until the exact figure replaces them
         if (stats.isNotEmpty() || app.liveTokens > 0) add(StatusSegment(listOf(StatusPart("↑${compact(stats.sumOf { it.promptTokens.toLong() })}", Palette.Blue), StatusPart(" ↓${compact(stats.sumOf { it.completionTokens.toLong() } + app.liveTokens)}", Palette.Green)), 3))
+        // everything this session spent, every model and feature (the advisors, the flow, compaction): the figure the price below is worked out from; the arrows above are this chat's own model only
+        add(statusSegment("Σ", "${compact(app.sessionTokens)} all models", Palette.Blue, 7))
         add(statusSegment("est.", priceText(cost), Palette.Orange, 7, bold = true))
         add(statusSegment("", "◷ ${spanText(System.currentTimeMillis() - app.sessionStart)}", Palette.Accent, 2))
         // the skill being run: how many of its required steps are done (the gate sends the model back if it tries to finish early)
@@ -1049,7 +1051,9 @@ fun ChatScreen(app: AppContext) {
                         (if (chat.unsaved && count > 0) " · not in vault (Ctrl+S)" else ""),
                 )
                 // the status bar sits under the message field (above the buttons): one row more in the count below
-                val statusRows = if (rememberDensity().tiny) 0 else 1
+                // the status bar wraps instead of dropping facts: reserve as many rows as it needs at this width
+                val statusSegments = chatStatus(app, chat, app.config.plainGlyphs, memoryChars, LocalContentWidth.current)
+                val statusRows = statusRowCount(statusSegments, LocalContentWidth.current)
                 val bottomGap = if (rememberDensity().tiny) 0 else 1
                 VGap()
                 // the thinking pane: a split window under the conversation (counted exactly, like everything else on the screen)
@@ -1079,7 +1083,7 @@ fun ChatScreen(app: AppContext) {
                     val panelActionRows = panelActions?.let { breakIntoLines(it, panelWidth()).size + (if (rememberDensity().tiny) 0 else 1) } ?: 0
                     val actions = if (panelActions != null) null else chatActions(browsing, entries.isNotEmpty())
                     val pendingRow = chat.attachments.rows
-                    val statusRow = if (gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled) 1 else 0
+                    val statusRow = if (gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled || chat.consulting != null) 1 else 0
                     // what sits under the conversation: the message field, or the change waiting for an answer
                     val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
                     val queuedRows = if (question == null && approval == null) chat.queued.size.coerceAtMost(QUEUE_SHOWN + 1) else 0
@@ -1101,7 +1105,7 @@ fun ChatScreen(app: AppContext) {
                         }
                         ActionBar(questionActions(question), panelWidth(), ActionStyle.Button)
                     }
-                    if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars, LocalContentWidth.current))
+                    StatusBar(statusSegments)
                 } else if (approval != null) {
                     Panel(approval.heading, accent = Palette.Warn) {
                         Label("${approval.icon} ${approval.title}", color = Palette.Warn, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
@@ -1110,7 +1114,7 @@ fun ChatScreen(app: AppContext) {
                         }
                         ActionBar(approvalActions(approval), panelWidth(), ActionStyle.Button)
                     }
-                    if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars, LocalContentWidth.current))
+                    StatusBar(statusSegments)
                 } else {
                     VGap()
                     // the menu of commands and tools, just above the message field
@@ -1144,7 +1148,7 @@ fun ChatScreen(app: AppContext) {
                     }
                     if (chat.queued.size > QUEUE_SHOWN) Label("  ⏳ … and ${chat.queued.size - QUEUE_SHOWN} more queued", color = Palette.Muted)
                     TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = maxInputRows(), attachments = chat.attachments)
-                    if (statusRows > 0) StatusBar(chatStatus(app, chat, app.config.plainGlyphs, memoryChars, LocalContentWidth.current))
+                    StatusBar(statusSegments)
                     ActionBar(chatActions(browsing, entries.isNotEmpty()))
                 }
                 // one empty row under the whole screen, so the last row does not touch the footer (counted in the conversation's height above)

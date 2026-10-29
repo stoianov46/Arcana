@@ -50,7 +50,7 @@ links), *Top tags*. Right: *Jump back in* (Ask your brain, AI notes, this sessio
 - Replies stream; the footer shows `✓ Done · time · ↑ prompt ↓ output tokens · tok/s` (a round that ended in a tool call shows a quiet
   `· step` line). The "thinking" status names the model. A reply keeps running when you leave the screen: with an empty field the
   number keys (and `Ctrl+P`) switch screens.
-- **Status bar under the field** (`StatusBar(chatStatus(…))`): model pill, memory size (`✎ memory 2.3k`), context gauge (`ctx █░░ 3%
+- **Status bar under the field** (`StatusBar(chatStatus(…))`; it **wraps onto more rows in a narrow window and never hides a fact**; `Σ 74k all models` is the session's tokens over every model and feature, the `↑ ↓` arrows are this chat's main model only, and `est.` is worked out from the Σ figure): model pill, memory size (`✎ memory 2.3k`), context gauge (`ctx █░░ 3%
   3.9k/131k`: last prompt + reply against `contextTokens`, else the window Ollama really loaded (`/api/ps`), else the model's `context_length`; never more than the model supports; written `256k`, not `262k`; a window under 32k shows `⚠ ctx 4k`), tokens in
   and out (`↓` and the bottom bar's `⚡ N tok` also count the reply tokens streaming right now via `AppContext.liveTokens`, replaced by Ollama's exact figures when the request ends; `↑` prompt tokens are exact and step once per model round), estimated price (`est.`, from Settings → Ollama → Price per million tokens), session time, tool-mode pill. Least important
   items drop first on a narrow terminal.

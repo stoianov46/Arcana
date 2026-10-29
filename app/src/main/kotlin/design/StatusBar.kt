@@ -2,6 +2,7 @@ package com.arcana.brain.app.design
 
 import androidx.compose.runtime.Composable
 import com.jakewharton.mosaic.ui.Color
+import com.jakewharton.mosaic.ui.Column
 import com.jakewharton.mosaic.ui.Row
 import com.jakewharton.mosaic.ui.TextStyle
 
@@ -10,7 +11,7 @@ class StatusPart(val text: String, val color: Color, val bold: Boolean = false, 
 
 /**
  * One fact in a [StatusBar]: a muted label and a coloured value (`ctx ▰▰▱▱ 12% 13k/131k`, `⏱ 1h 02m`, `≈ $0.31`).
- * When the bar is too narrow the segments with the lowest [priority] are dropped first, so what matters stays.
+ * [priority] no longer drops anything (the bar wraps, see [wrapSegments]); it is kept so a segment says how much it matters.
  */
 class StatusSegment(val parts: List<StatusPart>, val priority: Int = 5) {
     val width: Int get() = parts.sumOf { it.text.length }
@@ -52,31 +53,61 @@ fun gaugeSegment(label: String, fraction: Double, detail: String, priority: Int 
     )
 }
 
-/** The segments that fit in [width] (joined by [separatorWidth] columns each), dropping the lowest priority first and keeping the original order. */
-internal fun fitSegments(segments: List<StatusSegment>, width: Int, separatorWidth: Int = 3): List<StatusSegment> {
-    fun total(list: List<StatusSegment>) = list.sumOf { it.width } + separatorWidth * (list.size - 1).coerceAtLeast(0)
-    val kept = segments.toMutableList()
-    while (kept.size > 1 && total(kept) > width) {
-        val drop = kept.withIndex().minWithOrNull(compareBy({ it.value.priority }, { -it.index }))!!
-        kept.removeAt(drop.index)
+/**
+ * The segments laid out in rows of at most [width] columns (joined by [separatorWidth] columns), in their original order: **nothing is dropped**, a segment that does not fit
+ * on the row goes to the next one, and one that is wider than a whole row is cut with `…`. So every indicator stays visible at any width; a narrow window just needs more rows.
+ */
+internal fun wrapSegments(segments: List<StatusSegment>, width: Int, separatorWidth: Int = 3): List<List<StatusSegment>> {
+    val limit = width.coerceAtLeast(8)
+    val rows = mutableListOf(mutableListOf<StatusSegment>())
+    var used = 0
+    for (segment in segments.map { it.cut(limit) }) {
+        val row = rows.last()
+        if (row.isNotEmpty() && used + separatorWidth + segment.width > limit) {
+            rows += mutableListOf(segment)
+            used = segment.width
+        } else {
+            used += if (row.isEmpty()) segment.width else separatorWidth + segment.width
+            row += segment
+        }
     }
-    return kept
+    return rows
+}
+
+/** How many rows [wrapSegments] needs: what a screen must reserve for its status bar. */
+internal fun statusRowCount(segments: List<StatusSegment>, width: Int, separatorWidth: Int = 3): Int = wrapSegments(segments, width, separatorWidth).size
+
+/** This segment cut to at most [limit] columns: the last parts are shortened or left out and the text ends in `…`. */
+private fun StatusSegment.cut(limit: Int): StatusSegment {
+    if (width <= limit) return this
+    val parts = ArrayList<StatusPart>()
+    var left = limit - 1
+    for (part in this.parts) {
+        if (left <= 0) break
+        if (part.text.length <= left) { parts += part; left -= part.text.length }
+        else { parts += StatusPart(part.text.take(left), part.color, part.bold, part.background); left = 0 }
+    }
+    parts += StatusPart("…", Palette.Muted)
+    return StatusSegment(parts, priority)
 }
 
 /**
- * A one-line status bar (like the one under a Claude Code prompt): facts separated by `│`, values coloured, gauges for what fills up.
- * The same component serves every screen that wants a summary line; the segments decide what it says.
+ * A status bar (like the one under a Claude Code prompt): facts separated by `│`, values coloured, gauges for what fills up. It wraps onto as many rows as it needs, so no fact is ever
+ * hidden because the window is narrow ([statusRowCount] says how many rows to reserve). The segments decide what it says.
  */
 @Composable
 fun StatusBar(segments: List<StatusSegment>, width: Int = LocalContentWidth.current) {
     val plain = LocalPlainGlyphs.current
     val separator = if (plain) " | " else " │ "
-    val shown = fitSegments(segments, width, separator.length)
-    Row {
-        shown.forEachIndexed { i, segment ->
-            if (i > 0) Label(separator, color = Palette.Dim)
-            segment.parts.forEach { part ->
-                Label(part.text, color = part.color, background = part.background, textStyle = if (part.bold) TextStyle.Bold else TextStyle.Unspecified)
+    Column {
+        wrapSegments(segments, width, separator.length).forEach { row ->
+            Row {
+                row.forEachIndexed { i, segment ->
+                    if (i > 0) Label(separator, color = Palette.Dim)
+                    segment.parts.forEach { part ->
+                        Label(part.text, color = part.color, background = part.background, textStyle = if (part.bold) TextStyle.Bold else TextStyle.Unspecified)
+                    }
+                }
             }
         }
     }
@@ -87,7 +118,7 @@ fun StatusBar(segments: List<StatusSegment>, width: Int = LocalContentWidth.curr
 fun StatusHeader(title: String, segments: List<StatusSegment>) {
     Stack {
         Label(title, color = Palette.Text, textStyle = TextStyle.Bold)
-        if (!rememberDensity().tiny) StatusBar(segments)
+        StatusBar(segments)
     }
 }
 

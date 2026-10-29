@@ -77,7 +77,7 @@ Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `
 | `Actions.kt` | `ActionItem`, `ActionStyle` (`Quiet` default, `Button`), `ActionBar(items, width, style)`, `actionBarRows`, `breakIntoLines(items, width, style)`, `Badge` |
 | `ModelIcon.kt` | `ModelIcon` (`of`, `label`, `user`): the glyph before a model name by family (`◆` gemma, `◈` qwen, `▲` llama…; default `◆`, ASCII `*` in plain mode); the name itself is always Ollama's own. Used by the Chat labels and status bar; add a family to `FAMILIES` |
 | `SlashKind.kt` | `SlashKind` (+ `SlashCategory`: the COMMAND / SKILL / TOOL group and badge of every row): what a "/" menu entry is (Command, Skill, Read, Write, Shell, Danger, Web, Ask) with its `Palette` colour, glyph and badge word; `forTool(name, risk)` classifies a tool |
-| `StatusBar.kt` | **reusable status line**: `StatusSegment`/`StatusPart`, `statusSegment`, `pillSegment`, `gaugeSegment`, `fitSegments` (drops the lowest priority first), `StatusBar`, `StatusHeader`, `spanText`, `priceText` |
+| `StatusBar.kt` | **reusable status line**: `StatusSegment`/`StatusPart`, `statusSegment`, `pillSegment`, `gaugeSegment`, `wrapSegments` / `statusRowCount` (wrap onto more rows, never drop), `StatusBar`, `StatusHeader`, `spanText`, `priceText` |
 | `Shortcuts.kt` | `Shortcuts.label(text)`: the one place shortcut labels pass through (Ctrl chords) |
 | `Messages.kt` | `Notice`, `NoticeLine`, `Hint`, `Warning`, `Cta`, `Loading`, `Spinner` |
 | `Picker.kt` | `PickerState` + `Picker<T>`: `/` filters (any order of words), ↑↓, Enter; optional `icon`/`iconColor`/`meta`, and for trees `indent` (two spaces per level), `labelColor` and `total` (the count shown in the search strip) |

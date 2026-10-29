@@ -110,10 +110,9 @@ add it to the count.
 
 ## Status bar (`design/StatusBar.kt`)
 
-A reusable one-line summary: `StatusSegment(parts, priority)` (a part is coloured text, optionally bold or on a background), built with
+A reusable summary (one row when it fits, more when it does not): `StatusSegment(parts, priority)` (a part is coloured text, optionally bold or on a background), built with
 `statusSegment(label, value, color, priority)`, `pillSegment(text, background)`, `gaugeSegment(label, fraction, detail)` (green < 60 %,
-orange from 60 %, red from 85 %). `fitSegments(segments, width)` drops the lowest priority first (keeping the order) until the line fits;
-`StatusBar(segments)` draws it with `│` separators (`|` with plain glyphs); `StatusHeader(title, segments)` is a screen header with the bar
+orange from 60 %, red from 85 %). **Nothing is hidden at any width** (a rule of the project): `wrapSegments(segments, width)` lays the segments out in rows of at most `width` columns in their original order (a segment that does not fit goes to the next row; one wider than a row is cut with `…`), and `statusRowCount` says how many rows a screen must reserve (Chat counts them in its row accounting; the tiny-density case that used to hide the bar is gone). `priority` is kept but drops nothing. The Chat bar never drops the quiet part of `modelsSegment` either. `StatusBar(segments)` draws the rows with `│` separators (`|` with plain glyphs); `StatusHeader(title, segments)` is a screen header with the bar
 under the title. Chat (`chatStatus`) and Usage use it; any screen can.
 
 ## Scrollbars and scrolling text

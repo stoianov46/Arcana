@@ -98,7 +98,12 @@ fun ReplyStatus(app: AppContext, gen: Generation, consulting: String? = null, co
         }
         GenState.Failed -> Label((if (app.config.plainGlyphs) "Error: " else "✕ ") + gen.error, color = Palette.Red, wrap = true)
         GenState.Cancelled -> Label("Cancelled.", color = Palette.Warn)
-        else -> Unit
+        // the worker is done but another model is still working on its answer (reviewer, controller, judge, goal check): say so, it can take a minute on a local machine
+        else -> if (consulting != null) Spinner {
+            val judging = consulting == com.arcana.brain.core.Oracul.judge(app.config) && consulting != com.arcana.brain.core.Oracul.model(app.config)
+            val seconds = (System.currentTimeMillis() - consultingSince) / 1000
+            "${if (judging && consultingStage == null) "⚖" else com.arcana.brain.core.Oracul.GLYPH} $consulting is ${consultingStage ?: if (judging) "judging" else "answering"}… ${seconds}s · Esc to cancel"
+        }
     }
 }
 

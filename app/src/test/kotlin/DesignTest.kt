@@ -396,14 +396,19 @@ class DesignTest {
     }
 
     @Test
-    fun statusBarsDropTheLeastImportantSegmentsFirstAndFormatValues() {
+    fun statusBarsNeverDropASegmentTheyWrapAndFormatValues() {
         fun seg(text: String, priority: Int) = com.arcana.brain.app.design.statusSegment("", text, com.arcana.brain.app.design.Palette.Text, priority)
+        fun text(s: com.arcana.brain.app.design.StatusSegment) = s.parts.joinToString("") { p -> p.text }
         val all = listOf(seg("model", 9), seg("title", 3), seg("ctx", 10), seg("time", 1), seg("price", 7))
-        val widths = all.sumOf { it.width } + 3 * 4
-        assertEquals(all.map { it.width }, com.arcana.brain.app.design.fitSegments(all, widths).map { it.width })
-        val narrow = com.arcana.brain.app.design.fitSegments(all, 5 + 5 + 3 + 3 + 3 + 3) // room for model, ctx and price only
-        assertEquals(listOf("model", "ctx", "price"), narrow.map { it.parts.joinToString("") { p -> p.text } })
-        assertEquals(1, com.arcana.brain.app.design.fitSegments(all, 1).size)
+        val wide = com.arcana.brain.app.design.wrapSegments(all, all.sumOf { it.width } + 3 * 4)
+        assertEquals(1, wide.size, "everything fits on one row")
+        val narrow = com.arcana.brain.app.design.wrapSegments(all, 5 + 3 + 5)
+        assertEquals(listOf("model", "title", "ctx", "time", "price"), narrow.flatten().map { text(it) }, "nothing is dropped, whatever the width, and the order is kept")
+        assertTrue(narrow.size > 1 && narrow.all { row -> row.sumOf { it.width } + 3 * (row.size - 1) <= 13 }, "no row is wider than the bar")
+        assertEquals(narrow.size, com.arcana.brain.app.design.statusRowCount(all, 13))
+        val tiny = com.arcana.brain.app.design.wrapSegments(listOf(seg("a-very-long-segment-indeed", 5)), 10)
+        assertEquals(1, tiny.size)
+        assertTrue(text(tiny[0][0]).length <= 10 && text(tiny[0][0]).endsWith("…"), "one segment wider than the bar is cut with an ellipsis")
         val gauge = com.arcana.brain.app.design.gaugeSegment("ctx", 0.11, "15k/131k")
         assertEquals("ctx █░░░░░░░░░ 11% 15k/131k", gauge.parts.joinToString("") { it.text })
         assertEquals("ctx ##-------- 25% x", com.arcana.brain.app.design.gaugeSegment("ctx", 0.25, "x", plain = true).parts.joinToString("") { it.text })
@@ -654,7 +659,7 @@ class DesignTest {
         assertEquals(" Ψ big… ", asking.parts[0].text)
         assertTrue(asking.parts[1].text.contains("small waiting"))
         assertTrue(com.arcana.brain.app.screens.modelsSegment("◆ small", "jdg", config, false, 120).parts[0].text.contains("⚖ jdg"))
-        assertEquals(1, com.arcana.brain.app.screens.modelsSegment("◆ small", "big", config, false, 20).parts.size, "narrow: only the pill")
+        assertEquals(2, com.arcana.brain.app.screens.modelsSegment("◆ small", "big", config, false, 20).parts.size, "narrow: the quiet part stays too, the bar wraps")
     }
 
     @Test
