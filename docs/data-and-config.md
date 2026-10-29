@@ -43,6 +43,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `comparisonView` | side | how a `/compare` result is drawn in Chat: `side` (answers in columns, verdict below) or `stacked`; narrow windows stack either way |
 | `autoCompactPercent` | 80 | compact the chat before a message when the context window is this percent full (0 = off); `/compact` always works (see `Compaction`) |
 | `compactKeepPercent` | 30 | when the chat is compacted, the latest turns that fit in this share of the context window stay word for word (0 = the last 2 turns); Settings → Console → *Keep after compacting* |
+| (file) `events.jsonl` | | next to `config.json`: one JSON line per orchestration event (`time`, `kind`, `detail`, `model`) for the Usage screen's Team page; cleared with the usage history |
 | `chatHistory` | 0 | latest messages sent as context; 0 = everything (the chat is compacted at `autoCompactPercent`, not cut). Configs saved before this change keep their old 20 until it is changed in Settings → Console → Chat history |
 | `confirmCancel` | true | `Esc` on a running reply asks "Cancel this reply?" first (Settings → Console → *Confirm before cancelling*); false = `Esc` cancels at once |
 | `keepChats` / `chatsKept` | true / 50 | persist chats / how many to keep |

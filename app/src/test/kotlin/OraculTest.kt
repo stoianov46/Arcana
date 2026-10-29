@@ -3,6 +3,7 @@ package com.arcana.brain.app
 import com.arcana.brain.core.AppConfig
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ChatStore
+import com.arcana.brain.core.Events
 import com.arcana.brain.core.ConfigStore
 import com.arcana.brain.core.Oracul
 import com.arcana.brain.core.SessionStore
@@ -62,7 +63,7 @@ class OraculTest {
         val dir = Files.createTempDirectory("arcana-oracul")
         val store = ConfigStore(dir.resolve("config.json"))
         store.save(AppConfig(ollamaUrl = "http://127.0.0.1:${f.server.address.port}", model = "worker", keepChats = false).config())
-        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), SessionStore(dir.resolve("sessions")))
+        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), SessionStore(dir.resolve("sessions")), com.arcana.brain.core.EventStore(dir.resolve("events.jsonl")))
             .also { it.scope = CoroutineScope(Dispatchers.Default) }
     }
 
@@ -622,6 +623,21 @@ class OraculTest {
             Thread.sleep(2500)
             assertTrue(!Files.exists(other.resolve("ran")), "without auto-run the command is not run")
             assertTrue(off.roleNote?.contains("auto-run") == true, "and the user is told why")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun aFlowRecordsItsEventsAndTheLogoStopsBeingBusyWhenEveryHelperIsDone() {
+        val f = fake()
+        f.script = controllerSays("VERDICT: REDO\\n- fix it", "VERDICT: DONE")
+        try {
+            val a = app(f) { copy(flow = "careful", flowAnalyst = "judge", flowController = "judge", rolePlanner = "big", roleReviewer = "big", toolsEnabled = false) }
+            a.chat.send(longQuestion)
+            Thread.sleep(2500)
+            val kinds = a.events.map { it.kind + ":" + it.detail }
+            assertTrue(kinds.first() == "flow:" && "control:redo" in kinds && "redo:" in kinds && "control:done" in kinds, "the run, the verdicts and the redo were recorded: $kinds")
+            assertEquals(2, a.events.count { it.kind == Events.OPINION }, "a review after each of the two answers")
+            assertEquals(0, a.busy, "nothing is busy once the worker and every helper are done, so the logo stops")
         } finally { f.server.stop(0) }
     }
 

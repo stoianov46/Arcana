@@ -27,7 +27,7 @@ class CompactTest {
         val dir = Files.createTempDirectory("arcana-compact")
         val config = ConfigStore(dir.resolve("config.json"))
         config.save(AppConfig(ollamaUrl = "http://127.0.0.1:${server.address.port}", model = "m", keepChats = false))
-        return AppContext(config, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), SessionStore(dir.resolve("sessions"))).also {
+        return AppContext(config, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), SessionStore(dir.resolve("sessions")), com.arcana.brain.core.EventStore(dir.resolve("events.jsonl"))).also {
             it.scope = CoroutineScope(Dispatchers.Default)
         }
     }

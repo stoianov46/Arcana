@@ -17,6 +17,7 @@ import com.arcana.brain.core.CheckRun
 import com.arcana.brain.core.Artifacts
 import com.arcana.brain.core.CONSULT
 import com.arcana.brain.core.CONSULT_DEFINITION
+import com.arcana.brain.core.Events
 import com.arcana.brain.core.Flow
 import com.arcana.brain.core.MAX_CONSULTS
 import com.arcana.brain.core.Route
@@ -262,6 +263,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val (question, answer) = Oracul.lastExchange(messages.toList()) ?: return
         val check = runCheckCommand()
         // an objective failure needs no second opinion: the output is the verdict
+        if (check != null) app.recordEvent(Events.CHECK, if (check.second.passed) "pass" else "fail")
         if (check != null && !check.second.passed) {
             val run = check.second
             add(Oracul.controlMessage(check.first, Oracul.Control(false, "The check command failed (" + (run.code?.let { "exit code $it" } ?: "timed out") + "):\n" + run.output.takeLast(1_500))))
@@ -280,6 +282,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             if (text.isEmpty()) { roleNote = "$controller returned an empty verdict: the answer stands."; return }
             val verdict = Oracul.parseControl(text)
             add(Oracul.controlMessage(controller, verdict))
+            app.recordEvent(Events.CONTROL, if (verdict.done) "done" else "redo", controller)
             if (verdict.done) return
             requestRedo(flow)
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
@@ -304,7 +307,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         consulting = judge; consultingStage = "judging the opinion"
         try {
             val text = Oracul.ask(clientFor(judge), Oracul.verdictRequest(question, answer, Oracul.body(opinion), oraculBackground())) { app.recordUsage("Judge", it, judge) }
-            if (text.isNotEmpty()) add(Oracul.verdictMessage(judge, text))
+            if (text.isNotEmpty()) {
+                add(Oracul.verdictMessage(judge, text))
+                app.recordEvent(Events.VERDICT, Regex("^\\W*(AGREE|PARTLY|DISAGREE)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.lowercase() ?: "unclear", judge)
+            }
         } finally {
             consulting = null
         }
@@ -314,6 +320,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     fun startGoal(text: String) {
         goal = text.trim().ifEmpty { return }
         goalTurns = 0
+        app.recordEvent(Events.GOAL, "set")
         send("Goal: ${goal}\nWork toward it until it is reached; tell me when you think it is.")
     }
 
@@ -338,8 +345,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             if (text.isEmpty()) { roleNote = "$model returned an empty goal check: the goal stays set."; return }
             val check = Oracul.parseGoal(text)
             add(Oracul.goalMessage(model, check))
-            if (check.met) { clearGoal(); return }
-            if (goalTurns >= app.config.goalTurns) { clearGoal(); roleNote = "The goal was not met after ${app.config.goalTurns} automatic turns: stopped. Set it again with /goal, or carry on yourself."; return }
+            if (check.met) { clearGoal(); app.recordEvent(Events.GOAL, "met", model); return }
+            if (goalTurns >= app.config.goalTurns) { clearGoal(); app.recordEvent(Events.GOAL, "stopped", model); roleNote = "The goal was not met after ${app.config.goalTurns} automatic turns: stopped. Set it again with /goal, or carry on yourself."; return }
             goalTurns++
             app.scope.launch { yield(); send(Oracul.goalContinue(wanted)) }
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
@@ -370,13 +377,15 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             app.config.toolsEnabled && capabilities != null && "tools" !in capabilities -> { roleNote = "$model cannot use tools: ${app.config.model} answers."; return }
         }
         runWorker = model
+        app.recordEvent(Events.ROUTE, if (kind == Route.Vision) "image" else "code", model)
         routeNote = "Routed to $model: the message has ${kind.label}."
     }
 
     /** Sends the worker back (the verdict is already in the chat), unless [Flow.redos] are used up: then the last answer stands, with a note. */
     private fun requestRedo(flow: Flow) {
-        if (flowRedos >= flow.redos) { if (flow.redos > 0) roleNote = "The controller still wanted a redo after ${flow.redos} tries: the last answer stands."; return }
+        if (flowRedos >= flow.redos) { if (flow.redos > 0) { roleNote = "The controller still wanted a redo after ${flow.redos} tries: the last answer stands."; app.recordEvent(Events.REDO_LIMIT) }; return }
         flowRedos++
+        app.recordEvent(Events.REDO)
         app.scope.launch { yield(); send(Oracul.REDO_PROMPT) }
     }
 
@@ -418,6 +427,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         try {
             val feature = when (kind) { StageKind.Analyst -> "Analyst"; StageKind.Planner -> "Planner"; else -> "Oracul" }
             val text = Oracul.ask(clientFor(model), Oracul.consultRequest(kind, brief, oraculBackground())) { app.recordUsage(feature, it, model) }
+            if (text.isNotEmpty()) app.recordEvent(Events.CONSULT, kind.label.lowercase(), model)
             return if (text.isEmpty()) "Error: $model returned nothing." else "${kind.label} ($model) says:\n$text"
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             throw e
@@ -686,7 +696,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             }
             if (allowed && spec != null && !result.startsWith("Error:")) {
                 app.session.log(SessionKind.Tool, "${call.name} ${spec.summary(call.arguments)}")
-                Artifacts.of(call.name, { (call.arguments[it] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty() }, result, System.currentTimeMillis())?.let { artifacts += it }
+                Artifacts.of(call.name, { (call.arguments[it] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty() }, result, System.currentTimeMillis())?.let { artifacts += it; app.recordEvent(Events.ARTIFACT, it.action) }
                 if (spec.risk != ToolRisk.Read) app.brain.changed()
             }
             // what each tool costs: time, outcome and how much text it put into the context (shown on the Usage screen's Tools page)
@@ -694,6 +704,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val message = ChatMessage.toolResult(call.name, result)
             add(message)
             added += message
+            if (call.name == "remember") when {
+                result.startsWith("Already remembered") -> app.recordEvent(Events.MEMORY, "duplicate")
+                result.startsWith("Error:") && "dead path" in result -> app.recordEvent(Events.MEMORY, "refused")
+            }
             // the skill run: a skill the model loaded itself starts it; every call and result is ticked off against the required steps
             if (call.name == "use_skill" && !result.startsWith("Error:")) {
                 val skill = Skills.find(box.skills, (call.arguments["name"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty())
@@ -903,6 +917,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         get() = consultingNow
         private set(value) {
             if (value != consultingNow) consultingSince = System.currentTimeMillis()
+            // a helper model at work keeps the logo animated, like a reply does (the count goes up once when the first one starts and down once when none is left)
+            if (consultingNow == null && value != null) app.busy++ else if (consultingNow != null && value == null) app.busy = (app.busy - 1).coerceAtLeast(0)
             consultingNow = value
             if (value == null) consultingStage = null
         }
@@ -1023,7 +1039,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * A second opinion on the last answer from the Oracul model: it reads the question and the answer (and may check with the worker's tools, see [oraculAgent]) and says what is wrong or
      * missing. The result is added to the chat as a block of its own; returns a line for the user. Throws with a message when it cannot.
      */
-    suspend fun secondOpinion(reviewer: String? = null, stage: String? = null): String {
+    suspend fun secondOpinion(reviewer: String? = null, stage: String? = null, source: String = "manual"): String {
         val model = (reviewer ?: Oracul.model(app.config)).ifEmpty { error("Choose an Oracul model first: Settings → Oracul → Model.") }
         val (question, answer) = Oracul.lastExchange(messages.toList()) ?: error("There is no answer to review yet.")
         check(consulting == null) { "The Oracul is already working." }
@@ -1040,6 +1056,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             }
             require(text.isNotEmpty()) { "$model returned an empty opinion; nothing was added." }
             add(Oracul.opinionMessage(model, text + Oracul.toolsLine(used)))
+            app.recordEvent(Events.OPINION, source, model)
             return "Second opinion from $model added."
         } finally {
             consulting = null
@@ -1127,20 +1144,20 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val flow = Flow.of(config)
         if (flow != null && flowControl && consulting == null) {
             autoConsult = app.scope.launch {
-                runReviewer?.let { runCatching { secondOpinion(it, stage = "reviewing the answer") } }
+                runReviewer?.let { runCatching { secondOpinion(it, stage = "reviewing the answer", source = "flow") } }
                 control(flow)
             }
             return
         }
         // a skill that names a reviewer asks for the review itself, whatever the automatic setting says
-        runReviewer?.let { reviewer -> if (consulting == null) autoConsult = app.scope.launch { runCatching { secondOpinion(reviewer) } }; return }
+        runReviewer?.let { reviewer -> if (consulting == null) autoConsult = app.scope.launch { runCatching { secondOpinion(reviewer, source = "auto") } }; return }
         // the Oracul already stepped in during this turn because the worker kept failing: one consultation per turn is enough
         if (stuckAdvised > 0) return
         if (Oracul.model(config).isEmpty() || config.oraculAuto == "off" || consulting != null) return
         if (!Oracul.due(config, Oracul.turnFacts(messages.toList(), skillRun?.skippedCount ?: 0))) return
         // opt-in (Settings → Oracul → Judge automatically): a full comparison with a verdict instead of one opinion
         autoConsult = if (config.oraculJudgeAuto) app.scope.launch { runCatching { compare() } } else app.scope.launch {
-            runCatching { secondOpinion() }.onSuccess { runCatching { verdictOnOpinion() } }
+            runCatching { secondOpinion(source = "auto") }.onSuccess { runCatching { verdictOnOpinion() } }
         }
     }
 
@@ -1170,12 +1187,13 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * inserted at that point. Nothing is removed from the chat; the model just stops being sent what is above the summary.
      * Returns what to tell the user; throws with a message when it cannot be done (too short, empty summary, no model).
      */
-    suspend fun compact(): String {
+    suspend fun compact(auto: Boolean = false): String {
         check(!compacting) { "Already compacting." }
         val all = messages.toList()
         val cut = Compaction.cutPoint(all, keepTokens()) ?: error("The chat is too short to compact: your latest messages stay as they are, and there must be a few messages before them.")
         val part = Compaction.toSummarize(all, cut)
         compacting = true
+        app.busy++
         try {
             val text = StringBuilder()
             app.client.chat(listOf(ChatMessage.system(Compaction.INSTRUCTIONS), ChatMessage.user(Compaction.transcript(part)))).collect { chunk ->
@@ -1189,9 +1207,11 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             messages.add(at, Compaction.summaryMessage(summary))
             if (savedMessages >= at) savedMessages++
             persist()
+            app.recordEvent(Events.COMPACT, if (auto) "auto" else "manual")
             return "Compacted ${part.size} messages into a summary of about ${UsageStats.compact(((summary.length + 3) / 4).toLong())} tokens. The model now sees the summary and your latest messages; everything stays visible here."
         } finally {
             compacting = false
+            app.busy = (app.busy - 1).coerceAtLeast(0)
         }
     }
 
@@ -1247,12 +1267,13 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             }
             // a short message of a flow goes straight to the worker: no review and no check either
             flowControl = flow != null && (redo || planned)
+            if (flow != null && planned) app.recordEvent(Events.FLOW)
             if (flow != null && !flowControl) runReviewer = null
             route(history)
             val analysis = if (flow != null && planned && body.length >= PLAN_MIN_CHARS) analyse(flow, body) else ""
             if (planner != null && planned) plan(planner, chipEntry, body, analysis)
             // a nearly full window: summarize the older part first, so this question is not sent with a chat that no longer fits
-            if (autoCompactDue(messages.toList())) runCatching { compact() }
+            if (autoCompactDue(messages.toList())) runCatching { compact(auto = true) }
             val history = Compaction.forModel(messages.toList())
             val config = app.config
             val vault = app.openVault().getOrNull()

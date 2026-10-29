@@ -13,6 +13,7 @@ import com.arcana.brain.app.input.KeyHandler
 import com.arcana.brain.app.input.char
 import com.arcana.brain.app.navigation.FocusMode
 import com.arcana.brain.app.navigation.Hints
+import com.arcana.brain.core.TeamStatsBuilder
 import com.arcana.brain.core.ToolStats
 import com.arcana.brain.core.ToolUseRecord
 import com.arcana.brain.core.UsageInsights
@@ -31,7 +32,7 @@ import java.util.Locale
 
 private enum class Period(val title: String) { Session("This session"), Today("Today"), Week("7 days"), Month("30 days"), All("All time") }
 
-private enum class Page(val title: String) { Overview("Overview"), Breakdown("Breakdown"), Tools("Tools"), Recent("Recent replies") }
+private enum class Page(val title: String) { Overview("Overview"), Breakdown("Breakdown"), Team("Team"), Tools("Tools"), Recent("Recent replies") }
 
 private const val DAY = 86_400_000L
 
@@ -40,10 +41,11 @@ fun UsageScreen(app: AppContext) {
     var period by remember { mutableStateOf(Period.Session) }
     var page by remember { mutableStateOf(Page.Overview) }
     var confirmClear by remember { mutableStateOf(false) }
+    val teamOutput = remember { OutputState() }
     var notice by remember { mutableStateOf<Notice?>(null) }
 
     FocusMode(confirmClear)
-    if (confirmClear) Hints("y  clear history", "any other key  keep") else Hints("←→  period", "Tab  page", "c  clear history")
+    if (confirmClear) Hints("y  clear history", "any other key  keep") else Hints("←→  period", "Tab  page", *(if (page == Page.Team) arrayOf("↑↓  scroll") else emptyArray()), "c  clear history")
 
     KeyHandler { key ->
         when {
@@ -59,6 +61,7 @@ fun UsageScreen(app: AppContext) {
             key == Key.Right -> { period = Period.entries[(period.ordinal + 1).mod(Period.entries.size)]; true }
             key == Key.Tab -> { page = Page.entries[(page.ordinal + 1).mod(Page.entries.size)]; true }
             key == Key.BackTab -> { page = Page.entries[(page.ordinal - 1).mod(Page.entries.size)]; true }
+            page == Page.Team && teamOutput.handle(key, letters = false) -> true
             key.char == 'c' -> { confirmClear = true; true }
             else -> false
         }
@@ -108,7 +111,18 @@ fun UsageScreen(app: AppContext) {
                 Period.Month -> UsageStats.startOfToday() - 29 * DAY
                 Period.All -> 0L
             })
-            if (page == Page.Tools) ToolsPanel(toolRecords, room) else Dashboard(period, page, records, all, room)
+            val since = when (period) {
+                Period.Session -> app.sessionStart
+                Period.Today -> UsageStats.startOfToday()
+                Period.Week -> UsageStats.startOfToday() - 6 * DAY
+                Period.Month -> UsageStats.startOfToday() - 29 * DAY
+                Period.All -> 0L
+            }
+            when (page) {
+                Page.Tools -> ToolsPanel(toolRecords, room)
+                Page.Team -> TeamPage(TeamStatsBuilder.build(records, TeamStatsBuilder.since(app.events.toList(), since), app.config.estPriceIn, app.config.estPriceOut), teamOutput, room, app.config.plainGlyphs, app.config.estPriceIn, app.config.estPriceOut)
+                else -> Dashboard(period, page, records, all, room)
+            }
             NoticeLine(notice)
         }
     }
@@ -195,6 +209,7 @@ private fun Dashboard(period: Period, page: Page, records: List<UsageRecord>, al
             if (left >= 6) { VGap(); SpeedPanel(all, period) }
         }
         Page.Recent -> RecentPanel(records, all, insights, (room - 4).coerceAtLeast(1))
+        Page.Team -> Unit // drawn by [TeamPage]
         Page.Tools -> Unit // drawn by [ToolsPanel]: tool calls are not model requests, so this page does not need any
     }
 }

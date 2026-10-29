@@ -416,7 +416,7 @@ Letters like `k` `j` `s` only act as keys when you are not typing in a field.
 # Usage, settings and troubleshooting
 
 ## Usage
-The **Usage** screen is a dashboard of what the model did, over this session, today, 7 days, 30 days or all time (`←` `→`). `Tab` switches page: **Overview** (totals, a chart of tokens by hour or day, and insights: busiest day, peak hour, streak, week on week, typical and slowest reply, context load), **Breakdown** (by feature and model with their share, what the Oracul, Planner and Judge cost, when in the day you use it, speed trend) and **Recent replies** (a table of the latest ones with tokens, time and speed). Panels that do not fit a small terminal are left out. The footer also shows a running total. Everything is stored in `~/.config/arcana/usage.jsonl`.
+The **Usage** screen is a dashboard of what the model did, over this session, today, 7 days, 30 days or all time (`←` `→`). `Tab` switches page: **Team** (what the helper models cost and did: tokens by chat and helpers, models, flow acceptance, redos, verdicts, goals, routes; scroll with ↑↓), **Overview** (totals, a chart of tokens by hour or day, and insights: busiest day, peak hour, streak, week on week, typical and slowest reply, context load), **Breakdown** (by feature and model with their share, what the Oracul, Planner and Judge cost, when in the day you use it, speed trend) and **Recent replies** (a table of the latest ones with tokens, time and speed). Panels that do not fit a small terminal are left out. The footer also shows a running total. Everything is stored in `~/.config/arcana/usage.jsonl`.
 
 ## Make it yours (Settings)
 - **Appearance**: colour theme (Dark, Light, Soft, Darcula, Solarized, Nord), sidebar, logo animation.

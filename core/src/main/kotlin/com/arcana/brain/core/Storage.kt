@@ -27,6 +27,7 @@ object Storage {
     const val SESSIONS = "sessions"
     const val USAGE = "usage"
     const val TOOL_USAGE = "tool-usage"
+    const val EVENTS = "events"
     const val VAULT_TRASH = "vault-trash"
 
     /** The areas under [root] (the folder that holds `config.json`), and the vault's own `.trash` when a vault is given. */
@@ -38,6 +39,7 @@ object Storage {
         add(StorageArea(SESSIONS, "Saved sessions", "the activity logs of past sessions", root.resolve("sessions")))
         add(StorageArea(USAGE, "Usage history", "tokens and timing of every request (the Usage screen)", root.resolve("usage.jsonl")))
         add(StorageArea(TOOL_USAGE, "Tool usage history", "every tool call (the Usage screen's Tools page)", root.resolve("tool-usage.jsonl")))
+        add(StorageArea(EVENTS, "Event history", "redos, verdicts, routed messages, goals (the Usage screen's Team page)", root.resolve("events.jsonl")))
     }
 
     fun use(area: StorageArea): StorageUse {

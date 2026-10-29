@@ -689,8 +689,8 @@ class CoreTest {
         Files.writeString(config.resolve("usage.jsonl"), "{}\n")
         Files.createDirectories(vault.resolve(".trash")); Files.writeString(vault.resolve(".trash/gone.md"), "old")
         val areas = Storage.areas(config, vault)
-        assertEquals(listOf("backups", "trash", "vault-trash", "chats", "sessions", "usage", "tool-usage"), areas.map { it.id })
-        assertEquals(listOf("backups", "trash", "chats", "sessions", "usage", "tool-usage"), Storage.areas(config).map { it.id }, "no vault, no vault trash")
+        assertEquals(listOf("backups", "trash", "vault-trash", "chats", "sessions", "usage", "tool-usage", "events"), areas.map { it.id })
+        assertEquals(listOf("backups", "trash", "chats", "sessions", "usage", "tool-usage", "events"), Storage.areas(config).map { it.id }, "no vault, no vault trash")
         fun area(id: String) = areas.first { it.id == id }
         assertEquals(StorageUse(2, 2049), Storage.use(area("backups")))
         assertEquals(StorageUse(1, 3), Storage.use(area("usage")))
@@ -2183,5 +2183,43 @@ class CoreTest {
         val with = Prompts.chatMessages(AppConfig(), history, null, emptyMap(), goal = "every note is tagged")
         assertTrue("THE GOAL OF THIS CHAT" in with.first().content && "every note is tagged" in with.first().content)
         assertTrue("THE GOAL OF THIS CHAT" !in Prompts.chatMessages(AppConfig(), history, null, emptyMap()).first().content, "no goal, no line")
+    }
+
+    @Test
+    fun theTeamStatsSplitTheTokensAndCountWhatTheOrchestrationDid() {
+        val records = listOf(
+            UsageRecord(1, "Chat", "main", 600, 200, 8000), UsageRecord(2, "Oracul", "helper", 100, 50, 3000), UsageRecord(3, "Controller", "helper", 100, 50, 1000),
+            UsageRecord(4, "Compact", "main", 400, 100, 1000),
+        )
+        fun e(t: Long, kind: String, detail: String = "", model: String = "") = StatEvent(t, kind, detail, model)
+        val events = listOf(
+            e(1, Events.FLOW), e(2, Events.CONTROL, "done"),                                   // accepted the first time
+            e(3, Events.FLOW), e(4, Events.CONTROL, "redo"), e(5, Events.REDO), e(6, Events.CONTROL, "done"),  // redone once
+            e(7, Events.FLOW), e(8, Events.CHECK, "fail"), e(9, Events.REDO), e(10, Events.CONTROL, "done"),   // a failing check counts as a redo
+            e(11, Events.VERDICT, "agree"), e(12, Events.VERDICT, "partly"), e(13, Events.VERDICT, "disagree"), e(14, Events.OPINION, "auto"),
+            e(15, Events.GOAL, "set"), e(16, Events.GOAL, "met"), e(17, Events.ROUTE, "code", "coder"), e(18, Events.ROUTE, "code", "coder"),
+            e(19, Events.CONSULT, "planner", "helper"), e(20, Events.CANCEL), e(21, Events.COMPACT, "auto"), e(22, Events.MEMORY, "duplicate"), e(23, Events.ARTIFACT, "created"),
+        )
+        val stats = TeamStatsBuilder.build(records, events, 3, 15)
+        assertEquals(800L, stats.chatTokens, "only the Chat feature is the chat model's own (compaction is neither)")
+        assertEquals(300L, stats.helperTokens)
+        assertEquals(300.0 / 1100, stats.helperShare, 0.0001)
+        assertEquals(listOf("Oracul", "Controller"), stats.helpers.map { it.first })
+        assertEquals("main", stats.models.first().model, "the model that spent most comes first")
+        assertEquals(3, stats.flowRuns)
+        assertEquals(1, stats.flowFirstTime, "only the first run was accepted without a redo")
+        assertEquals(2, stats.redos)
+        assertEquals(1, stats.checksFailed)
+        assertEquals(0.5, stats.opinionsConfirmed!!, 0.0001, "agree 1 + partly half, of 3")
+        assertEquals(listOf("code → coder" to 2), stats.routes)
+        assertEquals(listOf("planner (helper)" to 1), stats.consults)
+        assertEquals(1, stats.goalsMet); assertEquals(1, stats.goalsSet)
+        assertEquals(1, stats.cancels); assertEquals(1, stats.compacts); assertEquals(1, stats.memoryDuplicates)
+        assertTrue(TeamStatsBuilder.build(emptyList(), emptyList(), 3, 15).isEmpty)
+        val dir = java.nio.file.Files.createTempDirectory("arcana-events")
+        val store = EventStore(dir.resolve("events.jsonl"))
+        store.append(e(1, Events.FLOW)); store.append(e(2, Events.ROUTE, "image", "vl"))
+        assertEquals(listOf(Events.FLOW, Events.ROUTE), store.load().map { it.kind })
+        store.clear(); assertEquals(emptyList(), store.load())
     }
 }

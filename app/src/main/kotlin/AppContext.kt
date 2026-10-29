@@ -20,6 +20,8 @@ import com.arcana.brain.core.capture
 import com.arcana.brain.core.OllamaClient
 import com.arcana.brain.core.UsageRecord
 import com.arcana.brain.core.ToolUseRecord
+import com.arcana.brain.core.EventStore
+import com.arcana.brain.core.StatEvent
 import com.arcana.brain.core.ToolUseStore
 import com.arcana.brain.core.UsageStore
 import com.arcana.brain.core.Vault
@@ -40,6 +42,7 @@ class AppContext(
     private val toolUseStore: ToolUseStore = ToolUseStore(),
     chatStore: ChatStore = ChatStore(),
     sessionStore: SessionStore = SessionStore(),
+    private val eventStore: EventStore = EventStore(),
 ) {
     var config by mutableStateOf(store.load())
         private set
@@ -89,6 +92,15 @@ class AppContext(
     /** Every tool call the model made (loaded from `tool-usage.jsonl`), newest last; the Usage screen's Tools page reads it. */
     val toolUsage = mutableStateListOf<ToolUseRecord>().also { it.addAll(toolUseStore.load()) }
 
+    /** What happened in the orchestration (redos, verdicts, routes, goals), loaded from `events.jsonl`; the Usage screen's Team page reads it. */
+    val events = mutableStateListOf<StatEvent>().also { it.addAll(eventStore.load()) }
+
+    fun recordEvent(kind: String, detail: String = "", model: String = "") {
+        val event = StatEvent(System.currentTimeMillis(), kind, detail, model)
+        events += event
+        runCatching { eventStore.append(event) }
+    }
+
     fun recordToolUse(record: ToolUseRecord) {
         toolUsage += record
         runCatching { toolUseStore.append(record) }
@@ -134,6 +146,7 @@ class AppContext(
         when (area.id) {
             com.arcana.brain.core.Storage.USAGE -> usage.clear()
             com.arcana.brain.core.Storage.TOOL_USAGE -> toolUsage.clear()
+            com.arcana.brain.core.Storage.EVENTS -> events.clear()
         }
         return removed
     }
@@ -143,6 +156,8 @@ class AppContext(
         runCatching { usageStore.clear() }
         toolUsage.clear()
         runCatching { toolUseStore.clear() }
+        events.clear()
+        runCatching { eventStore.clear() }
     }
 
     /** How many replies are being generated right now (drives the animated logo). */

@@ -26,6 +26,7 @@ import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.Compaction
 import com.arcana.brain.app.navigation.LibraryFilter
 import com.arcana.brain.core.Artifacts
+import com.arcana.brain.core.Events
 import com.arcana.brain.core.Flow
 import com.arcana.brain.core.MemoryAudit
 import com.arcana.brain.core.Oracul
@@ -835,7 +836,7 @@ fun ChatScreen(app: AppContext) {
             }
             ChatMode.ConfirmCancel -> {
                 // the reply may have finished while the question was open: then there is nothing left to cancel
-                if (key == Key.Enter || key.char == 'y' || key.char == 'Y') { if (gen.state == GenState.Running) gen.cancel() else chat.cancelOracul() }
+                if (key == Key.Enter || key.char == 'y' || key.char == 'Y') { if (gen.state == GenState.Running) gen.cancel() else chat.cancelOracul(); app.recordEvent(Events.CANCEL) }
                 mode = ChatMode.Chat
                 true
             }
@@ -901,9 +902,9 @@ fun ChatScreen(app: AppContext) {
                 slashMatches.isNotEmpty() && key == Key.Enter -> { useSlash(slashMatches[slashIndex.coerceIn(0, slashMatches.size - 1)]); true }
                 key == Key.Escape -> when {
                     // a running reply is never cancelled by a stray key: Esc asks first (Settings → Console → Confirm before cancelling)
-                    gen.state == GenState.Running -> { if (app.config.confirmCancel) mode = ChatMode.ConfirmCancel else gen.cancel(); true }
+                    gen.state == GenState.Running -> { if (app.config.confirmCancel) mode = ChatMode.ConfirmCancel else { gen.cancel(); app.recordEvent(Events.CANCEL) }; true }
                     // the Oracul or the judge working on its own (an opinion, a comparison, a takeover): the same question, then nothing is added
-                    chat.consulting != null -> { if (app.config.confirmCancel) mode = ChatMode.ConfirmCancel else chat.cancelOracul(); true }
+                    chat.consulting != null -> { if (app.config.confirmCancel) mode = ChatMode.ConfirmCancel else { chat.cancelOracul(); app.recordEvent(Events.CANCEL) }; true }
                     browsing -> { browsing = false; true }
                     chat.messages.isNotEmpty() -> { browsing = true; true }
                     else -> false
