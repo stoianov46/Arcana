@@ -107,6 +107,11 @@ The Oracul's blocks are stored in the chat like any message, so they survive sav
 - **Escalation is never automatic.** After a failed turn (error, or an empty reply that the one retry did not fix) a toast offers
   `/takeover`; the user decides. A tool-error loop or a skipped skill step gets the optional second opinion instead.
 
+## The two switches
+
+- **Helper models** (`oraculEnabled`, default on; `/helpers`): the master switch for every model that is not the chat model: the Oracul and its opinions, the judge and verdicts, the flow, the specialists (`consult`) and the router. Off: `Oracul.model` and `Oracul.judge` answer blank, `Flow.of` is null, the router and `consult` do nothing and the status bars show no Oracul badge; `/oracul` says the helpers are switched off (`Oracul.missingModelMessage`). **The models stay set**, so switching back loses nothing. The goal check still runs, on the chat model.
+- **Skill roles** (`skillRolesEnabled`, default on; `/roles`): the worker, planner and reviewer a skill names or the role table gives. Off: a skill is run by the chat model alone (`ChatSession.applyRoles` returns nothing, unless a flow is selected, whose own stages still apply). It is **independent** of the first switch, so the combinations are: both on (everything), helpers off + roles on (one model, plus skills with their roles), helpers on + roles off, both off (one model only).
+
 ## Models and roles
 
 Resolution for a skill run: **the skill's own property → the role table in Settings (`rolePlanner` / `roleWorker` / `roleReviewer`) →
@@ -223,6 +228,7 @@ continues, so a vision answer is not redone by the chat model. A model-based sel
 | `flow` / `flowAnalyst` / `flowController` / `flowRedos` / `flowCheckCommand` | `off` / blank / blank / `2` / blank | the selected flow (`off`, `careful`), the models of its analyst and controller (blank = the Oracul model) how many redos the controller may ask for (0–5) and an objective check command (blank = none; needs shell + auto-run); while a flow is on the role table applies to every message |
 | `flowTools` | `false` | the chat model may call the analyst, planner and reviewer as the `consult` tool |
 | `routeVision` / `routeCode` | blank / blank | the models the router sends a message with an image / with code to (blank = the chat model) |
+| `oraculEnabled` / `skillRolesEnabled` | `true` / `true` | the master switch for the helper models (Oracul, judge, flow, specialists, router) and the switch for skill roles; independent |
 | `oraculVerdict` / `goalTurns` | `true` / `5` | the judge's verdict after an automatic opinion (needs `judgeModel`); how many times `/goal` may continue the work by itself |
 | `rolesScope` | `skills` | `skills` or `all`: with `all` the role table also runs for messages without a skill (`ChatSession.applyRoles(null)`; no plan under `PLAN_MIN_CHARS` = 60 characters) |
 | `rolePlanner` / `roleWorker` / `roleReviewer` | blank | the role table for skill runs |

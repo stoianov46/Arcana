@@ -2222,4 +2222,17 @@ class CoreTest {
         assertEquals(listOf(Events.FLOW, Events.ROUTE), store.load().map { it.kind })
         store.clear(); assertEquals(emptyList(), store.load())
     }
+
+    @Test
+    fun theMasterSwitchTurnsEveryHelperModelOffAndKeepsTheirSettings() {
+        val on = AppConfig(oraculModel = "o", judgeModel = "j", flow = "careful")
+        assertEquals("o", Oracul.model(on)); assertEquals("j", Oracul.judge(on)); assertTrue(Flow.of(on) != null)
+        val off = on.copy(oraculEnabled = false)
+        assertEquals("", Oracul.model(off)); assertEquals("", Oracul.judge(off)); assertEquals(null, Flow.of(off))
+        assertEquals("", Oracul.statusText(off), "no badge when the helpers are off")
+        assertEquals(emptyList(), Oracul.models(off))
+        assertTrue("switched off" in Oracul.missingModelMessage(off) && "Choose an Oracul model" in Oracul.missingModelMessage(on.copy(oraculModel = "")))
+        assertEquals("o", off.oraculModel, "the models stay set")
+        assertTrue(AppConfig().oraculEnabled && AppConfig().skillRolesEnabled)
+    }
 }

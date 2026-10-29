@@ -183,9 +183,14 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * ([AppConfig.rolesScope] = "all"): only the role table in the settings applies.
      */
     private suspend fun applyRoles(entry: String?): String? {
-        val roles = if (entry == null) SkillRoles().withDefaults(app.config) else {
-            val vault = app.openVault().getOrNull() ?: return null
-            runCatching { Skills.roles(vault.read(entry)).withDefaults(app.config) }.getOrNull() ?: return null
+        val roles = when {
+            // skill roles switched off: a skill is run by the chat model alone; only a selected flow still names its models
+            !app.config.skillRolesEnabled -> Flow.of(app.config)?.roles() ?: return null
+            entry == null -> SkillRoles().withDefaults(app.config)
+            else -> {
+                val vault = app.openVault().getOrNull() ?: return null
+                runCatching { Skills.roles(vault.read(entry)).withDefaults(app.config) }.getOrNull() ?: return null
+            }
         }.takeIf { it.any } ?: return null
         val installed = runCatching { app.client.listModels() }.getOrNull() ?: return null
         val onOracul = if (app.config.oraculUrl.isBlank()) installed else runCatching { clientFor("").listModels() }.getOrDefault(emptyList())
@@ -299,7 +304,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * (`AGREE`, `PARTLY`, `DISAGREE` and why). Advisory, shown as a block under the opinion; the worker sees it if the user goes on. A failure is ignored.
      */
     private suspend fun verdictOnOpinion() {
-        val judge = app.config.judgeModel.trim().takeIf { it.isNotEmpty() && app.config.oraculVerdict } ?: return
+        val judge = app.config.judgeModel.trim().takeIf { it.isNotEmpty() && app.config.oraculVerdict && app.config.oraculEnabled } ?: return
         val all = messages.toList()
         val opinion = all.lastOrNull { Oracul.isReview(it) } ?: return
         val (question, answer) = Oracul.lastExchange(all) ?: return
@@ -364,7 +369,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * Only the first round of a message routes, and a redo or a goal turn looks at the message it continues.
      */
     private suspend fun route(history: List<ChatMessage>) {
-        if (runWorker != null) return
+        if (runWorker != null || !app.config.oraculEnabled) return
         val last = history.lastOrNull { it.role == "user" && !Oracul.isOpinion(it) && !Compaction.isSummary(it) && !it.content.startsWith(Oracul.REDO_PROMPT) && !it.content.startsWith(Oracul.GOAL_PROMPT) && !it.content.startsWith(Oracul.REVISE_PROMPT) } ?: return
         val kind = Router.kindOf(last.content, last.images.isNotEmpty()) ?: return
         val model = Router.modelFor(app.config, kind).ifEmpty { return }
@@ -416,6 +421,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      */
     private suspend fun consult(call: ToolCall): String {
         fun arg(name: String) = (call.arguments[name] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim()
+        if (!app.config.oraculEnabled) return "Error: the helper models are switched off; work without a specialist."
         val kind = Flow.consultKind(arg("stage")) ?: return "Error: stage must be analyst, planner or reviewer."
         val brief = arg("brief").ifEmpty { return "Error: give a brief: everything the specialist needs." }
         if (consults >= MAX_CONSULTS) return "Error: you have already consulted $MAX_CONSULTS times in this message; carry on with what you have."
@@ -767,7 +773,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** What the model is offered when it has a toolbox: the tools, a way to ask for another mode, and (in plan mode) a way to ask to leave it. */
     private fun definitionsFor(box: ToolBox): JsonArray =
-        JsonArray(box.definitions() + REQUEST_MODE_DEFINITION + CHAT_STATS_DEFINITION + TODO_DEFINITION + (if (app.config.flowTools) listOf(CONSULT_DEFINITION) else emptyList()) + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
+        JsonArray(box.definitions() + REQUEST_MODE_DEFINITION + CHAT_STATS_DEFINITION + TODO_DEFINITION + (if (app.config.flowTools && app.config.oraculEnabled) listOf(CONSULT_DEFINITION) else emptyList()) + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
 
     /** The model asks to switch the tool mode: the user always decides; when they agree the mode, the toolbox and the model's tools change at once. */
     private suspend fun requestMode(call: ToolCall): String {
@@ -1040,7 +1046,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * missing. The result is added to the chat as a block of its own; returns a line for the user. Throws with a message when it cannot.
      */
     suspend fun secondOpinion(reviewer: String? = null, stage: String? = null, source: String = "manual"): String {
-        val model = (reviewer ?: Oracul.model(app.config)).ifEmpty { error("Choose an Oracul model first: Settings → Oracul → Model.") }
+        val model = (reviewer ?: Oracul.model(app.config)).ifEmpty { error(Oracul.missingModelMessage(app.config)) }
         val (question, answer) = Oracul.lastExchange(messages.toList()) ?: error("There is no answer to review yet.")
         check(consulting == null) { "The Oracul is already working." }
         consulting = model; consultingStage = stage
@@ -1069,7 +1075,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * and the verdict. An extra model that cannot answer is left out with a line saying so; the Oracul model itself must answer.
      */
     suspend fun compare(only: String? = null): String {
-        val models = (only?.let { listOf(it) } ?: Oracul.models(app.config)).ifEmpty { error("Choose an Oracul model first: Settings → Oracul → Model.") }
+        val models = (only?.let { listOf(it) } ?: Oracul.models(app.config)).ifEmpty { error(Oracul.missingModelMessage(app.config)) }
         val judge = Oracul.judge(app.config)
         val (question, answer) = Oracul.lastExchange(messages.toList()) ?: error("There is no answer to compare yet.")
         check(consulting == null) { "The Oracul is already working." }
@@ -1112,7 +1118,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * Returns a line for the user; throws with a message when it cannot.
      */
     suspend fun takeOver(): String {
-        val model = Oracul.model(app.config).ifEmpty { error("Choose an Oracul model first: Settings → Oracul → Model.") }
+        val model = Oracul.model(app.config).ifEmpty { error(Oracul.missingModelMessage(app.config)) }
         check(consulting == null) { "The Oracul is already working." }
         check(messages.lastOrNull()?.role == "user" || messages.lastOrNull()?.role == "tool") { "There is no unanswered message to take over." }
         consulting = model

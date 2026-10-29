@@ -106,6 +106,8 @@ internal val SlashCommands = listOf(
     SlashItem("/autorun", "Run shell commands without asking (toggle)", false),
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false, usage = "e.g. /memory check   (finds repeated lines and dead note paths, asks before removing)"),
     SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
+    SlashItem("/helpers", "All helper models on or off: Oracul, judge, flow, specialists, router (toggle). Off = only the chat model works", false),
+    SlashItem("/roles", "Skill roles on or off: the worker, planner and reviewer a skill uses (toggle)", false),
     SlashItem("/flow", "Flow: every message goes analyst, planner, worker, reviewer, controller (toggle)", false, usage = "e.g. /flow careful   or   /flow off   (without a name it switches)"),
     SlashItem("/goal", "Set a goal: Arcana keeps working until a checker says it is met", false, usage = "e.g. /goal all notes in Inbox are tagged   (/goal alone shows it, /goal clear removes it)"),
     SlashItem("/artifacts", "Files and notes the model wrote or changed in this chat", false),
@@ -124,12 +126,14 @@ internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean
         else -> "ON" to Palette.Green
     }
     "/mode" -> if (!config.toolsEnabled) "TOOLS OFF" to Palette.Dim else config.toolMode.uppercase() to when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }
-    "/oracul" -> if (config.oraculModel.isBlank()) "NO MODEL" to Palette.Dim else (if (config.oraculAuto == "off") "MANUAL" else "AUTO ${config.oraculAuto.uppercase()}") to Palette.Green
+    "/oracul" -> if (!config.oraculEnabled) "HELPERS OFF" to Palette.Dim else if (config.oraculModel.isBlank()) "NO MODEL" to Palette.Dim else (if (config.oraculAuto == "off") "MANUAL" else "AUTO ${config.oraculAuto.uppercase()}") to Palette.Green
     "/compact" -> if (config.autoCompactPercent > 0) "AUTO ${config.autoCompactPercent}%" to Palette.Green else "MANUAL" to Palette.Dim
     "/autorun" -> if (!config.toolShell) "SHELL OFF" to Palette.Dim else if (config.toolAutoShell) "ON" to Palette.Red else "OFF" to Palette.Dim
     "/memory" -> if (config.memoryEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/skills" -> if (config.skillsEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/thinking" -> if (config.thinkingPane) "ON" to Palette.Green else "OFF" to Palette.Dim
+    "/helpers" -> if (config.oraculEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
+    "/roles" -> if (config.skillRolesEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/flow" -> if (config.flow == Flow.OFF) "OFF" to Palette.Dim else config.flow.uppercase() to Palette.Green
     else -> null
 }
@@ -594,6 +598,8 @@ fun ChatScreen(app: AppContext) {
             "/skills" -> toggleSkills()
             "/thinking" -> toggleThinkingPane()
             "/flow" -> setFlow(args)
+            "/helpers" -> { val on = !app.config.oraculEnabled; app.update(app.config.copy(oraculEnabled = on)); toast(if (on) "Helper models on." else "Helper models off: only ${app.config.model} works (skill roles are separate: /roles).") }
+            "/roles" -> { val on = !app.config.skillRolesEnabled; app.update(app.config.copy(skillRolesEnabled = on)); toast(if (on) "Skill roles on: skills use the worker, planner and reviewer they name." else "Skill roles off: a skill is run by ${app.config.model} alone.") }
             "/artifacts" -> if (chat.artifacts.isEmpty()) toast("Nothing written or changed in this chat yet.") else mode = ChatMode.Artifacts
             "/goal" -> runGoal(args)
             "/mode" -> cycleMode()

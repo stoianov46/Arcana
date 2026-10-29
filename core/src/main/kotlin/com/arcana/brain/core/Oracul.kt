@@ -32,7 +32,7 @@ object Oracul {
     val AUTO_MODES = listOf("off", "problems", "always")
 
     /** The model that gives second opinions; blank = the Oracul is off. */
-    fun model(config: AppConfig): String = config.oraculModel.trim()
+    fun model(config: AppConfig): String = if (config.oraculEnabled) config.oraculModel.trim() else ""
 
     /** [config] as the Oracul and the judge see it: asking [model], on their own server when [AppConfig.oraculUrl] is set. */
     fun serverConfig(config: AppConfig, model: String): AppConfig =
@@ -72,7 +72,11 @@ object Oracul {
     }
 
     /** The model that judges a comparison: its own setting, else the Oracul model. */
-    fun judge(config: AppConfig): String = config.judgeModel.trim().ifEmpty { model(config) }
+    fun judge(config: AppConfig): String = if (config.oraculEnabled) config.judgeModel.trim().ifEmpty { model(config) } else ""
+
+    /** Why there is no Oracul model: switched off (the master switch), or not chosen yet. */
+    fun missingModelMessage(config: AppConfig): String =
+        if (!config.oraculEnabled) "Helper models are switched off: turn them on with /helpers (Settings → Oracul → Helper models)." else "Choose an Oracul model first: Settings → Oracul → Model."
 
     fun isOpinion(message: ChatMessage): Boolean = message.role == "user" && (message.content.startsWith(MARK) || message.content.startsWith(MARK_COMPARE) || message.content.startsWith(MARK_PLAN) || message.content.startsWith(MARK_ANALYSIS) || message.content.startsWith(MARK_CONTROL) || message.content.startsWith(MARK_VERDICT) || message.content.startsWith(MARK_GOAL))
 

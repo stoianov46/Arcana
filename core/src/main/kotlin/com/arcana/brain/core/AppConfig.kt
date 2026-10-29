@@ -89,6 +89,10 @@ data class AppConfig(
     val searchKey: String = "",
     /** The Oracul (see [Oracul]): the model that gives second opinions; blank = off. */
     val oraculModel: String = "",
+    /** The master switch for every helper model: the Oracul and its second opinions, the judge, the flow, the specialists (`consult`) and the router. Off: only the chat model works (skill roles have their own switch, [skillRolesEnabled]). The models stay set, so switching back loses nothing. */
+    val oraculEnabled: Boolean = true,
+    /** Skill roles: the worker, planner and reviewer a skill names (or the role table gives) for a skill run. Off: a skill is run by the chat model alone. Separate from [oraculEnabled]. */
+    val skillRolesEnabled: Boolean = true,
     /** Default models for skill runs (a skill's own `planner:` / `worker:` / `reviewer:` wins); blank = not used. See [SkillRoles]. */
     val rolePlanner: String = "",
     val roleWorker: String = "",

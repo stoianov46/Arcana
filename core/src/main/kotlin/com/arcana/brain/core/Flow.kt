@@ -45,7 +45,7 @@ data class Flow(val name: String, val stages: List<FlowStage>, val redos: Int = 
         val NAMES = listOf(OFF, CAREFUL)
 
         /** The flow [AppConfig.flow] selects, or null when none. */
-        fun of(config: AppConfig): Flow? = when (config.flow) {
+        fun of(config: AppConfig): Flow? = if (!config.oraculEnabled) null else when (config.flow) {
             CAREFUL -> careful(config)
             else -> null
         }

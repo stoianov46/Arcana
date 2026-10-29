@@ -745,6 +745,32 @@ class OraculTest {
     }
 
     @Test
+    fun theHelperSwitchAndTheSkillRolesSwitchWorkApart() {
+        val f = fake()
+        try {
+            // helpers off, skill roles on: one model for chat, the skill still gets its worker and reviewer
+            runSkill(f, skillVault("")) { copy(roleWorker = "big", roleReviewer = "judge", oraculModel = "judge", oraculEnabled = false) }
+            assertEquals(listOf("big", "judge"), f.asked.map { it.first }, "skill roles apply although the helper models are off")
+            f.asked.clear()
+            // both off: the chat model alone
+            runSkill(f, skillVault("")) { copy(roleWorker = "big", roleReviewer = "judge", oraculEnabled = false, skillRolesEnabled = false) }
+            assertEquals(listOf("worker"), f.asked.map { it.first }, "one model only")
+            f.asked.clear()
+            // helpers on, skill roles off: the skill is run by the chat model, but the flow still works
+            val chat = app(f) { copy(flow = "careful", flowAnalyst = "judge", rolePlanner = "big", roleReviewer = "big", skillRolesEnabled = false, toolsEnabled = false) }.chat
+            chat.send(longQuestion)
+            Thread.sleep(1500)
+            assertTrue(f.asked.map { it.first }.let { it.first() == "judge" && "worker" in it }, "the flow's stages still run: ${f.asked.map { it.first }}")
+            f.asked.clear()
+            // a flow selected while the helpers are off does nothing
+            val off = app(f) { copy(flow = "careful", flowAnalyst = "judge", rolePlanner = "big", oraculModel = "big", oraculAuto = "always", judgeModel = "judge", oraculEnabled = false, toolsEnabled = false) }.chat
+            off.send(longQuestion)
+            Thread.sleep(1200)
+            assertEquals(listOf("worker"), f.asked.map { it.first }, "no analyst, plan, review, verdict or control")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun reviseTakesAnExtraNoteAndCompareCanUseOneModelForOneCall() {
         val f = fake()
         try {
