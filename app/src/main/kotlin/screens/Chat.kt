@@ -25,6 +25,7 @@ import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.Compaction
 import com.arcana.brain.core.Flow
+import com.arcana.brain.core.MemoryAudit
 import com.arcana.brain.core.Oracul
 import com.jakewharton.mosaic.ui.Color
 import com.jakewharton.mosaic.ui.TextStyle
@@ -100,7 +101,7 @@ internal val SlashCommands = listOf(
     SlashItem("/compact", "Summarize the older part of this chat to free the context window", false),
     SlashItem("/mode", "Tools mode: ask, auto, plan (cycles)", false),
     SlashItem("/autorun", "Run shell commands without asking (toggle)", false),
-    SlashItem("/memory", "Open ARCANA.md, your standing instructions", false),
+    SlashItem("/memory", "Open ARCANA.md, your standing instructions", false, usage = "e.g. /memory check   (finds repeated lines and dead note paths, asks before removing)"),
     SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
     SlashItem("/flow", "Flow: every message goes analyst, planner, worker, reviewer, controller (toggle)", false, usage = "e.g. /flow careful   or   /flow off   (without a name it switches)"),
     SlashItem("/goal", "Set a goal: Arcana keeps working until a checker says it is met", false, usage = "e.g. /goal all notes in Inbox are tagged   (/goal alone shows it, /goal clear removes it)"),
@@ -286,7 +287,7 @@ private const val MaxNotes = 5
 /** How many queued messages are listed above the message field; the rest are counted. */
 private const val QUEUE_SHOWN = 3
 
-private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel }
+private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory }
 
 /** What happens to the last answer when it is sent to an existing note. */
 private enum class Target(val verb: String) { Append("Append"), Replace("Replace") }
@@ -487,6 +488,17 @@ fun ChatScreen(app: AppContext) {
         toast(if (opened) "${vault.memoryName()} opened in your editor. Save it; the next message uses it." else "Edit ${file} (it is read in every chat).")
     }
 
+    /** What `/memory check` found, shown in a panel that asks before the repeated lines are removed. */
+    var memoryAudit by remember { mutableStateOf<MemoryAudit?>(null) }
+
+    fun openMemoryCheck() {
+        val vault = app.openVault().getOrNull() ?: return toast("Choose a vault first (Settings → Vault).", error = true)
+        val audit = runCatching { vault.auditMemory() }.getOrElse { return toast("Could not read ${vault.memoryName()}.", error = true) }
+        if (audit.clean) return toast("${vault.memoryName()} is clean: no repeated lines and no dead note paths (${vault.memoryEntries().size} entries).")
+        memoryAudit = audit
+        mode = ChatMode.ConfirmMemory
+    }
+
     // everything the slash menu knows (commands, skills, tools); set once the menu's list is built, read when a typed line is sent
     var slashItemsNow: List<SlashItem> = SlashCommands
     var useSlashNow: (SlashItem) -> Unit = {}
@@ -556,7 +568,7 @@ fun ChatScreen(app: AppContext) {
 
     fun runCommand(command: String, args: String = "") {
         // text after a command is only meaningful for these; anywhere else say so instead of guessing
-        if (args.isNotEmpty() && command !in setOf("/oracul", "/compare", "/revise", "/flow", "/goal")) return toast("$command takes no text after it. Type just $command.", error = true)
+        if (args.isNotEmpty() && command !in setOf("/oracul", "/compare", "/revise", "/flow", "/goal", "/memory")) return toast("$command takes no text after it. Type just $command.", error = true)
         when (command) {
             "/new" -> startNew()
             "/history" -> openHistory()
@@ -566,7 +578,7 @@ fun ChatScreen(app: AppContext) {
             "/note" -> openNotePick()
             "/vault" -> toggleVault()
             "/tools" -> toggleTools()
-            "/memory" -> openMemory()
+            "/memory" -> when (args.lowercase()) { "" -> openMemory(); "check" -> openMemoryCheck(); else -> toast("/memory takes only “check” after it.", error = true) }
             "/skills" -> toggleSkills()
             "/thinking" -> toggleThinkingPane()
             "/flow" -> setFlow(args)
@@ -691,6 +703,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.Save -> Hints("Enter  save", "Tab  whole chat / last answer", "Ctrl+O  overwrite a note", "Esc  cancel")
         ChatMode.Leave -> Hints("w  save to vault", "Esc  leave chat", "any other key  stay")
         ChatMode.ConfirmClear -> Hints("y  erase this chat", "any other key  keep")
+        ChatMode.ConfirmMemory -> Hints("y  remove the repeated lines", "any other key  leave it as it is")
         ChatMode.ConfirmCancel -> Hints("Enter  cancel it", "y  cancel it", "any other key  keep going")
         ChatMode.ConfirmReplace -> Hints("y  replace", "any other key  keep the note")
         ChatMode.History -> Hints("↑↓  move", "Enter  open", "/  filter", "Esc  back")
@@ -784,6 +797,15 @@ fun ChatScreen(app: AppContext) {
                     chat.deleteCurrent()
                     toast("Chat erased")
                 }
+                mode = ChatMode.Chat
+                true
+            }
+            ChatMode.ConfirmMemory -> {
+                if (key.char == 'y' || key.char == 'Y') {
+                    val removed = app.openVault().getOrNull()?.let { runCatching { it.cleanMemory() }.getOrDefault(0) } ?: 0
+                    toast(if (removed == 0) "Nothing to remove." else "Removed $removed repeated line${if (removed == 1) "" else "s"}.")
+                }
+                memoryAudit = null
                 mode = ChatMode.Chat
                 true
             }
@@ -927,6 +949,22 @@ fun ChatScreen(app: AppContext) {
                     Warning("“${chat.title}” (${chat.messages.size} messages) is deleted from the history. /new keeps it and starts a fresh chat instead.")
                 }
                 ActionBar(listOf(ActionItem("y", "Erase chat", accent = Palette.Red), ActionItem("any other key", "Keep it", accent = Palette.Cta)), style = ActionStyle.Button)
+            }
+            ChatMode.ConfirmMemory -> {
+                val audit = memoryAudit
+                ScreenHeader("Chat", "Memory check")
+                VGap()
+                Panel("Repeated lines · ${audit?.duplicates?.size ?: 0}", accent = if (audit?.duplicates.isNullOrEmpty()) Palette.Dim else Palette.Orange) {
+                    if (audit == null || audit.duplicates.isEmpty()) Hint("None.")
+                    audit?.duplicates?.take(8)?.forEach { (dup, kept) -> Label("✕ ${dup.take(70)}", color = Palette.Orange); Label("  same as: ${kept.take(60)}", color = Palette.Dim) }
+                    if ((audit?.duplicates?.size ?: 0) > 8) Hint("… and ${audit!!.duplicates.size - 8} more")
+                }
+                Panel("Notes that are not there · ${audit?.deadPaths?.size ?: 0}", accent = if (audit?.deadPaths.isNullOrEmpty()) Palette.Dim else Palette.Red) {
+                    if (audit == null || audit.deadPaths.isEmpty()) Hint("None.")
+                    audit?.deadPaths?.take(8)?.forEach { (line, ref) -> Label("✕ ${ref.take(70)}", color = Palette.Red); Label("  in: ${line.take(64)}", color = Palette.Dim) }
+                    if (audit?.deadPaths?.isNotEmpty() == true) Hint("These are not removed: fix the path in the memory file (/memory).")
+                }
+                ActionBar(listOf(ActionItem("y", "Remove repeated lines", accent = Palette.Orange), ActionItem("any other key", "Leave it", accent = Palette.Cta)), style = ActionStyle.Button)
             }
             ChatMode.ConfirmCancel -> {
                 ScreenHeader("Chat", chat.title)

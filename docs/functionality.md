@@ -74,7 +74,7 @@ The memory file (the Chat status bar's `✎ memory 3k` pill turns orange, `⚠ m
 `Prompts.chatMessages(memory = …)`; Settings → Prompts → *Memory file*; the status bar shows `✎ memory`). `ChatSession.offerMemory()` runs
 when Chat opens: if the vault has no `ARCANA.md` and `memoryOffered` is false it creates one from `Vault.MEMORY_TEMPLATE` (fifteen rules
 for using tools, plus empty sections) and shows "Memory file created" with an offer to open it; the flag then stays true, so a file the user
-deletes comes back only through `/memory`. The `remember` tool appends to its "Remembered" section (always asks). `ToolBox.cheatSheet()`
+deletes comes back only through `/memory`. The `remember` tool appends to its "Remembered" section (always asks). It **does not add a fact twice** (`MemoryLines.similar`: equal after lower-casing and dropping punctuation, or at least 80 % of the words shared; it answers "Already remembered: …") and **refuses a line that names a note that is not there** (a `[[link]]` or a `.md` path: `Vault.noteExists`; the message tells the model to get the exact path with `find_files`). `/memory check` lists repeated lines and dead note paths (`Vault.auditMemory`) in a panel; `y` removes the repeats (`Vault.cleanMemory`: the first of each stays), dead paths are only listed, for you to fix in the file. Only this vault's memory file is touched, never your own `~/.config/arcana/ARCANA.md`. `ToolBox.cheatSheet()`
 adds the real tool list to the same prompt.
 
 ## Skills

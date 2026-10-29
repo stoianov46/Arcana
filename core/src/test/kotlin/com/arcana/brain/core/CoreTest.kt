@@ -2075,4 +2075,41 @@ class CoreTest {
         assertTrue(Oracul.background(long + ChatMessage.user("next")).length <= Oracul.MAX_BACKGROUND + 100, "the total is capped")
         assertTrue("x" in Oracul.background(long + ChatMessage.user("next")) && "q40" in Oracul.background(long + ChatMessage.user("next")), "newest first")
     }
+
+    @Test
+    fun rememberSkipsWhatIsAlreadyThereAndRefusesDeadNotePaths() {
+        val dir = java.nio.file.Files.createTempDirectory("arcana-mem")
+        java.nio.file.Files.createDirectories(dir.resolve("Notes"))
+        java.nio.file.Files.writeString(dir.resolve("Notes/Plan.md"), "# Plan\n")
+        val vault = Vault(dir)
+        assertEquals(null, vault.remember("I write in Ukrainian and English"))
+        val base = vault.memoryEntries().size - 1 // the template has bullets of its own
+        assertEquals("I write in Ukrainian and English", vault.remember("  i write in ukrainian and english. "), "same after normalizing: not added again")
+        assertEquals("I write in Ukrainian and English", vault.remember("I write in Ukrainian and in English"), "near-equal (most words shared): not added again")
+        assertEquals(null, vault.remember("I like short answers"), "a different fact is added")
+        assertEquals(base + 2, vault.memoryEntries().size)
+        assertEquals(null, vault.remember("The plan lives in Notes/Plan.md"), "an existing path is fine")
+        assertEquals(null, vault.remember("See [[Plan]] for the roadmap"), "an existing [[link]] is fine")
+        val error = assertFailsWith<IllegalArgumentException> { vault.remember("The roadmap is in Notes/Roadmap.md") }
+        assertTrue("Notes/Roadmap.md" in error.message.orEmpty() && "find_files" in error.message.orEmpty(), "the model is told what to do")
+        assertFailsWith<IllegalArgumentException> { vault.remember("See [[Nowhere]]") }
+        assertEquals(base + 4, vault.memoryEntries().size, "a refused line is not written")
+    }
+
+    @Test
+    fun theMemoryAuditListsRepeatsAndDeadPathsAndOnlyCleaningRemovesRepeats() {
+        val dir = java.nio.file.Files.createTempDirectory("arcana-mem2")
+        val vault = Vault(dir)
+        val file = vault.ensureMemory()
+        java.nio.file.Files.writeString(file, "# Memory\n\n- I prefer short answers\n- I PREFER short answers!\n- Notes live in Gone/Old.md\n- Something else entirely different here\n")
+        val audit = vault.auditMemory()
+        assertEquals(listOf("I PREFER short answers!" to "I prefer short answers"), audit.duplicates)
+        assertEquals(listOf("Notes live in Gone/Old.md" to "Gone/Old.md"), audit.deadPaths)
+        assertTrue(!audit.clean)
+        assertEquals(1, vault.cleanMemory())
+        assertEquals(listOf("I prefer short answers", "Notes live in Gone/Old.md", "Something else entirely different here"), vault.memoryEntries(), "only the repeat went; the dead path stays for the user")
+        assertTrue(java.nio.file.Files.readString(file).startsWith("# Memory"), "the rest of the file is untouched")
+        assertEquals(0, vault.cleanMemory())
+        assertTrue(Vault(java.nio.file.Files.createTempDirectory("arcana-mem3")).auditMemory().clean, "no memory file: nothing to report")
+    }
 }

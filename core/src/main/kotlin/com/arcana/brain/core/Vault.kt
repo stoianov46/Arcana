@@ -118,13 +118,68 @@ class Vault(root: Path, private val memoryPath: String = "") {
         return file
     }
 
-    /** Adds a line to the "Remembered" section of the memory note. */
-    fun remember(text: String) {
+    /** The lines of the memory file that are entries (`- text`), without the dash; empty when there is no file. */
+    fun memoryEntries(): List<String> {
+        val file = memoryFile()
+        if (!Files.exists(file)) return emptyList()
+        return Files.readAllLines(file).filter { it.startsWith("- ") }.map { it.removePrefix("- ").trim() }
+    }
+
+    /** Whether a note a memory line names is there: a path ending in `.md` (inside the vault, or `~/…` / absolute), or the name in a `[[link]]`. */
+    fun noteExists(ref: String): Boolean = runCatching {
+        when {
+            ref.startsWith("~/") -> Files.exists(Path.of(System.getProperty("user.home")).resolve(ref.removePrefix("~/")))
+            ref.startsWith("/") -> Files.exists(Path.of(ref))
+            ref.endsWith(".md") -> Files.exists(resolve(ref))
+            else -> notes().any { it.path.substringAfterLast('/').removeSuffix(".md").equals(ref, ignoreCase = true) }
+        }
+    }.getOrDefault(false)
+
+    /** Duplicate entries and entries that name a note that is not there (see [MemoryAudit]); nothing is changed. */
+    fun auditMemory(): MemoryAudit {
+        val kept = ArrayList<String>()
+        val duplicates = ArrayList<Pair<String, String>>()
+        val dead = ArrayList<Pair<String, String>>()
+        for (entry in memoryEntries()) {
+            val same = kept.firstOrNull { MemoryLines.similar(it, entry) }
+            if (same != null) { duplicates += entry to same; continue }
+            kept += entry
+            MemoryLines.noteRefs(entry).firstOrNull { !noteExists(it) }?.let { dead += entry to it }
+        }
+        return MemoryAudit(duplicates, dead)
+    }
+
+    /** Removes the entries [auditMemory] lists as duplicates (the first of each stays); returns how many went. Entries with dead paths are left for the user to fix. */
+    fun cleanMemory(): Int {
+        val file = memoryFile()
+        if (!Files.exists(file)) return 0
+        val kept = ArrayList<String>()
+        var removed = 0
+        val out = Files.readAllLines(file).filter { line ->
+            if (!line.startsWith("- ")) return@filter true
+            val entry = line.removePrefix("- ").trim()
+            if (kept.any { MemoryLines.similar(it, entry) }) { removed++; false } else { kept += entry; true }
+        }
+        if (removed > 0) Files.writeString(file, out.joinToString("\n") + "\n")
+        return removed
+    }
+
+    /**
+     * Adds a line to the "Remembered" section of the memory note. Returns the earlier line when it already says the same (nothing is written then), else null.
+     * A line that names a note which is not in the vault (a `[[link]]` or a `.md` path) is refused with a message the model can act on: it would be a dead path later.
+     */
+    fun remember(text: String): String? {
+        val clean = text.trim().replace(Regex("\\s*\\n\\s*"), " ")
+        for (ref in MemoryLines.noteRefs(clean)) {
+            require(noteExists(ref)) { "The note “$ref” does not exist in the vault, so the line would hold a dead path. Find the exact path with find_files, then remember the line again with that path." }
+        }
         ensureMemory()
-        val line = "- " + text.trim().replace(Regex("\\s*\\n\\s*"), " ")
+        memoryEntries().firstOrNull { MemoryLines.similar(it, clean) }?.let { return it }
+        val line = "- $clean"
         val file = memoryFile()
         val existing = Files.readString(file)
         Files.writeString(file, existing.trimEnd() + (if (existing.contains("## Remembered")) "\n" else "\n\n## Remembered\n\n") + line + "\n")
+        return null
     }
 
     fun create(folder: String, title: String, body: String, model: String): Note {

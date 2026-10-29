@@ -438,15 +438,14 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
             else "${counts.size} tags:\n" + counts.take((a.int("limit") ?: 50).coerceIn(1, 200)).joinToString("\n") { (tag, n) -> "#$tag  ($n)" }
         },
         ToolSpec(
-            "remember", "Add one line to the user's memory file (ARCANA.md): a lasting fact or preference that every future chat should know. Use it only when the user asks you to remember something. The user confirms each line.",
+            "remember", "Add one line to the user's memory file (ARCANA.md): a lasting fact or preference that every future chat should know. Use it only when the user asks you to remember something. The user confirms each line. A line that names a note must use its exact path (find_files); an unknown path is refused, and a fact that is already there is not added twice.",
             schema("text" to ("string" to "One short sentence to remember"), required = listOf("text")),
             ToolRisk.Write, { it.str("text") },
             { a -> listOf("Remember in ARCANA.md (read in every chat):", "+ ${a.str("text").trim()}") },
             alwaysAsk = true, confirmHeading = "Remember this?",
         ) { a ->
             require(a.str("text").isNotBlank()) { "Say what to remember." }
-            vault.remember(a.str("text"))
-            "Remembered in ARCANA.md."
+            vault.remember(a.str("text"))?.let { "Already remembered: “$it”. Nothing was added." } ?: "Remembered in ARCANA.md."
         },
         ToolSpec(
             "append_to_note", "Add text to the end of an existing note, optionally under a new heading.",

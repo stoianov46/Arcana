@@ -98,6 +98,8 @@ Size: S under half a day, M about a day, L several days, XL a week or more (roug
 
 ## N6. Memory: duplicates and missing paths
 
+**Status: done.** The check is on `remember` (the tool), and `/memory check` for what is already in the file. A line is refused only when it *names* a note that does not exist; there is no way to tell that a plain sentence "should" have carried a path.
+
 **Problem.** The memory file collects entries that repeat, and some lack the file path that is later used as the note path in the vault.
 
 **Proposal.**

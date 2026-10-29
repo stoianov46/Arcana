@@ -611,8 +611,8 @@ class DesignTest {
         assertEquals("usage: /some_new_tool <path> <content>", toolUsage("some_new_tool", listOf("path", "content")), "a tool without a curated example shows its required arguments")
         assertEquals("needs no text: just /another", toolUsage("another", emptyList()))
         val withText = SlashCommands.filter { it.usage.isNotEmpty() }.map { it.name }
-        assertEquals(listOf("/oracul", "/revise", "/compare", "/flow", "/goal"), withText, "exactly the commands that accept text carry an example")
-        assertTrue(SlashCommands.filter { it.usage.isEmpty() }.none { it.name in setOf("/oracul", "/revise", "/compare", "/flow", "/goal") })
+        assertEquals(listOf("/oracul", "/revise", "/compare", "/flow", "/goal", "/memory"), withText, "exactly the commands that accept text carry an example")
+        assertTrue(SlashCommands.filter { it.usage.isEmpty() }.none { it.name in setOf("/oracul", "/revise", "/compare", "/flow", "/goal", "/memory") })
     }
 
     @Test
