@@ -204,7 +204,7 @@ internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConf
 
 /** The model-state indicator of the Chat status bar: the reason for a wait (orange), or `● loaded 7.7 GB 100% GPU` when the chat model is loaded, or `○ not loaded` (it loads with the next message); null until Ollama has been asked. */
 internal fun modelStateSegment(app: AppContext, plain: Boolean): StatusSegment? {
-    if (app.modelWhy.isNotEmpty()) return pillSegment((if (plain) "wait: " else "◌ ") + app.modelWhy, Palette.Orange, 10)
+    if (app.modelWhy.isNotEmpty()) return pillSegment((if (plain) "wait: " else "◌ ") + app.modelWhy.substringBefore(";").take(44), Palette.Orange, 10) // the whole sentence is in the reply line
     val loaded = app.loaded ?: return null
     val mine = loaded.firstOrNull { com.arcana.brain.core.ModelStatus.sameModel(it.name, app.config.model) }
         ?: return statusSegment("", if (plain) "not loaded" else "○ not loaded", Palette.Muted, 4)
@@ -213,9 +213,21 @@ internal fun modelStateSegment(app: AppContext, plain: Boolean): StatusSegment? 
     return statusSegment("", (if (plain) "loaded" else "● loaded") + detail, if (slow) Palette.Orange else Palette.Green, 6)
 }
 
-/** `⚠ mistral-small3.2 35% on CPU: slow, lower the context window or use a smaller model`: a model that does not fit in memory. */
-internal fun offloadText(offload: com.arcana.brain.core.Offload, plain: Boolean): String =
-    "${if (plain) "!" else "⚠"} ${offload.model} ${offload.cpuPercent}% on CPU: slow, lower the context window or use a smaller model"
+/**
+ * The warnings about the model and the machine, short, for the footer bar (on every screen, next to the model badge): a loaded model that runs partly on the CPU (red), a context window
+ * larger than the model is built for, or one so small that notes and tool results get cut (orange). The explanations are in Settings → Ollama → Context window.
+ */
+internal fun hardwareWarnings(app: AppContext, plain: Boolean): List<Pair<String, com.jakewharton.mosaic.ui.Color>> {
+    val mark = if (plain) "!" else "⚠"
+    val config = app.config
+    val out = ArrayList<Pair<String, com.jakewharton.mosaic.ui.Color>>()
+    app.offloads.firstOrNull()?.let { out += "$mark ${it.cpuPercent}% on CPU: slow, lower the context" to Palette.Red }
+    if (config.contextTokens > 0 && app.modelContext > 0 && config.contextTokens > app.modelContext)
+        out += "$mark ctx ${UsageStats.contextSize(config.contextTokens.toLong())} > model ${UsageStats.contextSize(app.modelContext.toLong())}" to Palette.Orange
+    val window = effectiveContext(config.contextTokens, app.modelContext, app.loadedContext)
+    if (window in 1 until COMFORTABLE_CONTEXT) out += "$mark ctx ${UsageStats.contextSize(window.toLong())} is small" to Palette.Orange
+    return out
+}
 
 /** The memory pill when the file is longer than what is sent: how much goes to the model of how much there is, in warning colours (the end is not read). */
 internal fun memoryCutText(total: Int, plain: Boolean): String =
@@ -249,11 +261,6 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         contextUsage(chat.messages, window)?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
         if (chat.compacting) add(pillSegment(if (plain) "compacting" else "◌ compacting…", Palette.Blue, 10))
         // a small window drops the oldest text without a word: say so before it matters (Settings → Ollama → Context window)
-        // a loaded model that does not fit in memory runs partly on the CPU: several times slower, and a long prompt can run into the timeout
-        app.offloads.firstOrNull()?.let { add(pillSegment(offloadText(it, plain), Palette.Red, 10)) }
-        // asking for more than the model is built for: memory for nothing, and a risk of swapping
-        if (config.contextTokens > 0 && app.modelContext > 0 && config.contextTokens > app.modelContext) add(pillSegment(if (plain) "! ctx asks ${UsageStats.contextSize(config.contextTokens.toLong())}, model ${UsageStats.contextSize(app.modelContext.toLong())}" else "⚠ ctx asks ${UsageStats.contextSize(config.contextTokens.toLong())}, model ${UsageStats.contextSize(app.modelContext.toLong())}", Palette.Orange, 9))
-        if (window in 1 until COMFORTABLE_CONTEXT) add(pillSegment(if (plain) "! small ctx ${UsageStats.contextSize(window.toLong())}" else "⚠ ctx ${UsageStats.contextSize(window.toLong())}", Palette.Orange, 9))
         // ↑ (prompt) is exact and moves when a request ends; ↓ (reply) also counts the pieces streaming right now, until the exact figure replaces them
         if (stats.isNotEmpty() || app.liveTokens > 0) add(StatusSegment(listOf(StatusPart("↑${compact(stats.sumOf { it.promptTokens.toLong() })}", Palette.Blue), StatusPart(" ↓${compact(stats.sumOf { it.completionTokens.toLong() } + app.liveTokens)}", Palette.Green)), 3))
         // everything this session spent, every model and feature (the advisors, the flow, compaction): the figure the price below is worked out from; the arrows above are this chat's own model only

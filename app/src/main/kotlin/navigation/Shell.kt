@@ -364,6 +364,9 @@ private fun Footer(app: AppContext, navigator: Navigator, hint: String, columns:
     val tokens = app.sessionTokens
     val tokenBadge = if (tokens > 0) " ⚡ ${UsageStats.compact(tokens)} tok " else ""
     val oracul = oraculBadge(app, navigator.current == Screen.Chat)
+    // warnings about the model and the machine (a model partly on the CPU, a window too large or too small): short, here, on every screen
+    val warnings = com.arcana.brain.app.screens.hardwareWarnings(app, app.config.plainGlyphs)
+    val warningWidth = warnings.sumOf { it.first.length + 2 }
     Row(Modifier.fillMaxWidth().background(Palette.SurfaceHigh)) {
         // the model that works now comes first: the worker, or the Oracul (orange) while it is being asked, when the worker's pill turns quiet
         val asking = app.chat.consulting != null && oracul != null
@@ -375,13 +378,14 @@ private fun Footer(app: AppContext, navigator: Navigator, hint: String, columns:
             if (oracul != null) Label(oracul.first, color = Palette.Background, background = oracul.second, textStyle = TextStyle.Bold)
         }
         if (tokenBadge.isNotEmpty()) Label(tokenBadge, color = Palette.Background, background = Palette.Blue, textStyle = TextStyle.Bold) // a badge like the model pill; blue = tokens, as in the Chat status bar
+        warnings.forEach { (text, color) -> Label(" $text ", color = Palette.Background, background = color, textStyle = TextStyle.Bold) }
         if (navigator.focusMode) Label(" ✎ EDITING  Esc ", color = Palette.Background, background = Palette.Editing, textStyle = TextStyle.Bold)
-        val room = columns - badgeText.length - tokenBadge.length - (oracul?.first?.length ?: 0) - (if (navigator.focusMode) 16 else 0) - 2
+        val room = columns - badgeText.length - tokenBadge.length - warningWidth - (oracul?.first?.length ?: 0) - (if (navigator.focusMode) 16 else 0) - 2
         val toast = navigator.toast
         if (toast != null && !navigator.quitPending) {
             // a message from an overlay replaces the hints for a few seconds
             Label("", Modifier.weight(1f), background = Palette.SurfaceHigh, fill = true)
-            Label(" ${if (toast.isError) "✕" else "✓"} ${toast.text} ".take((columns - badgeText.length - tokenBadge.length - (oracul?.first?.length ?: 0) - 2).coerceAtLeast(10)), color = Palette.Background, background = if (toast.isError) Palette.Red else Palette.Green, textStyle = TextStyle.Bold)
+            Label(" ${if (toast.isError) "✕" else "✓"} ${toast.text} ".take((columns - badgeText.length - tokenBadge.length - warningWidth - (oracul?.first?.length ?: 0) - 2).coerceAtLeast(10)), color = Palette.Background, background = if (toast.isError) Palette.Red else Palette.Green, textStyle = TextStyle.Bold)
             Label(" ", background = Palette.SurfaceHigh)
         } else {
             FooterHints(if (navigator.quitPending) hint else fitHints(hint, room), badges = !navigator.quitPending)
