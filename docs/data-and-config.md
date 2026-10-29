@@ -71,6 +71,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `toolSteps` | 8 | max tool rounds per question (1–60); at the limit `stepLimit` decides |
 | `stepLimit` | `ask` | at the step limit: `ask` shows a dialog offering that many more steps, `auto` gives them at once (up to `STEP_LIMIT_AUTO_ROUNDS` = 3 times per question, logged in the session, then it asks), `stop` makes the model answer with what it has. Each change, command and web address inside the extra steps keeps its own approval |
 | `flow` / `flowAnalyst` / `flowController` / `flowRedos` / `flowCheckCommand` | `off` / `` / `` / `2` / `` | the selected flow (`off`, `careful`), the models of its analyst and controller stages (blank = the Oracul model) how many redos the controller may ask for (0-5) and a shell command run as an objective check after each answer (needs `toolShell` and `toolAutoShell`); see [oracul.md](oracul.md#flows-orchestration) |
+| `flowTools` | false | the chat model may call the analyst, planner and reviewer as the `consult` tool (Settings → Oracul → *Specialists as tools*) |
 | `routeVision` / `routeCode` | `` / `` | the models the router sends a message with an image / with code to (blank = the chat model); see [oracul.md](oracul.md#router) |
 | `oraculVerdict` / `goalTurns` | `true` / `5` | the judge's verdict on each automatic opinion (needs `judgeModel`); automatic turns `/goal` may take per goal |
 | `rolesScope` | `skills` | `skills` or `all`: where the role table below applies (only a run with a skill, or every message) |

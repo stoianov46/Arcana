@@ -303,6 +303,42 @@ class OraculTest {
     }
 
     @Test
+    fun theMainModelCanConsultASpecialistAsAToolAndGetsItsAnswerBack() {
+        val f = fake()
+        try {
+            f.script = { model, body ->
+                if (model == "worker" && "\"tools\"" in body && "\"role\":\"tool\"" !in body) call("consult", """{"stage":"planner","brief":"sort the inbox"}""") else null
+            }
+            val vault = Files.createDirectories(Files.createTempDirectory("arcana-consult").resolve("v"))
+            val chat = app(f) { copy(flowTools = true, rolePlanner = "big", toolsEnabled = true, toolMode = "auto", vaultPath = vault.toString()) }.chat
+            chat.send("Please sort the inbox")
+            val deadline = System.currentTimeMillis() + 10_000
+            while (f.asked.size < 3 && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            Thread.sleep(300)
+            assertEquals(listOf("worker", "big", "worker"), f.asked.map { it.first }, "the model asked, the specialist answered, the model went on")
+            assertTrue(f.asked[1].second.contains("sort the inbox"), "the specialist got the brief")
+            val result = chat.messages.first { it.role == "tool" }
+            assertTrue(result.content.startsWith("Planner (big) says:"), "the answer came back as the tool result: ${result.content}")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun aConsultWithoutAModelOrWithAWrongStageIsAnErrorTheModelCanRead() {
+        val f = fake()
+        try {
+            f.script = { model, body ->
+                if (model == "worker" && "\"tools\"" in body && "\"role\":\"tool\"" !in body) call("consult", """{"stage":"reviewer","brief":"x"}""") else null
+            }
+            val vault = Files.createDirectories(Files.createTempDirectory("arcana-consult2").resolve("v"))
+            val chat = app(f) { copy(flowTools = true, toolsEnabled = true, toolMode = "auto", vaultPath = vault.toString()) }.chat
+            chat.send("Please review this")
+            Thread.sleep(1500)
+            assertTrue(chat.messages.first { it.role == "tool" }.content.startsWith("Error: no model is set for the reviewer"), "no model for the stage")
+            assertEquals(listOf("worker", "worker"), f.asked.map { it.first }, "nobody else was asked")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun aFileTheWorkerWritesIsListedAsAnArtifactOfTheChat() {
         val f = fake()
         try {

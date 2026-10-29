@@ -171,6 +171,16 @@ runs unless *Flow* is set (`AppConfig.flow`).
   written (`gen.state == Running`), so a redo or a queued message is never talked over. The goal belongs to the chat in memory: `/new` and opening another chat clear it, and it is
   not saved.
 
+## Specialists as tools (`consult`)
+
+The *subagent* way to use the same stages, as in Claude Code: with **Settings → Oracul → Specialists as tools** (`flowTools`, off by default) and tools on, the chat model is offered one
+more pseudo-tool, `consult` (`CONSULT_DEFINITION`, handled by `ChatSession.consult` like `ask_user`, not by the `ToolBox`). It names a `stage` (`analyst`, `planner`, `reviewer`; not the controller
+or the worker) and writes a `brief`; the stage's model (`Flow.careful(config).model(kind)`: *Flow analyst*, *Skill planner*, *Skill reviewer*, else the Oracul model) is asked with the stage's own
+instructions (`Oracul.consultRequest`) and **sees only the brief** (plus the usual earlier-chat header), and its text comes back as the tool's result: `Planner (model) says: …`. So the model
+decides when, and most messages call nobody. Limits: `MAX_CONSULTS` = 3 per message of the user (`consults`, reset by a message), one specialist at a time, no recursion. A stage without a
+model, a model that is not installed or a wrong stage name is an `Error:` result the model can read and work around. Usage goes to `Analyst`, `Planner` or `Oracul`; nothing is added to the chat
+besides the tool call and its result. It is independent of *Flow*: both can be on (the flow then still runs its fixed sequence, and the model may consult inside the worker's turn).
+
 ## Router
 
 The *router* block of the orchestration design, **rules first** (`core/Router.kt`): `Router.kindOf(text, hasImages)` says *image* when an image is attached, *code* when the text has a
@@ -211,6 +221,7 @@ continues, so a vision answer is not redone by the chat model. A model-based sel
 | `oraculJudgeAuto` | `false` | when an automatic opinion is due, run `compare()` (Oracul answer plus judge verdict) instead; mid-turn stuck advice and skill reviewers stay single opinions |
 | `oraculTools` | `true` | the Oracul may use the worker's tools |
 | `flow` / `flowAnalyst` / `flowController` / `flowRedos` / `flowCheckCommand` | `off` / blank / blank / `2` / blank | the selected flow (`off`, `careful`), the models of its analyst and controller (blank = the Oracul model) how many redos the controller may ask for (0–5) and an objective check command (blank = none; needs shell + auto-run); while a flow is on the role table applies to every message |
+| `flowTools` | `false` | the chat model may call the analyst, planner and reviewer as the `consult` tool |
 | `routeVision` / `routeCode` | blank / blank | the models the router sends a message with an image / with code to (blank = the chat model) |
 | `oraculVerdict` / `goalTurns` | `true` / `5` | the judge's verdict after an automatic opinion (needs `judgeModel`); how many times `/goal` may continue the work by itself |
 | `rolesScope` | `skills` | `skills` or `all`: with `all` the role table also runs for messages without a skill (`ChatSession.applyRoles(null)`; no plan under `PLAN_MIN_CHARS` = 60 characters) |

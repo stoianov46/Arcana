@@ -2153,4 +2153,15 @@ class CoreTest {
         assertEquals(null, CheckCommand.run("sleep 5", dir, seconds = 1).code, "a timeout has no exit code")
         assertTrue(CheckCommand.refusal("sudo rm x") != null && CheckCommand.refusal("./gradlew test") == null)
     }
+
+    @Test
+    fun onlyTheAdvisingStagesCanBeConsulted() {
+        assertEquals(StageKind.Analyst, Flow.consultKind(" Analyst "))
+        assertEquals(StageKind.Planner, Flow.consultKind("planner"))
+        assertEquals(StageKind.Reviewer, Flow.consultKind("REVIEWER"))
+        assertEquals(null, Flow.consultKind("controller"), "the controller and the worker are not specialists to call")
+        assertEquals(null, Flow.consultKind("boss"))
+        assertTrue("analyst" in CONSULT_DEFINITION.toString() && CONSULT == "consult")
+        assertTrue("TASK:\nx" in Oracul.consultRequest(StageKind.Planner, "x").last().content && "TO REVIEW:\nx" in Oracul.consultRequest(StageKind.Reviewer, "x").last().content)
+    }
 }

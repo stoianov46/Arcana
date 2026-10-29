@@ -56,6 +56,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `set_properties` | Write | `path`, `properties` | `Vault.setProperties`: one `key: value` per line (list values may continue on indented / `- item` lines); an existing key is replaced in place, a new one added, the rest and the text stay; a note without a block gets one; plan mode has no write tools, so none |
 | `add_tags` | Write | `path`, `tags` | `Vault.addTags` → `mergeFrontmatterTags`: the note's tags stay, the new ones are added to ONE `tags:` line (other `tag:` / `Tags:` lines are folded in); preview `+ #tag` per tag |
 | `list_tags` | Read | `limit?` (≤200) | `VaultIndex.build(vault).tagCounts`: `#tag  (n)` lines, most used first, so the model reuses tags |
+| `consult` | pseudo-tool, answered by the chat (only with *Specialists as tools*) | `stage`, `brief` | asks the analyst, planner or reviewer model and returns its text; at most 3 per message |
 | `remember` | Write, always asks | `text` | appends a line under "Remembered" in `ARCANA.md`; skips a fact that is already there, refuses a `[[link]]` / `.md` path that does not exist (`Vault.remember`) |
 | `write_file` | Write | `path`, `content` | create or replace; **backup** of the old file; creates parent dirs |
 | `edit_file` | Write | `path`, `old`, `new` | `old` must occur exactly once; backup first |

@@ -15,7 +15,10 @@ import com.arcana.brain.core.Artifact
 import com.arcana.brain.core.CheckCommand
 import com.arcana.brain.core.CheckRun
 import com.arcana.brain.core.Artifacts
+import com.arcana.brain.core.CONSULT
+import com.arcana.brain.core.CONSULT_DEFINITION
 import com.arcana.brain.core.Flow
+import com.arcana.brain.core.MAX_CONSULTS
 import com.arcana.brain.core.Route
 import com.arcana.brain.core.Router
 import com.arcana.brain.core.SkillRoles
@@ -395,6 +398,36 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }
     }
 
+    /** How many times the model has consulted a specialist in this message; reset by a message of the user. */
+    private var consults = 0
+
+    /**
+     * The model calls a stage as a specialist (`consult`): the stage's model gets only the brief the model wrote, with the stage's own instructions, and its text is the tool's
+     * answer. Nothing is added to the chat besides the tool call. Not installed, no model for the stage or too many calls are errors the model can read.
+     */
+    private suspend fun consult(call: ToolCall): String {
+        fun arg(name: String) = (call.arguments[name] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim()
+        val kind = Flow.consultKind(arg("stage")) ?: return "Error: stage must be analyst, planner or reviewer."
+        val brief = arg("brief").ifEmpty { return "Error: give a brief: everything the specialist needs." }
+        if (consults >= MAX_CONSULTS) return "Error: you have already consulted $MAX_CONSULTS times in this message; carry on with what you have."
+        val model = Flow.careful(app.config).model(kind).ifEmpty { return "Error: no model is set for the ${kind.label.lowercase()} (Settings → Oracul); work without it." }
+        if (consulting != null) return "Error: another model is working right now; try again in a moment."
+        if (missingOnOracul(model)) return "Error: the model $model is not installed; work without the ${kind.label.lowercase()}."
+        consults++
+        consulting = model; consultingStage = "advising as the ${kind.label.lowercase()}"
+        try {
+            val feature = when (kind) { StageKind.Analyst -> "Analyst"; StageKind.Planner -> "Planner"; else -> "Oracul" }
+            val text = Oracul.ask(clientFor(model), Oracul.consultRequest(kind, brief, oraculBackground())) { app.recordUsage(feature, it, model) }
+            return if (text.isEmpty()) "Error: $model returned nothing." else "${kind.label} ($model) says:\n$text"
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return "Error: the ${kind.label.lowercase()} failed (${e.message})."
+        } finally {
+            consulting = null
+        }
+    }
+
     private fun clearRoles() { runWorker = null; runReviewer = null; flowControl = false }
 
     private fun startSkillRun(name: String, requirements: List<Requirement>) {
@@ -543,11 +576,12 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         for (call in calls) {
             // read again for every call: an earlier call of this round may have switched the mode, which rebuilds the toolbox
             val box = toolbox
-            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || call.name == CHAT_STATS || call.name == TODO || box == null) {
+            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || call.name == CHAT_STATS || call.name == TODO || call.name == CONSULT || box == null) {
                 val message = ChatMessage.toolResult(call.name, when {
                     call.name == ASK_USER -> askUser(call, text)
                     call.name == REQUEST_ACCESS -> requestAccess(call)
                     call.name == REQUEST_MODE -> requestMode(call)
+                    call.name == CONSULT -> consult(call)
                     call.name == TODO -> Todos.describe(Todos.parse((call.arguments["items"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()))
                     call.name == CHAT_STATS -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList())
                     else -> "Error: tools are off. Call request_access to ask the user for them."
@@ -719,7 +753,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** What the model is offered when it has a toolbox: the tools, a way to ask for another mode, and (in plan mode) a way to ask to leave it. */
     private fun definitionsFor(box: ToolBox): JsonArray =
-        JsonArray(box.definitions() + REQUEST_MODE_DEFINITION + CHAT_STATS_DEFINITION + TODO_DEFINITION + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
+        JsonArray(box.definitions() + REQUEST_MODE_DEFINITION + CHAT_STATS_DEFINITION + TODO_DEFINITION + (if (app.config.flowTools) listOf(CONSULT_DEFINITION) else emptyList()) + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
 
     /** The model asks to switch the tool mode: the user always decides; when they agree the mode, the toolbox and the model's tools change at once. */
     private suspend fun requestMode(call: ToolCall): String {
@@ -1197,6 +1231,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             // the controller's redo is the worker's own turn: same models, no new analysis or plan
             val redo = body.startsWith(Oracul.REDO_PROMPT)
             if (!redo) flowRedos = 0
+            if (!redo) consults = 0
             if (!redo && !body.startsWith(Oracul.GOAL_PROMPT)) goalTurns = 0
             val planned = !redo && (chipEntry != null || body.length >= PLAN_MIN_CHARS)
             val planner = when {

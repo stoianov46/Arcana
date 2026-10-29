@@ -307,6 +307,12 @@ object Oracul {
             if (toolsUsed.isEmpty()) "" else "\n\nTOOLS THE ANSWERING ASSISTANT USED: ${toolsUsed.distinct().joinToString()}"),
     )
 
+    /** What a stage is asked when the main model calls it as a tool: the stage's own instructions and the brief the model wrote (it sees nothing else). */
+    fun consultRequest(kind: StageKind, brief: String, background: String = ""): List<ChatMessage> = listOf(
+        ChatMessage.system(when (kind) { StageKind.Analyst -> ANALYSIS_INSTRUCTIONS; StageKind.Planner -> PLAN_INSTRUCTIONS; else -> REVIEW_INSTRUCTIONS }),
+        ChatMessage.user(earlier(background) + (if (kind == StageKind.Reviewer) "TO REVIEW:\n" else "TASK:\n") + brief.trim().take(MAX_PART)),
+    )
+
     fun answerRequest(question: String, withTools: Boolean = false, background: String = ""): List<ChatMessage> = listOf(
         ChatMessage.system("Answer the user's question carefully and concisely. If you cannot know something, say so." + if (withTools) " You have tools: use them to look things up instead of guessing; do not change anything unless the user asked for it." else ""),
         ChatMessage.user(if (background.isBlank()) question.trim().take(MAX_PART) else earlier(background) + "QUESTION:\n" + question.trim().take(MAX_PART)),

@@ -145,7 +145,7 @@ Size: S under half a day, M about a day, L several days, XL a week or more (roug
 
 ## N10. Orchestration: the flow core (reworked to industry practice)
 
-**Status: steps 1–5 done, including the command-based check.** 1 `Flow`, the analyst and the *Careful* preset; 2 the controller, the redo loop and the objective check command; 3 `/flow`, stage names in the reply line, `⇉` in the status bars; 4 the judge verdict (N9) and `/goal` (N5); 5 the rule-based router. **Not started:** step 6, stages as callable tools (subagent style); it is only worth building after the fixed sequence has been used on real work.
+**Status: steps 1–5 done, including the command-based check.** 1 `Flow`, the analyst and the *Careful* preset; 2 the controller, the redo loop and the objective check command; 3 `/flow`, stage names in the reply line, `⇉` in the status bars; 4 the judge verdict (N9) and `/goal` (N5); 5 the rule-based router. **Step 6, stages as callable tools (the `consult` tool, Settings → Oracul → *Specialists as tools*), is built too.** Nothing here has been measured on real models yet: how much a flow or a specialist improves answers is not known.
 
 **Correction.** The first draft of this section turned your example (analyse prompt → plan → execute → analyse result → control) into one fixed five-stage pipeline with gating rules. That was my invention. Your list is **one possible flow**, not the design. The design is a small set of building blocks that can express that flow and others, as other agents do.
 

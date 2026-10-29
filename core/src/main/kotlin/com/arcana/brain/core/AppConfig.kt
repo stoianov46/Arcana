@@ -101,6 +101,8 @@ data class AppConfig(
     val flowController: String = "",
     /** How many times the controller may send the worker back to redo an answer (0 = it only gives its verdict). */
     val flowRedos: Int = 2,
+    /** The main model may call the analyst, planner and reviewer itself as a tool (`consult`, subagent style), when the stage has a model; needs tools on. */
+    val flowTools: Boolean = false,
     /** An objective check for the flow: a shell command that runs in the project folder after each answer (`./gradlew test`). Exit code 0 = passed (the controller is told); anything else = redo, with the output as the notes. Needs the shell tools and auto-run on. Blank = no command. */
     val flowCheckCommand: String = "",
     /** The router (see [Router]): the model that answers a message with an image attached, and the one for a message with code in it; blank = the chat model. */
