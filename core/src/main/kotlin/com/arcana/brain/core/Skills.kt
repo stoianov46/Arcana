@@ -33,8 +33,11 @@ class Skill(
 data class SkillRoles(val worker: String = "", val reviewer: String = "", val planner: String = "") {
     val any: Boolean get() = worker.isNotEmpty() || reviewer.isNotEmpty() || planner.isNotEmpty()
 
-    /** What the skill does not name is taken from the role table in the settings ([AppConfig.roleWorker] and the others). */
-    fun withDefaults(config: AppConfig) = SkillRoles(worker.ifEmpty { config.roleWorker.trim() }, reviewer.ifEmpty { config.roleReviewer.trim() }, planner.ifEmpty { config.rolePlanner.trim() })
+    /** What the skill does not name is taken from the role table in the settings ([AppConfig.roleWorker] and the others), or from the selected [Flow]. */
+    fun withDefaults(config: AppConfig): SkillRoles {
+        val table = Flow.of(config)?.roles() ?: SkillRoles(config.roleWorker.trim(), config.roleReviewer.trim(), config.rolePlanner.trim())
+        return SkillRoles(worker.ifEmpty { table.worker }, reviewer.ifEmpty { table.reviewer }, planner.ifEmpty { table.planner })
+    }
 }
 
 object Skills {

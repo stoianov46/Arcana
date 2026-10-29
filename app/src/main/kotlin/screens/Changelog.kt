@@ -30,6 +30,7 @@ Built on 24–25 October 2026. Last updated 28 October 2026.
 - `Esc` on a running reply (or an Oracul run) opens *Cancel this reply?*: `Enter` cancels, any other key keeps going, and the reply keeps streaming meanwhile. The double `Esc` is gone; **Settings → Console → Confirm before cancelling** turns the question off.
 
 ## Models as a pipeline
+- **Flow: Careful** (Settings → Oracul → Flow): every message goes through an **analyst** (what is really asked, what is unclear), a **planner**, the **worker** and a **reviewer**, each its own model. Short messages skip the analysis and the plan. New *Analysis* block in the chat and an *Analyst* line in Usage. First step of the orchestration work: only the fixed sequence exists so far.
 - **Settings → Oracul → Roles apply to → Every message** runs the planner, worker and reviewer for all chat, not only skills: a plan first (messages of 60+ characters), the worker answers, the reviewer checks.
 
 ## Usage became a dashboard

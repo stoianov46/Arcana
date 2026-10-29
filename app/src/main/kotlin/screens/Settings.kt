@@ -144,6 +144,7 @@ private val MainModel = Editor.Model("Model", { it.model }, { c, v -> c.copy(mod
 
 private val OraculModel = Editor.Model("Oracul model", { it.oraculModel }, { c, v -> c.copy(oraculModel = v) }, allowNone = true, oracul = true)
 private val ExtraModels = Editor.Model("More Oracul models", { it.oraculExtra }, { c, v -> c.copy(oraculExtra = v.split(',').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")) }, allowNone = true, oracul = true, multi = true)
+private val AnalystRole = Editor.Model("Flow analyst", { it.flowAnalyst }, { c, v -> c.copy(flowAnalyst = v) }, allowNone = true, oracul = true)
 private val PlannerRole = Editor.Model("Skill planner", { it.rolePlanner }, { c, v -> c.copy(rolePlanner = v) }, allowNone = true, oracul = true)
 private val WorkerRole = Editor.Model("Skill worker", { it.roleWorker }, { c, v -> c.copy(roleWorker = v) }, allowNone = true)
 private val ReviewerRole = Editor.Model("Skill reviewer", { it.roleReviewer }, { c, v -> c.copy(roleReviewer = v) }, allowNone = true, oracul = true)
@@ -260,6 +261,8 @@ private val settings: List<Setting> = listOf(
         c.copy(oraculUrl = v.trim().trimEnd('/'))
     }),
     choice(Group.Oracul, "Roles apply to", "Skills only: the planner, worker and reviewer below run for a message that carries a skill. Every message: they run as a pipeline for all chat (a plan first, for messages of 60 characters or more; the worker answers; the reviewer checks). Slower, but each model does what it is best at. A skill's own properties still win.", listOf("skills" to "Skills only", "all" to "Every message"), { it.rolesScope }, { c, v -> c.copy(rolesScope = v) }),
+    choice(Group.Oracul, "Flow", "A fixed sequence of models that handles every message: the analyst says what is really asked, the planner plans, the worker does it, the reviewer checks. Careful uses the models below (an unset stage takes the Oracul model; the worker is the chat model unless Skill worker is set) and a message under 60 characters goes straight to the worker. Off: the chat model answers, and skills use the role table. Slow and heavy: several models run for each message.", listOf("off" to "Off", "careful" to "Careful"), { it.flow }, { c, v -> c.copy(flow = v) }),
+    Setting(Group.Oracul, "Flow analyst", "The model that reads your request first and writes what is really asked, what is unclear and what a good result looks like (needs Flow: Careful). Blank: the Oracul model.", { it.flowAnalyst.ifEmpty { "(the Oracul model)" } }, editor = AnalystRole),
     Setting(Group.Oracul, "Skill planner", "The model that writes a short plan before a skill starts (the worker then sees it). A skill's own `planner:` property wins. Blank: no plan.", { it.rolePlanner.ifEmpty { "(no plan)" } }, editor = PlannerRole),
     Setting(Group.Oracul, "Skill worker", "The model that runs skills instead of the chat model. A skill's own `worker:` property wins. Blank: the chat model.", { it.roleWorker.ifEmpty { "(the chat model)" } }, editor = WorkerRole),
     Setting(Group.Oracul, "Skill reviewer", "The model that gives a second opinion when a skill's run is done, whatever the automatic setting says. A skill's own `reviewer:` property wins. Blank: none.", { it.roleReviewer.ifEmpty { "(no review)" } }, editor = ReviewerRole),
@@ -315,6 +318,7 @@ private fun adviceFor(app: AppContext, label: String): String? {
         "Model" -> app.memoryAdvice(config.model, FitRole.Main)
         "Oracul model" -> app.memoryAdvice(config.oraculModel, FitRole.Oracul)
         "Judge model" -> app.memoryAdvice(com.arcana.brain.core.Oracul.judge(config), FitRole.Judge)
+        "Flow analyst" -> app.memoryAdvice(config.flowAnalyst, FitRole.Oracul)
         "Skill planner" -> app.memoryAdvice(config.rolePlanner, FitRole.Oracul)
         "Skill reviewer" -> app.memoryAdvice(config.roleReviewer, FitRole.Oracul)
         "Skill worker" -> app.memoryAdvice(config.roleWorker, FitRole.Main)

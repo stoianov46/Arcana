@@ -477,6 +477,39 @@ class OraculTest {
     }
 
     @Test
+    fun theCarefulFlowAnalysesPlansWorksAndReviewsInThatOrder() {
+        val f = fake()
+        try {
+            val long = "Please explain in some detail how the two sorting algorithms differ in practice"
+            val chat = app(f) { copy(flow = "careful", flowAnalyst = "judge", rolePlanner = "big", roleReviewer = "big", toolsEnabled = false) }.chat
+            chat.send(long)
+            Thread.sleep(1000)
+            assertEquals(listOf("judge", "big", "worker", "big"), f.asked.map { it.first }, "analyst, planner, worker (the chat model), reviewer")
+            assertTrue("ANALYSIS OF THE TASK" in f.asked[1].second, "the planner was given the analysis")
+            val analysis = chat.messages.first { Oracul.isAnalysis(it) }
+            assertTrue(Oracul.isOpinion(analysis) && !Oracul.isReview(analysis) && !Oracul.isPlan(analysis), "an analysis is advice, not a review or a plan")
+            assertTrue(chat.messages.indexOf(analysis) < chat.messages.indexOfFirst { Oracul.isPlan(it) }, "the analysis comes before the plan")
+            f.asked.clear()
+            val short = app(f) { copy(flow = "careful", flowAnalyst = "judge", rolePlanner = "big", toolsEnabled = false) }.chat
+            short.send("thanks")
+            Thread.sleep(600)
+            assertEquals(listOf("worker"), f.asked.map { it.first }, "a short message skips the analyst and the planner")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun anAnalystThatIsNotInstalledOnlyLeavesTheAnalysisOut() {
+        val f = fake()
+        try {
+            val chat = app(f) { copy(flow = "careful", flowAnalyst = "missing", rolePlanner = "big", toolsEnabled = false) }.chat
+            chat.send("Please explain in some detail how the two sorting algorithms differ in practice")
+            Thread.sleep(800)
+            assertEquals(listOf("big", "worker"), f.asked.map { it.first }, "no analyst; the planner and the worker still ran")
+            assertTrue(chat.roleNote?.contains("missing") == true, "the user is told")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun reviseTakesAnExtraNoteAndCompareCanUseOneModelForOneCall() {
         val f = fake()
         try {

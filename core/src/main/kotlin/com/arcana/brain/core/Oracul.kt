@@ -16,6 +16,9 @@ object Oracul {
     /** A plan written by the skill's planner model before the worker starts: shown like an Oracul block, but it is advice for the worker, not a review. */
     const val MARK_PLAN = "[Plan"
 
+    /** What the flow's analyst wrote before the planner: the task restated, what is unclear, what a good result looks like. Advice for the later stages, like a plan. */
+    const val MARK_ANALYSIS = "[Analysis"
+
     /** What [AppConfig.oraculAuto] may be. */
     val AUTO_MODES = listOf("off", "problems", "always")
 
@@ -61,19 +64,33 @@ object Oracul {
     /** The model that judges a comparison: its own setting, else the Oracul model. */
     fun judge(config: AppConfig): String = config.judgeModel.trim().ifEmpty { model(config) }
 
-    fun isOpinion(message: ChatMessage): Boolean = message.role == "user" && (message.content.startsWith(MARK) || message.content.startsWith(MARK_COMPARE) || message.content.startsWith(MARK_PLAN))
+    fun isOpinion(message: ChatMessage): Boolean = message.role == "user" && (message.content.startsWith(MARK) || message.content.startsWith(MARK_COMPARE) || message.content.startsWith(MARK_PLAN) || message.content.startsWith(MARK_ANALYSIS))
 
     fun isPlan(message: ChatMessage): Boolean = message.role == "user" && message.content.startsWith(MARK_PLAN)
 
-    /** A second opinion or a comparison: an Oracul block that [REVISE_PROMPT] can act on (a plan is not one). */
-    fun isReview(message: ChatMessage): Boolean = isOpinion(message) && !isPlan(message)
+    fun isAnalysis(message: ChatMessage): Boolean = message.role == "user" && message.content.startsWith(MARK_ANALYSIS)
+
+    /** A second opinion or a comparison: an Oracul block that [REVISE_PROMPT] can act on (a plan or an analysis is not one). */
+    fun isReview(message: ChatMessage): Boolean = isOpinion(message) && !isPlan(message) && !isAnalysis(message)
 
     /** What the worker is told about a plan, in the plan block itself. */
     private const val PLAN_INTRO = "A planner (another model) wrote this plan for the task. Follow it where it is right; if a step is wrong, say why in one line and do the right thing."
+    private const val ANALYSIS_INTRO = "An analyst (another model) read the user's request before the work began. Use it to see what is really asked; if it is wrong, say why in one line and do the right thing."
     private const val REVIEW_INTRO = "A reviewer (another model) read your last answer and says:"
 
     /** Said to the worker after a reviewer's intro: the reviewer saw only part of the conversation, so it can be wrong about what the user meant. */
     private const val CAVEAT = "It was shown only part of the conversation: check what it says against the chat before you agree."
+
+    fun analysisMessage(model: String, analysis: String): ChatMessage = ChatMessage.user("$MARK_ANALYSIS · $model]\n$ANALYSIS_INTRO\n\n${analysis.trim()}")
+
+    const val ANALYSIS_INSTRUCTIONS = "You analyse a request before other assistants plan and do the work. Do not do the work and do not answer it. Write, briefly and in the language " +
+        "of the request: 1) what is really asked, in one or two sentences; 2) what is unclear or missing, each with the assumption you would make; 3) constraints and things to " +
+        "avoid; 4) what a good result looks like, in a way that can be checked. At most 150 words."
+
+    fun analysisRequest(question: String, background: String = ""): List<ChatMessage> = listOf(
+        ChatMessage.system(ANALYSIS_INSTRUCTIONS),
+        ChatMessage.user(earlier(background) + "REQUEST:\n${question.trim().take(MAX_PART)}"),
+    )
 
     fun planMessage(model: String, plan: String): ChatMessage = ChatMessage.user("$MARK_PLAN · $model]\n$PLAN_INTRO\n\n${plan.trim()}")
 
@@ -81,9 +98,13 @@ object Oracul {
         "(at most 8 steps): what to look at first, what to do in which order, what to check at the end, and where the result goes. Do not do the work and do not answer " +
         "the task yourself. Keep the language of the task."
 
-    fun planRequest(question: String, skillText: String, background: String = ""): List<ChatMessage> = listOf(
+    fun planRequest(question: String, skillText: String, background: String = "", analysis: String = ""): List<ChatMessage> = listOf(
         ChatMessage.system(PLAN_INSTRUCTIONS),
-        ChatMessage.user(earlier(background) + "TASK:\n${question.trim().take(MAX_PART)}\n\nSKILL INSTRUCTIONS:\n${skillText.trim().take(MAX_PART)}"),
+        ChatMessage.user(
+            earlier(background) + "TASK:\n${question.trim().take(MAX_PART)}" +
+                (if (analysis.isBlank()) "" else "\n\nANALYSIS OF THE TASK (by an analyst):\n${analysis.trim().take(MAX_PART)}") +
+                "\n\nSKILL INSTRUCTIONS:\n${skillText.trim().take(MAX_PART)}",
+        ),
     )
 
     /** The recent conversation as a header for a request, so a short question ("do option C", "yes") makes sense to the model that answers it; empty when there is none. */
@@ -152,7 +173,7 @@ object Oracul {
     }
 
     /** An Oracul message as the reader sees it: without the line that is addressed to the worker model. */
-    fun body(message: ChatMessage): String = text(message).removePrefix(REVIEW_INTRO).removePrefix(PLAN_INTRO).removePrefix(STUCK_INTRO).trim().removePrefix(CAVEAT).trim()
+    fun body(message: ChatMessage): String = text(message).removePrefix(REVIEW_INTRO).removePrefix(PLAN_INTRO).removePrefix(ANALYSIS_INTRO).removePrefix(STUCK_INTRO).trim().removePrefix(CAVEAT).trim()
 
     /** An Oracul message without its first line. */
     fun text(message: ChatMessage): String = message.content.substringAfter('\n', "").trim()

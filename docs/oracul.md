@@ -38,6 +38,7 @@ What differs: the Oracul is advisory and speaks only after problems or on a comm
 | **Revise** | `/revise [note]` | the chat model revises its last answer with the open opinion | `ChatSession.revise`, `Oracul.REVISE_PROMPT` |
 | **Takeover** (escalation) | `/takeover`, offered by a toast after a failed turn | the Oracul continues the unanswered turn from the same history, with its own model and tools | `ChatSession.takeOver`, `Oracul.takeoverHeading` |
 | **Skill roles** | `worker:`, `reviewer:`, `planner:` in a skill's properties, or the role table in Settings | a skill run uses another worker model, gets a plan first, and a review at the end | `ChatSession.applyRoles` / `plan`, `Skills.roles`, `SkillRoles.withDefaults` |
+| **Flow** | Settings → Oracul → *Flow* = Careful | every message goes through a fixed sequence: analyst → planner → worker → reviewer, each its own model | `Flow`, `ChatSession.analyse` / `plan` / `applyRoles` |
 | **Memory fit** | the model pickers in Settings | each model is marked as fitting this machine or not, with a suggested Oracul and judge | `core/ModelFit.kt` |
 
 ## What the Oracul is shown of the conversation
@@ -68,7 +69,7 @@ trigger ──► model/server resolved ──► request built ──► (tool 
 - **Concurrency guard:** `consulting` (the model being asked) is non-null while any consultation runs; a second one is refused
   ("The Oracul is already working"). The bottom bar and the Chat status bar read it.
 - **Usage:** every request is recorded under the model that spent the tokens, as feature `Oracul` (opinions, its answers in a comparison,
-  takeovers, stepping in), `Judge` (the verdict) or `Planner` (the plan): `app.recordUsage(feature, chunk, model)`. The usage file keeps them, so
+  takeovers, stepping in), `Judge` (the verdict) `Analyst` (the flow's analysis) or `Planner` (the plan): `app.recordUsage(feature, chunk, model)`. The usage file keeps them, so
   *how many times each was called* survives restarts; Usage → By feature shows them, Usage → Breakdown has a panel *Oracul, Planner, Judge* (`UsageStats.advisors`, `AdvisorsPanel`: calls, tokens, share of all tokens, average time, models) and `chat_stats` reports them (`ChatStats.spendLines`: spend per
   model and in total, and the all-time call counts). Its tool calls go in the tool statistics.
 
@@ -119,6 +120,29 @@ loads a skill itself with `use_skill` (worker and reviewer only: **a plan is wri
 not installed or cannot use tools is skipped with a message (`roleNote`, shown as a toast) and the settings' model is used; nothing is
 ever written to the settings. The judge is only the judge: it sees all answers (`ANSWER 1` is the chat model's) and picks or merges.
 
+## Flows (orchestration)
+
+A **flow** (`core/Flow.kt`) is a fixed sequence of stages, each with its own model. It is the *sequence* block of a larger design (stage, sequence, router,
+loop, check; see `docs/plan-next.md`, N10): this is the first step, and only the fixed sequence exists. The default is still the single chat model; no flow
+runs unless *Flow* is set (`AppConfig.flow`).
+
+| Stage | Model (first that is set) | Does | Block in the chat |
+|---|---|---|---|
+| Analyst | `flowAnalyst`, else the Oracul model | reads the request and writes what is really asked, what is unclear (with an assumption each), constraints and what a good result looks like; no tools | `Ψ Analysis · <model>` |
+| Planner | `rolePlanner`, else the Oracul model | the plan, now also shown the analysis | `Ψ Plan · <model>` |
+| Worker | `roleWorker`, else the chat model | answers, with tools as usual | the answer |
+| Reviewer | `roleReviewer`, else the Oracul model | the second opinion when the run is done, whatever `oraculAuto` says | `Ψ Second opinion · <model>` |
+
+- **No second way to run a model.** The planner, worker and reviewer are applied through the roles of a skill run (`Flow.roles()` feeds
+  `SkillRoles.withDefaults`; a skill's own properties still win). Only the analyst is new: `ChatSession.analyse` runs before `plan` in the first round's
+  `prepare`, adds an *analysis block* (a user message, like a plan: `Oracul.MARK_ANALYSIS`, `isAnalysis`; advice, **not** a review, so `/revise` ignores it) and
+  passes its text to `Oracul.planRequest(..., analysis)`.
+- **Short messages** (under `PLAN_MIN_CHARS` = 60) are neither analysed nor planned, so "thanks" costs one model run. A skill chip is always planned.
+- **Failures are notes.** An analyst that is not installed, returns nothing or fails leaves the analysis out (`roleNote`, a toast); the rest goes on.
+- **Usage:** feature `Analyst` (Usage → Breakdown panel *Oracul, Analyst, Planner, Judge*, `chat_stats`).
+- **Cost:** up to four model runs per message, and on a local machine several large models swap in and out of memory (the memory advice in Settings applies to the
+  analyst too). Not built yet: the controller and the redo loop (N10 step 2), `/flow <name>`, more presets and a router.
+
 ## Interface
 
 - **Bottom bar badge:** `Ψ <oracul> ⚖ <judge> · auto|always|manual`, the judge only when it differs; orange `Ψ <model>…` while it works;
@@ -150,6 +174,7 @@ ever written to the settings. The judge is only the judge: it sees all answers (
 | `oraculContextMessages` / `oraculContextChars` | `6` / `1500` | how many earlier chat messages, and how many characters of each, the Oracul, judge and planner are shown besides the last question (Settings → Oracul → Chat context); 0 messages = none |
 | `oraculJudgeAuto` | `false` | when an automatic opinion is due, run `compare()` (Oracul answer plus judge verdict) instead; mid-turn stuck advice and skill reviewers stay single opinions |
 | `oraculTools` | `true` | the Oracul may use the worker's tools |
+| `flow` / `flowAnalyst` | `off` / blank | the selected flow (`off`, `careful`) and the analyst's model (blank = the Oracul model); while a flow is on the role table applies to every message |
 | `rolesScope` | `skills` | `skills` or `all`: with `all` the role table also runs for messages without a skill (`ChatSession.applyRoles(null)`; no plan under `PLAN_MIN_CHARS` = 60 characters) |
 | `rolePlanner` / `roleWorker` / `roleReviewer` | blank | the role table for skill runs |
 | `comparisonView` | `side` | `side` or `stacked` |
@@ -174,7 +199,7 @@ ever written to the settings. The judge is only the judge: it sees all answers (
 | Same tools as the worker, changes always ask | "same tools" was the choice; the safety comes from asking, not from taking tools away |
 | The worker stays on the main server | the Oracul server is for the bigger model; mixing would hide where data goes |
 | `oraculExtra` instead of a model list per command | one setting, ticked in a picker, works with `/compare model` for one-off use |
-| Roles are per skill with a table as default | the need was "this skill must be right"; a global orchestration layer was not needed |
+| Roles are per skill with a table as default | the need was "this skill must be right"; a global orchestration layer was not needed **at the time**: it was reopened (see *Flows*), and the role table is now also the base of the flow |
 | Rendering is separate from the message | the split view is a display preference and must not change what is stored or sent |
 
 ## Not built (and what it would take)

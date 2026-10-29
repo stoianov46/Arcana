@@ -95,7 +95,7 @@ class CoreTest {
             UsageRecord(4, "Judge", "judge", 40, 10, 500),
         )
         val advisors = UsageStats.advisors(records).associateBy { it.feature }
-        assertEquals(listOf("Oracul", "Planner", "Judge"), UsageStats.advisors(records).map { it.feature })
+        assertEquals(listOf("Oracul", "Analyst", "Planner", "Judge"), UsageStats.advisors(records).map { it.feature })
         assertEquals(2, advisors.getValue("Oracul").totals.requests)
         assertEquals(300L, advisors.getValue("Oracul").totals.totalTokens)
         assertEquals(listOf("big"), advisors.getValue("Oracul").models)
@@ -2006,5 +2006,28 @@ class CoreTest {
         assertEquals("Looks wrong.", Oracul.body(Oracul.stuckMessage("big", "Looks wrong.")))
         val old = ChatMessage.user("[Second opinion · big]\nA reviewer (another model) read your last answer and says:\n\nLooks wrong.")
         assertEquals("Looks wrong.", Oracul.body(old), "chats saved before still show cleanly")
+    }
+
+    @Test
+    fun theCarefulFlowTakesItsModelsFromItsSettingsThenTheRoleTableThenTheOracul() {
+        assertEquals(null, Flow.of(AppConfig()))
+        val flow = Flow.of(AppConfig(flow = "careful", oraculModel = "o", flowAnalyst = "a", rolePlanner = "p", roleWorker = "", roleReviewer = ""))!!
+        assertEquals(listOf(StageKind.Analyst, StageKind.Planner, StageKind.Worker, StageKind.Reviewer), flow.stages.map { it.kind })
+        assertEquals("a", flow.model(StageKind.Analyst))
+        assertEquals("p", flow.model(StageKind.Planner))
+        assertEquals("", flow.model(StageKind.Worker), "blank worker = the chat model")
+        assertEquals("o", flow.model(StageKind.Reviewer), "an unset stage takes the Oracul model")
+        assertEquals(SkillRoles(worker = "", reviewer = "o", planner = "p"), flow.roles())
+        val config = AppConfig(flow = "careful", oraculModel = "o", rolePlanner = "p")
+        assertEquals(SkillRoles("w", "o", "p"), SkillRoles(worker = "w").withDefaults(config), "a skill's own role still wins over the flow")
+    }
+
+    @Test
+    fun anAnalysisBlockIsAdviceNotAReview() {
+        val analysis = Oracul.analysisMessage("m", "Asked: X")
+        assertTrue(Oracul.isAnalysis(analysis) && Oracul.isOpinion(analysis) && !Oracul.isReview(analysis) && !Oracul.isPlan(analysis))
+        assertEquals("Asked: X", Oracul.body(analysis))
+        assertTrue("ANALYSIS OF THE TASK" in Oracul.planRequest("q", "", analysis = "Asked: X").last().content)
+        assertTrue("ANALYSIS OF THE TASK" !in Oracul.planRequest("q", "").last().content)
     }
 }

@@ -339,7 +339,7 @@ private fun FeaturePanel(records: List<UsageRecord>, color: Color, title: String
 @Composable
 private fun AdvisorsPanel(records: List<UsageRecord>) {
     val width = panelWidth()
-    Panel("Oracul, Planner, Judge") {
+    Panel("Oracul, Analyst, Planner, Judge") {
         UsageStats.advisors(records).forEach { a ->
             val t = a.totals
             val line = if (t.requests == 0) fit(a.feature, 8) + " not used in this period"

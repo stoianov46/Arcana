@@ -93,6 +93,10 @@ data class AppConfig(
     val roleReviewer: String = "",
     /** Where the role table applies: "skills" (only a run that carries a skill) or "all" (every message: plan, worker, review). */
     val rolesScope: String = "skills",
+    /** The flow that runs for every message: "off" or "careful" (see [Flow]). A flow brings its own scope: the role table applies to every message while it is on. */
+    val flow: String = "off",
+    /** The model of the flow's analyst stage; blank = the Oracul model. */
+    val flowAnalyst: String = "",
     /** More models that answer a comparison (`/compare`) besides the Oracul model, comma-separated; the judge then compares all the answers. */
     val oraculExtra: String = "",
     /** Another Ollama server for the Oracul and the judge (a bigger machine on your network); blank = the same server as the main model. */

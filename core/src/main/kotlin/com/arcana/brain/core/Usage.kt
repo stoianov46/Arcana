@@ -77,12 +77,12 @@ data class UsageInsights(
     val weekChange: Double?,
 )
 
-/** What one of the advisors (the Oracul, the Planner, the Judge) spent: its requests, the models it used and its share of all tokens. */
+/** What one of the advisors (the Oracul, the Analyst, the Planner, the Judge) spent: its requests, the models it used and its share of all tokens. */
 data class AdvisorUsage(val feature: String, val totals: UsageTotals, val models: List<String>, val share: Double)
 
 object UsageStats {
     /** The features that run on another model than the chat's: shown together because what they cost is worth comparing. */
-    val ADVISORS = listOf("Oracul", "Planner", "Judge")
+    val ADVISORS = listOf("Oracul", "Analyst", "Planner", "Judge")
 
     /** One entry per advisor, in a fixed order, also when it was never called (zero totals); [share] is of every token in [records]. */
     fun advisors(records: List<UsageRecord>): List<AdvisorUsage> {

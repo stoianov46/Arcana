@@ -11,7 +11,9 @@ import com.arcana.brain.core.STEP_LIMIT_AUTO_ROUNDS
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.Requirement
+import com.arcana.brain.core.Flow
 import com.arcana.brain.core.SkillRoles
+import com.arcana.brain.core.StageKind
 import com.arcana.brain.core.Skills
 import com.arcana.brain.core.SkillRun
 import com.arcana.brain.core.FileAttachment
@@ -174,18 +176,43 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     /** The planner model writes a short plan for [question] from the skill's instructions; it is added to the chat as a block the worker then sees. A failure is only a note. */
-    private suspend fun plan(planner: String, entry: String?, question: String) {
+    private suspend fun plan(planner: String, entry: String?, question: String, analysis: String = "") {
         val vault = app.openVault().getOrNull()
         if (entry != null && vault == null) return
         consulting = planner
         try {
             val skillText = if (entry == null || vault == null) "" else Skills.loadEntry(vault, entry).orEmpty()
-            val text = Oracul.ask(clientFor(planner), Oracul.planRequest(question, skillText, oraculBackground())) { app.recordUsage("Planner", it, planner) }
+            val text = Oracul.ask(clientFor(planner), Oracul.planRequest(question, skillText, oraculBackground(), analysis)) { app.recordUsage("Planner", it, planner) }
             if (text.isEmpty()) roleNote = "$planner returned an empty plan: the worker starts without one." else add(Oracul.planMessage(planner, text))
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             throw e
         } catch (e: Exception) {
             roleNote = "The planner $planner failed (${e.message}): the worker starts without a plan."
+        } finally {
+            consulting = null
+        }
+    }
+
+    /**
+     * The analyst stage of the selected [Flow]: its model reads [question] and writes what is really asked, what is unclear and what a good result looks like.
+     * The text is added to the chat as an analysis block (the later stages and the worker see it) and returned for the planner. A model that is not installed,
+     * an empty text or a failure is only a note: the flow goes on without it.
+     */
+    private suspend fun analyse(flow: Flow, question: String): String {
+        val analyst = flow.model(StageKind.Analyst).ifEmpty { return "" }
+        val onOracul = if (app.config.oraculUrl.isBlank()) runCatching { app.client.listModels() }.getOrNull() else runCatching { clientFor("").listModels() }.getOrNull()
+        if (onOracul != null && onOracul.none { it == analyst || it == "$analyst:latest" }) { roleNote = "The analyst $analyst is not installed: the flow goes on without an analysis."; return "" }
+        consulting = analyst
+        try {
+            val text = Oracul.ask(clientFor(analyst), Oracul.analysisRequest(question, oraculBackground())) { app.recordUsage("Analyst", it, analyst) }
+            if (text.isEmpty()) { roleNote = "$analyst returned an empty analysis: the flow goes on without one."; return "" }
+            add(Oracul.analysisMessage(analyst, text))
+            return text
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            roleNote = "The analyst $analyst failed (${e.message}): the flow goes on without an analysis."
+            return ""
         } finally {
             consulting = null
         }
@@ -975,9 +1002,15 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         gen.start(tools = offered, maxSteps = Skills.stepsFor(history, app.config.toolSteps)) {
             // a skill that names its models: the chip's roles apply from the first round
             val chipEntry = history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }
-            if (chipEntry != null) applyRoles(chipEntry)?.let { plan(it, chipEntry, body) }
-            // every message, not only skills: the role table runs as a pipeline (a short message is not planned)
-            else if (app.config.rolesScope == "all") applyRoles(null)?.takeIf { body.length >= PLAN_MIN_CHARS }?.let { plan(it, null, body) }
+            // a selected flow, or the role table for every message, runs for plain messages too (a short message is neither analysed nor planned)
+            val flow = Flow.of(app.config)
+            val planner = when {
+                chipEntry != null -> applyRoles(chipEntry)
+                flow != null || app.config.rolesScope == "all" -> applyRoles(null)
+                else -> null
+            }
+            val analysis = if (flow != null && body.length >= PLAN_MIN_CHARS) analyse(flow, body) else ""
+            if (planner != null && (chipEntry != null || body.length >= PLAN_MIN_CHARS)) plan(planner, chipEntry, body, analysis)
             // a nearly full window: summarize the older part first, so this question is not sent with a chat that no longer fits
             if (autoCompactDue(messages.toList())) runCatching { compact() }
             val history = Compaction.forModel(messages.toList())
