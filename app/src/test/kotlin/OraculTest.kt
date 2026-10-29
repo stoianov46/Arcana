@@ -566,6 +566,30 @@ class OraculTest {
     }
 
     @Test
+    fun aFailingCheckCommandSendsTheWorkerBackAndAPassingOneIsToldToTheController() {
+        val f = fake()
+        f.script = controllerSays("VERDICT: DONE")
+        try {
+            val project = Files.createTempDirectory("arcana-check")
+            val command = "if [ -f flag ]; then echo all-good; exit 0; else touch flag; echo needs-fixing; exit 1; fi"
+            val chat = app(f) { copy(flow = "careful", flowAnalyst = "judge", flowController = "judge", rolePlanner = "big", roleReviewer = "big", flowCheckCommand = command, toolShell = true, toolAutoShell = true, projectFolder = project.toString(), toolsEnabled = false) }.chat
+            chat.send(longQuestion)
+            Thread.sleep(3500)
+            assertEquals(listOf("judge", "big", "worker", "big", "worker", "big", "judge"), f.asked.map { it.first }, "the failing check redid the work without asking the controller; the passing one went to it")
+            val verdicts = chat.messages.filter { Oracul.isControl(it) }
+            assertTrue(verdicts[0].content.contains("Verdict: redo") && verdicts[0].content.contains("exit code 1") && verdicts[0].content.contains("needs-fixing"), "the output is the notes")
+            assertTrue(f.asked.last().second.contains("CHECK COMMAND") && f.asked.last().second.contains("passed (exit code 0)"), "the controller is told the command passed")
+            f.asked.clear()
+            val other = Files.createTempDirectory("arcana-check2")
+            val off = app(f) { copy(flow = "careful", flowAnalyst = "judge", flowController = "judge", rolePlanner = "big", roleReviewer = "big", flowCheckCommand = "touch ran", toolShell = true, toolAutoShell = false, projectFolder = other.toString(), toolsEnabled = false) }.chat
+            off.send(longQuestion)
+            Thread.sleep(2500)
+            assertTrue(!Files.exists(other.resolve("ran")), "without auto-run the command is not run")
+            assertTrue(off.roleNote?.contains("auto-run") == true, "and the user is told why")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun theControllerCannotSendTheWorkerBackMoreOftenThanTheLimit() {
         val f = fake()
         f.script = controllerSays("VERDICT: REDO\\nstill wrong")

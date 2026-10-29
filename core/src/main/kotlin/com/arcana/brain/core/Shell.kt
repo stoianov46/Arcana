@@ -85,3 +85,20 @@ private fun shorten(text: String): String {
     val half = limit / 2
     return text.take(half) + "\n… ${text.length - limit} characters left out …\n" + text.takeLast(half).trimEnd()
 }
+
+/** What a check command (a flow's objective check, `flowCheckCommand`) did: its exit code (null = it timed out) and its output. */
+data class CheckRun(val code: Int?, val output: String) {
+    val passed: Boolean get() = code == 0
+}
+
+object CheckCommand {
+    /** Why [command] may not run as a check, or null: the same commands [ShellPolicy] never runs are refused here too. */
+    fun refusal(command: String): String? = ShellPolicy.blockedReason(command)?.let { "Arcana never runs this kind of command: $it." }
+
+    /** Runs [command] in [cwd] for at most [seconds]; the output keeps its start and end when it is long. */
+    fun run(command: String, cwd: Path, seconds: Int = 120): CheckRun {
+        val text = runShell(command, cwd, seconds.coerceIn(1, ShellPolicy.MAX_SECONDS))
+        val code = Regex("^exit code (-?\\d+)").find(text)?.groupValues?.get(1)?.toIntOrNull()
+        return CheckRun(code, text.substringAfter('\n', "").trim())
+    }
+}

@@ -2142,4 +2142,15 @@ class CoreTest {
         assertEquals("c", Router.modelFor(config, Route.Code))
         assertEquals("", Router.modelFor(AppConfig(), Route.Code))
     }
+
+    @Test
+    fun aCheckCommandReportsItsExitCodeAndOutput() {
+        val dir = java.nio.file.Files.createTempDirectory("arcana-cmd")
+        assertEquals(CheckRun(0, "hi"), CheckCommand.run("echo hi", dir))
+        val failed = CheckCommand.run("echo broken; exit 3", dir)
+        assertEquals(3, failed.code)
+        assertTrue(!failed.passed && "broken" in failed.output)
+        assertEquals(null, CheckCommand.run("sleep 5", dir, seconds = 1).code, "a timeout has no exit code")
+        assertTrue(CheckCommand.refusal("sudo rm x") != null && CheckCommand.refusal("./gradlew test") == null)
+    }
 }

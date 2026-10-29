@@ -12,6 +12,8 @@ import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.Requirement
 import com.arcana.brain.core.Artifact
+import com.arcana.brain.core.CheckCommand
+import com.arcana.brain.core.CheckRun
 import com.arcana.brain.core.Artifacts
 import com.arcana.brain.core.Flow
 import com.arcana.brain.core.Route
@@ -254,22 +256,29 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * [Flow.redos] times per message of the user; an answer that is still refused then stands, with a note. A failure, an empty text or an unreadable verdict never starts a loop.
      */
     private suspend fun control(flow: Flow) {
-        val controller = flow.model(StageKind.Controller).ifEmpty { return }
         val (question, answer) = Oracul.lastExchange(messages.toList()) ?: return
+        val check = runCheckCommand()
+        // an objective failure needs no second opinion: the output is the verdict
+        if (check != null && !check.second.passed) {
+            val run = check.second
+            add(Oracul.controlMessage(check.first, Oracul.Control(false, "The check command failed (" + (run.code?.let { "exit code $it" } ?: "timed out") + "):\n" + run.output.takeLast(1_500))))
+            requestRedo(flow)
+            return
+        }
+        val controller = flow.model(StageKind.Controller).ifEmpty { return }
         if (missingOnOracul(controller)) { roleNote = "The controller $controller is not installed: the answer stands without a check."; return }
         val all = messages.toList()
         val review = all.lastOrNull { Oracul.isReview(it) }?.let { Oracul.body(it) }.orEmpty()
         val analysis = all.lastOrNull { Oracul.isAnalysis(it) }?.let { Oracul.body(it) }.orEmpty()
         consulting = controller; consultingStage = "checking the answer"
         try {
-            val text = Oracul.ask(clientFor(controller), Oracul.controlRequest(question, answer, review, analysis, oraculBackground())) { app.recordUsage("Controller", it, controller) }
+            val passed = check?.let { "`${it.first}` passed (exit code 0)." + if (it.second.output.isBlank()) "" else "\n" + it.second.output.takeLast(600) }.orEmpty()
+            val text = Oracul.ask(clientFor(controller), Oracul.controlRequest(question, answer, review, analysis, oraculBackground(), passed)) { app.recordUsage("Controller", it, controller) }
             if (text.isEmpty()) { roleNote = "$controller returned an empty verdict: the answer stands."; return }
             val verdict = Oracul.parseControl(text)
             add(Oracul.controlMessage(controller, verdict))
             if (verdict.done) return
-            if (flowRedos >= flow.redos) { if (flow.redos > 0) roleNote = "The controller still wanted a redo after ${flow.redos} tries: the last answer stands."; return }
-            flowRedos++
-            app.scope.launch { yield(); send(Oracul.REDO_PROMPT) }
+            requestRedo(flow)
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -359,6 +368,31 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }
         runWorker = model
         routeNote = "Routed to $model: the message has ${kind.label}."
+    }
+
+    /** Sends the worker back (the verdict is already in the chat), unless [Flow.redos] are used up: then the last answer stands, with a note. */
+    private fun requestRedo(flow: Flow) {
+        if (flowRedos >= flow.redos) { if (flow.redos > 0) roleNote = "The controller still wanted a redo after ${flow.redos} tries: the last answer stands."; return }
+        flowRedos++
+        app.scope.launch { yield(); send(Oracul.REDO_PROMPT) }
+    }
+
+    /**
+     * The flow's objective check ([AppConfig.flowCheckCommand]): runs the command in the project folder and returns the command with what it did, or null when there is none or it
+     * may not run. It runs without asking, so it needs the shell tools **and** auto-run to be on (the same trust), and a command [ShellPolicy] refuses never runs.
+     */
+    private suspend fun runCheckCommand(): Pair<String, CheckRun>? {
+        val config = app.config
+        val command = config.flowCheckCommand.trim().ifEmpty { return null }
+        if (!config.toolShell || !config.toolAutoShell) { roleNote = "The flow's check command is not run: it needs Settings → Tools → shell commands and auto-run."; return null }
+        CheckCommand.refusal(command)?.let { roleNote = "The flow's check command is not run: $it"; return null }
+        val dir = projectFolder(config) ?: app.openVault().getOrNull()?.root ?: run { roleNote = "The flow's check command is not run: there is no project folder or vault to run it in."; return null }
+        consulting = command; consultingStage = "running the check command"
+        try {
+            return command to withContext(Dispatchers.IO) { CheckCommand.run(command, dir) }
+        } finally {
+            consulting = null
+        }
     }
 
     private fun clearRoles() { runWorker = null; runReviewer = null; flowControl = false }

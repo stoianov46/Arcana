@@ -169,13 +169,14 @@ object Oracul {
         return Control(match.groupValues[1].equals("DONE", ignoreCase = true), notes)
     }
 
-    fun controlRequest(question: String, answer: String, review: String, analysis: String, background: String = ""): List<ChatMessage> = listOf(
+    fun controlRequest(question: String, answer: String, review: String, analysis: String, background: String = "", check: String = ""): List<ChatMessage> = listOf(
         ChatMessage.system(CONTROL_INSTRUCTIONS),
         ChatMessage.user(
             earlier(background) + "REQUEST:\n${question.trim().take(MAX_PART)}" +
                 (if (analysis.isBlank()) "" else "\n\nWHAT A GOOD RESULT LOOKS LIKE (analyst):\n${analysis.trim().take(MAX_PART)}") +
                 "\n\nANSWER:\n${answer.trim().take(MAX_PART)}" +
-                (if (review.isBlank()) "" else "\n\nWHAT THE REVIEWER SAID:\n${review.trim().take(MAX_PART)}"),
+                (if (review.isBlank()) "" else "\n\nWHAT THE REVIEWER SAID:\n${review.trim().take(MAX_PART)}") +
+                (if (check.isBlank()) "" else "\n\nCHECK COMMAND:\n${check.trim().take(MAX_PART)}"),
         ),
     )
 

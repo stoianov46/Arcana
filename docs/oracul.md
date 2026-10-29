@@ -148,11 +148,15 @@ runs unless *Flow* is set (`AppConfig.flow`).
   `Flow.MAX_REDOS` = 5, 0 = verdict only) redos per message of the user (`flowRedos` in `ChatSession`, reset by a real message); when the limit is reached the last answer stands and a toast says so.
   A redo is the worker's own turn: same models, **no new analysis or plan** (`prepare` checks for `REDO_PROMPT`), and `Oracul.lastExchange` skips the redo and revise prompts so the
   reviewer and controller still see the user's original request.
-- **The controller's check is a model's opinion, not proof** (see the caveats above); an objective check (a command's exit code) is the next step of the plan.
+- **An objective check (`flowCheckCommand`).** The controller's check is a model's opinion, not proof (see the caveats above), so a flow can also run a shell command after each answer
+  (`./gradlew test`): `ChatSession.runCheckCommand` runs it in the project folder (else the vault) with `CheckCommand.run`. **Exit code 0** = passed, and the controller is told
+  (`CHECK COMMAND` in its request); **anything else** (or a timeout) = a redo with the output tail as the notes, **without asking a model** (the redo limit applies; the block is a `Control` block
+  titled with the command). It runs without asking, so it needs `toolShell` **and** `toolAutoShell` on (the same trust as auto-run); commands `ShellPolicy` refuses never run; otherwise it is skipped
+  with a note. It also runs when the flow has no controller model.
 - **Failures are notes.** An analyst that is not installed, returns nothing or fails leaves the analysis out (`roleNote`, a toast); the rest goes on.
 - **Usage:** features `Analyst` and `Controller` (Usage → Breakdown panel *Oracul, Analyst, Planner, Controller, Judge*, `chat_stats`).
 - **Cost:** up to four model runs per message, and on a local machine several large models swap in and out of memory (the memory advice in Settings applies to the
-  analyst too). Not built yet: command-based checks, `/flow <name>`, more presets and a router.
+  analyst too). Not built yet: more presets.
 
 ## Judge verdict and goals
 
@@ -206,7 +210,7 @@ continues, so a vision answer is not redone by the chat model. A model-based sel
 | `oraculContextMessages` / `oraculContextChars` | `0` / `3000` | how many earlier chat messages (0 = all, up to 30,000 characters in total) and how many characters of each the Oracul, judge, planner, analyst and controller are shown besides the last question (Settings → Oracul → Chat context) |
 | `oraculJudgeAuto` | `false` | when an automatic opinion is due, run `compare()` (Oracul answer plus judge verdict) instead; mid-turn stuck advice and skill reviewers stay single opinions |
 | `oraculTools` | `true` | the Oracul may use the worker's tools |
-| `flow` / `flowAnalyst` / `flowController` / `flowRedos` | `off` / blank / blank / `2` | the selected flow (`off`, `careful`), the models of its analyst and controller (blank = the Oracul model) and how many redos the controller may ask for (0–5); while a flow is on the role table applies to every message |
+| `flow` / `flowAnalyst` / `flowController` / `flowRedos` / `flowCheckCommand` | `off` / blank / blank / `2` / blank | the selected flow (`off`, `careful`), the models of its analyst and controller (blank = the Oracul model) how many redos the controller may ask for (0–5) and an objective check command (blank = none; needs shell + auto-run); while a flow is on the role table applies to every message |
 | `routeVision` / `routeCode` | blank / blank | the models the router sends a message with an image / with code to (blank = the chat model) |
 | `oraculVerdict` / `goalTurns` | `true` / `5` | the judge's verdict after an automatic opinion (needs `judgeModel`); how many times `/goal` may continue the work by itself |
 | `rolesScope` | `skills` | `skills` or `all`: with `all` the role table also runs for messages without a skill (`ChatSession.applyRoles(null)`; no plan under `PLAN_MIN_CHARS` = 60 characters) |
