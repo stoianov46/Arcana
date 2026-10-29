@@ -101,6 +101,9 @@ data class AppConfig(
     val flowController: String = "",
     /** How many times the controller may send the worker back to redo an answer (0 = it only gives its verdict). */
     val flowRedos: Int = 2,
+    /** The router (see [Router]): the model that answers a message with an image attached, and the one for a message with code in it; blank = the chat model. */
+    val routeVision: String = "",
+    val routeCode: String = "",
     /** More models that answer a comparison (`/compare`) besides the Oracul model, comma-separated; the judge then compares all the answers. */
     val oraculExtra: String = "",
     /** Another Ollama server for the Oracul and the judge (a bigger machine on your network); blank = the same server as the main model. */

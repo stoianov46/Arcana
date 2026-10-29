@@ -147,6 +147,8 @@ private val OraculModel = Editor.Model("Oracul model", { it.oraculModel }, { c, 
 private val ExtraModels = Editor.Model("More Oracul models", { it.oraculExtra }, { c, v -> c.copy(oraculExtra = v.split(',').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")) }, allowNone = true, oracul = true, multi = true)
 private val AnalystRole = Editor.Model("Flow analyst", { it.flowAnalyst }, { c, v -> c.copy(flowAnalyst = v) }, allowNone = true, oracul = true)
 private val ControllerRole = Editor.Model("Flow controller", { it.flowController }, { c, v -> c.copy(flowController = v) }, allowNone = true, oracul = true)
+private val RouteVisionRole = Editor.Model("Route: images to", { it.routeVision }, { c, v -> c.copy(routeVision = v) }, allowNone = true)
+private val RouteCodeRole = Editor.Model("Route: code to", { it.routeCode }, { c, v -> c.copy(routeCode = v) }, allowNone = true)
 private val PlannerRole = Editor.Model("Skill planner", { it.rolePlanner }, { c, v -> c.copy(rolePlanner = v) }, allowNone = true, oracul = true)
 private val WorkerRole = Editor.Model("Skill worker", { it.roleWorker }, { c, v -> c.copy(roleWorker = v) }, allowNone = true)
 private val ReviewerRole = Editor.Model("Skill reviewer", { it.roleReviewer }, { c, v -> c.copy(roleReviewer = v) }, allowNone = true, oracul = true)
@@ -272,6 +274,8 @@ private val settings: List<Setting> = listOf(
     Setting(Group.Oracul, "Flow analyst", "The model that reads your request first and writes what is really asked, what is unclear and what a good result looks like (needs Flow: Careful). Blank: the Oracul model.", { it.flowAnalyst.ifEmpty { "(the Oracul model)" } }, editor = AnalystRole),
     Setting(Group.Oracul, "Flow controller", "The model that checks the finished answer against your request and the reviewer's notes and says done or redo (needs Flow: Careful). On redo the worker is sent back with what to fix. Blank: the Oracul model.", { it.flowController.ifEmpty { "(the Oracul model)" } }, editor = ControllerRole),
     stepper(Group.Oracul, "Flow redos", "How many times the controller may send the worker back for one message (0 = it only gives its verdict, never a redo). Each redo runs the worker, the reviewer and the controller again, so it is slow. ←/→ step by 1.", 0..Flow.MAX_REDOS, 1, { it.flowRedos }, { c, n -> c.copy(flowRedos = n) }),
+    Setting(Group.Oracul, "Route: images to", "The model that answers a message with an image attached (it must read images; the model list says which can). Blank: the chat model. A skill's or a flow's own worker wins.", { it.routeVision.ifEmpty { "(the chat model)" } }, editor = RouteVisionRole),
+    Setting(Group.Oracul, "Route: code to", "The model that answers a message with a code block or a source file name in it (with tools on it must be able to use them). Blank: the chat model. A skill's or a flow's own worker wins.", { it.routeCode.ifEmpty { "(the chat model)" } }, editor = RouteCodeRole),
     Setting(Group.Oracul, "Skill planner", "The model that writes a short plan before a skill starts (the worker then sees it). A skill's own `planner:` property wins. Blank: no plan.", { it.rolePlanner.ifEmpty { "(no plan)" } }, editor = PlannerRole),
     Setting(Group.Oracul, "Skill worker", "The model that runs skills instead of the chat model. A skill's own `worker:` property wins. Blank: the chat model.", { it.roleWorker.ifEmpty { "(the chat model)" } }, editor = WorkerRole),
     Setting(Group.Oracul, "Skill reviewer", "The model that gives a second opinion when a skill's run is done, whatever the automatic setting says. A skill's own `reviewer:` property wins. Blank: none.", { it.roleReviewer.ifEmpty { "(no review)" } }, editor = ReviewerRole),
@@ -329,6 +333,8 @@ private fun adviceFor(app: AppContext, label: String): String? {
         "Model" -> app.memoryAdvice(config.model, FitRole.Main)
         "Oracul model" -> app.memoryAdvice(config.oraculModel, FitRole.Oracul)
         "Judge model" -> app.memoryAdvice(com.arcana.brain.core.Oracul.judge(config), FitRole.Judge)
+        "Route: images to" -> app.memoryAdvice(config.routeVision, FitRole.Main)
+        "Route: code to" -> app.memoryAdvice(config.routeCode, FitRole.Main)
         "Flow analyst" -> app.memoryAdvice(config.flowAnalyst, FitRole.Oracul)
         "Flow controller" -> app.memoryAdvice(config.flowController, FitRole.Oracul)
         "Skill planner" -> app.memoryAdvice(config.rolePlanner, FitRole.Oracul)

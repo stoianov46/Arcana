@@ -38,6 +38,7 @@ What differs: the Oracul is advisory and speaks only after problems or on a comm
 | **Revise** | `/revise [note]` | the chat model revises its last answer with the open opinion | `ChatSession.revise`, `Oracul.REVISE_PROMPT` |
 | **Takeover** (escalation) | `/takeover`, offered by a toast after a failed turn | the Oracul continues the unanswered turn from the same history, with its own model and tools | `ChatSession.takeOver`, `Oracul.takeoverHeading` |
 | **Skill roles** | `worker:`, `reviewer:`, `planner:` in a skill's properties, or the role table in Settings | a skill run uses another worker model, gets a plan first, and a review at the end | `ChatSession.applyRoles` / `plan`, `Skills.roles`, `SkillRoles.withDefaults` |
+| **Router** | `routeVision` / `routeCode` set in Settings → Oracul | a message with an image goes to the vision model, one with code to the code model, by rules, no model involved | `Router`, `ChatSession.route` |
 | **Judge verdict** | after an automatic opinion, when `judgeModel` is set (`oraculVerdict`, default on) | the judge says `AGREE` / `PARTLY` / `DISAGREE` and why, as a block under the opinion; advisory | `ChatSession.verdictOnOpinion`, `Oracul.verdictRequest` |
 | **Goal** | `/goal <condition>` | the work starts; after every finished reply a checker (Oracul model, else the chat model) says `VERDICT: MET` or `NOT MET`; while not met the worker is sent on by itself, at most `goalTurns` times | `ChatSession.startGoal` / `checkGoal`, `Oracul.goalRequest`, `parseGoal` |
 | **Flow** | Settings → Oracul → *Flow* = Careful | every message goes through a fixed sequence: analyst → planner → worker → reviewer, each its own model | `Flow`, `ChatSession.analyse` / `plan` / `applyRoles` |
@@ -166,6 +167,14 @@ runs unless *Flow* is set (`AppConfig.flow`).
   written (`gen.state == Running`), so a redo or a queued message is never talked over. The goal belongs to the chat in memory: `/new` and opening another chat clear it, and it is
   not saved.
 
+## Router
+
+The *router* block of the orchestration design, **rules first** (`core/Router.kt`): `Router.kindOf(text, hasImages)` says *image* when an image is attached, *code* when the text has a
+fenced code block or a source file name (`.kt`, `.py`, `.js`, `.sql`, … not `.md`), else nothing. `routeVision` and `routeCode` (Settings → Oracul → *Route: images to* / *code to*) name the
+model for each kind; blank = no routing. `ChatSession.route` runs in the first round's `prepare`, **after** the roles, and only when no worker is named yet (a skill's `worker:`, the
+role table and a flow's worker win). The model must be installed, have the `vision` capability for an image and the `tools` capability when tools are on; otherwise the chat model answers and a toast says why (`roleNote`). A routed message shows `Routed to <model>: the message has …` (`routeNote`); the next message routes again from scratch. A redo or a goal turn routes by the message it
+continues, so a vision answer is not redone by the chat model. A model-based selector is a possible later step; it is not built, and rules are enough to start.
+
 ## Interface
 
 - **Bottom bar badge:** `Ψ <oracul> ⚖ <judge> · auto|always|manual`, the judge only when it differs; orange `Ψ <model>…` while it works;
@@ -198,6 +207,7 @@ runs unless *Flow* is set (`AppConfig.flow`).
 | `oraculJudgeAuto` | `false` | when an automatic opinion is due, run `compare()` (Oracul answer plus judge verdict) instead; mid-turn stuck advice and skill reviewers stay single opinions |
 | `oraculTools` | `true` | the Oracul may use the worker's tools |
 | `flow` / `flowAnalyst` / `flowController` / `flowRedos` | `off` / blank / blank / `2` | the selected flow (`off`, `careful`), the models of its analyst and controller (blank = the Oracul model) and how many redos the controller may ask for (0–5); while a flow is on the role table applies to every message |
+| `routeVision` / `routeCode` | blank / blank | the models the router sends a message with an image / with code to (blank = the chat model) |
 | `oraculVerdict` / `goalTurns` | `true` / `5` | the judge's verdict after an automatic opinion (needs `judgeModel`); how many times `/goal` may continue the work by itself |
 | `rolesScope` | `skills` | `skills` or `all`: with `all` the role table also runs for messages without a skill (`ChatSession.applyRoles(null)`; no plan under `PLAN_MIN_CHARS` = 60 characters) |
 | `rolePlanner` / `roleWorker` / `roleReviewer` | blank | the role table for skill runs |

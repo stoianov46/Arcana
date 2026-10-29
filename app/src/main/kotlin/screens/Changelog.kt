@@ -31,6 +31,7 @@ Built on 24–25 October 2026. Last updated 28 October 2026.
 
 ## Models as a pipeline
 - **Flow: Careful** (Settings → Oracul → Flow): every message goes through an **analyst** (what is really asked, what is unclear), a **planner**, the **worker** and a **reviewer**, each its own model. Short messages skip the analysis and the plan. New *Analysis* block in the chat and an *Analyst* line in Usage. First step of the orchestration work.
+- **Router**: messages with an image go to a vision model and messages with code to a code model (Settings → Oracul → Route), by plain rules; a toast says `Routed to …`. A skill's or flow's own worker still wins.
 - **Generated files at a glance**: a `✦ 3 changed` pill in the Chat status bar counts the files and notes the model wrote or changed in this chat, and `/artifacts` lists them (1-9 opens a note in the Library).
 - **Memory without duplicates or dead paths**: `remember` skips a fact that is already there and refuses a `[[link]]` or `.md` path that does not exist. `/memory check` lists repeats and dead paths and asks before removing the repeats.
 - **Library settings** (new Settings → Library page): which view it opens on (**All** by default; it used to keep the last view a link had set, which is why it opened on Tags), the list/preview width, sort order, preview pane on/off and tab counts. *Library as a tree* moved there from Vault.

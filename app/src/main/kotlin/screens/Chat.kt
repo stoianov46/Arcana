@@ -728,6 +728,7 @@ fun ChatScreen(app: AppContext) {
     // a vault without ARCANA.md gets one, with an offer to fill it in
     androidx.compose.runtime.LaunchedEffect(Unit) { chat.offerMemory() }
     // a skill asked for a model that cannot be used: say so once
+    androidx.compose.runtime.LaunchedEffect(chat.routeNote) { chat.routeNote?.let { toast(it); chat.routeNote = null } }
     androidx.compose.runtime.LaunchedEffect(chat.roleNote) { chat.roleNote?.let { toast(it, error = true); chat.roleNote = null } }
     // the worker failed this turn: offer the Oracul (never automatic, it is one keystroke away)
     // a reply that was cancelled or failed does not send what was queued behind it: it goes back to the message field

@@ -14,6 +14,8 @@ import com.arcana.brain.core.Requirement
 import com.arcana.brain.core.Artifact
 import com.arcana.brain.core.Artifacts
 import com.arcana.brain.core.Flow
+import com.arcana.brain.core.Route
+import com.arcana.brain.core.Router
 import com.arcana.brain.core.SkillRoles
 import com.arcana.brain.core.StageKind
 import com.arcana.brain.core.Skills
@@ -146,6 +148,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** True while the selected flow handles this message and ends with the controller's check; false for a short message that goes straight to the worker. */
     private var flowControl = false
+
+    /** What the router decided for this message ("Routed to qwen2.5vl:7b: the message has an image"); the Chat shows it once. */
+    var routeNote by androidx.compose.runtime.mutableStateOf<String?>(null)
 
     /** The files and notes the model's tools wrote or changed in this chat, oldest first (the status bar pill and `/artifacts`); cleared by a new chat. */
     val artifacts = androidx.compose.runtime.mutableStateListOf<Artifact>()
@@ -332,6 +337,28 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         } finally {
             consulting = null
         }
+    }
+
+    /**
+     * The router: a message with an image goes to the vision model, one with code to the code model (Settings → Oracul → *Route*), unless a skill or the flow already named the
+     * worker. The model must be installed, have the `vision` capability for an image and be able to use tools when tools are on; otherwise the chat model answers, with a note.
+     * Only the first round of a message routes, and a redo or a goal turn looks at the message it continues.
+     */
+    private suspend fun route(history: List<ChatMessage>) {
+        if (runWorker != null) return
+        val last = history.lastOrNull { it.role == "user" && !Oracul.isOpinion(it) && !Compaction.isSummary(it) && !it.content.startsWith(Oracul.REDO_PROMPT) && !it.content.startsWith(Oracul.GOAL_PROMPT) && !it.content.startsWith(Oracul.REVISE_PROMPT) } ?: return
+        val kind = Router.kindOf(last.content, last.images.isNotEmpty()) ?: return
+        val model = Router.modelFor(app.config, kind).ifEmpty { return }
+        if (model == app.config.model) return
+        val installed = runCatching { app.client.listModels() }.getOrNull() ?: return
+        if (installed.none { it == model || it == "$model:latest" }) { roleNote = "The ${kind.label} model $model is not installed: ${app.config.model} answers."; return }
+        val capabilities = runCatching { app.client.capabilities(model) }.getOrNull()
+        when {
+            kind == Route.Vision && capabilities != null && "vision" !in capabilities -> { roleNote = "$model cannot read images: ${app.config.model} answers."; return }
+            app.config.toolsEnabled && capabilities != null && "tools" !in capabilities -> { roleNote = "$model cannot use tools: ${app.config.model} answers."; return }
+        }
+        runWorker = model
+        routeNote = "Routed to $model: the message has ${kind.label}."
     }
 
     private fun clearRoles() { runWorker = null; runReviewer = null; flowControl = false }
@@ -1146,6 +1173,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             // a short message of a flow goes straight to the worker: no review and no check either
             flowControl = flow != null && (redo || planned)
             if (flow != null && !flowControl) runReviewer = null
+            route(history)
             val analysis = if (flow != null && planned && body.length >= PLAN_MIN_CHARS) analyse(flow, body) else ""
             if (planner != null && planned) plan(planner, chipEntry, body, analysis)
             // a nearly full window: summarize the older part first, so this question is not sent with a chat that no longer fits

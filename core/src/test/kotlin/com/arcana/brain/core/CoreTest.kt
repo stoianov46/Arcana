@@ -2128,4 +2128,18 @@ class CoreTest {
         assertEquals("✦ 2 changed", Artifacts.pill(listOf(Artifact("a", "created", "t", 1), Artifact("a", "edited", "t", 2), Artifact("b", "created", "t", 3)), false), "one path counts once")
         assertEquals(null, Artifacts.pill(emptyList(), false))
     }
+
+    @Test
+    fun theRouterReadsTheKindOfAMessageFromRulesAlone() {
+        assertEquals(Route.Vision, Router.kindOf("what is in this?", hasImages = true))
+        assertEquals(Route.Vision, Router.kindOf("fix ```x```", hasImages = true), "an image wins over code")
+        assertEquals(Route.Code, Router.kindOf("why does this fail?\n```kotlin\nval x = 1\n```", hasImages = false))
+        assertEquals(Route.Code, Router.kindOf("open src/main/App.kt and rename it", hasImages = false))
+        assertEquals(null, Router.kindOf("explain how sorting works", hasImages = false))
+        assertEquals(null, Router.kindOf("my notes.md are messy", hasImages = false), "a note is not code")
+        val config = AppConfig(routeVision = " v ", routeCode = "c")
+        assertEquals("v", Router.modelFor(config, Route.Vision))
+        assertEquals("c", Router.modelFor(config, Route.Code))
+        assertEquals("", Router.modelFor(AppConfig(), Route.Code))
+    }
 }

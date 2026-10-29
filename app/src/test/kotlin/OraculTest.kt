@@ -281,6 +281,28 @@ class OraculTest {
     }
 
     @Test
+    fun aMessageWithCodeIsRoutedToTheCodeModelUnlessItIsNotInstalled() {
+        val f = fake()
+        try {
+            val chat = app(f) { copy(routeCode = "big", toolsEnabled = false) }.chat
+            chat.send("Why does this fail?\n```kotlin\nval x = 1\n```")
+            Thread.sleep(800)
+            assertEquals(listOf("big"), f.asked.map { it.first }, "the code model answered")
+            assertTrue(chat.routeNote?.contains("Routed to big") == true)
+            f.asked.clear()
+            chat.send("And what about sorting?")
+            Thread.sleep(800)
+            assertEquals(listOf("worker"), f.asked.map { it.first }, "the next plain message goes back to the chat model")
+            f.asked.clear()
+            val missing = app(f) { copy(routeCode = "nowhere", toolsEnabled = false) }.chat
+            missing.send("Look at ```x```")
+            Thread.sleep(800)
+            assertEquals(listOf("worker"), f.asked.map { it.first }, "an uninstalled route model: the chat model answers")
+            assertTrue(missing.roleNote?.contains("nowhere") == true, "and the user is told")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun aFileTheWorkerWritesIsListedAsAnArtifactOfTheChat() {
         val f = fake()
         try {
