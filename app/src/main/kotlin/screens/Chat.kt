@@ -292,7 +292,7 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         }
         if (config.toolsEnabled) {
             if (app.tools == false) add(pillSegment("⚠ no tools", Palette.Red, 8))
-            else add(statusSegment("", "⚙ ${config.toolMode}", when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }, 8, bold = true, second = true))
+            else add(statusSegment("", "⚙ ${config.toolMode}", when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }, 8, bold = true))
             // the project the model works in: its folder name, so it is clear where relative paths and commands start
             if (config.projectFolder.isNotBlank()) add(statusSegment("", (if (plain) "project " else "▣ ") + java.nio.file.Path.of(config.projectFolder.trimEnd('/')).fileName, Palette.Cta, 5, second = true))
             // commands run without asking: said loudly, in the colour of high risk
