@@ -203,7 +203,7 @@ internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConf
     return StatusSegment(parts, 10)
 }
 
-/** The model-state indicator of the Chat status bar: the reason for a wait (orange), or `● loaded 7.7 GB 100% GPU` when the chat model is loaded, or `○ not loaded` (it loads with the next message); null until Ollama has been asked. */
+/** The model-state indicator of the Chat status bar: the reason for a wait (orange), or `● loaded 7.7 GB 100% GPU` when the chat model is loaded, or `○ not loaded` (it loads with the next message); with more than one model in memory, `· 2 models 17.3 GB` is what they take together; null until Ollama has been asked. */
 internal fun modelStateSegment(app: AppContext, plain: Boolean): StatusSegment? {
     if (app.modelWhy.isNotEmpty()) return statusSegment("", (if (plain) "wait: " else "◌ ") + app.modelWhy.substringBefore(";").replace("reading about ", "reading ").replace(" tokens of conversation", " tokens"), Palette.Orange, 10, second = true) // quiet orange text, no block of colour; the whole sentence is in the reply line
     val loaded = app.loaded ?: return null
@@ -211,7 +211,10 @@ internal fun modelStateSegment(app: AppContext, plain: Boolean): StatusSegment? 
         ?: return statusSegment("", if (plain) "not loaded" else "○ not loaded", Palette.Muted, 4)
     val slow = mine.cpuPercent >= 10
     val detail = if (mine.sizeBytes <= 0) "" else " ${"%.1f GB".format(mine.sizeBytes / 1e9)} ${100 - mine.cpuPercent}% GPU"
-    return statusSegment("", (if (plain) "loaded" else "● loaded") + detail, if (slow) Palette.Orange else Palette.Green, 6)
+    // every model Arcana has in memory (the chat model, the Oracul, the judge, the flow's stages): what they take together
+    val total = loaded.sumOf { it.sizeBytes }
+    val all = if (loaded.size > 1 && total > 0) " · ${loaded.size} models ${"%.1f GB".format(total / 1e9)}" else ""
+    return statusSegment("", (if (plain) "loaded" else "● loaded") + detail + all, if (slow) Palette.Orange else Palette.Green, 6)
 }
 
 /**
