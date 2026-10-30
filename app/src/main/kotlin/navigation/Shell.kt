@@ -363,10 +363,13 @@ private fun Footer(app: AppContext, navigator: Navigator, hint: String, columns:
     // Tokens used since Arcana started: grows after every reply; the Usage screen has the full picture.
     val tokens = app.sessionTokens
     val tokenBadge = if (tokens > 0) " ⚡ ${UsageStats.compact(tokens)} tok " else ""
+    // what every model Ollama holds takes in memory together (the chat model, the Oracul, the judge, the flow stages)
+    val ramBytes = app.loaded.orEmpty().sumOf { it.sizeBytes }
+    val ramBadge = if (ramBytes > 0) " ${if (app.config.plainGlyphs) "RAM" else "▦"} ${"%.1f GB".format(ramBytes / 1e9)} " else ""
     val oracul = oraculBadge(app, navigator.current == Screen.Chat)
     // warnings about the model and the machine (a model partly on the CPU, a window too large or too small): short, here, on every screen
     val warnings = com.arcana.brain.app.screens.hardwareWarnings(app, app.config.plainGlyphs)
-    val warningWidth = warnings.sumOf { it.first.length + 2 }
+    val warningWidth = warnings.sumOf { it.first.length + 2 } + ramBadge.length
     Row(Modifier.fillMaxWidth().background(Palette.SurfaceHigh)) {
         // the model that works now comes first: the worker, or the Oracul (orange) while it is being asked, when the worker's pill turns quiet
         val asking = app.chat.consulting != null && oracul != null
@@ -378,6 +381,7 @@ private fun Footer(app: AppContext, navigator: Navigator, hint: String, columns:
             if (oracul != null) Label(oracul.first, color = Palette.Background, background = oracul.second, textStyle = TextStyle.Bold)
         }
         if (tokenBadge.isNotEmpty()) Label(tokenBadge, color = Palette.Background, background = Palette.Blue, textStyle = TextStyle.Bold) // a badge like the model pill; blue = tokens, as in the Chat status bar
+        if (ramBadge.isNotEmpty()) Label(ramBadge, color = Palette.Background, background = Palette.Purple, textStyle = TextStyle.Bold)
         warnings.forEach { (text, color) -> Label(" $text ", color = Palette.Background, background = color, textStyle = TextStyle.Bold) }
         if (navigator.focusMode) Label(" ✎ EDITING  Esc ", color = Palette.Background, background = Palette.Editing, textStyle = TextStyle.Bold)
         val room = columns - badgeText.length - tokenBadge.length - warningWidth - (oracul?.first?.length ?: 0) - (if (navigator.focusMode) 16 else 0) - 2
