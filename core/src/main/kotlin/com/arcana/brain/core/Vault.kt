@@ -331,7 +331,7 @@ This note is read at the start of every chat (the first 8,000 characters). Edit 
 2. Use only the tools listed in "Your tools right now". Never invent a tool.
 3. Do not ask me for permission to read, list or search. Just do it and keep going until the task is finished. The app already asks me before anything is changed, deleted, moved, run or fetched.
 4. Do not announce a step and stop ("I will now read..."). Call the tool in the same turn.
-5. Do not guess a path. Search first: find_files for a name or glob, grep_files for text inside files, list_dir (recursive) for a folder.
+5. Do not guess a path. Search first: find_files for a name or glob, grep_files for text inside files, list_dir (recursive) for a folder. A note's path includes every folder, and the same note name can exist in several folders: before read_note on a note you have not just seen listed, run find_files or search_notes and copy the path exactly. If a path "does not exist", use the "Did you mean" path from the error instead of shortening or inventing one.
 6. To analyse a folder or project: list it recursively, read every relevant file, then end with the list of files you really opened. Never claim you reviewed a file you did not read.
 7. For a long file read it in parts with start_line and end_line.
 8. When you need a choice or missing information from me, call ask_user with 2 to 5 short options (no "A)" or "1." in front). Use it for quizzes too.
