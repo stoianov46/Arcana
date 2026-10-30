@@ -136,4 +136,6 @@ position) on a `│` track. `ScrollView` does the same for the conversation.
 
 ## The empty row under Chat
 
+The **bottom bar** (`Shell.kt` `footerSegments`) is coloured text on the bar, no blocks: model and connection, Oracul glyphs, session tokens, `modelStateSegment` (loaded, wait reason, total of all loaded models), `cpu` (`AppContext.cpuPercent`, read every 2 s), the memory file (`AppContext.memoryChars`, set by Chat), compaction, `hardwareWarnings`, EDITING; the hints follow at the right. The Chat status bar under the field keeps the core model facts on its first row and marks the secondary ones `second = true` (they, and all filled pills, go to the second row).
+
 Chat ends with one blank row (`bottomGap`, none in tiny density) so its key hints do not touch the footer. It is part of the exact row count in `Chat.kt`: `outputRows(fixed = … + bottomGap)`. Other screens still end flush against the footer.

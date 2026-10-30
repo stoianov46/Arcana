@@ -247,25 +247,14 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
     return buildList {
         // the models, one segment: whoever works now comes first as a filled pill, the other one after it, quiet
         add(modelsSegment(ModelIcon.label(config.model, plain), chat.consulting, config, plain, width, app.memoryAdvice(Oracul.model(config), com.arcana.brain.core.ModelFit.Role.Oracul)?.startsWith("⚠") == true))
-        // what the model is doing in Ollama: why it has not answered yet while we wait (loading, reading the prompt), else whether it is loaded and how much of it is on the GPU
-        modelStateSegment(app, plain)?.let { add(it) }
-        // how busy the whole processor is (htop's figure); the loaded indicator above says where the model sits, not how hard the machine works
-        app.cpuPercent?.let { add(statusSegment("cpu", "$it%", if (it >= 85) Palette.Red else if (it >= 60) Palette.Orange else Palette.Green, 5)) }
         add(statusSegment("temperature", "°${config.temperature}", Palette.Accent, 6))
-        if (config.chatUseVault) add(statusSegment("", "◉ vault", Palette.Cta, 6, bold = true))
+        if (config.chatUseVault) add(statusSegment("", "◉ vault", Palette.Cta, 6, bold = true, second = true))
         // the goal of this chat (/goal): shown so it is clear what the work is for
         chat.goal?.let { add(pillSegment("◎ goal: ${it.replace('\n', ' ').take(40)}${if (it.length > 40) "…" else ""}", Palette.Cta, 8)) }
         // what the tools wrote or changed in this chat (/artifacts lists it)
         Artifacts.pill(chat.artifacts.toList(), plain)?.let { add(pillSegment(it, Palette.Purple, 5)) }
-        // the memory file the assistant reads in every chat: shown, so you can see that it is in use (and how much room it takes)
-        if (config.memoryEnabled) {
-            if (memoryChars > Vault.MEMORY_LIMIT) add(pillSegment(memoryCutText(memoryChars, plain), Palette.Orange, 9))
-            else if (memoryChars > 0) add(statusSegment("", "✎ memory ${UsageStats.compact(memoryChars.toLong())}", Palette.Green, 6))
-            else add(statusSegment("", "✎ no ARCANA.md", Palette.Muted, 3))
-        }
         val window = effectiveContext(config.contextTokens, app.modelContext, app.loadedContext)
         contextUsage(chat.messages, window)?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
-        if (chat.compacting) add(pillSegment(if (plain) "compacting" else "◌ compacting…", Palette.Blue, 10))
         // a small window drops the oldest text without a word: say so before it matters (Settings → Ollama → Context window)
         // ↑ (prompt) is exact and moves when a request ends; ↓ (reply) also counts the pieces streaming right now, until the exact figure replaces them
         if (stats.isNotEmpty() || app.liveTokens > 0) add(StatusSegment(listOf(StatusPart("↑${compact(stats.sumOf { it.promptTokens.toLong() })}", Palette.Blue), StatusPart(" ↓${compact(stats.sumOf { it.completionTokens.toLong() } + app.liveTokens)}", Palette.Green)), 10))
@@ -283,18 +272,18 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
             }
             val text = "◆ ${run.name} ${run.done}/${run.total}" + (if (run.skippedCount > 0) " ✕${run.skippedCount} skipped" else if (run.done == run.total) " ✓" else "")
             // plain while it runs, filled only when something went wrong (skipped steps)
-            if (run.skippedCount > 0) add(pillSegment(text, state, 7)) else add(statusSegment("", text, state, 7, bold = true))
+            if (run.skippedCount > 0) add(pillSegment(text, state, 7)) else add(statusSegment("", text, state, 7, bold = true, second = true))
         }
         // the model's own task list: how many items are done
         chat.todos.takeIf { it.isNotEmpty() }?.let { list ->
             val done = com.arcana.brain.core.Todos.doneCount(list)
-            add(statusSegment("", (if (plain) "todo " else "☑ ") + "$done/${list.size}" + (if (done == list.size) " ✓" else ""), if (done == list.size) Palette.Green else Palette.Cta, 7))
+            add(statusSegment("", (if (plain) "todo " else "☑ ") + "$done/${list.size}" + (if (done == list.size) " ✓" else ""), if (done == list.size) Palette.Green else Palette.Cta, 7, second = true))
         }
         if (config.toolsEnabled) {
             if (app.tools == false) add(pillSegment("⚠ no tools", Palette.Red, 8))
-            else add(statusSegment("", "⚙ ${config.toolMode}", when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }, 8, bold = true))
+            else add(statusSegment("", "⚙ ${config.toolMode}", when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }, 8, bold = true, second = true))
             // the project the model works in: its folder name, so it is clear where relative paths and commands start
-            if (config.projectFolder.isNotBlank()) add(statusSegment("", (if (plain) "project " else "▣ ") + java.nio.file.Path.of(config.projectFolder.trimEnd('/')).fileName, Palette.Cta, 5))
+            if (config.projectFolder.isNotBlank()) add(statusSegment("", (if (plain) "project " else "▣ ") + java.nio.file.Path.of(config.projectFolder.trimEnd('/')).fileName, Palette.Cta, 5, second = true))
             // commands run without asking: said loudly, in the colour of high risk
             if (config.toolWeb && config.toolAutoSearch && config.toolMode != "plan") add(pillSegment(if (plain) "auto-search" else "↗ auto-search", Palette.Orange, 8))
             if (config.toolShell && config.toolAutoShell && config.toolMode != "plan") add(pillSegment(if (plain) "! auto-run" else "▶ auto-run", Palette.Red, 9))
@@ -1097,12 +1086,7 @@ fun ChatScreen(app: AppContext) {
                 )
                 // the status bar sits under the message field (above the buttons): one row more in the count below
                 // the status bar wraps instead of dropping facts: reserve as many rows as it needs at this width
-                androidx.compose.runtime.LaunchedEffect(Unit) {
-                    while (true) {
-                        app.cpuPercent = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.arcana.brain.core.SystemCpu.percent() }
-                        kotlinx.coroutines.delay(2_000)
-                    }
-                }
+                androidx.compose.runtime.LaunchedEffect(memoryChars) { app.memoryChars = memoryChars } // the footer shows it
                 val statusSegments = chatStatus(app, chat, app.config.plainGlyphs, memoryChars, LocalContentWidth.current)
                 val statusRows = statusRowCount(statusSegments, LocalContentWidth.current)
                 val bottomGap = if (rememberDensity().tiny) 0 else 1

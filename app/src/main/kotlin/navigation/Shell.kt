@@ -24,6 +24,9 @@ import com.arcana.brain.app.design.LocalPlainGlyphs
 import com.arcana.brain.app.design.LocalUiScale
 import com.arcana.brain.app.design.Palette
 import com.arcana.brain.app.design.Panel
+import com.arcana.brain.app.design.StatusPart
+import com.arcana.brain.app.design.StatusSegment
+import com.arcana.brain.app.design.statusSegment
 import com.arcana.brain.app.design.Stack
 import com.arcana.brain.app.design.VGap
 import com.arcana.brain.app.input.Clipboard
@@ -181,7 +184,7 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
     }
     // With an action bar on screen the footer keeps only what the bar does not show: the key map and quitting.
     val hint = when {
-        navigator.quitPending -> quitPrompt(size.columns - app.badgeWidth(navigator.current == Screen.Chat) - 2, navigator.exitFlow)
+        navigator.quitPending -> quitPrompt(size.columns - app.badgeWidth(navigator) - 2, navigator.exitFlow)
         navigator.overlayOpen -> overlayHint(navigator)
         navigator.actionBars > 0 -> Shortcuts.label("Ctrl+P  commands   Ctrl+N  capture   ?  keys")
         // the two global keys come first, so they are always seen
@@ -352,44 +355,65 @@ private fun Logo(text: String, busy: Boolean) {
     }
 }
 
+/**
+ * What the bottom bar says, as plain coloured text (no blocks of colour): the model and its connection, the Oracul, the tokens used since Arcana started, then everything about the
+ * machine: whether the model is loaded and what all models take, the processor, the memory file, a wait or a compaction, and the warnings.
+ */
+private fun footerSegments(app: AppContext, navigator: Navigator): List<StatusSegment> {
+    val plain = app.config.plainGlyphs
+    val model = when (val c = app.connection) {
+        Connection.Checking -> statusSegment("", "○ checking", Palette.Muted)
+        is Connection.Online -> statusSegment("", "● ${app.config.model}", Palette.Green, bold = true)
+        is Connection.ModelMissing -> statusSegment("", "● model missing", Palette.Warn, bold = true)
+        is Connection.Offline -> statusSegment("", "○ Ollama offline", Palette.Red, bold = true)
+    }
+    val oracul = oraculBadge(app, navigator.current == Screen.Chat)?.let { statusSegment("", it.first.trim(), it.second, bold = true) }
+    val asking = app.chat.consulting != null && oracul != null
+    return buildList {
+        // the model that works now comes first: the worker, or the Oracul (orange) while it is being asked
+        if (asking) { add(oracul!!); add(StatusSegment(listOf(StatusPart(model.parts.joinToString("") { it.text }, Palette.Muted)))) }
+        else { add(model); oracul?.let { add(it) } }
+        // tokens used since Arcana started: grows after every reply; the Usage screen has the full picture
+        if (app.sessionTokens > 0) add(statusSegment("", "⚡ ${UsageStats.compact(app.sessionTokens)} tok", Palette.Blue))
+        // the machine: where the model sits and what all loaded models take, the processor, the memory file
+        com.arcana.brain.app.screens.modelStateSegment(app, plain)?.let { add(it) }
+        app.cpuPercent?.let { add(statusSegment("cpu", "$it%", if (it >= 85) Palette.Red else if (it >= 60) Palette.Orange else Palette.Green)) }
+        if (app.config.memoryEnabled) {
+            val chars = app.memoryChars
+            if (chars > com.arcana.brain.core.Vault.MEMORY_LIMIT) add(statusSegment("", com.arcana.brain.app.screens.memoryCutText(chars, plain), Palette.Orange, bold = true))
+            else if (chars > 0) add(statusSegment("", "✎ memory ${UsageStats.compact(chars.toLong())}", Palette.Green))
+            else add(statusSegment("", "✎ no ARCANA.md", Palette.Muted))
+        }
+        if (app.chat.compacting) add(statusSegment("", if (plain) "compacting" else "◌ compacting…", Palette.Blue))
+        com.arcana.brain.app.screens.hardwareWarnings(app, plain).forEach { (text, color) -> add(statusSegment("", text, color, bold = true)) }
+        if (navigator.focusMode) add(statusSegment("", "✎ EDITING  Esc", Palette.Editing, bold = true))
+    }
+}
+
+private fun footerWidth(segments: List<StatusSegment>): Int = segments.sumOf { it.width } + 3 * (segments.size - 1).coerceAtLeast(0) + 2
+
 @Composable
 private fun Footer(app: AppContext, navigator: Navigator, hint: String, columns: Int) {
-    val (badgeText, badgeColor) = when (val c = app.connection) {
-        Connection.Checking -> " ○ checking " to Palette.Muted
-        is Connection.Online -> " ● ${app.config.model} " to Palette.Green
-        is Connection.ModelMissing -> " ● model missing " to Palette.Warn
-        is Connection.Offline -> " ○ Ollama offline " to Palette.Red
-    }
-    // Tokens used since Arcana started: grows after every reply; the Usage screen has the full picture.
-    val tokens = app.sessionTokens
-    val tokenBadge = if (tokens > 0) " ⚡ ${UsageStats.compact(tokens)} tok " else ""
-    // what every model Ollama holds takes in memory together (the chat model, the Oracul, the judge, the flow stages)
-    val ramBytes = app.loaded.orEmpty().sumOf { it.sizeBytes }
-    val ramBadge = if (ramBytes > 0) " ${if (app.config.plainGlyphs) "RAM" else "▦"} ${"%.1f GB".format(ramBytes / 1e9)} " else ""
-    val oracul = oraculBadge(app, navigator.current == Screen.Chat)
-    // warnings about the model and the machine (a model partly on the CPU, a window too large or too small): short, here, on every screen
-    val warnings = com.arcana.brain.app.screens.hardwareWarnings(app, app.config.plainGlyphs)
-    val warningWidth = warnings.sumOf { it.first.length + 2 } + ramBadge.length
-    Row(Modifier.fillMaxWidth().background(Palette.SurfaceHigh)) {
-        // the model that works now comes first: the worker, or the Oracul (orange) while it is being asked, when the worker's pill turns quiet
-        val asking = app.chat.consulting != null && oracul != null
-        if (asking) {
-            Label(oracul!!.first, color = Palette.Background, background = oracul.second, textStyle = TextStyle.Bold)
-            Label(badgeText, color = Palette.Background, background = Palette.Muted, textStyle = TextStyle.Bold)
-        } else {
-            Label(badgeText, color = Palette.Background, background = badgeColor, textStyle = TextStyle.Bold)
-            if (oracul != null) Label(oracul.first, color = Palette.Background, background = oracul.second, textStyle = TextStyle.Bold)
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            app.cpuPercent = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.arcana.brain.core.SystemCpu.percent() }
+            kotlinx.coroutines.delay(2_000)
         }
-        if (tokenBadge.isNotEmpty()) Label(tokenBadge, color = Palette.Background, background = Palette.Blue, textStyle = TextStyle.Bold) // a badge like the model pill; blue = tokens, as in the Chat status bar
-        if (ramBadge.isNotEmpty()) Label(ramBadge, color = Palette.Background, background = Palette.Purple, textStyle = TextStyle.Bold)
-        warnings.forEach { (text, color) -> Label(" $text ", color = Palette.Background, background = color, textStyle = TextStyle.Bold) }
-        if (navigator.focusMode) Label(" ✎ EDITING  Esc ", color = Palette.Background, background = Palette.Editing, textStyle = TextStyle.Bold)
-        val room = columns - badgeText.length - tokenBadge.length - warningWidth - (oracul?.first?.length ?: 0) - (if (navigator.focusMode) 16 else 0) - 2
+    }
+    val segments = footerSegments(app, navigator)
+    val used = footerWidth(segments)
+    Row(Modifier.fillMaxWidth().background(Palette.SurfaceHigh)) {
+        Label(" ", background = Palette.SurfaceHigh)
+        segments.forEachIndexed { i, segment ->
+            if (i > 0) Label(if (app.config.plainGlyphs) " | " else " │ ", color = Palette.Dim, background = Palette.SurfaceHigh)
+            segment.parts.forEach { part -> Label(part.text, color = part.color, background = Palette.SurfaceHigh, textStyle = if (part.bold) TextStyle.Bold else TextStyle.Unspecified) }
+        }
+        val room = columns - used - 2
         val toast = navigator.toast
         if (toast != null && !navigator.quitPending) {
             // a message from an overlay replaces the hints for a few seconds
             Label("", Modifier.weight(1f), background = Palette.SurfaceHigh, fill = true)
-            Label(" ${if (toast.isError) "✕" else "✓"} ${toast.text} ".take((columns - badgeText.length - tokenBadge.length - warningWidth - (oracul?.first?.length ?: 0) - 2).coerceAtLeast(10)), color = Palette.Background, background = if (toast.isError) Palette.Red else Palette.Green, textStyle = TextStyle.Bold)
+            Label(" ${if (toast.isError) "✕" else "✓"} ${toast.text} ".take(room.coerceAtLeast(10)), color = if (toast.isError) Palette.Red else Palette.Green, background = Palette.SurfaceHigh, textStyle = TextStyle.Bold)
             Label(" ", background = Palette.SurfaceHigh)
         } else {
             FooterHints(if (navigator.quitPending) hint else fitHints(hint, room), badges = !navigator.quitPending)
@@ -424,12 +448,7 @@ private fun oraculBadge(app: AppContext, collapsed: Boolean = false): Pair<Strin
     return " ${oracul.statusText(app.config)} " to Palette.Accent
 }
 
-private fun AppContext.badgeWidth(collapsed: Boolean): Int = (oraculBadge(this, collapsed)?.first?.length ?: 0) + (if (sessionTokens > 0) " ⚡ ${UsageStats.compact(sessionTokens)} tok ".length else 0) + when (connection) {
-    Connection.Checking -> " ○ checking ".length
-    is Connection.Online -> " ● ${config.model} ".length
-    is Connection.ModelMissing -> " ● model missing ".length
-    is Connection.Offline -> " ○ Ollama offline ".length
-}
+private fun AppContext.badgeWidth(navigator: Navigator): Int = footerWidth(footerSegments(this, navigator))
 
 /** Only the hints that fit, whole; the rest are one "?" away. */
 /** What the footer says while an overlay is open. */
@@ -467,8 +486,8 @@ private fun RowScope.FooterHints(line: String, badges: Boolean) {
         if (key.isEmpty()) {
             Label(part, color = Palette.Muted, background = Palette.SurfaceHigh)
         } else {
-            Label(" $key ", color = Palette.Background, background = Palette.Accent, textStyle = TextStyle.Bold)
-            Label(" ${part.substringAfter("  ").trim()}", color = Palette.Text, background = Palette.SurfaceHigh)
+            Label(key, color = Palette.Accent, background = Palette.SurfaceHigh, textStyle = TextStyle.Bold)
+            Label(" ${part.substringAfter("  ").trim()}", color = Palette.Muted, background = Palette.SurfaceHigh)
         }
     }
     Label(" ", background = Palette.SurfaceHigh)

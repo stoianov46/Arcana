@@ -56,7 +56,7 @@ Everything is in **Settings**. Pages are tabs: `Tab` moves to the next group, `�
 - **Ollama URL**: where the server listens, normally `http://localhost:11434`.
 - **Model**: `Enter` lists the models installed on that server, and you pick one.
 - **Temperature** and **Timeout** tune how adventurous and how patient the model is.
-- The badge at the bottom left shows the state: green means ready, red means Ollama is not running, orange means the chosen model is not installed. Press `t` in Settings to test the connection.
+- The model at the bottom left shows the state: green means ready, red means Ollama is not running, orange means the chosen model is not installed. Press `t` in Settings to test the connection.
 
 ## Vault
 - **Vault path**: `Enter` opens a folder browser. Folders with an `.obsidian` directory are marked as vaults.
@@ -150,7 +150,7 @@ Talk to the model (Gemma, Qwen… whichever you chose). The message field **alwa
 ## Typing
 - `Enter` sends; `Alt+Enter`, or a `\` before Enter, starts a new line. The field grows (up to a quarter of the screen) and shows a scrollbar; `↑` `↓` move between its lines.
 - **Type `/`** for a menu of commands and tools: keep typing to filter, `↑` `↓` choose, `Tab` or `Enter` use it, `Esc` closes. Settings such as `/vault`, `/tools`, `/mode` show whether they are ON now.
-- The **status bar** under the field shows the model, whether your memory file is in use (`✎ memory`), a **context gauge** (how full the model's memory window is), tokens (`↑` prompt, `↓` reply: the reply count moves live while it streams and becomes exact when the request ends; the blue `⚡ N tok` badge in the bottom bar is the total for this session), an **estimated price** (what the same tokens would cost on a paid service; set the price in Settings → Ollama), the session time, the tool mode and, while a skill runs, its progress (`◆ name 7/11`).
+- The **status bar** under the field has two rows. The first is the core of the model work: the models, the temperature, a **context gauge** (how full the model's memory window is), tokens (`↑` prompt, `↓` reply: the reply count moves live while it streams and becomes exact when the request ends; the blue `⚡ N tok` badge in the bottom bar is the total for this session), an **estimated price** (what the same tokens would cost on a paid service; set the price in Settings → Ollama), the session time. The second row holds the rest: the tool mode, `◉ vault`, the project, the goal, changed files, the auto-run warnings and, while a skill runs, its progress (`◆ name 7/11`). Everything about the machine is in the **bottom bar** instead, as coloured text: whether the model is loaded and how much memory all loaded models take, the processor (`cpu 8%`), the memory file (`✎ memory 4.6k`), waits and compaction, and the warnings.
 - Long pasted text is restored whole.
 
 ## Giving it context
