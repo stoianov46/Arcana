@@ -13,11 +13,14 @@ class StatusPart(val text: String, val color: Color, val bold: Boolean = false, 
  * One fact in a [StatusBar]: a muted label and a coloured value (`ctx ▰▰▱▱ 12% 13k/131k`, `⏱ 1h 02m`, `≈ $0.31`).
  * [priority] no longer drops anything (the bar wraps, see [wrapSegments]); it is kept so a segment says how much it matters.
  */
-class StatusSegment(val parts: List<StatusPart>, val priority: Int = 5) {
+class StatusSegment(val parts: List<StatusPart>, val priority: Int = 5, val second: Boolean = false) {
     val width: Int get() = parts.sumOf { it.text.length }
 
     /** A pill: it has a coloured background, so it asks for attention. */
     val filled: Boolean get() = parts.any { it.background != Color.Unspecified }
+
+    /** Goes after the quiet facts, on the second row: the pills, and what asked for it with `second` (a passing state, like the wait reason). */
+    val late: Boolean get() = filled || second
 }
 
 /** A pill: [text] on a coloured background, for what should catch the eye (the model, a warning). */
@@ -25,12 +28,13 @@ fun pillSegment(text: String, background: Color, priority: Int = 5) =
     StatusSegment(listOf(StatusPart(" $text ", Palette.Background, bold = true, background = background)), priority)
 
 /** `label value`: the label muted, the value in [color]. */
-fun statusSegment(label: String, value: String, color: Color, priority: Int = 5, bold: Boolean = false) = StatusSegment(
+fun statusSegment(label: String, value: String, color: Color, priority: Int = 5, bold: Boolean = false, second: Boolean = false) = StatusSegment(
     listOfNotNull(
         if (label.isEmpty()) null else StatusPart("$label ", Palette.Muted),
         StatusPart(value, color, bold),
     ),
     priority,
+    second,
 )
 
 /** A gauge: `label ▰▰▱▱▱▱▱▱ 12% detail`, green while there is room, orange from 60% and red from 85% (more is worse). */
@@ -67,8 +71,8 @@ internal fun wrapSegments(segments: List<StatusSegment>, width: Int, separatorWi
     var used = 0
     val cut = segments.map { it.cut(limit) }
     // the first row is for the quiet facts (the lead first); the filled ones, which ask for attention, start the next row
-    val ordered = cut.take(1) + cut.drop(1).filter { !it.filled } + cut.drop(1).filter { it.filled }
-    val firstRest = ordered.drop(1).indexOfFirst { it.filled }.let { if (it < 0 || ordered.drop(1).none { s -> !s.filled }) -1 else it + 1 }
+    val ordered = cut.take(1) + cut.drop(1).filter { !it.late } + cut.drop(1).filter { it.late }
+    val firstRest = ordered.drop(1).indexOfFirst { it.late }.let { if (it < 0 || ordered.drop(1).none { s -> !s.late }) -1 else it + 1 }
     for ((index, segment) in ordered.withIndex()) {
         val row = rows.last()
         if (row.isNotEmpty() && (index == firstRest || used + separatorWidth + segment.width > limit)) {
@@ -96,7 +100,7 @@ private fun StatusSegment.cut(limit: Int): StatusSegment {
         else { parts += StatusPart(part.text.take(left), part.color, part.bold, part.background); left = 0 }
     }
     parts += StatusPart("…", Palette.Muted)
-    return StatusSegment(parts, priority)
+    return StatusSegment(parts, priority, second)
 }
 
 /**

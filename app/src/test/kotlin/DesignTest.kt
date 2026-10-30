@@ -405,6 +405,8 @@ class DesignTest {
         val pill = com.arcana.brain.app.design.pillSegment("warn", com.arcana.brain.app.design.Palette.Red, 5)
         val rows = com.arcana.brain.app.design.wrapSegments(all + pill, 200)
         assertEquals(listOf(listOf("model", "title", "ctx", "time", "price"), listOf(" warn ")), rows.map { r -> r.map { text(it) } }, "the quiet facts on the first row, a pill on the second")
+        val waiting = com.arcana.brain.app.design.statusSegment("", "wait", com.arcana.brain.app.design.Palette.Orange, 10, second = true)
+        assertEquals(listOf(listOf("model", "title"), listOf("wait", " warn ")), com.arcana.brain.app.design.wrapSegments(listOf(seg("model", 9), waiting, seg("title", 3), pill), 200).map { r -> r.map { text(it) } }, "a passing state asks for the second row too")
         val narrow = com.arcana.brain.app.design.wrapSegments(all, 5 + 3 + 5)
         assertEquals(listOf("model", "title", "ctx", "time", "price"), narrow.flatten().map { text(it) }, "nothing is dropped, whatever the width, and the order is kept")
         assertTrue(narrow.size > 1 && narrow.all { row -> row.sumOf { it.width } + 3 * (row.size - 1) <= 13 }, "no row is wider than the bar")
