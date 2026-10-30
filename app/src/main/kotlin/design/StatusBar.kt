@@ -15,6 +15,9 @@ class StatusPart(val text: String, val color: Color, val bold: Boolean = false, 
  */
 class StatusSegment(val parts: List<StatusPart>, val priority: Int = 5) {
     val width: Int get() = parts.sumOf { it.text.length }
+
+    /** A pill: it has a coloured background, so it asks for attention. */
+    val filled: Boolean get() = parts.any { it.background != Color.Unspecified }
 }
 
 /** A pill: [text] on a coloured background, for what should catch the eye (the model, a warning). */
@@ -56,14 +59,18 @@ fun gaugeSegment(label: String, fraction: Double, detail: String, priority: Int 
 /**
  * The segments laid out in rows of at most [width] columns (joined by [separatorWidth] columns), in their original order: **nothing is dropped**, a segment that does not fit
  * on the row goes to the next one, and one that is wider than a whole row is cut with `…`. So every indicator stays visible at any width; a narrow window just needs more rows.
+ * The filled ones (pills, which ask for attention) come after the quiet facts and start a row of their own; the first segment (the lead: the model, the page) stays where it is.
  */
 internal fun wrapSegments(segments: List<StatusSegment>, width: Int, separatorWidth: Int = 3): List<List<StatusSegment>> {
     val limit = width.coerceAtLeast(8)
     val rows = mutableListOf(mutableListOf<StatusSegment>())
     var used = 0
-    for (segment in segments.map { it.cut(limit) }) {
+    val cut = segments.map { it.cut(limit) }
+    val ordered = cut.take(1) + cut.drop(1).filter { !it.filled } + cut.drop(1).filter { it.filled }
+    val firstPill = ordered.drop(1).indexOfFirst { it.filled }.let { if (it < 0) -1 else it + 1 }
+    for ((index, segment) in ordered.withIndex()) {
         val row = rows.last()
-        if (row.isNotEmpty() && used + separatorWidth + segment.width > limit) {
+        if (row.isNotEmpty() && (index == firstPill || used + separatorWidth + segment.width > limit)) {
             rows += mutableListOf(segment)
             used = segment.width
         } else {

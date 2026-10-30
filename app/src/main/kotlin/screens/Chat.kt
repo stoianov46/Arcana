@@ -205,7 +205,7 @@ internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConf
 
 /** The model-state indicator of the Chat status bar: the reason for a wait (orange), or `● loaded 7.7 GB 100% GPU` when the chat model is loaded, or `○ not loaded` (it loads with the next message); null until Ollama has been asked. */
 internal fun modelStateSegment(app: AppContext, plain: Boolean): StatusSegment? {
-    if (app.modelWhy.isNotEmpty()) return pillSegment((if (plain) "wait: " else "◌ ") + app.modelWhy.substringBefore(";").take(44), Palette.Orange, 10) // the whole sentence is in the reply line
+    if (app.modelWhy.isNotEmpty()) return statusSegment("", (if (plain) "wait: " else "◌ ") + app.modelWhy.substringBefore(";"), Palette.Orange, 10) // quiet orange text, no block of colour; the whole sentence is in the reply line
     val loaded = app.loaded ?: return null
     val mine = loaded.firstOrNull { com.arcana.brain.core.ModelStatus.sameModel(it.name, app.config.model) }
         ?: return statusSegment("", if (plain) "not loaded" else "○ not loaded", Palette.Muted, 4)
