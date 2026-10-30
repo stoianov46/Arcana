@@ -68,6 +68,9 @@ class AppContext(
         offloads = all.orEmpty().filter { it.cpuPercent >= 10 }.sortedByDescending { it.cpuPercent }.map { com.arcana.brain.core.Offload(it.name, it.cpuPercent, it.sizeBytes) }
     }
 
+    /** How busy the whole processor is (like htop), null until read: the `cpu` figure of the Chat status bar. Read every two seconds while the Chat is shown. */
+    var cpuPercent by mutableStateOf<Int?>(null)
+
     /** Every model Ollama has loaded (null = not known yet or Ollama cannot be asked): the model-state indicator in the Chat status bar. */
     var loaded by mutableStateOf<List<com.arcana.brain.core.LoadedModel>?>(null)
 

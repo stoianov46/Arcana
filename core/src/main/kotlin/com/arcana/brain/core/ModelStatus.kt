@@ -19,6 +19,15 @@ object SystemMemory {
     }
 }
 
+/** How busy the machine's processor is, the figure htop's bars show (all cores together). */
+object SystemCpu {
+    /** The share of the processor in use over the last moments, 0 to 100, or null when the system does not say (the first reading of a run may be empty). */
+    fun percent(): Int? = runCatching {
+        val bean = java.lang.management.ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean
+        bean.cpuLoad.takeIf { it >= 0 }?.let { (it * 100).toInt().coerceIn(0, 100) }
+    }.getOrNull()
+}
+
 /**
  * One sentence on why a request has not produced a word yet, from what Ollama and the machine say (the *Waiting for the model…* line): the model is not loaded yet (and what
  * else is, which Ollama has to make room for), or it is loaded and reading the prompt (with how much of it runs on the CPU, which is slow), and whether the memory is tight.

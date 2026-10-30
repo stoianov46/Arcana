@@ -246,6 +246,8 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         add(modelsSegment(ModelIcon.label(config.model, plain), chat.consulting, config, plain, width, app.memoryAdvice(Oracul.model(config), com.arcana.brain.core.ModelFit.Role.Oracul)?.startsWith("⚠") == true))
         // what the model is doing in Ollama: why it has not answered yet while we wait (loading, reading the prompt), else whether it is loaded and how much of it is on the GPU
         modelStateSegment(app, plain)?.let { add(it) }
+        // how busy the whole processor is (htop's figure); the loaded indicator above says where the model sits, not how hard the machine works
+        app.cpuPercent?.let { add(statusSegment("cpu", "$it%", if (it >= 85) Palette.Red else if (it >= 60) Palette.Orange else Palette.Green, 5)) }
         add(statusSegment("temperature", "°${config.temperature}", Palette.Accent, 6))
         if (config.chatUseVault) add(statusSegment("", "◉ vault", Palette.Cta, 6, bold = true))
         // the goal of this chat (/goal): shown so it is clear what the work is for
@@ -1092,6 +1094,12 @@ fun ChatScreen(app: AppContext) {
                 )
                 // the status bar sits under the message field (above the buttons): one row more in the count below
                 // the status bar wraps instead of dropping facts: reserve as many rows as it needs at this width
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    while (true) {
+                        app.cpuPercent = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.arcana.brain.core.SystemCpu.percent() }
+                        kotlinx.coroutines.delay(2_000)
+                    }
+                }
                 val statusSegments = chatStatus(app, chat, app.config.plainGlyphs, memoryChars, LocalContentWidth.current)
                 val statusRows = statusRowCount(statusSegments, LocalContentWidth.current)
                 val bottomGap = if (rememberDensity().tiny) 0 else 1
