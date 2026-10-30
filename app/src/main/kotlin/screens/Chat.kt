@@ -517,6 +517,14 @@ fun ChatScreen(app: AppContext) {
         toast(if (on) "Thinking pane on: it follows the model's thoughts under the conversation (needs a model that can think and a terminal at least 26 rows tall)." else "Thinking pane off.")
     }
 
+    /** Ctrl+T: the pane's height steps through [THINKING_SIZES] (it is switched on first when it is off), and the new height is kept in the settings. */
+    fun resizeThinkingPane() {
+        if (!app.config.thinkingPane) { toggleThinkingPane(); return }
+        val next = THINKING_SIZES.firstOrNull { it > app.config.thinkingPaneRows } ?: THINKING_SIZES.first()
+        app.update(app.config.copy(thinkingPaneRows = next))
+        toast("Thinking pane: $next rows (Ctrl+T steps through ${THINKING_SIZES.joinToString(", ")}; Settings → Console sets any height from 2 to 30).")
+    }
+
     fun toggleSkills() {
         val on = !app.config.skillsEnabled
         app.update(app.config.copy(skillsEnabled = on))
@@ -687,6 +695,7 @@ fun ChatScreen(app: AppContext) {
             Command("Attach a file or picture…", "Chat", "Ctrl+O") { openAttach() },
             Command("Memory file (ARCANA.md): open and edit", "Chat", "/memory") { openMemory() },
             Command(if (app.config.skillsEnabled) "Skills: turn off" else "Skills: turn on (list them)", "Chat", "/skills") { toggleSkills() },
+            Command("Thinking pane: change its height (Ctrl+T)", "Chat", "Ctrl+T") { resizeThinkingPane() },
             Command(if (app.config.thinkingPane) "Thinking pane: turn off" else "Thinking pane: show the model's thoughts live", "Chat", "/thinking") { toggleThinkingPane() },
             Command("Tools mode: ${app.config.toolMode} → next (ask, auto, plan)", "Chat", "/mode", app.config.toolsEnabled) { cycleMode() },
             Command("Oracul: second opinion on the last answer", "Chat", "/oracul", lastAnswer != null) { runOracul(compare = false) },
@@ -765,7 +774,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.PickTarget -> Hints("type  search", "↑↓  move", "Enter  ${target.verb.lowercase()}", "Esc  cancel")
         ChatMode.Chat -> when {
             output.selecting -> Hints("↑↓  move", "Space  tick", "c  copy", "b  code only", "Esc  leave")
-            gen.state == GenState.Running -> Hints("Enter  queue a message", *(if (chat.queued.isNotEmpty()) arrayOf("Backspace  remove queued") else emptyArray()), "Esc Esc  cancel reply", "↑↓  scroll")
+            gen.state == GenState.Running -> Hints("Enter  queue a message", *(if (chat.queued.isNotEmpty()) arrayOf("Backspace  remove queued") else emptyArray()), "Esc Esc  cancel reply", "↑↓  scroll", *(if (app.config.thinkingPane) arrayOf("Ctrl+T  thinking size") else emptyArray()))
             browsing -> Hints("Enter  type a message", "s  select & copy", "↑↓/Space  scroll", "1-9  screens")
             slashMatches.isNotEmpty() -> Hints("↑↓  choose", "Tab  complete", "Enter  run", "Esc  close")
             else -> Hints("Enter  send", "Alt+Enter  new line", "/  commands", "@  note", "Ctrl+O  attach", "Ctrl+S  save", "↑↓  scroll", "Esc  browse")
@@ -933,6 +942,7 @@ fun ChatScreen(app: AppContext) {
                 key.char == '?' && input.text.isEmpty() && !browsing && slashMatches.isEmpty() -> false
                 // a digit with an empty field during a reply is a screen number: leave it to the shell
                 gen.state == GenState.Running && input.text.isEmpty() && !browsing && key.char?.let { it in '0'..'9' } == true -> false
+                key == Key.Thinking -> { resizeThinkingPane(); true }
                 key == Key.Save -> { openSave(null); true }
                 key == Key.Browse -> { openAttach(); true }
                 output.selecting -> output.handle(key, entries, onNotice = { toast(it.text) })
@@ -1223,6 +1233,9 @@ internal fun wrapWords(text: String, width: Int): List<String> {
     }
     return rows
 }
+
+/** The heights Ctrl+T steps through. */
+private val THINKING_SIZES = listOf(4, 8, 14, 24)
 
 /** The split window under the conversation: the model's thoughts as they stream (the end of them, [rows] rows), or the last thoughts it had when it is idle. */
 @Composable

@@ -30,6 +30,8 @@ sealed interface Key {
     data object Capture : Key
     /** Save what is on screen (Ctrl+S); works even while a text field has the keyboard. */
     data object Save : Key
+    /** Change the size of the Chat's thinking pane (Ctrl+T): it steps through a few heights. */
+    data object Thinking : Key
     /** Open the file browser of the field being edited (Ctrl+O). */
     data object Browse : Key
     /** Delete the word before the caret (Alt+Backspace, Ctrl+W). */
