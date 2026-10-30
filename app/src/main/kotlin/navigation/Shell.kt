@@ -184,7 +184,7 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
     }
     // With an action bar on screen the footer keeps only what the bar does not show: the key map and quitting.
     val hint = when {
-        navigator.quitPending -> quitPrompt(size.columns - app.badgeWidth(navigator) - 2, navigator.exitFlow)
+        navigator.quitPending -> quitPrompt(size.columns - app.badgeWidth(navigator, size.columns) - 2, navigator.exitFlow)
         navigator.overlayOpen -> overlayHint(navigator)
         navigator.actionBars > 0 -> Shortcuts.label("Ctrl+P  commands   Ctrl+N  capture   ?  keys")
         // the two global keys come first, so they are always seen
@@ -205,7 +205,7 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
                 // Breathing room above the content, but none below it: the last row belongs to the content, right above the footer.
                 Box(Modifier.weight(1f).fillMaxHeight().padding(left = Dimens.ContentPadding, top = vPad, right = Dimens.ContentPadding, bottom = 0)) {
                     CompositionLocalProvider(
-                        LocalContentHeight provides viewRows - 1 - vPad - (if (topBar) 1 else 0),
+                        LocalContentHeight provides viewRows - footerRows(app, navigator, size.columns).size - vPad - (if (topBar) 1 else 0),
                         LocalContentWidth provides size.columns - sidebarWidth - 2 * Dimens.ContentPadding,
                     ) {
                         // The screen stays on while an overlay is open (so it keeps its state); the overlay hides it.
@@ -384,7 +384,11 @@ private fun footerSegments(app: AppContext, navigator: Navigator): List<StatusSe
     }
 }
 
-private fun footerWidth(segments: List<StatusSegment>): Int = segments.sumOf { it.width } + 3 * (segments.size - 1).coerceAtLeast(0) + 2
+/** The footer's facts laid out in rows that fit [columns] (it wraps like the status bars, nothing is hidden); the hints share the last row. */
+private fun footerRows(app: AppContext, navigator: Navigator, columns: Int): List<List<StatusSegment>> =
+    com.arcana.brain.app.design.wrapSegments(footerSegments(app, navigator), columns - 2, 3)
+
+private fun rowWidth(row: List<StatusSegment>): Int = row.sumOf { it.width } + 3 * (row.size - 1).coerceAtLeast(0) + 1
 
 @Composable
 private fun Footer(app: AppContext, navigator: Navigator, hint: String, columns: Int) {
@@ -394,23 +398,31 @@ private fun Footer(app: AppContext, navigator: Navigator, hint: String, columns:
             kotlinx.coroutines.delay(2_000)
         }
     }
-    val segments = footerSegments(app, navigator)
-    val used = footerWidth(segments)
-    Row(Modifier.fillMaxWidth().background(Palette.SurfaceHigh)) {
-        Label(" ", background = Palette.SurfaceHigh)
-        segments.forEachIndexed { i, segment ->
-            if (i > 0) Label(if (app.config.plainGlyphs) " | " else " │ ", color = Palette.Dim, background = Palette.SurfaceHigh)
-            segment.parts.forEach { part -> Label(part.text, color = part.color, background = Palette.SurfaceHigh, textStyle = if (part.bold) TextStyle.Bold else TextStyle.Unspecified) }
-        }
-        val room = columns - used - 2
-        val toast = navigator.toast
-        if (toast != null && !navigator.quitPending) {
-            // a message from an overlay replaces the hints for a few seconds
-            Label("", Modifier.weight(1f), background = Palette.SurfaceHigh, fill = true)
-            Label(" ${if (toast.isError) "✕" else "✓"} ${toast.text} ".take(room.coerceAtLeast(10)), color = if (toast.isError) Palette.Red else Palette.Green, background = Palette.SurfaceHigh, textStyle = TextStyle.Bold)
-            Label(" ", background = Palette.SurfaceHigh)
-        } else {
-            FooterHints(if (navigator.quitPending) hint else fitHints(hint, room), badges = !navigator.quitPending)
+    val rows = footerRows(app, navigator, columns)
+    val separator = if (app.config.plainGlyphs) " | " else " │ "
+    Column(Modifier.fillMaxWidth()) {
+        rows.forEachIndexed { index, row ->
+            Row(Modifier.fillMaxWidth().background(Palette.SurfaceHigh)) {
+                Label(" ", background = Palette.SurfaceHigh)
+                row.forEachIndexed { i, segment ->
+                    if (i > 0) Label(separator, color = Palette.Dim, background = Palette.SurfaceHigh)
+                    segment.parts.forEach { part -> Label(part.text, color = part.color, background = Palette.SurfaceHigh, textStyle = if (part.bold) TextStyle.Bold else TextStyle.Unspecified) }
+                }
+                if (index < rows.lastIndex) {
+                    Label("", Modifier.weight(1f), background = Palette.SurfaceHigh, fill = true)
+                } else {
+                    val room = columns - rowWidth(row) - 1
+                    val toast = navigator.toast
+                    if (toast != null && !navigator.quitPending) {
+                        // a message from an overlay replaces the hints for a few seconds
+                        Label("", Modifier.weight(1f), background = Palette.SurfaceHigh, fill = true)
+                        Label(" ${if (toast.isError) "✕" else "✓"} ${toast.text} ".take(room.coerceAtLeast(10)), color = if (toast.isError) Palette.Red else Palette.Green, background = Palette.SurfaceHigh, textStyle = TextStyle.Bold)
+                        Label(" ", background = Palette.SurfaceHigh)
+                    } else {
+                        FooterHints(if (navigator.quitPending) hint else fitHints(hint, room), badges = !navigator.quitPending)
+                    }
+                }
+            }
         }
     }
 }
@@ -442,7 +454,7 @@ private fun oraculBadge(app: AppContext, collapsed: Boolean = false): Pair<Strin
     return " ${oracul.statusText(app.config)} " to Palette.Accent
 }
 
-private fun AppContext.badgeWidth(navigator: Navigator): Int = footerWidth(footerSegments(this, navigator))
+private fun AppContext.badgeWidth(navigator: Navigator, columns: Int): Int = rowWidth(footerRows(this, navigator, columns).last())
 
 /** Only the hints that fit, whole; the rest are one "?" away. */
 /** What the footer says while an overlay is open. */
