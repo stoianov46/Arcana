@@ -102,7 +102,7 @@ with `ToolBox.describe()` so small models neither forget nor invent tools.
 
 A **relative path means inside the vault**; anything else must be absolute or start with `~/`. `ToolBox.describe()` tells the model the
 vault location, the home folder, the folders already allowed, and the tool list. Path errors say exactly what is wrong ("X does not
-exist … Did you mean: /Users/…/X?" using a bounded search of the allowed folders), because the model reads them and retries.
+exist … Did you mean: /Users/…/X?" using a bounded search of the allowed folders: a path that ends the real one, else the same file name in another folder; `read_note` gives the same hint), because the model reads them and retries.
 
 ## Modes (`AppConfig.toolMode`, `/mode`)
 

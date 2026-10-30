@@ -1736,6 +1736,21 @@ class CoreTest {
     }
 
     @Test
+    fun aNoteOrFilePathWithAFolderLeftOutSaysWhereTheNoteReallyIs() {
+        val root = Files.createTempDirectory("arcana-lost")
+        val vaultDir = Files.createDirectories(root.resolve("vault"))
+        Files.writeString(Files.createDirectories(vaultDir.resolve("Research/Arcana")).resolve("Architecture-Improvements.md"), "# Plan")
+        val box = ToolBox(Vault(vaultDir), emptyList(), root.resolve("backups"))
+        val wrong = "Research/Architecture-Improvements.md"
+        for (tool in listOf("read_note", "read_file")) {
+            val out = box.execute(call(tool, "path" to wrong))
+            assertTrue("does not exist" in out && "Did you mean" in out && "Research/Arcana/Architecture-Improvements.md" in out, "$tool: $out")
+        }
+        assertTrue("# Plan" in box.execute(call("read_note", "path" to "Research/Arcana/Architecture-Improvements")))
+        assertTrue("find_files" in box.execute(call("read_note", "path" to "Nowhere/Nothing.md")), "no match: the next step is named")
+    }
+
+    @Test
     fun findFilesSearchesDeepSkipsUnreadableAndHiddenFolders() {
         val root = Files.createTempDirectory("arcana-find")
         val vaultDir = Files.createDirectories(root.resolve("vault"))

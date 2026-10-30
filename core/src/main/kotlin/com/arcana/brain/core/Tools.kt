@@ -293,7 +293,10 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
     private fun didYouMean(raw: String): String {
         val tail = raw.trim().trim('/').takeIf { it.isNotEmpty() && !it.startsWith("~") && !Path.of(it).isAbsolute } ?: return ""
         val last = tail.substringAfterLast('/').lowercase()
-        val matches = access.roots.flatMap { findByName(it, last) }.map { it.trimEnd('/') }.filter { it.lowercase().endsWith(tail.lowercase()) }.distinct()
+        val found = access.roots.flatMap { findByName(it, last) }.map { it.trimEnd('/') }.distinct()
+        // the path as written ends the real one (a folder was left off the front), else the same file name in another folder (a folder was dropped from the middle)
+        val matches = found.filter { it.lowercase().endsWith(tail.lowercase()) }
+            .ifEmpty { found.filter { it.substringAfterLast('/').lowercase() == last } }
         return if (matches.isEmpty()) "" else " Did you mean: " + matches.take(5).joinToString(" or ") + "?"
     }
 
@@ -387,7 +390,12 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
             "read_note", "Read the full text of one note, by its path relative to $relativeTo (for example Projects/Idea.md).",
             schema("path" to ("string" to "Path of the note inside the vault"), required = listOf("path")),
             ToolRisk.Read, { it.str("path") },
-        ) { a -> cut(vault.read(notePath(a.str("path")))) },
+        ) { a ->
+            val path = notePath(a.str("path"))
+            val file = vault.root.resolve(path).normalize()
+            require(file.startsWith(vault.root) && Files.isRegularFile(file)) { "$path does not exist in the vault, ${vault.root}." + didYouMean(path).ifEmpty { " Find the exact path with find_files or search_notes." } }
+            cut(vault.read(path))
+        },
         ToolSpec(
             "create_note", "Create a new Markdown note in the vault. It is saved in the given folder (default: the output folder).",
             schema(
