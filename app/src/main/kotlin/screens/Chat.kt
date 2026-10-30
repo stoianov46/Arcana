@@ -1102,7 +1102,7 @@ fun ChatScreen(app: AppContext) {
                 val bottomGap = if (rememberDensity().tiny) 0 else 1
                 VGap()
                 // the thinking pane: a split window under the conversation (counted exactly, like everything else on the screen)
-                val paneRows = if (app.config.thinkingPane && question == null && approval == null && LocalContentHeight.current >= 26) app.config.thinkingPaneRows.coerceIn(3, 15) + 2 else 0
+                val paneRows = if (app.config.thinkingPane && question == null && approval == null && LocalContentHeight.current >= 26) app.config.thinkingPaneRows.coerceIn(2, 30).coerceAtMost(LocalContentHeight.current * 2 / 5) + 2 else 0
                 Panel("Conversation") {
                     val width = outputWidth()
                     val lines = buildList {
