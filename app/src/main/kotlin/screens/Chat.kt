@@ -263,7 +263,7 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         if (chat.compacting) add(pillSegment(if (plain) "compacting" else "◌ compacting…", Palette.Blue, 10))
         // a small window drops the oldest text without a word: say so before it matters (Settings → Ollama → Context window)
         // ↑ (prompt) is exact and moves when a request ends; ↓ (reply) also counts the pieces streaming right now, until the exact figure replaces them
-        if (stats.isNotEmpty() || app.liveTokens > 0) add(StatusSegment(listOf(StatusPart("↑${compact(stats.sumOf { it.promptTokens.toLong() })}", Palette.Blue), StatusPart(" ↓${compact(stats.sumOf { it.completionTokens.toLong() } + app.liveTokens)}", Palette.Green)), 3))
+        if (stats.isNotEmpty() || app.liveTokens > 0) add(StatusSegment(listOf(StatusPart("↑${compact(stats.sumOf { it.promptTokens.toLong() })}", Palette.Blue), StatusPart(" ↓${compact(stats.sumOf { it.completionTokens.toLong() } + app.liveTokens)}", Palette.Green)), 10))
         // everything this session spent, every model and feature (the advisors, the flow, compaction): the figure the price below is worked out from; the arrows above are this chat's own model only
         add(statusSegment("Σ", "${compact(app.sessionTokens)} all models", Palette.Blue, 7))
         add(statusSegment("est.", priceText(cost), Palette.Orange, 7, bold = true))

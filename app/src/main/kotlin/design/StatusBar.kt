@@ -20,6 +20,9 @@ class StatusSegment(val parts: List<StatusPart>, val priority: Int = 5) {
     val filled: Boolean get() = parts.any { it.background != Color.Unspecified }
 }
 
+/** The priority of the segments that stay on the first row of a [StatusBar] together with its lead. */
+const val LEAD_PRIORITY = 10
+
 /** A pill: [text] on a coloured background, for what should catch the eye (the model, a warning). */
 fun pillSegment(text: String, background: Color, priority: Int = 5) =
     StatusSegment(listOf(StatusPart(" $text ", Palette.Background, bold = true, background = background)), priority)
@@ -66,11 +69,14 @@ internal fun wrapSegments(segments: List<StatusSegment>, width: Int, separatorWi
     val rows = mutableListOf(mutableListOf<StatusSegment>())
     var used = 0
     val cut = segments.map { it.cut(limit) }
-    val ordered = cut.take(1) + cut.drop(1).filter { !it.filled } + cut.drop(1).filter { it.filled }
-    val firstPill = ordered.drop(1).indexOfFirst { it.filled }.let { if (it < 0) -1 else it + 1 }
+    // the first row is for the lead and what matters most (priority 10); everything else, quiet facts first and pills last, starts the next row
+    val head = cut.filterIndexed { i, it -> i == 0 || it.priority >= LEAD_PRIORITY }
+    val rest = cut.filterIndexed { i, it -> i != 0 && it.priority < LEAD_PRIORITY }
+    val ordered = head + rest.filter { !it.filled } + rest.filter { it.filled }
+    val firstRest = if (head.size > 1 && rest.isNotEmpty()) head.size else -1
     for ((index, segment) in ordered.withIndex()) {
         val row = rows.last()
-        if (row.isNotEmpty() && (index == firstPill || used + separatorWidth + segment.width > limit)) {
+        if (row.isNotEmpty() && (index == firstRest || used + separatorWidth + segment.width > limit)) {
             rows += mutableListOf(segment)
             used = segment.width
         } else {
