@@ -1,6 +1,7 @@
 package com.arcana.brain.app.design
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import com.jakewharton.mosaic.layout.background
 import com.jakewharton.mosaic.layout.drawBehind
 import com.jakewharton.mosaic.layout.fillMaxWidth
@@ -43,6 +44,8 @@ fun Panel(
     background: Color = Palette.Surface,
     content: @Composable () -> Unit,
 ) {
+    // a title can carry an emoji (a note's name): drawn raw it takes two cells, the row wraps and the whole screen scrolls
+    val heading = remember(title) { sanitizeForTerminal(title) }
     val framed = !rememberDensity().tiny
     val glyphs = FrameGlyphs.of(LocalPlainGlyphs.current)
     val base = modifier.fillMaxWidth().background(background).let { m ->
@@ -51,9 +54,9 @@ fun Panel(
         } else {
             m.drawBehind {
                 if (width < 2 || height < 2) return@drawBehind
-                drawText(0, 0, frameTop(width, title, glyphs), accent, background)
-                if (title.isNotBlank() && width >= 7) {
-                    drawText(0, 2, " " + title.take(width - 6).trimEnd() + " ", accent, background, TextStyle.Bold)
+                drawText(0, 0, frameTop(width, heading, glyphs), accent, background)
+                if (heading.isNotBlank() && width >= 7) {
+                    drawText(0, 2, " " + heading.take(width - 6).trimEnd() + " ", accent, background, TextStyle.Bold)
                 }
                 for (row in 1 until height - 1) {
                     drawText(row, 0, glyphs.vertical, accent, background)
@@ -64,7 +67,7 @@ fun Panel(
         }
     }
     Stack(base) {
-        if (!framed && title.isNotBlank()) Label(title, color = accent, textStyle = TextStyle.Bold)
+        if (!framed && heading.isNotBlank()) Label(heading, color = accent, textStyle = TextStyle.Bold)
         content()
     }
 }

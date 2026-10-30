@@ -184,6 +184,7 @@ Built on 24–25 October 2026. Last updated 28 October 2026.
 - Dialog buttons sit inside the dialog; code blocks are closed boxes.
 
 ## Smaller things
+- **Library no longer jumps on a note with an emoji in its name**: a panel title (the preview shows the note's name) is drawn with one-cell lookalikes like every other text, so an emoji no longer widens the row, wraps it and scrolls the whole screen on every redraw.
 - Shortcuts stay **Ctrl** chords (Ctrl+P commands, Ctrl+N capture, Ctrl+O attach, Ctrl+S save…): ⌘ chords were tried and dropped because terminals and macOS claim them (Print, New window).
 - Chat: type `/` for a menu of commands and tools (filter as you type, ↑↓ Tab/Enter).
 - Library: `r` **Rename** a note and the links to it are updated everywhere; `c` **Chat about it** continues with a note attached (a saved chat note carries its whole conversation).
