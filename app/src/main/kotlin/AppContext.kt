@@ -68,9 +68,6 @@ class AppContext(
         offloads = all.orEmpty().filter { it.cpuPercent >= 10 }.sortedByDescending { it.cpuPercent }.map { com.arcana.brain.core.Offload(it.name, it.cpuPercent, it.sizeBytes) }
     }
 
-    /** How many characters of the memory file (ARCANA.md) the Chat last read, for the footer. */
-    var memoryChars by mutableStateOf(0)
-
     /** How busy the whole processor is (like htop), null until read: the `cpu` figure of the Chat status bar. Read every two seconds while the Chat is shown. */
     var cpuPercent by mutableStateOf<Int?>(null)
 

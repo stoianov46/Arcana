@@ -357,7 +357,7 @@ private fun Logo(text: String, busy: Boolean) {
 
 /**
  * What the bottom bar says, as plain coloured text (no blocks of colour): the model and its connection, the Oracul, the tokens used since Arcana started, then everything about the
- * machine: whether the model is loaded and what all models take, the processor, the memory file, a wait or a compaction, and the warnings.
+ * machine: whether the model is loaded and what all models take, the processor, a wait or a compaction, and the warnings.
  */
 private fun footerSegments(app: AppContext, navigator: Navigator): List<StatusSegment> {
     val plain = app.config.plainGlyphs
@@ -378,12 +378,6 @@ private fun footerSegments(app: AppContext, navigator: Navigator): List<StatusSe
         // the machine: where the model sits and what all loaded models take, the processor, the memory file
         com.arcana.brain.app.screens.modelStateSegment(app, plain)?.let { add(it) }
         app.cpuPercent?.let { add(statusSegment("cpu", "$it%", if (it >= 85) Palette.Red else if (it >= 60) Palette.Orange else Palette.Green)) }
-        if (app.config.memoryEnabled) {
-            val chars = app.memoryChars
-            if (chars > com.arcana.brain.core.Vault.MEMORY_LIMIT) add(statusSegment("", com.arcana.brain.app.screens.memoryCutText(chars, plain), Palette.Orange, bold = true))
-            else if (chars > 0) add(statusSegment("", "✎ memory ${UsageStats.compact(chars.toLong())}", Palette.Green))
-            else add(statusSegment("", "✎ no ARCANA.md", Palette.Muted))
-        }
         if (app.chat.compacting) add(statusSegment("", if (plain) "compacting" else "◌ compacting…", Palette.Blue))
         com.arcana.brain.app.screens.hardwareWarnings(app, plain).forEach { (text, color) -> add(statusSegment("", text, color, bold = true)) }
         if (navigator.focusMode) add(statusSegment("", "✎ EDITING  Esc", Palette.Editing, bold = true))

@@ -253,6 +253,12 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         chat.goal?.let { add(pillSegment("◎ goal: ${it.replace('\n', ' ').take(40)}${if (it.length > 40) "…" else ""}", Palette.Cta, 8)) }
         // what the tools wrote or changed in this chat (/artifacts lists it)
         Artifacts.pill(chat.artifacts.toList(), plain)?.let { add(pillSegment(it, Palette.Purple, 5)) }
+        // the memory file the assistant reads in every chat: it takes room in the context, so it sits before the gauge (orange when its end is cut)
+        if (config.memoryEnabled) {
+            if (memoryChars > Vault.MEMORY_LIMIT) add(statusSegment("", memoryCutText(memoryChars, plain), Palette.Orange, 9, bold = true))
+            else if (memoryChars > 0) add(statusSegment("", "✎ memory ${UsageStats.compact(memoryChars.toLong())}", Palette.Green, 6))
+            else add(statusSegment("", "✎ no ARCANA.md", Palette.Muted, 3))
+        }
         val window = effectiveContext(config.contextTokens, app.modelContext, app.loadedContext)
         contextUsage(chat.messages, window)?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
         // a small window drops the oldest text without a word: say so before it matters (Settings → Ollama → Context window)
@@ -1086,7 +1092,6 @@ fun ChatScreen(app: AppContext) {
                 )
                 // the status bar sits under the message field (above the buttons): one row more in the count below
                 // the status bar wraps instead of dropping facts: reserve as many rows as it needs at this width
-                androidx.compose.runtime.LaunchedEffect(memoryChars) { app.memoryChars = memoryChars } // the footer shows it
                 val statusSegments = chatStatus(app, chat, app.config.plainGlyphs, memoryChars, LocalContentWidth.current)
                 val statusRows = statusRowCount(statusSegments, LocalContentWidth.current)
                 val bottomGap = if (rememberDensity().tiny) 0 else 1
