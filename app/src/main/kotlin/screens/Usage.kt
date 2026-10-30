@@ -480,7 +480,7 @@ private fun ToolsPanel(records: List<ToolUseRecord>, room: Int) {
 /** One row per entry: its name, a bar sized against the largest, the tokens, their share of [total] and the number of replies. */
 @Composable
 private fun Bars(rows: List<Triple<String, Long, UsageTotals?>>, color: Color, total: Long) {
-    val labelWidth = (rows.maxOfOrNull { it.first.length } ?: 0).coerceIn(6, 14)
+    val labelWidth = (rows.maxOfOrNull { it.first.length } ?: 0).coerceIn(6, 22)
     val barWidth = (panelWidth() - labelWidth - 22).coerceIn(4, 40)
     val max = rows.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1
     rows.forEach { (name, value, totals) ->
