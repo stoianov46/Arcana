@@ -165,7 +165,7 @@ private fun Dashboard(period: Period, page: Page, records: List<UsageRecord>, al
             if (left >= 8) {
                 VGap(); left -= 1
                 // chart (and the insights beside it on a wide screen) take what the other panels leave
-                val below = if (wide && left >= 24) FeatureRows + 3 else 0
+                val below = if (wide && left >= 24) featureRows(records) + 3 else 0
                 val chartRows = (left - below - 3).coerceIn(3, 12)
                 if (wide) {
                     val chartWidth = (LocalContentWidth.current * 11) / 20
@@ -198,11 +198,11 @@ private fun Dashboard(period: Period, page: Page, records: List<UsageRecord>, al
                     HGap()
                     Box(Modifier.weight(1f)) { CompositionLet(half) { FeaturePanel(records, Palette.Blue, "By model") { it.model } } }
                 }
-                left -= FeatureRows + 2
+                left -= featureRows(records) + 2
             } else {
                 FeaturePanel(records, Palette.Accent, "By feature") { it.feature }
-                left -= FeatureRows + 2
-                if (left >= 14) { VGap(); FeaturePanel(records, Palette.Blue, "By model") { it.model }; left -= FeatureRows + 3 }
+                left -= featureRows(records) + 2
+                if (left >= 14) { VGap(); FeaturePanel(records, Palette.Blue, "By model") { it.model }; left -= featureRows(records) + 3 }
             }
             if (left >= 6) { VGap(); AdvisorsPanel(records); left -= ADVISOR_ROWS + 3 }
             if (left >= 6) { VGap(); HoursPanel(records, insights); left -= 6 }
@@ -222,6 +222,10 @@ private fun CompositionLet(width: Int, content: @Composable () -> Unit) {
 
 private const val TILES_ROWS = 4
 private const val FeatureRows = 6
+
+/** How many rows the By feature / By model panels need: every feature and every model that spent a token is listed (at least [FeatureRows], at most 24 so the rest of the page keeps room). */
+private fun featureRows(records: List<UsageRecord>): Int =
+    maxOf(FeatureRows, UsageStats.by(records) { it.feature }.size, UsageStats.by(records) { it.model }.size).coerceAtMost(24)
 private const val ADVISOR_ROWS = 3
 
 @Composable
@@ -345,7 +349,7 @@ private fun InsightsPanel(i: UsageInsights, rows: Int) {
 
 @Composable
 private fun FeaturePanel(records: List<UsageRecord>, color: Color, title: String, key: (UsageRecord) -> String) {
-    val rows = UsageStats.by(records, key).take(FeatureRows)
+    val rows = UsageStats.by(records, key).take(featureRows(records))
     val total = records.sumOf { it.totalTokens.toLong() }.coerceAtLeast(1)
     Panel(title) { Bars(rows.map { Triple(it.first, it.second.totalTokens, it.second) }, color, total) }
 }
