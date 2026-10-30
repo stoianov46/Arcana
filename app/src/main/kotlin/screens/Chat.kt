@@ -205,16 +205,21 @@ internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConf
 
 /** The model-state indicator of the Chat status bar: the reason for a wait (orange), or `● loaded 7.7 GB 100% GPU` when the chat model is loaded, or `○ not loaded` (it loads with the next message); with more than one model in memory, `· 2 models 17.3 GB` is what they take together; null until Ollama has been asked. */
 internal fun modelStateSegment(app: AppContext, plain: Boolean): StatusSegment? {
-    if (app.modelWhy.isNotEmpty()) return statusSegment("", (if (plain) "wait: " else "◌ ") + app.modelWhy.substringBefore(";").replace("reading about ", "reading ").replace(" tokens of conversation", " tokens"), Palette.Orange, 10, second = true) // quiet orange text, no block of colour; the whole sentence is in the reply line
-    val loaded = app.loaded ?: return null
-    val mine = loaded.firstOrNull { com.arcana.brain.core.ModelStatus.sameModel(it.name, app.config.model) }
-        ?: return statusSegment("", if (plain) "not loaded" else "○ not loaded", Palette.Muted, 4)
-    val slow = mine.cpuPercent >= 10
-    val detail = if (mine.sizeBytes <= 0) "" else " ${"%.1f GB".format(mine.sizeBytes / 1e9)} ${100 - mine.cpuPercent}% GPU"
+    val loaded = app.loaded
+    val mine = loaded?.firstOrNull { com.arcana.brain.core.ModelStatus.sameModel(it.name, app.config.model) }
+    val detail = if (mine == null || mine.sizeBytes <= 0) "" else " ${"%.1f GB".format(mine.sizeBytes / 1e9)} ${100 - mine.cpuPercent}% GPU"
     // every model Arcana has in memory (the chat model, the Oracul, the judge, the flow's stages): what they take together
-    val total = loaded.sumOf { it.sizeBytes }
-    val all = if (loaded.size > 1 && total > 0) " · ${loaded.size} models ${"%.1f GB".format(total / 1e9)}" else ""
-    return statusSegment("", (if (plain) "loaded" else "● loaded") + detail + all, if (slow) Palette.Orange else Palette.Green, 6)
+    val total = loaded.orEmpty().sumOf { it.sizeBytes }
+    val all = if (loaded.orEmpty().size > 1 && total > 0) " · ${loaded!!.size} models ${"%.1f GB".format(total / 1e9)}" else ""
+    // one indicator, one place: while a wait lasts it says what is going on (orange), after it the state of the model
+    if (app.modelWhy.isNotEmpty()) {
+        val why = app.modelWhy.substringBefore(";").replace("reading about ", "reading ").replace(" tokens of conversation", " tokens")
+        val text = if (mine != null) "loaded$detail$all · " + why.removePrefix("loaded, ") else why // the whole sentence is in the reply line
+        return statusSegment("", (if (plain) "wait: " else "◌ ") + text, Palette.Orange, 10, second = false)
+    }
+    if (loaded == null) return null
+    if (mine == null) return statusSegment("", if (plain) "not loaded" else "○ not loaded", Palette.Muted, 4)
+    return statusSegment("", (if (plain) "loaded" else "● loaded") + detail + all, if (mine.cpuPercent >= 10) Palette.Orange else Palette.Green, 6)
 }
 
 /**
