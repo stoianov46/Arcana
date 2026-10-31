@@ -45,7 +45,7 @@ A test double for Ollama is a few lines (`/api/tags`, `/api/show`, `/api/ps`, a 
 | change the command line | `app/Cli.kt` (+ `SetupTest`) |
 | touch the chat loop | `app/Generation.kt`, `app/ChatSession.kt`; read [oracul.md](oracul.md) first when it touches second opinions or other models |
 
-Layout rules that bite: a screen's top-level children go inside `Stack { }` (Mosaic draws siblings on top of each other); rows under a panel are counted exactly, so a new bar or line must be added to that count ([ui-internals.md](ui-internals.md)).
+Layout rules that bite: a screen's top-level children go inside `Stack { }` (Mosaic draws siblings on top of each other); anything that can grow (a list, a stack of panels) goes in a `ScrollColumn` so nothing is ever hidden in a small window; only fixed chrome (header, action bar, a chat's message field) is counted by hand ([ui-internals.md](ui-internals.md)).
 
 ## Definition of done for a change
 

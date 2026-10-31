@@ -14,6 +14,7 @@ import com.arcana.brain.app.AppContext
 import com.arcana.brain.app.GenState
 import com.arcana.brain.app.Generation
 import com.arcana.brain.app.design.*
+import com.jakewharton.mosaic.modifier.Modifier
 import com.arcana.brain.app.input.Key
 import com.arcana.brain.app.input.KeyHandler
 import com.arcana.brain.app.input.TextFieldState
@@ -279,11 +280,13 @@ private fun InboxContent(app: AppContext, vault: Vault) {
                     ScrollView(lines, lines.size.coerceIn(1, excerptRows), remember { OutputState() })
                 }
                 VGap()
-                Panel("Proposal", accent = Palette.Cta) {
+                Panel("Proposal", Modifier.flexible(), accent = Palette.Cta) {
                     when (analysis) {
                         null -> Spinner(if (analyzing == note.path) "Gemma is reading the note…" else "Waiting for the model…")
                         is Analysis.Failed -> Warning(analysis.message)
                         is Analysis.Ready -> {
+                            // the fields scroll with the focus when the window is too short for all of them
+                            ScrollColumn(remember { ScrollState() }, Modifier.flexible(), follow = focus) {
                             val labels = listOf("Title", "Folder", "Tags", "Links", "Summary")
                             val hints = listOf("", "empty = stay here", "separate with spaces", "[[Note]] names", "")
                             labels.forEachIndexed { i, label ->
@@ -295,6 +298,7 @@ private fun InboxContent(app: AppContext, vault: Vault) {
                             if (backlinks.isNotEmpty()) Hint("${backlinks.size} note${if (backlinks.size == 1) "" else "s"} link here by name, so the title stays. It can still be moved.")
                             else index.notes.map { it.folder }.filter { it.isNotEmpty() && !it.startsWith(".") && !it.equals(inbox.trim('/'), ignoreCase = true) }.distinct().sorted().take(8).let { f ->
                                 if (f.isNotEmpty()) Label("Folders: " + f.joinToString(" · "), color = Palette.Dim)
+                            }
                             }
                         }
                     }

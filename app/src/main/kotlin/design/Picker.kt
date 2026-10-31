@@ -132,7 +132,9 @@ fun <T> Picker(
                             val glyph = icon(item)
                             if (glyph.isNotEmpty()) Label(" $glyph", color = iconColor(item))
                             Label(" ${label(item)}", Modifier.weight(1f), color = labelColor(item), textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
-                            val extra = meta(item)
+                            // the name has priority: the detail takes at most two fifths of the row and ends in "…"
+                            val cap = ((LocalContentWidth.current - 10) * 2 / 5).coerceAtLeast(8)
+                            val extra = meta(item).let { if (it.length > cap) it.take(cap - 1) + "…" else it }
                             if (extra.isNotEmpty()) Label("  $extra ", color = metaColor(item))
                         }
                     }

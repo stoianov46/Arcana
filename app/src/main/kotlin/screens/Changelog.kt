@@ -26,7 +26,11 @@ private fun changePages() = listOf(
 # The latest work
 Built on 24–25 October 2026. Last updated 31 October 2026.
 
+## Nothing is hidden any more
+- **Scrolling screens:** a screen taller than the window no longer loses blocks. *Settings*: the option list scrolls inside its panel and follows the cursor (a scrollbar on the right), so every option stays reachable in a short window; the help line under it is cut with `…` instead of taking the list's rows. *Usage*: Overview and Breakdown keep all their panels and scroll with `↑` `↓` / `PgUp` `PgDn`; Recent replies (now up to 200) and Tools scroll inside their panel. Text that does not fit ends in `…`, as in CosmoCLI. *Inbox review*: the proposal fields scroll with the focus in a short window. *AI notes* and every list: the name of a row keeps its room and the detail beside it is shortened with `…` first.
+
 ## Cancel asks first
+- **Loop guard:** two checks against a model that goes round in circles without an error. *Repeated text*: when the same passage has come 5 times in its thinking or its answer, the round is stopped, the model is told to decide and answer, and it is asked once more with a higher repeat penalty (a second loop ends as an error that says so, not as a wall of text). *Repeated calls*: the same tool call 3 times in one question (nothing changed in between, failed calls too) earns a "step back" message, and at 6 the tools are taken away so it must answer. *Settings → Opinions → Loop guard: repeated text / repeated calls* (Never = off); *Usage → Team → Housekeeping* shows how often it stepped in.
 - **Notes are found by name:** `read_note`, `set_properties`, `add_tags` and `append_to_note` accept a title, a `[[wikilink]]`, an absolute path inside the vault, or a path with the folder or the leading emoji left out, and use the one note that matches (several matches list the paths). Models used to miss paths because Obsidian knows notes by title, not by folder.
 - `Esc` on a running reply (or an Oracul run) opens *Cancel this reply?*: `Enter` cancels, any other key keeps going, and the reply keeps streaming meanwhile. The double `Esc` is gone; **Settings → Console → Confirm before cancelling** turns the question off.
 

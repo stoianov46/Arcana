@@ -42,10 +42,11 @@ fun UsageScreen(app: AppContext) {
     var page by remember { mutableStateOf(Page.Overview) }
     var confirmClear by remember { mutableStateOf(false) }
     val teamOutput = remember { OutputState() }
+    val scroll = rememberScrollState()
     var notice by remember { mutableStateOf<Notice?>(null) }
 
     FocusMode(confirmClear)
-    if (confirmClear) Hints("y  clear history", "any other key  keep") else Hints("←→  period", "Tab  page", *(if (page == Page.Team) arrayOf("↑↓  scroll") else emptyArray()), "c  clear history")
+    if (confirmClear) Hints("y  clear history", "any other key  keep") else Hints("←→  period", "Tab  page", "↑↓  scroll", "c  clear history")
 
     KeyHandler { key ->
         when {
@@ -59,9 +60,10 @@ fun UsageScreen(app: AppContext) {
             }
             key == Key.Left -> { period = Period.entries[(period.ordinal - 1).mod(Period.entries.size)]; true }
             key == Key.Right -> { period = Period.entries[(period.ordinal + 1).mod(Period.entries.size)]; true }
-            key == Key.Tab -> { page = Page.entries[(page.ordinal + 1).mod(Page.entries.size)]; true }
-            key == Key.BackTab -> { page = Page.entries[(page.ordinal - 1).mod(Page.entries.size)]; true }
+            key == Key.Tab -> { page = Page.entries[(page.ordinal + 1).mod(Page.entries.size)]; scroll.reset(); true }
+            key == Key.BackTab -> { page = Page.entries[(page.ordinal - 1).mod(Page.entries.size)]; scroll.reset(); true }
             page == Page.Team && teamOutput.handle(key, letters = false) -> true
+            page != Page.Team && scroll.handle(key) -> true
             key.char == 'c' -> { confirmClear = true; true }
             else -> false
         }
@@ -119,9 +121,9 @@ fun UsageScreen(app: AppContext) {
                 Period.All -> 0L
             }
             when (page) {
-                Page.Tools -> ToolsPanel(toolRecords, room)
+                Page.Tools -> ToolsPanel(toolRecords, scroll)
                 Page.Team -> TeamPage(TeamStatsBuilder.build(records, TeamStatsBuilder.since(app.events.toList(), since), app.config.estPriceIn, app.config.estPriceOut), teamOutput, room, app.config.plainGlyphs, app.config.estPriceIn, app.config.estPriceOut)
-                else -> Dashboard(period, page, records, all, room)
+                else -> Dashboard(period, page, records, all, room, scroll)
             }
             NoticeLine(notice)
         }
@@ -146,71 +148,74 @@ private fun TabBar(period: Period, page: Page) {
     }
 }
 
-/** The page on display. Every panel says how many rows it needs and is left out when [room] cannot hold it, so nothing overflows. */
+/**
+ * The page on display. Its panels sit in a scrolling column: all of them are always there, and what the window cannot show
+ * at once is reached with ↑/↓ and PgUp/PgDn (a scrollbar on the right says where you are).
+ */
 @Composable
-private fun Dashboard(period: Period, page: Page, records: List<UsageRecord>, all: List<UsageRecord>, room: Int) {
+private fun Dashboard(period: Period, page: Page, records: List<UsageRecord>, all: List<UsageRecord>, room: Int, scroll: ScrollState) {
     if (records.isEmpty()) {
         Panel("Nothing yet") { Hint("Nothing recorded for this period yet. Ask, chat or summarize and the numbers appear here.") }
         return
     }
+    if (page == Page.Recent) { RecentPanel(records, all, UsageStats.insights(records, all), scroll); return }
     val wide = LocalContentWidth.current >= 90
-    val half = ((LocalContentWidth.current - 1) / 2).coerceAtLeast(20)
+    // the scrollbar takes the last column, so everything inside is one column narrower
+    val w = LocalContentWidth.current - 1
+    val half = ((w - 1) / 2).coerceAtLeast(20)
     val insights = UsageStats.insights(records, all)
     val totals = UsageStats.totals(records)
-    when (page) {
-        Page.Overview -> {
-            var left = room
-            Tiles(totals, insights)
-            left -= TILES_ROWS
-            if (left >= 8) {
-                VGap(); left -= 1
-                // chart (and the insights beside it on a wide screen) take what the other panels leave
+    ScrollColumn(scroll, Modifier.flexible()) { CompositionLet(w) {
+        when (page) {
+            Page.Overview -> {
+                Tiles(totals, insights)
+                VGap()
+                val left = room - TILES_ROWS - 1
+                // the chart takes what the other panels leave; when there is no room for them it stays small and they scroll
                 val below = if (wide && left >= 24) featureRows(records) + 3 else 0
                 val chartRows = (left - below - 3).coerceIn(3, 12)
                 if (wide) {
-                    val chartWidth = (LocalContentWidth.current * 11) / 20
+                    val chartWidth = (w * 11) / 20
                     Row(Modifier.fillMaxWidth()) {
                         Box(Modifier.weight(11f)) { CompositionLet(chartWidth) { ActivityPanel(period, records, all, chartRows) } }
                         HGap()
-                        Box(Modifier.weight(9f)) { CompositionLet(LocalContentWidth.current - chartWidth - 1) { InsightsPanel(insights, chartRows + 1) } }
+                        Box(Modifier.weight(9f)) { CompositionLet(w - chartWidth - 1) { InsightsPanel(insights, chartRows + 1) } }
                     }
-                    left -= chartRows + 3
+                    VGap()
+                    FeaturePair(records, half)
                 } else {
                     ActivityPanel(period, records, all, chartRows)
-                    left -= chartRows + 3
-                    if (left >= 9) { VGap(); InsightsPanel(insights, minOf(left - 3, 6)) }
-                }
-                if (wide && below > 0 && left >= below + 1) {
                     VGap()
-                    Row(Modifier.fillMaxWidth()) {
-                        Box(Modifier.weight(1f)) { CompositionLet(half) { FeaturePanel(records, Palette.Accent, "By feature") { it.feature } } }
-                        HGap()
-                        Box(Modifier.weight(1f)) { CompositionLet(half) { FeaturePanel(records, Palette.Blue, "By model") { it.model } } }
-                    }
+                    InsightsPanel(insights, 6)
                 }
             }
-        }
-        Page.Breakdown -> {
-            var left = room
-            if (wide) {
-                Row(Modifier.fillMaxWidth()) {
-                    Box(Modifier.weight(1f)) { CompositionLet(half) { FeaturePanel(records, Palette.Accent, "By feature") { it.feature } } }
-                    HGap()
-                    Box(Modifier.weight(1f)) { CompositionLet(half) { FeaturePanel(records, Palette.Blue, "By model") { it.model } } }
+            Page.Breakdown -> {
+                if (wide) {
+                    FeaturePair(records, half)
+                } else {
+                    FeaturePanel(records, Palette.Accent, "By feature") { it.feature }
+                    VGap()
+                    FeaturePanel(records, Palette.Blue, "By model") { it.model }
                 }
-                left -= featureRows(records) + 2
-            } else {
-                FeaturePanel(records, Palette.Accent, "By feature") { it.feature }
-                left -= featureRows(records) + 2
-                if (left >= 14) { VGap(); FeaturePanel(records, Palette.Blue, "By model") { it.model }; left -= featureRows(records) + 3 }
+                VGap()
+                AdvisorsPanel(records)
+                VGap()
+                HoursPanel(records, insights)
+                VGap()
+                SpeedPanel(all, period)
             }
-            if (left >= 6) { VGap(); AdvisorsPanel(records); left -= ADVISOR_ROWS + 3 }
-            if (left >= 6) { VGap(); HoursPanel(records, insights); left -= 6 }
-            if (left >= 6) { VGap(); SpeedPanel(all, period) }
+            else -> Unit // Recent, Team and Tools draw themselves
         }
-        Page.Recent -> RecentPanel(records, all, insights, (room - 4).coerceAtLeast(1))
-        Page.Team -> Unit // drawn by [TeamPage]
-        Page.Tools -> Unit // drawn by [ToolsPanel]: tool calls are not model requests, so this page does not need any
+    } }
+}
+
+/** By feature and By model side by side, each sizing its bars to its own half. */
+@Composable
+private fun FeaturePair(records: List<UsageRecord>, half: Int) {
+    Row(Modifier.fillMaxWidth()) {
+        Box(Modifier.weight(1f)) { CompositionLet(half) { FeaturePanel(records, Palette.Accent, "By feature") { it.feature } } }
+        HGap()
+        Box(Modifier.weight(1f)) { CompositionLet(half) { FeaturePanel(records, Palette.Blue, "By model") { it.model } } }
     }
 }
 
@@ -411,32 +416,34 @@ private fun SpeedPanel(all: List<UsageRecord>, period: Period) {
     }
 }
 
-/** The latest replies, newest first, with the longest and the slowest picked out. */
+/** The latest replies, newest first, with the longest and the slowest picked out. Up to 200 rows, scrolled inside the panel. */
 @Composable
-private fun RecentPanel(records: List<UsageRecord>, all: List<UsageRecord>, insights: UsageInsights, rows: Int) {
+private fun RecentPanel(records: List<UsageRecord>, all: List<UsageRecord>, insights: UsageInsights, scroll: ScrollState) {
     val zone = java.time.ZoneId.systemDefault()
     val today = java.time.LocalDate.now()
-    val shown = records.sortedByDescending { it.time }.take(rows)
-    val width = panelWidth()
+    val shown = records.sortedByDescending { it.time }.take(200)
+    val width = panelWidth() - 1
     val modelWidth = (width - 9 - 10 - 8 - 8 - 7 - 8).coerceIn(6, 18)
-    Panel("Recent replies  ·  ${records.size} in this period") {
+    Panel("Recent replies  ·  ${records.size} in this period", Modifier.flexible()) {
         Label("When     Feature   ${"Model".padEnd(modelWidth)} Prompt   Reply   Time  tok/s".take(width), color = Palette.Muted)
-        shown.forEach { r ->
-            val at = java.time.Instant.ofEpochMilli(r.time).atZone(zone)
-            val when_ = if (at.toLocalDate() == today) "%02d:%02d".format(at.hour, at.minute) else "${at.dayOfWeek.getDisplayName(DayStyle.SHORT, Locale.ENGLISH)} ${at.dayOfMonth}"
-            val speed = if (r.millis > 0) "%.0f".format(r.completionTokens * 1000.0 / r.millis) else "–"
-            val mark = when {
-                r == insights.longestReply -> Palette.Green
-                r == insights.slowestReply -> Palette.Orange
-                else -> Palette.Text
+        ScrollColumn(scroll, Modifier.flexible()) {
+            shown.forEach { r ->
+                val at = java.time.Instant.ofEpochMilli(r.time).atZone(zone)
+                val when_ = if (at.toLocalDate() == today) "%02d:%02d".format(at.hour, at.minute) else "${at.dayOfWeek.getDisplayName(DayStyle.SHORT, Locale.ENGLISH)} ${at.dayOfMonth}"
+                val speed = if (r.millis > 0) "%.0f".format(r.completionTokens * 1000.0 / r.millis) else "–"
+                val mark = when {
+                    r == insights.longestReply -> Palette.Green
+                    r == insights.slowestReply -> Palette.Orange
+                    else -> Palette.Text
+                }
+                Label(
+                    (fit(when_, 8) + " " + fit(r.feature, 9) + " " + fit(r.model, modelWidth) + " " + UsageStats.compact(r.promptTokens.toLong()).padStart(6) + "  " +
+                        UsageStats.compact(r.completionTokens.toLong()).padStart(6) + "  " + (if (r.millis > 0) seconds(r.millis) else "–").padStart(5) + " " + speed.padStart(6)).take(width),
+                    color = mark,
+                )
             }
-            Label(
-                (fit(when_, 8) + " " + fit(r.feature, 9) + " " + fit(r.model, modelWidth) + " " + UsageStats.compact(r.promptTokens.toLong()).padStart(6) + "  " +
-                    UsageStats.compact(r.completionTokens.toLong()).padStart(6) + "  " + (if (r.millis > 0) seconds(r.millis) else "–").padStart(5) + " " + speed.padStart(6)).take(width),
-                color = mark,
-            )
         }
-        if (shown.size < records.size) Label("… ${records.size - shown.size} earlier replies not shown   (green: longest · orange: slowest)", color = Palette.Muted)
+        if (shown.size < records.size) Label("… ${records.size - shown.size} older replies not listed   (green: longest · orange: slowest)", color = Palette.Muted)
         else Label("green: longest reply · orange: slowest reply", color = Palette.Muted)
     }
 }
@@ -446,18 +453,18 @@ private fun RecentPanel(records: List<UsageRecord>, all: List<UsageRecord>, insi
  * prompt that comes from tools), the average time and the calls that failed or were denied. Biggest context cost first.
  */
 @Composable
-private fun ToolsPanel(records: List<ToolUseRecord>, room: Int) {
+private fun ToolsPanel(records: List<ToolUseRecord>, scroll: ScrollState) {
     if (records.isEmpty()) {
         Panel("Tools") { Hint("No tool calls in this period. Turn tools on in Chat (/tools) and ask the model to read or change something.") }
         return
     }
-    val rows = ToolStats.by(records).take((room - 4).coerceAtLeast(3))
+    val rows = ToolStats.by(records)
     val totalTokens = rows.sumOf { it.approxTokens }.coerceAtLeast(1)
     val labelWidth = (rows.maxOfOrNull { it.tool.length } ?: 0).coerceIn(8, 18)
-    val barWidth = (panelWidth() - labelWidth - 34).coerceIn(0, 30)
+    val barWidth = (panelWidth() - 1 - labelWidth - 34).coerceIn(0, 30)
     val max = rows.maxOf { it.approxTokens }.coerceAtLeast(1)
-    Panel("Tools · ${records.size} calls · ≈${UsageStats.compact(totalTokens)} tokens of results") {
-        rows.forEach { t ->
+    Panel("Tools · ${records.size} calls · ≈${UsageStats.compact(totalTokens)} tokens of results", Modifier.flexible()) {
+        ScrollColumn(scroll, Modifier.flexible()) { rows.forEach { t ->
             val filled = if (t.approxTokens == 0L || barWidth == 0) 0 else ((t.approxTokens * barWidth) / max).toInt().coerceIn(1, barWidth)
             Row {
                 Label(fit(t.tool, labelWidth), color = Palette.FieldLabel)
@@ -472,7 +479,7 @@ private fun ToolsPanel(records: List<ToolUseRecord>, room: Int) {
                 if (t.errors > 0) Label(" ✕${t.errors}", color = Palette.Red)
                 if (t.denied > 0) Label(" ⊘${t.denied}", color = Palette.Warn)
             }
-        }
+        } }
         Hint("≈ tokens: what the results added to the conversation (4 characters ≈ 1 token). ×calls · average time · ✕ failed · ⊘ denied.")
     }
 }

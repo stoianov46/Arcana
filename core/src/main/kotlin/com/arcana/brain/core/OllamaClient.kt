@@ -150,7 +150,7 @@ object OllamaProtocol {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** [jsonMode] asks Ollama to constrain the reply to valid JSON (used when the app needs to read the answer). */
-    fun chatRequest(config: AppConfig, messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, think: kotlinx.serialization.json.JsonElement? = null): JsonObject = buildJsonObject {
+    fun chatRequest(config: AppConfig, messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, think: kotlinx.serialization.json.JsonElement? = null, repeatPenalty: Double? = null): JsonObject = buildJsonObject {
         put("model", config.model)
         put("stream", true)
         if (think != null) put("think", think)
@@ -160,6 +160,7 @@ object OllamaProtocol {
         put("options", buildJsonObject {
             put("temperature", config.temperature)
             if (config.contextTokens > 0) put("num_ctx", config.contextTokens)
+            if (repeatPenalty != null) put("repeat_penalty", repeatPenalty)
         })
     }
 
@@ -253,12 +254,13 @@ class OllamaClient(private val config: () -> AppConfig) {
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()
     private val thinkingValuesCache get() = thinkingValuesByModel
 
-    fun chat(messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null): Flow<ChatChunk> = flow {
+    /** [repeatPenalty] (Ollama's `repeat_penalty`, 1.0 = none) is sent only for a retry after a loop; normally the model's own default stands. */
+    fun chat(messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, repeatPenalty: Double? = null): Flow<ChatChunk> = flow {
         val cfg = config()
         val request = HttpRequest.newBuilder(endpoint(cfg, "/api/chat"))
             .timeout(Duration.ofSeconds(cfg.timeoutSeconds.toLong()))
             .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(OllamaProtocol.chatRequest(cfg, messages, jsonMode, tools, thinkFor(cfg)).toString()))
+            .POST(HttpRequest.BodyPublishers.ofString(OllamaProtocol.chatRequest(cfg, messages, jsonMode, tools, thinkFor(cfg), repeatPenalty).toString()))
             .build()
         val future = http.sendAsync(request, HttpResponse.BodyHandlers.ofLines())
         // Cancelling the future closes the connection, which unblocks the line reader below.

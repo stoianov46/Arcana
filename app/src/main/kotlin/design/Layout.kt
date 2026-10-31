@@ -70,8 +70,9 @@ fun Modifier.flexible(): Modifier = layoutId(FLEXIBLE)
 
 /**
  * Vertical flow that never overflows its height. Mosaic can't clip, so a Column taller than the terminal would crash
- * the renderer. Children are placed top to bottom; one that doesn't fit in the remaining rows is hidden (measured to
- * zero size, which Mosaic skips when drawing) instead of being drawn out of bounds.
+ * the renderer. Children are placed top to bottom. One that is taller than the rows left is first offered just those rows
+ * (text then shortens itself with "…", a list scrolls); only a child that still doesn't fit is
+ * hidden (measured to zero size, which Mosaic skips when drawing). A [flexible] child leaves room for the siblings after it.
  */
 @Composable
 fun Stack(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
@@ -84,18 +85,33 @@ private object StackPolicy : MeasurePolicy {
     override fun MeasureScope.measure(measurables: List<Measurable>, constraints: Constraints): MeasureResult {
         val maxW = constraints.maxWidth
         val maxH = constraints.maxHeight
+        val bounded = constraints.hasBoundedHeight
+        // what the siblings after each flexible child need, so the flexible one does not take their rows
+        val after = IntArray(measurables.size)
+        if (bounded && measurables.any { it.layoutId == FLEXIBLE }) {
+            var below = 0
+            for (i in measurables.indices.reversed()) {
+                after[i] = below
+                if (measurables[i].layoutId != FLEXIBLE) below += measurables[i].measure(Constraints(maxWidth = maxW)).height
+            }
+        }
         val placed = ArrayList<Pair<Placeable, Int>>()
         var used = 0
-        for (m in measurables) {
-            val remaining = if (constraints.hasBoundedHeight) maxH - used else Constraints.Infinity
+        for ((i, m) in measurables.withIndex()) {
+            val remaining = if (bounded) maxH - used else Constraints.Infinity
             if (remaining <= 0) {
                 m.measure(Hidden)
                 continue
             }
-            val placeable = if (m.layoutId == FLEXIBLE) {
-                m.measure(Constraints(maxWidth = maxW, maxHeight = remaining))
+            var placeable = if (m.layoutId == FLEXIBLE) {
+                val room = (remaining - after[i]).coerceAtLeast(minOf(remaining, 3))
+                m.measure(Constraints(maxWidth = maxW, maxHeight = room))
             } else {
                 m.measure(Constraints(maxWidth = maxW))
+            }
+            // too tall: offer it the rows that are left, so it shortens itself instead of vanishing
+            if (placeable.height > remaining && bounded && m.layoutId != FLEXIBLE) {
+                placeable = m.measure(Constraints(maxWidth = maxW, maxHeight = remaining))
             }
             if (placeable.height > remaining) {
                 m.measure(Hidden)

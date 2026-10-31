@@ -512,18 +512,21 @@ private fun NoteComposerContent(app: AppContext, vault: Vault) {
             Mode.Start -> {
                 ScreenHeader("AI notes", presetNote?.let { "What should AI do with ${it.path}?" } ?: "Pick what AI should do. It can start from a prompt or from a note you already have")
                 VGap()
+                val startHint = "Every result is a draft: refine it with follow-up prompts, then replace the note, add to it, or save a new one."
+                // the hint wraps on a narrow window: the list leaves it exactly the rows it needs
+                val hintRows = wrap(startHint, (panelWidth() - 2).coerceAtLeast(10)).size
                 Panel(presetNote?.let { it.title } ?: "What should AI do?") {
                     Picker(
                         tasks, taskPicker,
                         label = { it.label },
-                        rows = bodyRows(extra = 6),
+                        rows = bodyRows(extra = 4 + hintRows),
                         icon = { it.icon },
                         iconColor = { Palette.Accent },
                         meta = { it.detail },
                         placeholder = "Press / to filter",
                     )
                     VGap()
-                    Hint("Every result is a draft: refine it with follow-up prompts, then replace the note, add to it, or save a new one.")
+                    Hint(startHint)
                 }
             }
             Mode.PickSource -> {

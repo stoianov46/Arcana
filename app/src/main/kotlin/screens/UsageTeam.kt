@@ -76,6 +76,7 @@ internal fun teamLines(stats: TeamStats, width: Int, plain: Boolean, priceIn: In
 
     heading("HOUSEKEEPING")
     row("  Cancelled ${stats.cancels}× · compacted ${stats.compacts}×" + (if (stats.todoNudges > 0) " · sent back to open todo steps ${stats.todoNudges}×" else ""))
+    if (stats.loops.isNotEmpty()) row("  Loop guard: " + listOf("text" to "rounds stopped for repeating text", "calls" to "warnings for repeated calls", "halt" to "tool loops ended").mapNotNull { (k, label) -> stats.loops[k]?.let { "$it $label" } }.joinToString(" · "))
     row("  Memory: ${stats.memoryDuplicates} duplicate${if (stats.memoryDuplicates == 1) "" else "s"} skipped · ${stats.memoryRefused} dead path${if (stats.memoryRefused == 1) "" else "s"} refused")
     row("  Files and notes: " + (if (stats.artifacts.isEmpty()) "none written" else stats.artifacts.joinToString(" · ") { "${it.first} ${it.second}" }))
     return out

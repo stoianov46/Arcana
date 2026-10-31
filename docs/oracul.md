@@ -224,6 +224,7 @@ continues, so a vision answer is not redone by the chat model. A model-based sel
 | `oraculUrl` | blank = main server | a second Ollama server for the Oracul, the judge, planner and reviewer |
 | `oraculAuto` | `problems` | `off` / `problems` / `always` |
 | `stuckCalls` / `stuckTurns` | `4` / `3` | failed calls in one turn per step-in; failing turns in a row for an automatic review (`0` = never) |
+| `loopRepeats` / `loopCalls` | `5` / `3` | not the Oracul: the loop guard (functionality.md) catches repeats that fail nothing; it needs no model |
 | `oraculContextMessages` / `oraculContextChars` | `0` / `3000` | how many earlier chat messages (0 = all, up to 30,000 characters in total) and how many characters of each the Oracul, judge, planner, analyst and controller are shown besides the last question (Settings → Helpers → Chat context) |
 | `oraculJudgeAuto` | `false` | when an automatic opinion is due, run `compare()` (Oracul answer plus judge verdict) instead; mid-turn stuck advice and skill reviewers stay single opinions |
 | `oraculTools` | `true` | the Oracul may use the worker's tools |

@@ -70,7 +70,10 @@ fun Label(
                 val maxH = constraints.maxHeight
                 var lines = clean.split('\n')
                 if (wrap && constraints.hasBoundedWidth) lines = lines.flatMap { wrap(it, maxW) }
-                if (constraints.hasBoundedHeight) lines = lines.take(maxH)
+                if (constraints.hasBoundedHeight && lines.size > maxH) {
+                    // more text than rows: the last row says so instead of the rest vanishing
+                    lines = if (maxH <= 0) emptyList() else lines.take(maxH).let { it.dropLast(1) + (it.last().trimEnd() + "…") }
+                }
                 if (constraints.hasBoundedWidth) {
                     lines = lines.map { if (it.length > maxW) it.take((maxW - 1).coerceAtLeast(0)) + if (maxW > 0) "…" else "" else it }
                 }

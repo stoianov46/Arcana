@@ -10,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.arcana.brain.core.ChatChunk
 import com.arcana.brain.core.ChatMessage
+import com.arcana.brain.core.LoopGuard
 import com.arcana.brain.core.ReplyStats
 import com.arcana.brain.core.TextToolCalls
 import com.arcana.brain.core.ToolCall
@@ -56,6 +57,12 @@ class Generation(
      * because the window is nearly full, so the request is built anew), or null to go on with the one in hand.
      */
     private val refresh: (suspend () -> List<ChatMessage>?)? = null,
+    /** How often the same stretch of text may repeat inside one round before the round is stopped (see [LoopGuard]); 0 = never checked. */
+    private val loopRepeats: () -> Int = { 0 },
+    /** Asked before each round: true when the tools must be taken away now (the model keeps repeating calls), so it has to answer. */
+    private val toolsHalted: () -> Boolean = { false },
+    /** Told when a round was stopped for repeating itself (`text`), once each time. */
+    private val onLoop: (String) -> Unit = {},
 ) {
     var state by mutableStateOf(GenState.Idle)
         private set
@@ -121,6 +128,7 @@ class Generation(
                 var limit = maxSteps
                 var nudges = 0
                 var emptyRetries = 0
+                var loopRetries = 0
                 while (true) {
                     val buffer = StringBuilder()
                     val thoughts = StringBuilder()
@@ -128,13 +136,18 @@ class Generation(
                     if (onToolRound != null && onStepLimit != null && activeTools != null && step > 0 && step >= limit) {
                         limit += onStepLimit.invoke(step)
                     }
-                    val offered = if (onToolRound != null && step < limit) activeTools else null
+                    val offered = if (onToolRound != null && step < limit && !toolsHalted()) activeTools else null
                     var pieces = 0
                     var liveAdded = 0
                     roundPieces = 0
                     roundStartedAt = System.currentTimeMillis()
+                    var looped = false
+                    var sinceCheck = 0
+                    // the last stretch of each kind of text, apart from the capped copy of the thoughts: a loop must be seen however long the round already is
+                    val thinkTail = StringBuilder()
+                    val textTail = StringBuilder()
                     try {
-                        client.chat(messages, json, offered).collect { chunk ->
+                        client.chat(messages, json, offered, repeatPenalty = if (loopRetries > 0) LOOP_RETRY_PENALTY else null).collect { chunk ->
                             if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) {
                                 onUsage(chunk)
                                 // the exact figures are in now: take back the estimate that stood in for them
@@ -162,10 +175,45 @@ class Generation(
                                 val now = System.currentTimeMillis()
                                 if (now - liveThinkingAt >= 100) { liveThinking = thoughts.toString(); liveThinkingAt = now }
                             }
+                            // the same stretch of text again and again (in the thoughts or in the answer): stop the round instead of waiting for the token limit
+                            sinceCheck += chunk.content.length + chunk.thinking.length
+                            thinkTail.append(chunk.thinking).trimTo(LoopGuard.WINDOW)
+                            textTail.append(chunk.content).trimTo(LoopGuard.WINDOW)
+                            if (sinceCheck >= LoopGuard.CHECK_EVERY && !chunk.done) {
+                                sinceCheck = 0
+                                val repeats = loopRepeats()
+                                if (repeats > 1 && (LoopGuard.repeating(thinkTail.toString(), repeats) || LoopGuard.repeating(textTail.toString(), repeats))) { looped = true; throw LoopStop() }
+                            }
                         }
+                    } catch (e: LoopStop) {
+                        // handled below: the stream is closed, what it wrote so far is still in the buffers
                     } finally {
                         // a cancelled or failed request never gets exact figures: do not leave its estimate in the counters
                         if (liveAdded != 0) onLive(-liveAdded)
+                    }
+                    if (looped) {
+                        onLoop("text")
+                        // it chanted its answer: keep the first round of it. It only thought in circles (or chanted again after the nudge): ask once more, out of
+                        // sight, with a stronger repeat penalty; a second time the reply is an error that says so rather than a wall of repeated text
+                        val answered = LoopGuard.withoutLoop(buffer.toString())
+                        if (loopRetries < MAX_LOOP_RETRIES) {
+                            loopRetries++
+                            roundThinking = ""
+                            messages = messages + (if (answered.isBlank()) emptyList() else listOf(ChatMessage.assistant(answered))) + ChatMessage.user(LoopGuard.TEXT_NUDGE)
+                            text = ""
+                            liveThinking = ""
+                            stats = null
+                            continue
+                        }
+                        if (answered.isBlank()) {
+                            error = "The model kept repeating itself and was stopped. Ask again, more narrowly, or try another model (Ctrl+O)."
+                            transition(GenState.Failed)
+                        } else {
+                            text = answered
+                            transition(GenState.Done)
+                            onComplete(answered, stats)
+                        }
+                        break
                     }
                     roundThinking = thoughts.toString().trim()
                     if (roundThinking.isNotEmpty()) liveThinking = roundThinking // the last chunks, which the throttle may have skipped
@@ -278,6 +326,18 @@ fun rememberGeneration(app: AppContext, feature: String): Generation {
 
 /** How many announcements in a row (without a tool call in between) are pushed on before the reply is accepted as it is. */
 private const val MAX_NUDGES = 2
+
+/** How often a round that repeated itself is asked again (with [LOOP_RETRY_PENALTY]) before the reply ends. */
+private const val MAX_LOOP_RETRIES = 1
+
+/** Ollama's `repeat_penalty` for the retry after a loop (the usual default is about 1.1). */
+private const val LOOP_RETRY_PENALTY = 1.2
+
+/** Drops the oldest characters once the builder is twice [keep] long, so it stays at about that size. */
+private fun StringBuilder.trimTo(keep: Int) { if (length > keep * 2) delete(0, length - keep) }
+
+/** Thrown inside the stream to close it when [LoopGuard] sees the text go in circles. */
+private class LoopStop : RuntimeException()
 
 /** The most thinking text kept for one reply; a reasoning model can write far more than anyone reads. */
 private const val MAX_THINKING_CHARS = 20_000

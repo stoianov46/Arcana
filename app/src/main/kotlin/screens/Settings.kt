@@ -36,7 +36,7 @@ import kotlinx.coroutines.launch
 private const val PRUNE_DAYS = 30
 
 private enum class Group(val title: String, val about: String = "") {
-    Ollama("Ollama"), Vault("Vault"), Library("Library"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Helpers("Helpers", "Models other than the chat model, and the master switch that turns them all off. The Oracul gives second opinions; the router sends images and code to their own models."), Opinions("Opinions", "When the Oracul speaks up by itself, the judge's verdict on it, and when it steps in because the chat model keeps failing."), Flow("Flow", "Every message through analyst, planner, worker, reviewer and controller, each its own model; specialists as tools; /goal."), Skills("Skills", "The worker, planner and reviewer a skill run uses (its own properties win), with their own on/off switch."), Sounds("Sounds"), Storage("Storage"), Accessibility("Accessibility"), Tabs("Tabs"),
+    Ollama("Ollama"), Vault("Vault"), Library("Library"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Helpers("Helpers", "Models other than the chat model, and the master switch that turns them all off. The Oracul gives second opinions; the router sends images and code to their own models."), Opinions("Opinions", "When the Oracul speaks up by itself, the judge's verdict on it, and when it steps in because the chat model keeps failing; the loop guard against a model that repeats itself needs no helper model."), Flow("Flow", "Every message through analyst, planner, worker, reviewer and controller, each its own model; specialists as tools; /goal."), Skills("Skills", "The worker, planner and reviewer a skill run uses (its own properties win), with their own on/off switch."), Sounds("Sounds"), Storage("Storage"), Accessibility("Accessibility"), Tabs("Tabs"),
 }
 
 /** How Enter edits a setting that is not simply stepped with ←/→. */
@@ -290,6 +290,8 @@ private val declared: List<Setting> = listOf(
     toggle(Group.Opinions, "Judge automatically", "On: when an automatic second opinion is due (see above), run a full comparison instead of one opinion: the Oracul answers the question too and the judge model compares both answers (as /compare does; the judge is shown as ⚖). Slow: three model runs instead of one, and more tokens. Off: the judge works only on /compare. The Oracul stepping in mid-turn and skill reviewers stay single opinions.", { it.oraculJudgeAuto }, { c, v -> c.copy(oraculJudgeAuto = v) }),
     choice(Group.Opinions, "Stuck: failed calls", "The main model counts as stuck after this many failed tool calls in one turn (errors, timeouts, commands that exit with an error). The Oracul then reads the attempts and its advice goes into the main model's loop, and again after every further such number. Needs an Oracul model and an automatic setting other than Off.", listOf("0" to "Never", "3" to "After 3", "4" to "After 4", "6" to "After 6", "8" to "After 8"), { it.stuckCalls.toString() }, { c, v -> c.copy(stuckCalls = v.toInt()) }),
     choice(Group.Opinions, "Stuck: failing turns", "An automatic review is due when this many turns in a row each had a failed tool call, even if each had only one (you keep coming back, the main model keeps failing). Used by On problems.", listOf("0" to "Never", "2" to "After 2", "3" to "After 3", "4" to "After 4", "5" to "After 5"), { it.stuckTurns.toString() }, { c, v -> c.copy(stuckTurns = v.toInt()) }),
+    choice(Group.Opinions, "Loop guard: repeated text", "A model sometimes writes the same passage again and again (in its thinking or in its answer) without any error. When the same stretch has come this many times in one round, Arcana stops the round, tells the model out of sight to decide and answer, and asks once more with a higher repeat penalty; if it loops again you get what it had written, or an error that says so. Never = the round runs until the model stops by itself.", listOf("0" to "Never", "3" to "After 3", "5" to "After 5", "8" to "After 8"), { it.loopRepeats.toString() }, { c, v -> c.copy(loopRepeats = v.toInt()) }),
+    choice(Group.Opinions, "Loop guard: repeated calls", "When the model makes the same tool call again (same tool, same arguments, nothing changed in between; a failed call counts too), this many times in one question, it is told out of sight to step back and try something different. At twice as many, the tools are taken away for the rest of the question and it has to answer with what it has. A change or a command that worked starts the count again. Never = no check.", listOf("0" to "Never", "2" to "After 2", "3" to "After 3", "4" to "After 4", "6" to "After 6"), { it.loopCalls.toString() }, { c, v -> c.copy(loopCalls = v.toInt()) }),
     choice(Group.Flow, "Flow", "A fixed sequence of models that handles every message: the analyst says what is really asked, the planner plans, the worker does it, the reviewer checks. Careful uses the models below (an unset stage takes the Oracul model; the worker is the chat model unless Skill worker is set) and a message under 60 characters goes straight to the worker. Off: the chat model answers, and skills use the role table. Slow and heavy: several models run for each message.", listOf("off" to "Off", "careful" to "Careful"), { it.flow }, { c, v -> c.copy(flow = v) }),
     Setting(Group.Flow, "Flow analyst", "The model that reads your request first and writes what is really asked, what is unclear and what a good result looks like (needs Flow: Careful). Blank: the Oracul model.", { it.flowAnalyst.ifEmpty { "(the Oracul model)" } }, editor = AnalystRole),
     Setting(Group.Flow, "Flow controller", "The model that checks the finished answer against your request and the reviewer's notes and says done or redo (needs Flow: Careful). On redo the worker is sent back with what to fix. Blank: the Oracul model.", { it.flowController.ifEmpty { "(the Oracul model)" } }, editor = ControllerRole),
@@ -413,6 +415,7 @@ private fun contextNote(app: AppContext): String {
 fun SettingsScreen(app: AppContext) {
     val scope = rememberCoroutineScope()
     val picker = remember { PickerState() }
+    val listScroll = rememberScrollState()
     val field = remember { TextFieldState() }
     var group by remember { mutableStateOf(Group.Ollama) }
     var index by remember { mutableIntStateOf(0) }
@@ -665,12 +668,18 @@ fun SettingsScreen(app: AppContext) {
                 VGap()
                 GroupBar(group)
                 VGap()
-                Panel(group.title) {
+                // the list scrolls with the cursor inside the panel: no option is ever cut off, whatever the window height
+                Panel(group.title, Modifier.flexible()) {
                     if (group == Group.Tabs) {
-                        TabList(index.coerceIn(0, Screen.sidebar.lastIndex))
+                        ScrollColumn(listScroll, Modifier.flexible(), follow = index.coerceIn(0, Screen.sidebar.lastIndex)) {
+                            TabList(index.coerceIn(0, Screen.sidebar.lastIndex))
+                        }
                     } else {
                         if (group.about.isNotEmpty()) { Label(group.about, color = Palette.Muted, wrap = true); VGap() }
-                        OptionList(app.config, inGroup, index.coerceIn(0, inGroup.lastIndex))
+                        val at = index.coerceIn(0, inGroup.lastIndex)
+                        ScrollColumn(listScroll, Modifier.flexible(), follow = optionChild(inGroup, at)) {
+                            OptionList(app.config, inGroup, at)
+                        }
                     }
                     if (group == Group.Appearance) {
                         VGap()
@@ -681,7 +690,7 @@ fun SettingsScreen(app: AppContext) {
                 if (group == Group.Tabs) {
                     if (!rememberDensity().compact) Hint("The first tab is where Arcana opens, and a tab's position decides its number key. Tabs move within their own section.")
                 } else {
-                    selected?.let { if (!rememberDensity().compact) Hint("${it.label}: ${it.help}" + (if (it.label == "Context window") contextNote(app) else "") + (adviceFor(app, it.label)?.let { advice -> "\n$advice" } ?: "")) }
+                    selected?.let { if (!rememberDensity().compact) Hint(shortened("${it.label}: ${it.help}" + (if (it.label == "Context window") contextNote(app) else "") + (adviceFor(app, it.label)?.let { advice -> "\n$advice" } ?: ""))) }
                 }
             }
             is Editing.Typing -> {
@@ -779,7 +788,7 @@ private fun GroupBar(current: Group) {
 
 /** A row that does nothing while its switch is off: the helper-model rows (but not the master switch itself or the goal) and the skill-role rows. */
 private fun inactive(config: AppConfig, s: Setting): Boolean = when (s.group) {
-    Group.Helpers, Group.Opinions, Group.Flow -> !config.oraculEnabled && s.label != "Helper models" && s.label != "Goal turns"
+    Group.Helpers, Group.Opinions, Group.Flow -> !config.oraculEnabled && s.label != "Helper models" && s.label != "Goal turns" && !s.label.startsWith("Loop guard")
     Group.Skills -> !config.skillRolesEnabled && s.label != "Skill roles"
     else -> false
 }
@@ -805,6 +814,28 @@ private fun OptionList(config: AppConfig, items: List<Setting>, selected: Int) {
             Label(if (on && s.step != null) " ›" else "", color = Palette.Muted)
         }
     }
+}
+
+/**
+ * [text] cut to a fifth of the window's rows, ending in "…" when there was more: the help under the list must not take the rows
+ * the list needs (the full text is one Enter away, where it has the whole panel).
+ */
+@Composable
+private fun shortened(text: String): String {
+    val cap = (LocalContentHeight.current / 5).coerceIn(2, 8)
+    val lines = text.split('\n').flatMap { wrap(it, (LocalContentWidth.current - 4).coerceAtLeast(20)) }
+    return if (lines.size <= cap) text else lines.take(cap).joinToString("\n").trimEnd() + "…"
+}
+
+/** The index, among the children [OptionList] draws (section headings included), of option [selected]. */
+private fun optionChild(items: List<Setting>, selected: Int): Int {
+    var child = 0
+    for (i in 0..selected.coerceAtMost(items.lastIndex)) {
+        val section = sectionOf(items[i])
+        if (section != null && section != sectionOf(items.getOrNull(i - 1) ?: items[i]).takeIf { i > 0 }) child++
+        if (i < selected) child++
+    }
+    return child
 }
 
 /** The sidebar tabs in their current order, with the number key each one has; the chosen one can be moved. */

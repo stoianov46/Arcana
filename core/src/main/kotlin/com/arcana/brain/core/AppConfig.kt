@@ -142,6 +142,10 @@ data class AppConfig(
     val stuckCalls: Int = 4,
     /** An automatic review is due after this many turns in a row that each had a failed tool call; 0 = never. */
     val stuckTurns: Int = 3,
+    /** The loop guard stops a round whose text (thinking or answer) has repeated the same stretch this many times, and retries it once with a nudge; 0 = off. */
+    val loopRepeats: Int = 5,
+    /** The loop guard warns a model that repeats an identical tool call (nothing changed in between) at this many repeats in one turn, and takes the tools away at twice as many; 0 = off. */
+    val loopCalls: Int = 3,
     /** The Oracul may use the worker's tools to check an answer (reads follow *Read without asking*; every change, command and web access asks the user, even in Auto mode). Needs tools on and an Oracul model that supports them. */
     val oraculTools: Boolean = true,
     /** The first-run setup (vault, memory file, skills) was finished or skipped; it opens by itself only until then. */

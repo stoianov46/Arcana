@@ -43,6 +43,8 @@ object Events {
     const val COMPACT = "compact"
     /** The memory tool: detail `duplicate` (not added) or `refused` (dead note path). */
     const val MEMORY = "memory"
+    /** The loop guard stepped in: detail `text` (a round stopped for repeating itself), `calls` (a warning for repeated tool calls) or `halt` (tools taken away). */
+    const val LOOP = "loop"
     /** A file or note the tools wrote: detail = what happened (`created`, `edited`, …). */
     const val ARTIFACT = "artifact"
 }
@@ -87,6 +89,8 @@ data class TeamStats(
     val routes: List<Pair<String, Int>>, val consults: List<Pair<String, Int>>,
     val autoRevises: Int, val todoNudges: Int,
     val cancels: Int, val compacts: Int, val memoryDuplicates: Int, val memoryRefused: Int, val artifacts: List<Pair<String, Int>>,
+    /** What the loop guard did: `text`, `calls`, `halt` and how often. */
+    val loops: Map<String, Int> = emptyMap(),
 ) {
     val helperShare: Double get() = (chatTokens + helperTokens).let { if (it == 0L) 0.0 else helperTokens.toDouble() / it }
     val helperCostShare: Double get() = (chatCost + helperCost).let { if (it <= 0.0) 0.0 else helperCost / it }
@@ -133,6 +137,7 @@ object TeamStatsBuilder {
             cancels = count(Events.CANCEL), compacts = count(Events.COMPACT),
             memoryDuplicates = count(Events.MEMORY, "duplicate"), memoryRefused = count(Events.MEMORY, "refused"),
             artifacts = counts(Events.ARTIFACT) { it.detail },
+            loops = events.filter { it.kind == Events.LOOP }.groupingBy { it.detail }.eachCount(),
         )
     }
 

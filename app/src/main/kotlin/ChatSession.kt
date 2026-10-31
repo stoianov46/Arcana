@@ -18,6 +18,7 @@ import com.arcana.brain.core.Artifacts
 import com.arcana.brain.core.CONSULT
 import com.arcana.brain.core.CONSULT_DEFINITION
 import com.arcana.brain.core.Events
+import com.arcana.brain.core.LoopGuard
 import com.arcana.brain.core.Flow
 import com.arcana.brain.core.MAX_CONSULTS
 import com.arcana.brain.core.Route
@@ -137,6 +138,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             textCalls = { app.config.textCalls },
             confirmTextCalls = ::confirmTextCalls,
             gate = { skillRun?.nudge() },
+            loopRepeats = { app.config.loopRepeats },
+            toolsHalted = { loopCalls.halted },
+            onLoop = { app.recordEvent(Events.LOOP, it) },
             refresh = { refreshRequest?.takeIf { autoCompactDue(messages.toList()) }?.let { rebuild -> runCatching { compact(auto = true) }.getOrNull()?.let { rebuild() } } },
         )
     }
@@ -628,6 +632,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val request = ChatMessage.assistantCalls(text, calls, stats, gen.takeThinking())
         add(request)
         added += request
+        var loopStep = LoopGuard.Step.None
         for (call in calls) {
             // read again for every call: an earlier call of this round may have switched the mode, which rebuilds the toolbox
             val box = toolbox
@@ -649,6 +654,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val spec = box.find(call.name)
             // the same read, search or page asked for again in this turn, with nothing changed since: answer it from what the turn already has (no run, no dialog)
             val callKey = call.name + " " + call.arguments
+            if (spec != null && spec.name !in NEVER_REMEMBERED) loopCalls.note(callKey).let { if (it > loopStep) loopStep = it }
             val earlier = if (spec != null && repeatable(spec)) turnCalls[callKey]?.takeIf { System.currentTimeMillis() - it.first < app.config.repeatMemorySeconds * 1000L }?.second else null
             if (earlier != null) {
                 val message = ChatMessage.toolResult(call.name, "You already made this exact call earlier in this turn and nothing has changed since, so the result is the same as the one above in this conversation (it began: $earlier). Use that result instead of asking again; if you need something different, change the arguments.")
@@ -736,7 +742,11 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             // remember a read for the rest of the turn; anything that changes or runs something makes an older read untrustworthy
             if (allowed && spec != null) {
                 // a change, a command or a pause (time passes, a rate limit resets) makes older reads untrustworthy; a failed result is never remembered, so a retry really runs
-                if (!repeatable(spec) || spec.name in CLEARS_MEMORY) turnCalls.clear()
+                if (!repeatable(spec) || spec.name in CLEARS_MEMORY) {
+                    turnCalls.clear()
+                    // a change or a command that worked makes an older call new again; one that failed changed nothing, so asking it again is still a repeat
+                    if (!Oracul.isFailure(ChatMessage.toolResult(call.name, result))) loopCalls.forget()
+                }
                 if (repeatable(spec) && !FAILURE_LOOK.containsMatchIn(result.take(300))) turnCalls[callKey] = System.currentTimeMillis() to result.take(160).replace('\n', ' ')
             }
             if (allowed && spec != null && !result.startsWith("Error:")) {
@@ -761,6 +771,12 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 if (skill != null && runWorker == null && runReviewer == null) applyRoles(skill.path) // a plan is only written at the start of a message, not here
             }
             skillRun?.let { it.observe(call.name, call.arguments.toString(), result); skillTick++ }
+        }
+        // the same calls again and again: a warning first, then the tools are taken away so the model has to answer (out of sight, like Generation's own nudges)
+        if (loopStep != LoopGuard.Step.None) {
+            val warn = loopStep == LoopGuard.Step.Warn
+            app.recordEvent(Events.LOOP, if (warn) "calls" else "halt")
+            added += ChatMessage.user(if (warn) LoopGuard.CALLS_NUDGE else LoopGuard.HALT_NUDGE)
         }
         // the turn keeps failing: the Oracul reads the attempts and its advice joins the loop, so the next round starts from it
         stuckAdvice()?.let { add(it); added += it }
@@ -1044,6 +1060,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** The reads, searches and page fetches of the current turn, with the start of what each returned: an identical repeat is not run (or asked about) again. Cleared with every new question and by anything that changes or runs something. */
     private val turnCalls = HashMap<String, Pair<Long, String>>()
 
+    /** The loop guard's count of identical calls in this turn, a failed one too (see [LoopGuard.Calls]): a warning to the model, then the tools are taken away. Cleared with every new question. */
+    private val loopCalls = LoopGuard.Calls { app.config.loopCalls }
+
     /** What may be answered from [turnCalls]: tools that only look (and the web reads, which would ask the user again for the same address). */
     private fun repeatable(spec: com.arcana.brain.core.ToolSpec) = spec.name !in NEVER_REMEMBERED && (spec.risk == ToolRisk.Read || spec.name == "fetch_url" || spec.name == "web_search")
 
@@ -1284,6 +1303,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         clearRoles()
         stuckAdvised = 0
         turnCalls.clear()
+        loopCalls.reset()
         // ...and a skill chip on it starts a run of that skill (its required steps are then watched)
         history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }?.let { entry ->
             val vault = app.openVault().getOrNull()
