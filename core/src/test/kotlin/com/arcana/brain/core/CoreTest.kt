@@ -1183,6 +1183,21 @@ class CoreTest {
     }
 
     @Test
+    fun thinkingValuesAreReadFromShowAndSentAsThinkOnlyWhenAsked() {
+        val binary = """{"capabilities":["thinking"],"thinking":{"values":[false,true],"default":true}}"""
+        assertEquals(listOf("false", "true") to "true", OllamaProtocol.parseThinking(binary))
+        assertEquals(listOf("low", "medium", "high") to "medium", OllamaProtocol.parseThinking("""{"thinking":{"values":["low","medium","high"],"default":"medium"}}"""))
+        assertEquals(emptyList<String>() to "", OllamaProtocol.parseThinking("""{"capabilities":["completion"]}"""))
+        assertEquals(null, OllamaProtocol.thinkValue("default"))
+        assertEquals("false", OllamaProtocol.thinkValue("off")?.toString())
+        assertEquals("true", OllamaProtocol.thinkValue("on")?.toString())
+        assertEquals("\"low\"", OllamaProtocol.thinkValue("low")?.toString())
+        val messages = listOf(ChatMessage.user("hi"))
+        assertTrue("think" !in OllamaProtocol.chatRequest(AppConfig(), messages))
+        assertEquals("false", OllamaProtocol.chatRequest(AppConfig(), messages, think = OllamaProtocol.thinkValue("off"))["think"].toString())
+    }
+
+    @Test
     fun contextLengthIsReadFromModelInfoAndAskedForWhenSet() {
         val body = """{"capabilities":["tools"],"model_info":{"general.architecture":"gemma4","gemma4.context_length":131072,"gemma4.embedding_length":2560}}"""
         assertEquals(131072, OllamaProtocol.parseContextLength(body))

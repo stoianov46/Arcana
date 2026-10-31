@@ -31,6 +31,9 @@ data class AppConfig(
     val navPosition: String = "left",
     /** The sidebar logo's colours sweep while the model is generating. */
     val animateLogo: Boolean = true,
+    val showModelTraits: Boolean = true,
+    /** The `think` of a request: "default" (the model decides), "off", "on", or a level ("low", "medium", "high") for a model that lists it. */
+    val thinking: String = "default",
     /** Plain words and ASCII instead of decorative glyphs and frames, for screen readers. */
     val plainGlyphs: Boolean = false,
     /** Render Markdown in output (headings, bullets, code); off shows the model's text as written. */
@@ -169,8 +172,10 @@ data class AppConfig(
     val toolSteps: Int = 8,
     /** A pane under the Chat conversation that shows what a reasoning model is thinking while it streams (and the last thoughts when it is idle). Off by default. */
     val thinkingPane: Boolean = false,
-    /** How many text rows the thinking pane shows (it follows the end of the stream). */
-    val thinkingPaneRows: Int = 6,
+    /** Where the thinking pane sits around the conversation: "bottom", "top", "left" or "right". */
+    val thinkingPanePlacement: String = "bottom",
+    /** How much of the main axis the thinking pane takes, in percent: of the height for "top" and "bottom", of the width for "left" and "right". */
+    val thinkingPanePercent: Int = 30,
     /** What happens to the results of tools from earlier turns when the chat is sent again: "whole" (kept as they were; the default, nothing is cut silently) or "shorten" (each cut to 1,200 characters, for small context windows). */
     val oldToolOutput: String = "whole",
     /** How many seconds an identical read, search or page fetch of the current question is answered from memory instead of being run (and asked about) again; 0 = every call runs. */

@@ -43,6 +43,12 @@ import com.arcana.brain.core.UsageStats
 import com.arcana.brain.core.Vault
 import com.arcana.brain.app.SystemOpen
 import com.jakewharton.mosaic.ui.Row
+import com.jakewharton.mosaic.ui.Box
+import com.jakewharton.mosaic.layout.height
+import com.jakewharton.mosaic.layout.fillMaxWidth
+import com.jakewharton.mosaic.ui.RowScope
+import com.jakewharton.mosaic.modifier.Modifier
+import androidx.compose.runtime.CompositionLocalProvider
 import java.nio.file.Path
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonPrimitive
@@ -104,6 +110,7 @@ internal val SlashCommands = listOf(
     SlashItem("/compact", "Summarize the older part of this chat to free the context window", false),
     SlashItem("/mode", "Tools mode: ask, auto, plan (cycles)", false),
     SlashItem("/autorun", "Run shell commands without asking (toggle)", false),
+    SlashItem("/think", "Model thinking: model default, off (fast), on (cycles through what the model offers)", false),
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false, usage = "e.g. /memory check   (finds repeated lines and dead note paths, asks before removing)"),
     SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
     SlashItem("/helpers", "All helper models on or off: Oracul, judge, flow, specialists, router (toggle). Off = only the chat model works", false),
@@ -128,6 +135,7 @@ internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean
     "/mode" -> if (!config.toolsEnabled) "TOOLS OFF" to Palette.Dim else config.toolMode.uppercase() to when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }
     "/oracul" -> if (!config.oraculEnabled) "HELPERS OFF" to Palette.Dim else if (config.oraculModel.isBlank()) "NO MODEL" to Palette.Dim else (if (config.oraculAuto == "off") "MANUAL" else "AUTO ${config.oraculAuto.uppercase()}") to Palette.Green
     "/compact" -> if (config.autoCompactPercent > 0) "AUTO ${config.autoCompactPercent}%" to Palette.Green else "MANUAL" to Palette.Dim
+    "/think" -> thinkText(config.thinking) to if (config.thinking == "default") Palette.Dim else Palette.Accent
     "/autorun" -> if (!config.toolShell) "SHELL OFF" to Palette.Dim else if (config.toolAutoShell) "ON" to Palette.Red else "OFF" to Palette.Dim
     "/memory" -> if (config.memoryEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/skills" -> if (config.skillsEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
@@ -157,6 +165,77 @@ internal fun slashMatches(items: List<SlashItem>, query: String): List<SlashItem
     val names = { item: SlashItem -> item.name.lowercase().removePrefix("/") }
     // commands, then skills, then tools (so each kind sits together and is easy to tell apart); inside a kind the names that start with the text come first
     return (items.filter { names(it).startsWith(q) } + items.filter { !names(it).startsWith(q) && q in names(it) }).sortedBy { it.kind.category.ordinal }
+}
+
+/** The Chat key map (`?`): every key and command by what it is for, the ones about the model first. */
+fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf(
+    com.arcana.brain.app.navigation.KeySection("The model: thinking, tools, memory", listOf(
+        "/think" to "thinking: model default, off (fast), on",
+        "/thinking" to "thinking pane under the conversation",
+        "/mode" to "tools: ask, auto, plan",
+        "/tools" to "tools on or off",
+        "/autorun" to "shell commands without asking",
+        "/vault" to "answer from your vault notes",
+        "/compact" to "summarize old messages, free the context",
+        "/memory" to "ARCANA.md, your standing instructions",
+    )),
+    com.arcana.brain.app.navigation.KeySection("More models: opinion, flow, goal", listOf(
+        "/oracul [model]" to "second opinion on the last answer",
+        "/revise [note]" to "the main model revises with it",
+        "/takeover" to "the Oracul finishes a failed turn",
+        "/compare [model]" to "the Oracul answers, a judge compares",
+        "/flow [name]" to "analyst, planner, worker, reviewer, controller",
+        "/goal [text]" to "keep working until a checker says done",
+        "/helpers, /roles" to "helper models, skill roles on or off",
+        "/skills" to "skills from your vault on or off",
+    )),
+    com.arcana.brain.app.navigation.KeySection("The message field", listOf(
+        "Enter" to "send",
+        "Alt+Enter, \\ Enter" to "new line",
+        "/" to "commands and tools (↑↓ Tab Enter)",
+        "@" to "attach a note",
+        Shortcuts.label("Ctrl+O") to "attach a file or picture",
+        Shortcuts.label("Ctrl+S") to "save the chat to the vault",
+        "↑↓ PgUp PgDn" to "scroll the conversation",
+        "Backspace" to "empty field: undo attach, then queued",
+        "Esc" to "browse the conversation",
+    )),
+    com.arcana.brain.app.navigation.KeySection("While the model works", listOf(
+        "Enter" to "queue a message for after the reply",
+        "Esc" to "cancel the reply (asks first)",
+        Shortcuts.label("Ctrl+T") to "thinking pane: show it, resize it, then hide it",
+        "↑↓" to "scroll while it writes",
+    )),
+    com.arcana.brain.app.navigation.KeySection("Browsing (Esc from the field)", listOf(
+        "Enter" to "back to typing",
+        "↑↓ j k" to "scroll;  Space PgDn: a page;  g G: top, end",
+        "s" to "select & copy (Space tick, c copy, b code)",
+        "f" to "files and notes the model changed",
+    )),
+    com.arcana.brain.app.navigation.KeySection("The chat and its notes", listOf(
+        "/new, /history" to "a new chat, an earlier chat",
+        "/clear" to "erase this chat",
+        "/save" to "save it as a note",
+        "/append, /replace" to "put the last answer into a note",
+        "/note, /image" to "attach a note, a file or picture",
+        "/artifacts" to "files and notes written in this chat",
+    )),
+)
+
+/** The values of [model] `think` as the setting names them: `default`, then `off`, `on` and levels, only what the model lists. */
+internal fun thinkOptions(values: List<String>): List<String> =
+    if (values.isEmpty()) listOf("default") else listOf("default") + values.map { when (it) { "false" -> "off"; "true" -> "on"; else -> it } }.distinct()
+
+internal fun thinkText(setting: String): String = if (setting == "default") "MODEL DEFAULT" else setting.uppercase()
+
+/** `✦ think auto`, `◌ think off` or `✦ think low`: what is sent as `think`; off is blue (fast), the rest accent. */
+internal fun thinkingSegment(app: AppContext, plain: Boolean): StatusSegment {
+    val setting = app.config.thinking
+    // a setting the model does not list is not sent: the model decides
+    val effective = if (setting in thinkOptions(app.thinkingValues)) setting else "default"
+    val word = if (effective == "default") "auto" else effective
+    val glyph = if (plain) "" else if (effective == "off") "◌ " else "✦ "
+    return statusSegment("", "${glyph}think $word", if (effective == "off") Palette.Blue else Palette.Accent, 8, bold = true)
 }
 
 /** How full the model's context was after the last reply (its prompt plus its answer) as a share and a `13.6k/131k` text; null before the first reply or when the size is unknown. */
@@ -253,6 +332,8 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         // the models, one segment: whoever works now comes first as a filled pill, the other one after it, quiet
         add(modelsSegment(ModelIcon.label(config.model, plain), chat.consulting, config, plain, width, app.memoryAdvice(Oracul.model(config), com.arcana.brain.core.ModelFit.Role.Oracul)?.startsWith("⚠") == true))
         add(statusSegment("temperature", "°${config.temperature}", Palette.Accent, 6))
+        // the model's thinking: a core fact of how it answers (off is much faster); shown when the model can think
+        if (app.thinkingValues.isNotEmpty()) add(thinkingSegment(app, plain))
         if (config.chatUseVault) add(statusSegment("", "◉ vault", Palette.Cta, 6, bold = true, second = true))
         // the goal of this chat (/goal): shown so it is clear what the work is for
         chat.goal?.let { add(pillSegment("◎ goal: ${it.replace('\n', ' ').take(40)}${if (it.length > 40) "…" else ""}", Palette.Cta, 8)) }
@@ -292,12 +373,12 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         }
         if (config.toolsEnabled) {
             if (app.tools == false) add(pillSegment("⚠ no tools", Palette.Red, 8))
-            else add(statusSegment("", "⚙ ${config.toolMode}", when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }, 8, bold = true))
+            else add(statusSegment("", "⚙ ${config.toolMode}", when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }, 8, bold = true, second = true))
             // the project the model works in: its folder name, so it is clear where relative paths and commands start
             if (config.projectFolder.isNotBlank()) add(statusSegment("", (if (plain) "project " else "▣ ") + java.nio.file.Path.of(config.projectFolder.trimEnd('/')).fileName, Palette.Cta, 5, second = true))
-            // commands run without asking: said loudly, in the colour of high risk
-            if (config.toolWeb && config.toolAutoSearch && config.toolMode != "plan") add(pillSegment(if (plain) "auto-search" else "↗ auto-search", Palette.Orange, 8))
-            if (config.toolShell && config.toolAutoShell && config.toolMode != "plan") add(pillSegment(if (plain) "! auto-run" else "▶ auto-run", Palette.Red, 9))
+            // commands run without asking: said in the colour of risk, but as bold text, not a filled block that shouts over the bar
+            if (config.toolWeb && config.toolAutoSearch && config.toolMode != "plan") add(statusSegment("", if (plain) "auto-search" else "↗ auto-search", Palette.Orange, 8, bold = true, second = true))
+            if (config.toolShell && config.toolAutoShell && config.toolMode != "plan") add(statusSegment("", if (plain) "! auto-run" else "▶ auto-run", Palette.Red, 9, bold = true, second = true))
         }
     }
 }
@@ -517,12 +598,17 @@ fun ChatScreen(app: AppContext) {
         toast(if (on) "Thinking pane on: it follows the model's thoughts under the conversation (needs a model that can think and a terminal at least 26 rows tall)." else "Thinking pane off.")
     }
 
-    /** Ctrl+T: the pane's height steps through [THINKING_SIZES] (it is switched on first when it is off), and the new height is kept in the settings. */
+    /** Ctrl+T: switches the pane on, then steps its size through [THINKING_SIZES], and after the last size switches it off again (the next press starts over at the first size). */
     fun resizeThinkingPane() {
         if (!app.config.thinkingPane) { toggleThinkingPane(); return }
-        val next = THINKING_SIZES.firstOrNull { it > app.config.thinkingPaneRows } ?: THINKING_SIZES.first()
-        app.update(app.config.copy(thinkingPaneRows = next))
-        toast("Thinking pane: $next rows (Ctrl+T steps through ${THINKING_SIZES.joinToString(", ")}; Settings → Console sets any height from 2 to 30).")
+        val next = THINKING_SIZES.firstOrNull { it > app.config.thinkingPanePercent }
+        if (next == null) {
+            app.update(app.config.copy(thinkingPane = false, thinkingPanePercent = THINKING_SIZES.first()))
+            toast("Thinking pane off (Ctrl+T turns it on again at ${THINKING_SIZES.first()} %).")
+            return
+        }
+        app.update(app.config.copy(thinkingPanePercent = next))
+        toast("Thinking pane: $next % (Ctrl+T steps through ${THINKING_SIZES.joinToString(", ")} % and then turns it off; Settings → Console sets the size and the placement).")
     }
 
     fun toggleSkills() {
@@ -588,6 +674,20 @@ fun ChatScreen(app: AppContext) {
         }
     }
 
+    /** `/think`: the next thinking value the model accepts (model default, off, on, or its levels). */
+    fun cycleThinking() {
+        val options = thinkOptions(app.thinkingValues)
+        if (options.size < 2) return toast(if (app.thinkingValues.isEmpty()) "${app.config.model} does not offer a thinking switch (Ollama lists none), so nothing is sent." else "${app.config.model} has no thinking choice.", error = true)
+        val next = options[(options.indexOf(app.config.thinking).coerceAtLeast(0) + 1) % options.size]
+        app.update(app.config.copy(thinking = next))
+        toast(when (next) {
+            "off" -> "Thinking off: the model answers at once (much faster; weaker on hard questions)."
+            "default" -> "Thinking: the model decides (its default is ${if (app.thinkingDefault == "false") "off" else "on"})."
+            "on" -> "Thinking on: the model reasons before it answers."
+            else -> "Thinking effort: $next."
+        })
+    }
+
     fun toggleAutoRun() {
         if (!app.config.toolShell) return toast("Shell commands are off. Turn them on in Settings → Tools first.", error = true)
         val on = !app.config.toolAutoShell
@@ -645,6 +745,7 @@ fun ChatScreen(app: AppContext) {
             "/goal" -> runGoal(args)
             "/mode" -> cycleMode()
             "/autorun" -> toggleAutoRun()
+            "/think" -> cycleThinking()
             "/compact" -> runCompact()
             "/oracul" -> runOracul(compare = false, only = args.ifEmpty { null })
             "/compare" -> runOracul(compare = true, only = args.ifEmpty { null })
@@ -695,7 +796,7 @@ fun ChatScreen(app: AppContext) {
             Command("Attach a file or picture…", "Chat", "Ctrl+O") { openAttach() },
             Command("Memory file (ARCANA.md): open and edit", "Chat", "/memory") { openMemory() },
             Command(if (app.config.skillsEnabled) "Skills: turn off" else "Skills: turn on (list them)", "Chat", "/skills") { toggleSkills() },
-            Command("Thinking pane: change its height (Ctrl+T)", "Chat", "Ctrl+T") { resizeThinkingPane() },
+            Command("Thinking pane: size, then off (Ctrl+T)", "Chat", "Ctrl+T") { resizeThinkingPane() },
             Command(if (app.config.thinkingPane) "Thinking pane: turn off" else "Thinking pane: show the model's thoughts live", "Chat", "/thinking") { toggleThinkingPane() },
             Command("Tools mode: ${app.config.toolMode} → next (ask, auto, plan)", "Chat", "/mode", app.config.toolsEnabled) { cycleMode() },
             Command("Oracul: second opinion on the last answer", "Chat", "/oracul", lastAnswer != null) { runOracul(compare = false) },
@@ -774,7 +875,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.PickTarget -> Hints("type  search", "↑↓  move", "Enter  ${target.verb.lowercase()}", "Esc  cancel")
         ChatMode.Chat -> when {
             output.selecting -> Hints("↑↓  move", "Space  tick", "c  copy", "b  code only", "Esc  leave")
-            gen.state == GenState.Running -> Hints("Enter  queue a message", *(if (chat.queued.isNotEmpty()) arrayOf("Backspace  remove queued") else emptyArray()), "Esc Esc  cancel reply", "↑↓  scroll", *(if (app.config.thinkingPane) arrayOf("Ctrl+T  thinking size") else emptyArray()))
+            gen.state == GenState.Running -> Hints("Enter  queue a message", *(if (chat.queued.isNotEmpty()) arrayOf("Backspace  remove queued") else emptyArray()), "Esc  cancel reply", "↑↓  scroll", *(if (app.config.thinkingPane) arrayOf("Ctrl+T  thinking size") else emptyArray()))
             browsing -> Hints("Enter  type a message", "s  select & copy", "↑↓/Space  scroll", "1-9  screens")
             slashMatches.isNotEmpty() -> Hints("↑↓  choose", "Tab  complete", "Enter  run", "Esc  close")
             else -> Hints("Enter  send", "Alt+Enter  new line", "/  commands", "@  note", "Ctrl+O  attach", "Ctrl+S  save", "↑↓  scroll", "Esc  browse")
@@ -1111,42 +1212,66 @@ fun ChatScreen(app: AppContext) {
                 val statusRows = statusRowCount(statusSegments, LocalContentWidth.current)
                 val bottomGap = if (rememberDensity().tiny) 0 else 1
                 VGap()
-                // the thinking pane: a split window under the conversation (counted exactly, like everything else on the screen)
-                val paneRows = if (app.config.thinkingPane && question == null && approval == null && LocalContentHeight.current >= 26) app.config.thinkingPaneRows.coerceIn(2, 30).coerceAtMost(LocalContentHeight.current * 2 / 5) + 2 else 0
-                Panel("Conversation") {
-                    val width = outputWidth()
-                    val lines = buildList {
-                        if (chat.messages.isEmpty() && gen.text.isEmpty()) {
-                            add(Line(Shortcuts.label("› Press Enter to start typing. Ask your second brain anything. @ attaches a note, Ctrl+O a file or picture, /vault makes answers come from your notes."), Palette.Hint))
-                            add(Line(Shortcuts.label("› Ctrl+P lists every action. Esc leaves the field to scroll and copy."), Palette.Hint))
-                            if (!app.config.toolsEnabled) add(Line("› Tools are off: type /tools so the model can read and write your notes and files (it asks before changing anything).", Palette.Hint))
+                // Everything under the conversation is counted exactly, so it fills the rest of the height.
+                val inputRows = wrapRows(input.text, (LocalContentWidth.current - 4).coerceAtLeast(10)).size.coerceIn(1, maxInputRows())
+                val qLines = if (question != null) questionLines(question, panelWidth()) else emptyList()
+                // the buttons of a dialog sit inside it, at the bottom; the message field keeps its buttons under the status bar
+                val panelActions = if (question != null) questionActions(question) else if (approval != null) approvalActions(approval) else null
+                val panelActionRows = panelActions?.let { breakIntoLines(it, panelWidth()).size + (if (rememberDensity().tiny) 0 else 1) } ?: 0
+                val actions = if (panelActions != null) null else chatActions(browsing, entries.isNotEmpty(), chat.artifacts.isNotEmpty())
+                val pendingRow = chat.attachments.rows
+                val statusRow = if (gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled || chat.consulting != null) 1 else 0
+                // what sits under the conversation: the message field, or the change waiting for an answer
+                val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
+                val queuedRows = if (question == null && approval == null) chat.queued.size.coerceAtMost(QUEUE_SHOWN + 1) else 0
+                val below = queuedRows + (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval, approvalMax()).size + 3 else 2 + inputRows + pendingRow + slashMatches.size + (if (slashUsage.isEmpty()) 0 else 1)) + statusRows + panelActionRows
+                // the thinking pane: a split window around the conversation (a strip above or below it, a column beside it)
+                val freeRows = outputRows(fixed = 3 + 2 + statusRow + below + bottomGap, actions = actions)
+                val pane = if (app.config.thinkingPane && question == null && approval == null) thinkingPaneLayout(app.config.thinkingPanePlacement, app.config.thinkingPanePercent, LocalContentWidth.current, LocalContentHeight.current, freeRows + statusRow + 2) else null
+                val side = pane != null && pane.placement.let { it == "left" || it == "right" }
+                val stripRows = if (pane != null && !side) pane.size + 2 else 0
+                val scrollRows = freeRows - stripRows
+                val conversation: @Composable () -> Unit = {
+                    Panel("Conversation") {
+                        val width = outputWidth()
+                        val lines = buildList {
+                            if (chat.messages.isEmpty() && gen.text.isEmpty()) {
+                                add(Line(Shortcuts.label("› Press Enter to start typing. Ask your second brain anything. @ attaches a note, Ctrl+O a file or picture, /vault makes answers come from your notes."), Palette.Hint))
+                                add(Line(Shortcuts.label("› Ctrl+P lists every action. Esc leaves the field to scroll and copy."), Palette.Hint))
+                                if (!app.config.toolsEnabled) add(Line("› Tools are off: type /tools so the model can read and write your notes and files (it asks before changing anything).", Palette.Hint))
+                            }
+                            var next = 0
+                            // the opinion nobody has answered yet says how to use it
+                            val openOpinion = if (Oracul.hasOpenOpinion(shownMessages)) shownMessages.last { Oracul.isReview(it) } else null
+                            shownMessages.forEach { m ->
+                                addAll(messageLines(app, m, next, width, applyHint = m === openOpinion))
+                                next += entriesOf(m).size
+                            }
                         }
-                        var next = 0
-                        // the opinion nobody has answered yet says how to use it
-                        val openOpinion = if (Oracul.hasOpenOpinion(shownMessages)) shownMessages.last { Oracul.isReview(it) } else null
-                        shownMessages.forEach { m ->
-                            addAll(messageLines(app, m, next, width, applyHint = m === openOpinion))
-                            next += entriesOf(m).size
+                        output.copyPlain = app.config.copyAs == "plain"
+                        ScrollView(lines, scrollRows, output)
+                        ReplyStatus(app, gen, consulting = chat.consulting, consultingSince = chat.consultingSince, consultingStage = chat.consultingStage)
+                    }
+                }
+                if (pane != null && side) {
+                    val total = LocalContentWidth.current
+                    val convWidth = total - pane.size - 1
+                    val paneHeight = scrollRows + statusRow + 2
+                    val paneBox: @Composable RowScope.() -> Unit = {
+                        Box(Modifier.weight(pane.size.toFloat() / total)) {
+                            CompositionLocalProvider(LocalContentWidth provides pane.size) { ThinkingPane(gen, chat, paneHeight - 2, app.config.model, Modifier.height(paneHeight)) }
                         }
                     }
-                    output.copyPlain = app.config.copyAs == "plain"
-                    // Everything under the panel is counted exactly, so the conversation fills the rest of the height.
-                    val inputRows = wrapRows(input.text, (LocalContentWidth.current - 4).coerceAtLeast(10)).size.coerceIn(1, maxInputRows())
-                    val qLines = if (question != null) questionLines(question, panelWidth()) else emptyList()
-                    // the buttons of a dialog sit inside it, at the bottom; the message field keeps its buttons under the status bar
-                    val panelActions = if (question != null) questionActions(question) else if (approval != null) approvalActions(approval) else null
-                    val panelActionRows = panelActions?.let { breakIntoLines(it, panelWidth()).size + (if (rememberDensity().tiny) 0 else 1) } ?: 0
-                    val actions = if (panelActions != null) null else chatActions(browsing, entries.isNotEmpty(), chat.artifacts.isNotEmpty())
-                    val pendingRow = chat.attachments.rows
-                    val statusRow = if (gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled || chat.consulting != null) 1 else 0
-                    // what sits under the conversation: the message field, or the change waiting for an answer
-                    val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
-                    val queuedRows = if (question == null && approval == null) chat.queued.size.coerceAtMost(QUEUE_SHOWN + 1) else 0
-                    val below = queuedRows + (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval, approvalMax()).size + 3 else 2 + inputRows + pendingRow + slashMatches.size + (if (slashUsage.isEmpty()) 0 else 1)) + statusRows + panelActionRows
-                    ScrollView(lines, outputRows(fixed = 3 + 2 + statusRow + below + bottomGap + paneRows, actions = actions), output)
-                    ReplyStatus(app, gen, consulting = chat.consulting, consultingSince = chat.consultingSince, consultingStage = chat.consultingStage)
+                    Row(Modifier.fillMaxWidth()) {
+                        if (pane.placement == "left") { paneBox(); HGap() }
+                        Box(Modifier.weight(convWidth.toFloat() / total)) { CompositionLocalProvider(LocalContentWidth provides convWidth) { conversation() } }
+                        if (pane.placement == "right") { HGap(); paneBox() }
+                    }
+                } else {
+                    if (pane?.placement == "top") ThinkingPane(gen, chat, pane.size, app.config.model)
+                    conversation()
+                    if (pane != null && pane.placement == "bottom") ThinkingPane(gen, chat, pane.size, app.config.model)
                 }
-                if (paneRows > 0) ThinkingPane(gen, chat, paneRows - 2, app.config.model)
                 if (question != null) {
                     val qLines = questionLines(question, panelWidth())
                     Panel("Question", accent = Palette.Cta) {
@@ -1234,20 +1359,42 @@ internal fun wrapWords(text: String, width: Int): List<String> {
     return rows
 }
 
-/** The heights Ctrl+T steps through. */
-private val THINKING_SIZES = listOf(4, 8, 14, 24)
+/** The sizes (percent of the main axis) Ctrl+T steps through. */
+private val THINKING_SIZES = listOf(15, 25, 35, 50, 75, 85)
+
+/** Where the thinking pane goes and how big: [size] is its text rows for "top" and "bottom", its whole width in columns for "left" and "right". */
+internal class ThinkingPaneLayout(val placement: String, val size: Int)
+
+/**
+ * The pane's place for a [width] x [height] content area, or null when it does not fit. [blockRows] is the height the conversation has when there is no pane
+ * (its frame and status row included): the strip takes [percent] of it, and the conversation keeps at least 5 rows. A column takes [percent] of [width]
+ * and leaves the conversation at least 40 columns; a window under 80 columns or 16 rows has no side column, so the pane goes to the bottom there.
+ */
+internal fun thinkingPaneLayout(placement: String, percent: Int, width: Int, height: Int, blockRows: Int): ThinkingPaneLayout? {
+    val p = percent.coerceIn(10, 90)
+    if ((placement == "left" || placement == "right") && width >= 80 && height >= 16) {
+        return ThinkingPaneLayout(placement, (width * p / 100).coerceIn(24, width - 41))
+    }
+    if (height < 26) return null
+    val outer = (blockRows * p / 100).coerceAtMost(blockRows - 2 - 5 - 2)
+    return if (outer < 4) null else ThinkingPaneLayout(if (placement == "top") "top" else "bottom", outer - 2)
+}
 
 /** The split window under the conversation: the model's thoughts as they stream (the end of them, [rows] rows), or the last thoughts it had when it is idle. */
 @Composable
-private fun ThinkingPane(gen: Generation, chat: ChatSession, rows: Int, model: String) {
+private fun ThinkingPane(gen: Generation, chat: ChatSession, rows: Int, model: String, modifier: Modifier = Modifier) {
     val running = gen.state == GenState.Running
     val text = (if (running) gen.liveThinking else chat.messages.lastOrNull { it.role == "assistant" && it.thinking.isNotBlank() }?.thinking.orEmpty()).trim()
     val width = panelWidth()
     val wrapped = if (text.isEmpty()) emptyList() else wrapWords(sanitizeForTerminal(text), width)
     val shown = wrapped.takeLast(rows)
     Panel("Thinking · $model" + (if (running) " · live" else "") + (if (text.isEmpty()) "" else " · ${UsageStats.compact(text.length.toLong())} characters")) {
-        if (shown.isEmpty()) Label(fit(if (running) "Waiting for the model's thoughts… (a model without a thinking mode shows none)" else "The thoughts of a reasoning model appear here while it works.", width), color = Palette.Dim)
-        for (i in 0 until rows) if (shown.isNotEmpty() || i > 0) Label(shown.getOrNull(i)?.takeIf { it.isNotEmpty() } ?: " ", color = Palette.Muted)
+        // nothing to show yet: say so, wrapped to the pane (a side column is narrow)
+        val empty = if (shown.isNotEmpty()) emptyList() else wrapWords(if (running) "Waiting for the model's thoughts… (a model without a thinking mode shows none)" else "The thoughts of a reasoning model appear here while it works.", width)
+        for (i in 0 until rows) {
+            if (empty.isNotEmpty()) Label(empty.getOrNull(i) ?: " ", color = Palette.Dim)
+            else if (shown.isNotEmpty()) Label(shown.getOrNull(i)?.takeIf { it.isNotEmpty() } ?: " ", color = Palette.Muted)
+        }
     }
 }
 

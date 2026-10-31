@@ -15,6 +15,7 @@ import com.arcana.brain.app.Connection
 import com.arcana.brain.app.ResizeSignalGuard
 import com.arcana.brain.app.TerminalSize
 import com.arcana.brain.app.design.Dimens
+import com.arcana.brain.app.design.HGap
 import com.arcana.brain.app.design.Shortcuts
 import com.arcana.brain.core.UsageStats
 import com.arcana.brain.app.design.Label
@@ -214,7 +215,7 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
                             val rows = LocalContentHeight.current
                             Box(Modifier.fillMaxWidth().fillMaxHeight().drawBehind { for (row in 0 until rows) drawText(row, 0, " ".repeat(width), Palette.Background, Palette.Background) }) {
                                 when {
-                                    navigator.helpOpen -> KeyMap(navigator.current.title, navigator.helpHint)
+                                    navigator.helpOpen -> KeyMap(navigator.current.title, navigator.helpHint, if (navigator.current == Screen.Chat) com.arcana.brain.app.screens.chatKeySections() else null)
                                     navigator.paletteOpen -> PaletteOverlay(navigator, latestCommands)
                                     navigator.captureOpen -> CaptureOverlay(app, navigator)
                                 }
@@ -373,6 +374,8 @@ private fun footerSegments(app: AppContext, navigator: Navigator): List<StatusSe
         // the model that works now comes first: the worker, or the Oracul (orange) while it is being asked
         if (asking) { add(oracul!!); add(StatusSegment(listOf(StatusPart(model.parts.joinToString("") { it.text }, Palette.Muted)))) }
         else { add(model); oracul?.let { add(it) } }
+        // what the chat model can take in, as Ollama reports it: pictures, sound, and a mixture of experts (only the experts it needs run per token)
+        if (app.config.showModelTraits && app.connection is Connection.Online) modelTraits(app, plain)?.let { add(it) }
         // tokens used since Arcana started: grows after every reply; the Usage screen has the full picture
         if (app.sessionTokens > 0) add(statusSegment("", "⚡ ${UsageStats.compact(app.sessionTokens)} tok", Palette.Blue))
         // the machine: where the model sits and what all loaded models take, the processor, the memory file
@@ -380,8 +383,18 @@ private fun footerSegments(app: AppContext, navigator: Navigator): List<StatusSe
         app.cpuPercent?.let { add(statusSegment("cpu", "$it%", if (it >= 85) Palette.Red else if (it >= 60) Palette.Orange else Palette.Green)) }
         if (app.chat.compacting) add(statusSegment("", if (plain) "compacting" else "◌ compacting…", Palette.Blue))
         com.arcana.brain.app.screens.hardwareWarnings(app, plain).forEach { (text, color) -> add(statusSegment("", text, color, bold = true)) }
-        if (navigator.focusMode) add(statusSegment("", "✎ EDITING  Esc", Palette.Editing, bold = true))
+        if (navigator.focusMode) add(statusSegment("", "✎ EDITING  Esc", Palette.Cta, bold = true))
     }
+}
+
+/** `▣ image  ♪ audio  MoE 128`: what the chat model supports, from `/api/show`; null when it supports none of these or Ollama did not say. */
+private fun modelTraits(app: AppContext, plain: Boolean): StatusSegment? {
+    val traits = buildList {
+        if (app.vision == true) add(if (plain) "image" else "▣ image")
+        if (app.audio == true) add(if (plain) "audio" else "♪ audio")
+        if (app.experts > 0) add("MoE ${app.experts}")
+    }
+    return if (traits.isEmpty()) null else statusSegment("", traits.joinToString("  "), Palette.Blue, 4)
 }
 
 /** The footer's facts laid out in rows that fit [columns] (it wraps like the status bars, nothing is hidden); the hints share the last row. */
@@ -499,21 +512,61 @@ private fun RowScope.FooterHints(line: String, badges: Boolean) {
     Label(" ", background = Palette.SurfaceHigh)
 }
 
-/** The key map of the screen on display plus the keys that work everywhere, laid over the content. Any key closes it. */
+/** A titled group of keys in a screen's key map: each row is the key and what it does. */
+class KeySection(val title: String, val rows: List<Pair<String, String>>)
+
+/**
+ * The key map of the screen on display plus the keys that work everywhere, laid over the content. Any key closes it. A screen that
+ * passes [sections] gets them in two columns (the last ones are left out when the window is too low for them); otherwise the map is
+ * the keys the screen shows at the bottom right now.
+ */
 @Composable
-private fun KeyMap(title: String, screenHint: String) {
+private fun KeyMap(title: String, screenHint: String, sections: List<KeySection>? = null) {
     val rows = LocalContentHeight.current
+    val width = LocalContentWidth.current
     val own = screenHint.split("   ").filter { it.isNotBlank() }.map { it.substringBefore("  ", "") to it.substringAfter("  ", it).trim() }
     val everywhere = listOf(
         "1-${Screen.sidebar.size}" to "switch screen",
+        Shortcuts.label("Ctrl+P") to "command palette",
+        Shortcuts.label("Ctrl+N") to "capture a note",
         Shortcuts.label("Ctrl+B") to "fold the sidebar",
         "Ctrl+C ×2" to "quit (the second press confirms)",
         "?" to "this key map",
         "Esc" to "leave editing, then back to Home",
     )
-    val keyWidth = own.maxOfOrNull { it.first.length } ?: 0
-    val globalWidth = everywhere.maxOf { it.first.length }
     Box(Modifier.fillMaxWidth().fillMaxHeight().drawBehind { for (row in 0 until rows) drawText(row, 0, " ".repeat(width), Palette.Background, Palette.Background) }) {
+        if (sections != null && width >= 112) {
+            val all = sections + KeySection("Everywhere", everywhere)
+            // two columns of about the same height; what does not fit the window is dropped from the end
+            fun height(group: List<KeySection>) = group.sumOf { it.rows.size + 1 } + (group.size - 1).coerceAtLeast(0)
+            val total = height(all)
+            val left = ArrayList<KeySection>()
+            val right = ArrayList<KeySection>()
+            all.forEach { if (height(left) < total / 2 && right.isEmpty()) left += it else right += it }
+            val room = rows - 6
+            while (height(left) > room && left.size > 1) left.removeLast()
+            while (height(right) > room && right.size > 1) right.removeLast()
+            Panel("Keys · $title", Modifier.fillMaxWidth(), accent = Palette.Cta, background = Palette.Background) {
+                Label("Any key closes this map", color = Palette.Muted)
+                VGap()
+                Row(Modifier.fillMaxWidth()) {
+                    for ((i, group) in listOf(left, right).withIndex()) {
+                        Stack(Modifier.weight(1f)) {
+                            val keyWidth = group.maxOfOrNull { g -> g.rows.maxOf { it.first.length } } ?: 0
+                            group.forEachIndexed { n, g ->
+                                if (n > 0) VGap()
+                                Label(g.title, color = Palette.Muted, textStyle = TextStyle.Bold)
+                                g.rows.forEach { (key, text) -> KeyRow(key, text, keyWidth, if (g.title == "Everywhere") Palette.Cta else Palette.Accent) }
+                            }
+                        }
+                        if (i == 0) HGap()
+                    }
+                }
+            }
+            return@Box
+        }
+        val keyWidth = own.maxOfOrNull { it.first.length } ?: 0
+        val globalWidth = everywhere.maxOf { it.first.length }
         Panel("Keys · $title", Modifier.fillMaxWidth(), accent = Palette.Cta, background = Palette.Background) {
             Label("Any key closes this map", color = Palette.Muted)
             VGap()

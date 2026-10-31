@@ -582,6 +582,23 @@ class DesignTest {
     }
 
     @Test
+    fun theThinkingPaneGoesWhereTheSettingSaysAndSizesInPercentOfItsAxis() {
+        val layout = { p: String, pc: Int, w: Int, h: Int, b: Int -> com.arcana.brain.app.screens.thinkingPaneLayout(p, pc, w, h, b) }
+        // a strip takes its percent of the conversation's height (frame included), the conversation keeps 5 rows
+        assertEquals("bottom", layout("bottom", 30, 120, 40, 34)!!.placement)
+        assertEquals(8, layout("bottom", 30, 120, 40, 34)!!.size)
+        assertEquals("top", layout("top", 30, 120, 40, 34)!!.placement)
+        assertEquals(34 * 70 / 100 - 2, layout("bottom", 70, 120, 40, 34)!!.size)
+        assertEquals(20 - 2 - 5 - 2 - 2, layout("bottom", 70, 120, 40, 20)!!.size)
+        // a column takes its percent of the width, never leaving the conversation under 40 columns
+        assertEquals(36, layout("left", 30, 120, 40, 34)!!.size)
+        assertEquals(120 - 41, layout("right", 70, 120, 40, 34)!!.size)
+        // a narrow window has no column: the pane goes to the bottom; a short one has no pane
+        assertEquals("bottom", layout("left", 30, 79, 40, 34)!!.placement)
+        assertEquals(null, layout("bottom", 30, 120, 25, 20))
+    }
+
+    @Test
     fun thinkingLinesFollowTheViewAndStayOutOfSelection() {
         val text = "first second\nthird"
         assertTrue(com.arcana.brain.app.screens.thinkingLines(text, "hidden", false, 40).isEmpty())

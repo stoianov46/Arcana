@@ -155,7 +155,7 @@ private val WorkerRole = Editor.Model("Skill worker", { it.roleWorker }, { c, v 
 private val ReviewerRole = Editor.Model("Skill reviewer", { it.roleReviewer }, { c, v -> c.copy(roleReviewer = v) }, allowNone = true, oracul = true)
 private val JudgeModel = Editor.Model("Judge model", { it.judgeModel }, { c, v -> c.copy(judgeModel = v) }, allowNone = true, oracul = true)
 
-private val settings: List<Setting> = listOf(
+private val declared: List<Setting> = listOf(
     text(Group.Ollama, "Ollama URL", "Where the Ollama server listens.", { it.ollamaUrl }, { c, v ->
         require(v.startsWith("http://") || v.startsWith("https://")) { "URL must start with http:// or https://" }
         c.copy(ollamaUrl = v.trimEnd('/'))
@@ -206,6 +206,8 @@ private val settings: List<Setting> = listOf(
     ),
     choice(Group.Appearance, "Navigation", "Where the screens are listed: a sidebar on the left or the right, or a bar across the top. Switches at once, so you can compare.", listOf("left" to "Left sidebar", "right" to "Right sidebar", "top" to "Top bar"), { it.navPosition }, { c, v -> c.copy(navPosition = v) }),
     choice(Group.Appearance, "Sidebar", "Full: screen names. Icons: only the number key and an icon, which leaves the content more width. Ctrl+B switches it from any screen.", listOf("full" to "Full", "icons" to "Icons"), { if (it.sidebarCollapsed) "icons" else "full" }, { c, v -> c.copy(sidebarCollapsed = v == "icons") }),
+    choice(Group.Ollama, "Thinking", "Whether the model reasons before it answers (Ollama's think). Model default leaves it to the model (Qwen and Gemma think every time). Off answers at once: a simple question took 0.3 s instead of 10 s in a test, but hard questions come out weaker. On makes it think even if it would not. A level (Low, Medium, High) is sent only to a model that lists it (gpt-oss does; Qwen and Gemma only have on and off, so for them it falls back to the model default). The Chat status bar shows `think auto / off / on`, and `/think` cycles it.", listOf("default" to "Model default", "off" to "Off (fast)", "on" to "On", "low" to "Low", "medium" to "Medium", "high" to "High"), { it.thinking }, { c, v -> c.copy(thinking = v) }),
+    toggle(Group.Ollama, "Model abilities in the bottom bar", "Next to the model name the bottom bar names what Ollama says the model can do: `▣ image` (it can look at pictures: attach one with Ctrl+O), `♪ audio` (it can hear sound) and `MoE 128` (a mixture of experts with 128 experts: only a few of them work on each token, so it answers faster than a dense model of the same file size, though all of it must still fit in memory). Nothing is shown for a model that has none of these, or when Ollama does not say.", { it.showModelTraits }, { c, v -> c.copy(showModelTraits = v) }),
     toggle(Group.Appearance, "Logo animation", "While a reply is being generated, the colours of the sidebar logo sweep along it. Off keeps the logo still.", { it.animateLogo }, { c, v -> c.copy(animateLogo = v) }),
 
     toggle(Group.Console, "Answer from vault", "Chat searches your notes for each question and answers from what it finds, citing the notes. You can also switch this per chat with /vault.", { it.chatUseVault }, { c, v -> c.copy(chatUseVault = v) }),
@@ -220,7 +222,8 @@ private val settings: List<Setting> = listOf(
     toggle(Group.Console, "Show thinking", "Show \"<model> is thinking…\" while a reasoning model works before its first words.", { it.showThinking }, { c, v -> c.copy(showThinking = v) }),
     choice(Group.Console, "Comparison view", "How /compare shows the answers in Chat. Side by side: the main model's answer and the Oracul models' answers in columns, each under a coloured name, the verdict below across the whole width (needs a window of about 80 columns for two answers, 120 for three, else they stack). Stacked: one under another.", listOf("side" to "Side by side", "stacked" to "Stacked"), { it.comparisonView }, { c, v -> c.copy(comparisonView = v) }),
     toggle(Group.Console, "Thinking pane", "A split window under the Chat conversation that follows what a reasoning model is thinking while it works (and shows its last thoughts when idle), so you can watch its reasoning without it filling the conversation. Needs a model that can think (the model list in Settings → Ollama says so) and a terminal at least 26 rows tall; /thinking in Chat toggles it. Off by default.", { it.thinkingPane }, { c, v -> c.copy(thinkingPane = v) }),
-    stepper(Group.Console, "Thinking pane height", "How many rows of thoughts the pane shows (2 to 30, ←/→ step by 1); it always shows the end of the stream. On a small window it never takes more than two fifths of the screen, so the conversation keeps its room.", 2..30, 1, { it.thinkingPaneRows }, { c, n -> c.copy(thinkingPaneRows = n) }, " rows"),
+    choice(Group.Console, "Thinking pane placement", "Where the thinking pane sits around the conversation: bottom or top (a strip across the full width), left or right (a column beside the conversation; needs a window about 80 columns wide, else it goes to the bottom). Ctrl+T in Chat changes its size at any moment.", listOf("bottom" to "Bottom", "top" to "Top", "left" to "Left", "right" to "Right"), { it.thinkingPanePlacement }, { c, v -> c.copy(thinkingPanePlacement = v) }),
+    stepper(Group.Console, "Thinking pane size", "How much of the main axis the pane takes, in percent: of the conversation's height when it is at the bottom or top, of the width when it is left or right (10 to 90, ←/→ step by 5). It always shows the end of the stream. The conversation keeps a few rows of its own whatever you set.", 10..90, 5, { it.thinkingPanePercent }, { c, n -> c.copy(thinkingPanePercent = n) }, unit = " %"),
     choice(Group.Console, "Thinking in Chat", "What a reasoning model thought before it answered, kept apart from the answer. Summary: one dim line with its length. Full: all of it, dimmed, above the answer. Hidden: not shown (it is still kept with the chat).", listOf("summary" to "Summary", "full" to "Full", "hidden" to "Hidden"), { it.thinkingView }, { c, v -> c.copy(thinkingView = v) }),
     choice(Group.Console, "Auto-compact", "When the context window is this full, Arcana first asks the model to summarize the older part of the chat (like /compact), then sends your message. Nothing is deleted: the summary appears in the chat as a divider and the model just stops being sent what is above it. Off: only /compact does it.", listOf("0" to "Off", "70" to "At 70%", "80" to "At 80%", "90" to "At 90%"), { it.autoCompactPercent.toString() }, { c, v -> c.copy(autoCompactPercent = v.toInt()) }),
     stepper(Group.Console, "Keep after compacting", "When the chat is compacted (Auto-compact or /compact), the latest turns that fit in this share of the context window stay word for word and only what is older becomes the summary. 0 = just your last 2 messages. More keeps more detail but frees less room each time. ←/→ step by 5.", 0..60, 5, { it.compactKeepPercent }, { c, n -> c.copy(compactKeepPercent = n) }, unit = " %", zero = "last 2 turns"),
@@ -319,6 +322,45 @@ private val settings: List<Setting> = listOf(
     choice(Group.Accessibility, "Interface scale", "A terminal sets its own font size, so this is the layout density: Spacious keeps the roomy screens for longer, Compact packs more in. Change your terminal's font size for bigger text.", listOf("compact" to "Compact", "normal" to "Normal", "spacious" to "Spacious"), { it.uiScale }, { c, v -> c.copy(uiScale = v) }),
     toggle(Group.Accessibility, "Screen-reader output", "Drops decorative symbols (▌ ✓ ✕ → • and the rounded frames) in favour of plain words and ASCII that read cleanly in a screen reader.", { it.plainGlyphs }, { c, v -> c.copy(plainGlyphs = v) }),
 )
+
+/** A long tab is split into titled sections, in this order; a short tab has none. Rows are named by label. */
+private val sections: Map<Group, List<Pair<String, List<String>>>> = mapOf(
+    Group.Ollama to listOf(
+        "Connection" to listOf("Ollama URL", "Model", "Timeout"),
+        "Generation" to listOf("Temperature", "Context window", "Thinking"),
+        "Display and cost" to listOf("Model abilities in the bottom bar", "Price: prompt tokens", "Price: reply tokens"),
+    ),
+    Group.Vault to listOf(
+        "Location" to listOf("Vault path", "Output folder", "Where Arcana's own files are (this vault)", "Where YOUR files are (every vault)"),
+        "Notes" to listOf("Context notes", "Chars per note", "Inbox folder", "Daily notes folder", "Daily note format", "Stale after"),
+    ),
+    Group.Console to listOf(
+        "Chat" to listOf("Answer from vault", "Render Markdown", "Confirm before cancelling", "Comparison view", "Copy as"),
+        "Thinking" to listOf("Show thinking", "Thinking pane", "Thinking pane placement", "Thinking pane size", "Thinking in Chat"),
+        "History and compacting" to listOf("Auto-compact", "Keep after compacting", "Chat history", "Keep chats", "Chats kept"),
+    ),
+    Group.Tools to listOf(
+        "Steps" to listOf("Tools in Chat", "Mode", "Finish open todos", "At the step limit", "Steps per question"),
+        "Files and shell" to listOf("Working folder", "Allowed folders", "Read without asking", "Shell commands", "Run commands without asking"),
+        "Web" to listOf("Search backend", "Search address", "Search API key", "Web pages", "Search and fetch without asking"),
+        "Skills" to listOf("Skills", "Skills folder"),
+        "Tool output" to listOf("Calls written as text", "Old tool output", "Remember repeated reads"),
+    ),
+    Group.Helpers to listOf(
+        "Oracul" to listOf("Helper models", "Oracul model", "More Oracul models", "Judge model", "Oracul server", "Oracul may use tools"),
+        "Router" to listOf("Route: images to", "Route: code to"),
+        "Chat context" to listOf("Chat context: messages", "Chat context: characters each"),
+    ),
+)
+
+/** The section a row belongs to, or null in a tab without sections. A row no section names lands in a last one, so none is lost. */
+private fun sectionOf(s: Setting): String? = sections[s.group]?.let { list -> list.firstOrNull { s.label in it.second }?.first ?: "More" }
+
+/** The rows, each tab's own rows gathered by section (the order inside a section is the order given above). */
+private val settings: List<Setting> = declared.sortedBy { s ->
+    val list = sections[s.group]
+    list?.indexOfFirst { s.label in it.second }?.takeIf { it >= 0 }?.let { i -> i * 100 + list[i].second.indexOf(s.label) } ?: (if (list != null) Int.MAX_VALUE else 0)
+}
 
 private const val CustomModel = "✎ Type a custom name…"
 private const val NoModel = "∅ None (off)"
@@ -751,6 +793,10 @@ private fun OptionList(config: AppConfig, items: List<Setting>, selected: Int) {
         val bg = if (on) Palette.Selected else if (i % 2 == 0) Palette.EntryBg else Palette.Surface
         val off = inactive(config, s)
         val value = s.value(config) + if (off) "  · off" else ""
+        val section = sectionOf(s)
+        if (section != null && section != sectionOf(items.getOrNull(i - 1) ?: s).takeIf { i > 0 }) {
+            Label("  ── $section ".padEnd((panelWidth() - 2).coerceAtLeast(10), '─'), color = Palette.Muted, textStyle = TextStyle.Bold)
+        }
         Row(Modifier.fillMaxWidth().background(bg)) {
             Label(if (on) "▌" else " ", color = Palette.Accent)
             Label(" " + fit(s.label, labelWidth), color = if (on) Palette.Cta else if (off) Palette.Dim else Palette.FieldLabel, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)

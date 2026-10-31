@@ -122,6 +122,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private val wholeNotes = mutableSetOf<String>()
     private val cutAccepted = mutableSetOf<String>()
 
+    /** Builds the request for the reply being written from the chat as it is now; set while a reply runs, so a compaction between tool rounds can rebuild it. */
+    private var refreshRequest: (suspend () -> List<ChatMessage>)? = null
+
     /** The reply being written. It lives as long as the app does. */
     val gen: Generation by lazy {
         Generation(
@@ -134,6 +137,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             textCalls = { app.config.textCalls },
             confirmTextCalls = ::confirmTextCalls,
             gate = { skillRun?.nudge() },
+            refresh = { refreshRequest?.takeIf { autoCompactDue(messages.toList()) }?.let { rebuild -> runCatching { compact(auto = true) }.getOrNull()?.let { rebuild() } } },
         )
     }
 
@@ -1317,13 +1321,18 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             if (planner != null && planned) plan(planner, chipEntry, body, analysis)
             // a nearly full window: summarize the older part first, so this question is not sent with a chat that no longer fits
             if (autoCompactDue(messages.toList())) runCatching { compact(auto = true) }
-            val history = Compaction.forModel(messages.toList())
-            val config = app.config
-            val vault = app.openVault().getOrNull()
-            val hits = if (config.chatUseVault && vault != null) vault.search(body, config.contextNotes, config.contextCharsPerNote) else null
-            pendingSources = hits?.map { it.note.path }.orEmpty()
-            pendingCut = hits?.filter { it.missing > 0 }?.map { it.note.path }.orEmpty()
-            Prompts.chatMessages(config, history, hits, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, toolsNote = box?.describe().orEmpty(), canRequestTools = canRequest, memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "", goal = goal.orEmpty()).also { request -> promptEstimate = request.sumOf { it.content.length } / 4 }
+            // built again after a compaction between tool rounds: a long run of tools fills the window too, not only a long chat
+            suspend fun compose(): List<ChatMessage> {
+                val history = Compaction.forModel(messages.toList())
+                val config = app.config
+                val vault = app.openVault().getOrNull()
+                val hits = if (config.chatUseVault && vault != null) vault.search(body, config.contextNotes, config.contextCharsPerNote) else null
+                pendingSources = hits?.map { it.note.path }.orEmpty()
+                pendingCut = hits?.filter { it.missing > 0 }?.map { it.note.path }.orEmpty()
+                return Prompts.chatMessages(config, history, hits, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, toolsNote = box?.describe().orEmpty(), canRequestTools = canRequest, memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "", goal = goal.orEmpty()).also { request -> promptEstimate = request.sumOf { it.content.length } / 4 }
+            }
+            refreshRequest = ::compose
+            compose()
         }
     }
 

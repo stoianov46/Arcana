@@ -118,6 +118,9 @@ data class ModelDetails(val name: String, val sizeBytes: Long, val capabilities:
     }
 }
 
+/** What `/api/show` says about a model: its abilities, its context, its experts, and the values its `think` accepts (`true`, `false`, `low`…; empty when it cannot think or Ollama does not say). */
+data class ModelShow(val capabilities: List<String>, val contextLength: Int, val experts: Int, val thinkingValues: List<String>, val thinkingDefault: String = "")
+
 class OllamaException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 @Serializable
@@ -135,7 +138,7 @@ private data class WireChunk(
 private data class WireMessage(val content: String = "", val thinking: String = "", @SerialName("tool_calls") val toolCalls: List<ToolCall> = emptyList())
 
 @Serializable
-private data class WireShow(val capabilities: List<String> = emptyList(), @SerialName("model_info") val modelInfo: JsonObject = JsonObject(emptyMap()))
+private data class WireShow(val capabilities: List<String> = emptyList(), @SerialName("model_info") val modelInfo: JsonObject = JsonObject(emptyMap()), val thinking: JsonObject? = null)
 
 @Serializable
 private data class WireTags(val models: List<WireModel> = emptyList())
@@ -147,9 +150,10 @@ object OllamaProtocol {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** [jsonMode] asks Ollama to constrain the reply to valid JSON (used when the app needs to read the answer). */
-    fun chatRequest(config: AppConfig, messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null): JsonObject = buildJsonObject {
+    fun chatRequest(config: AppConfig, messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, think: kotlinx.serialization.json.JsonElement? = null): JsonObject = buildJsonObject {
         put("model", config.model)
         put("stream", true)
+        if (think != null) put("think", think)
         if (jsonMode) put("format", "json")
         if (tools != null && tools.isNotEmpty()) put("tools", tools)
         put("messages", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ChatMessage.serializer()), messages.map { it.withFilesInlined().copy(thinking = "") }))
@@ -176,6 +180,27 @@ object OllamaProtocol {
 
     fun parseCapabilities(body: String): List<String> =
         runCatching { json.decodeFromString<WireShow>(body).capabilities }.getOrDefault(emptyList())
+
+    /** The values `think` accepts for the model, from `thinking.values` (`true`, `false`, `low`…) and the default one; empty when the model does not list any. */
+    fun parseThinking(body: String): Pair<List<String>, String> = runCatching {
+        val t = json.decodeFromString<WireShow>(body).thinking ?: return emptyList<String>() to ""
+        val values = (t["values"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }.orEmpty()
+        values to ((t["default"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "")
+    }.getOrDefault(emptyList<String>() to "")
+
+    /** The `think` value a setting asks for ("off", "on", a level; "default" asks for none), or null. */
+    fun thinkValue(setting: String): kotlinx.serialization.json.JsonElement? = when (setting.lowercase()) {
+        "", "default" -> null
+        "off" -> kotlinx.serialization.json.JsonPrimitive(false)
+        "on" -> kotlinx.serialization.json.JsonPrimitive(true)
+        else -> kotlinx.serialization.json.JsonPrimitive(setting.lowercase())
+    }
+
+    /** How many experts a mixture-of-experts model has, from `model_info` (`<architecture>.expert_count`); 0 for a dense model or when it does not say. */
+    fun parseExperts(body: String): Int = runCatching {
+        json.decodeFromString<WireShow>(body).modelInfo.entries
+            .firstOrNull { it.key.endsWith(".expert_count") }?.value?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() } ?: 0
+    }.getOrDefault(0)
 
     /** The longest context the model supports, from `model_info` (`<architecture>.context_length`); 0 when it does not say. */
     fun parseContextLength(body: String): Int = runCatching {
@@ -226,13 +251,14 @@ object OllamaProtocol {
 
 class OllamaClient(private val config: () -> AppConfig) {
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()
+    private val thinkingValuesCache get() = thinkingValuesByModel
 
     fun chat(messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null): Flow<ChatChunk> = flow {
         val cfg = config()
         val request = HttpRequest.newBuilder(endpoint(cfg, "/api/chat"))
             .timeout(Duration.ofSeconds(cfg.timeoutSeconds.toLong()))
             .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(OllamaProtocol.chatRequest(cfg, messages, jsonMode, tools).toString()))
+            .POST(HttpRequest.BodyPublishers.ofString(OllamaProtocol.chatRequest(cfg, messages, jsonMode, tools, thinkFor(cfg)).toString()))
             .build()
         val future = http.sendAsync(request, HttpResponse.BodyHandlers.ofLines())
         // Cancelling the future closes the connection, which unblocks the line reader below.
@@ -262,10 +288,20 @@ class OllamaClient(private val config: () -> AppConfig) {
     }.flowOn(Dispatchers.IO)
 
     /** What the model can do, as Ollama reports it ("completion", "vision", "tools", "thinking"…); empty when it does not say. */
-    suspend fun capabilities(model: String): List<String> = show(model).first
+    suspend fun capabilities(model: String): List<String> = show(model).capabilities
 
-    /** What the model can do, and how many tokens of context it supports (0 when unknown). */
-    suspend fun show(model: String): Pair<List<String>, Int> = withContext(Dispatchers.IO) {
+    /**
+     * The `think` to send: what the setting asks for, but only when the model lists that value (a model that cannot think answers `does not support
+     * thinking` to any `think`, and one with only on/off has no "low"). Null leaves it to the model.
+     */
+    private suspend fun thinkFor(cfg: AppConfig): kotlinx.serialization.json.JsonElement? {
+        val wanted = OllamaProtocol.thinkValue(cfg.thinking) ?: return null
+        val allowed = thinkingValuesCache[cfg.ollamaUrl + " " + cfg.model] ?: runCatching { show(cfg.model).thinkingValues }.getOrNull()?.also { thinkingValuesCache[cfg.ollamaUrl + " " + cfg.model] = it } ?: return null
+        return wanted.takeIf { (it as kotlinx.serialization.json.JsonPrimitive).content in allowed }
+    }
+
+    /** What the model can do, how many tokens of context it supports (0 when unknown), how many experts it has (0 = dense, or unknown) and the values its `think` takes. */
+    suspend fun show(model: String): ModelShow = withContext(Dispatchers.IO) {
         val cfg = config()
         val body = buildJsonObject { put("model", model) }.toString()
         val request = HttpRequest.newBuilder(endpoint(cfg, "/api/show"))
@@ -278,8 +314,9 @@ class OllamaClient(private val config: () -> AppConfig) {
         } catch (e: Exception) {
             throw OllamaException("Cannot reach Ollama at ${cfg.ollamaUrl}: ${e.message}", e)
         }
-        if (response.statusCode() != 200) return@withContext emptyList<String>() to 0
-        OllamaProtocol.parseCapabilities(response.body()) to OllamaProtocol.parseContextLength(response.body())
+        if (response.statusCode() != 200) return@withContext ModelShow(emptyList(), 0, 0, emptyList())
+        val (values, default) = OllamaProtocol.parseThinking(response.body())
+        ModelShow(OllamaProtocol.parseCapabilities(response.body()), OllamaProtocol.parseContextLength(response.body()), OllamaProtocol.parseExperts(response.body()), values, default)
     }
 
     /** The context window the running [model] really has (what Ollama loaded it with), or 0 when it is not loaded or this Ollama version does not say. */
@@ -318,7 +355,7 @@ class OllamaClient(private val config: () -> AppConfig) {
         if (response.statusCode() != 200) throw OllamaException("Ollama returned HTTP ${response.statusCode()}")
         OllamaProtocol.parseModelSizes(response.body()).map { (name, size) ->
             val shown = runCatching { show(name) }.getOrNull()
-            ModelDetails(name, size, shown?.first.orEmpty(), shown?.second ?: 0)
+            ModelDetails(name, size, shown?.capabilities.orEmpty(), shown?.contextLength ?: 0)
         }
     }
 
@@ -355,3 +392,6 @@ class OllamaClient(private val config: () -> AppConfig) {
         runCatching { Json.parseToJsonElement(body).let { (it as JsonObject)["error"].toString().trim('"') } }
             .getOrDefault(body.take(200))
 }
+
+/** What each model's `think` accepts, by server and model, once asked (a model's values do not change while Arcana runs). */
+private val thinkingValuesByModel = java.util.concurrent.ConcurrentHashMap<String, List<String>>()

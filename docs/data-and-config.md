@@ -36,6 +36,8 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `sidebarCollapsed` | false | icon rail |
 | `tabOrder` | `[]` | screen names in the user's order (first = start screen) |
 | `animateLogo` | true | colour sweep while generating |
+| `thinking` | default | `default`, `off`, `on`, `low`, `medium`, `high`: sent as Ollama's `think` when the model lists that value (`/api/show` → `thinking.values`) |
+| `showModelTraits` | true | `▣ image`, `♪ audio`, `MoE n` next to the model name in the bottom bar |
 | `plainGlyphs` | false | ASCII-only output (screen readers) |
 | `renderMarkdown` | true | rich Markdown vs raw text |
 | `showThinking` | true | "<model> is thinking…" status |
@@ -68,7 +70,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `libraryTab` / `libraryListPercent` / `librarySort` / `libraryPreview` / `libraryCounts` | `all` / 30 / `modified` / true / true | Settings → Library: the view the Library opens on from the sidebar, the list's share of a wide window (20-60 %), the order of the lists sorted by date (`modified` or `title`), the preview pane, the counts in the tabs |
 | `libraryTree` | true | the Library lists notes as a tree of folders that fold and unfold (false: one flat list with full paths) |
 | `repeatMemorySeconds` | 45 | how long an identical read, search or web fetch of the current question is answered from memory (0 = off); Settings → Tools → *Remember repeated reads* |
-| `thinkingPane` / `thinkingPaneRows` | false / 6 | the split window that follows the model's thinking (Settings → Console → *Thinking pane*, `/thinking`) and how many rows (2-30, at most two fifths of the screen) it shows |
+| `thinkingPane` / `thinkingPanePlacement` / `thinkingPanePercent` | false / bottom / 30 | the split window that follows the model's thinking (Settings → Console → *Thinking pane*, `/thinking`), where it sits (bottom, top, left, right) and how much of the main axis it takes (10-90 %: of the height at the bottom or top, of the width left or right) |
 | `oldToolOutput` | `whole` | tool results from earlier questions are sent as they were (`whole`) or cut to 1,200 characters with a marker (`shorten`); Settings → Tools → *Old tool output* |
 | `toolSteps` | 8 | max tool rounds per question (1–60); at the limit `stepLimit` decides |
 | `stepLimit` | `ask` | at the step limit: `ask` shows a dialog offering that many more steps, `auto` gives them at once (up to `STEP_LIMIT_AUTO_ROUNDS` = 3 times per question, logged in the session, then it asks), `stop` makes the model answer with what it has. Each change, command and web address inside the extra steps keeps its own approval |

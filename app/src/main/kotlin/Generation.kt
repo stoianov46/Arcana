@@ -51,6 +51,11 @@ class Generation(
      * a required step open), or null to let it finish. The message is hidden, like the "continue now" nudge; the owner limits how often.
      */
     private val gate: (() -> String?)? = null,
+    /**
+     * Asked after every round of tool use, before the model is asked again: returns the request to send from now on (the chat was compacted
+     * because the window is nearly full, so the request is built anew), or null to go on with the one in hand.
+     */
+    private val refresh: (suspend () -> List<ChatMessage>?)? = null,
 ) {
     var state by mutableStateOf(GenState.Idle)
         private set
@@ -176,6 +181,7 @@ class Generation(
                         nudges = 0 // the limit is for announcements in a row: a long runbook narrates before many of its steps
                         val round = stats
                         messages = messages + onToolRound.invoke(roundText, calls.toList(), round)
+                        refresh?.let { r -> withContext(Dispatchers.IO) { r() } }?.let { messages = it }
                         // the next round starts with a clean slate: what the model said before its tools is now in the chat
                         text = ""
                         stats = null

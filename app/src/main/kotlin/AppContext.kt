@@ -52,6 +52,22 @@ class AppContext(
     /** Whether the chosen model can look at pictures: null while unknown (Ollama did not say, or is not reachable). */
     var vision by mutableStateOf<Boolean?>(null)
 
+    /** Whether the model hears audio (null = unknown). */
+    var audio by mutableStateOf<Boolean?>(null)
+        private set
+
+    /** The values the model's `think` takes (`true`, `false`, `low`…): empty when it cannot think or Ollama did not say. */
+    var thinkingValues by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    /** What the model does when `think` is not sent (`true` or `false`; empty when unknown). */
+    var thinkingDefault by mutableStateOf("")
+        private set
+
+    /** How many experts the model has when it is a mixture of experts (0 = dense or unknown). */
+    var experts by mutableStateOf(0)
+        private set
+
     /** Whether the model can call tools (null = unknown). */
     var tools by mutableStateOf<Boolean?>(null)
         private set
@@ -197,11 +213,15 @@ class AppContext(
             Connection.Offline(e.message ?: e.toString())
         }
         val shown = if (connection is Connection.Online) runCatching { client.show(config.model) }.getOrNull() else null
-        modelContext = shown?.second ?: 0
+        modelContext = shown?.contextLength ?: 0
         modelSizes = runCatching { client.modelSizes() }.getOrDefault(emptyMap())
         refreshLoadedContext()
-        val capabilities = shown?.first?.takeIf { it.isNotEmpty() }
+        val capabilities = shown?.capabilities?.takeIf { it.isNotEmpty() }
         vision = capabilities?.let { "vision" in it }
+        audio = capabilities?.let { "audio" in it }
+        experts = shown?.experts ?: 0
+        thinkingValues = shown?.thinkingValues.orEmpty()
+        thinkingDefault = shown?.thinkingDefault.orEmpty()
         tools = capabilities?.let { "tools" in it }
     }
 
