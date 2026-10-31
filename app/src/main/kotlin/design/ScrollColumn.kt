@@ -8,6 +8,7 @@ import com.jakewharton.mosaic.layout.Measurable
 import com.jakewharton.mosaic.layout.MeasurePolicy
 import com.jakewharton.mosaic.layout.MeasureResult
 import com.jakewharton.mosaic.layout.MeasureScope
+import com.jakewharton.mosaic.layout.Placeable
 import com.jakewharton.mosaic.layout.drawBehind
 import com.jakewharton.mosaic.modifier.Modifier
 import com.jakewharton.mosaic.ui.Layout
@@ -22,11 +23,27 @@ class ScrollState {
     internal var count = 0
     internal var shown = 0
     internal var maxFirst = 0
+    internal var heights = IntArray(0)
 
     /** True when some children are out of view (the column drew a scrollbar). */
     val scrollable get() = count > shown
 
     fun reset() { first = 0 }
+
+    /** Children move whole, so a step skips children until at least [STEP] rows have gone by: a spacer row never makes a press look dead. */
+    private fun stepDown(): Int {
+        var to = first
+        var moved = 0
+        while (to < maxFirst && moved < STEP) { moved += heights.getOrElse(to) { 1 }; to++ }
+        return to
+    }
+
+    private fun stepUp(): Int {
+        var to = first
+        var moved = 0
+        while (to > 0 && moved < STEP) { to--; moved += heights.getOrElse(to) { 1 } }
+        return to
+    }
 
     /**
      * ↑/↓ (and k/j when [letters]) move one child, PgUp/PgDn a page, Home/End the ends. Returns whether the key was used,
@@ -37,8 +54,8 @@ class ScrollState {
         val page = (shown - 1).coerceAtLeast(1)
         val ch = if (letters) key.char else null
         val to = when {
-            key == Key.Up || ch == 'k' -> first - 1
-            key == Key.Down || ch == 'j' -> first + 1
+            key == Key.Up || ch == 'k' -> stepUp()
+            key == Key.Down || ch == 'j' -> stepDown()
             key == Key.PageUp -> first - page
             key == Key.PageDown -> first + page
             key == Key.Home -> 0
@@ -49,6 +66,9 @@ class ScrollState {
         return true
     }
 }
+
+private const val STEP = 3
+private const val MIN_PARTIAL = 5
 
 @Composable
 fun rememberScrollState() = remember { ScrollState() }
@@ -110,15 +130,26 @@ private class ScrollPolicy(val state: ScrollState) : MeasurePolicy {
         var last = first - 1
         while (last + 1 < n && used + heights[last + 1] <= room) { last++; used += heights[last] }
         state.count = n
+        state.heights = heights
         state.shown = last - first + 1
 
-        for (i in 0 until n) if (i < first || i > last) measurables[i].measure(Hidden)
+        // the next child does not fit whole: when there is room worth filling, show it shortened (a panel keeps its frame and
+        // the rows that fit) instead of leaving a gap; scrolling brings the rest
+        var partial: Placeable? = null
+        var partialAt = -1
+        val spare = room - used
+        if (bounded && last + 1 < n && spare >= MIN_PARTIAL) {
+            val p = measurables[last + 1].measure(Constraints(maxWidth = inner, maxHeight = spare))
+            if (p.height in 1..spare) { partial = p; partialAt = used; used += p.height }
+        }
+        for (i in 0 until n) if (i < first || i > last + (if (partial != null) 1 else 0)) measurables[i].measure(Hidden)
         val scrolling = state.shown < n
         val height = if (scrolling && bounded) room else used
         val width = if (maxW == Constraints.Infinity) (placeables.maxOfOrNull { it.width } ?: 0) + 1 else maxW
         return layout(width.coerceAtLeast(constraints.minWidth), height.coerceAtLeast(constraints.minHeight)) {
             var y = 0
             for (i in first..last) { placeables[i].place(0, y); y += heights[i] }
+            partial?.place(0, partialAt)
         }
     }
 }

@@ -173,7 +173,7 @@ private fun Dashboard(period: Period, page: Page, records: List<UsageRecord>, al
                 val left = room - TILES_ROWS - 1
                 // the chart takes what the other panels leave; when there is no room for them it stays small and they scroll
                 val below = if (wide && left >= 24) featureRows(records) + 3 else 0
-                val chartRows = (left - below - 3).coerceIn(3, 12)
+                val chartRows = (left - below - 3).coerceIn(3, 8)
                 if (wide) {
                     val chartWidth = (w * 11) / 20
                     Row(Modifier.fillMaxWidth()) {
@@ -200,9 +200,18 @@ private fun Dashboard(period: Period, page: Page, records: List<UsageRecord>, al
                 VGap()
                 AdvisorsPanel(records)
                 VGap()
-                HoursPanel(records, insights)
-                VGap()
-                SpeedPanel(all, period)
+                if (wide) {
+                    // the two small panels share a row: a grid fills the window instead of a tall single column
+                    Row(Modifier.fillMaxWidth()) {
+                        Box(Modifier.weight(1f)) { CompositionLet(half) { HoursPanel(records, insights) } }
+                        HGap()
+                        Box(Modifier.weight(1f)) { CompositionLet(half) { SpeedPanel(all, period) } }
+                    }
+                } else {
+                    HoursPanel(records, insights)
+                    VGap()
+                    SpeedPanel(all, period)
+                }
             }
             else -> Unit // Recent, Team and Tools draw themselves
         }
@@ -407,9 +416,11 @@ private fun SpeedPanel(all: List<UsageRecord>, period: Period) {
     val hi = timed.maxOrNull() ?: 0.0
     Panel("Speed, last $days days" + if (timed.isEmpty()) "" else "  ·  ${"%.0f".format(lo)}–${"%.0f".format(hi)} tok/s") {
         Row {
+            // one column per day when two per day would not fit the panel
+            val gap = if (panelWidth() >= days * 2) " " else ""
             speed.forEach { (_, v) ->
                 val level = if (v <= 0) -1 else if (hi == lo) 3 else (((v - lo) / (hi - lo)) * 7).toInt().coerceIn(0, 7)
-                Label(if (level < 0) "· " else glyphs[level].toString() + " ", color = if (level < 0) Palette.Dim else Palette.Orange)
+                Label(if (level < 0) "·$gap" else glyphs[level].toString() + gap, color = if (level < 0) Palette.Dim else Palette.Orange)
             }
         }
         Label("older ← → today · a dot is a day without replies", color = Palette.Muted)
