@@ -377,10 +377,11 @@ private fun footerSegments(app: AppContext, navigator: Navigator): List<StatusSe
     }
 }
 
-/** `▣ image  ♪ audio  MoE 128`: what the chat model supports, from `/api/show`; null when it supports none of these or Ollama did not say. */
+/** `vision · thinking · tools  ♪ audio  MoE 128`: what the chat model supports, from `/api/show`; null when it supports none of these or Ollama did not say. */
 private fun modelTraits(app: AppContext, plain: Boolean): StatusSegment? {
+    val abilities = listOfNotNull("vision".takeIf { app.vision == true }, "thinking".takeIf { app.thinking == true }, "tools".takeIf { app.tools == true })
     val traits = buildList {
-        if (app.vision == true) add(if (plain) "image" else "▣ image")
+        if (abilities.isNotEmpty()) add(abilities.joinToString(if (plain) " / " else " · "))
         if (app.audio == true) add(if (plain) "audio" else "♪ audio")
         if (app.experts > 0) add("MoE ${app.experts}")
     }

@@ -37,7 +37,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `tabOrder` | `[]` | screen names in the user's order (first = start screen) |
 | `animateLogo` | true | colour sweep while generating |
 | `thinking` | default | `default`, `off`, `on`, `low`, `medium`, `high`: sent as Ollama's `think` when the model lists that value (`/api/show` → `thinking.values`) |
-| `showModelTraits` | true | `▣ image`, `♪ audio`, `MoE n` next to the model name in the bottom bar |
+| `showModelTraits` | true | `vision · thinking · tools`, `♪ audio`, `MoE n` next to the model name in the bottom bar |
 | `plainGlyphs` | false | ASCII-only output (screen readers) |
 | `renderMarkdown` | true | rich Markdown vs raw text |
 | `showThinking` | true | "<model> is thinking…" status |

@@ -37,6 +37,26 @@ class Vault(root: Path, private val memoryPath: String = "") {
             .toList()
     }.sortedByDescending { it.modified }
 
+    /**
+     * The notes inside the vault's hidden folders (`.arcana/`, …), which [notes] leaves out so that search, the Brain and the Library's counts ignore them.
+     * Only the Library shows them, on request. Obsidian's, git's and the trash's own folders are not notes and are skipped.
+     */
+    fun hiddenNotes(): List<Note> {
+        val skip = setOf(".trash", ".git", ".obsidian")
+        val folders = try {
+            Files.newDirectoryStream(root).use { s -> s.filter { Files.isDirectory(it) && it.name.startsWith(".") && it.name !in skip }.toList() }
+        } catch (e: Exception) { return emptyList() }
+        return folders.flatMap { dir ->
+            try {
+                Files.walk(dir).use { paths ->
+                    paths.filter { Files.isRegularFile(it) && it.extension == "md" && !it.relativeTo(dir).any { p -> p.name.startsWith(".") } }
+                        .map { Note(it.relativeTo(root).toString().replace('\\', '/'), Files.getLastModifiedTime(it).toMillis()) }
+                        .toList()
+                }
+            } catch (e: Exception) { emptyList() }
+        }.sortedByDescending { it.modified }
+    }
+
     fun read(note: String): String = Files.readString(resolve(note))
 
     /**

@@ -45,9 +45,13 @@ class CoreTest {
         val dir = Files.createTempDirectory("vault")
         Files.createDirectories(dir.resolve(".obsidian"))
         Files.writeString(dir.resolve(".obsidian/hidden.md"), "kotlin secret")
+        Files.createDirectories(dir.resolve(".arcana/skills"))
+        Files.writeString(dir.resolve(".arcana/skills/s.md"), "skill")
         Files.writeString(dir.resolve("Kotlin.md"), "Kotlin coroutines make async simple. Kotlin rocks.")
         Files.writeString(dir.resolve("Cooking.md"), "Pasta recipe")
         val vault = Vault(dir)
+        assertEquals(listOf(".arcana/skills/s.md"), vault.hiddenNotes().map { it.path }, "hidden notes are listed apart, without .obsidian")
+        assertTrue(vault.notes().none { it.path.startsWith(".") })
 
         assertEquals(setOf("Kotlin", "Cooking"), vault.notes().map { it.title }.toSet())
         val hits = vault.search("what about kotlin coroutines?", limit = 5, excerptChars = 100)

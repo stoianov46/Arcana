@@ -52,6 +52,10 @@ class AppContext(
     /** Whether the chosen model can look at pictures: null while unknown (Ollama did not say, or is not reachable). */
     var vision by mutableStateOf<Boolean?>(null)
 
+    /** Whether the model can think before it answers (null = unknown). */
+    var thinking by mutableStateOf<Boolean?>(null)
+        private set
+
     /** Whether the model hears audio (null = unknown). */
     var audio by mutableStateOf<Boolean?>(null)
         private set
@@ -219,6 +223,7 @@ class AppContext(
         val capabilities = shown?.capabilities?.takeIf { it.isNotEmpty() }
         vision = capabilities?.let { "vision" in it }
         audio = capabilities?.let { "audio" in it }
+        thinking = capabilities?.let { "thinking" in it }
         experts = shown?.experts ?: 0
         thinkingValues = shown?.thinkingValues.orEmpty()
         thinkingDefault = shown?.thinkingDefault.orEmpty()

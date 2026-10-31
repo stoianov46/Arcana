@@ -69,7 +69,15 @@ fun LibraryScreen(app: AppContext) {
     val inbox = app.config.inboxFolder
     val staleDays = app.config.staleDays
     val showingTags = filter == LibraryFilter.Tags && tag == null
-    val shown = if (index == null) emptyList() else notesFor(index, filter, tag, inbox, staleDays, app.config.librarySort)
+    // `.` adds the notes of hidden folders (.arcana/…) to the All view; they are not part of the index, so no other view or count includes them
+    var showHidden by remember { mutableStateOf(false) }
+    val hidden = remember(showHidden, index, vault) {
+        if (!showHidden) emptyList() else vault.getOrNull()?.hiddenNotes().orEmpty().map { n ->
+            val words = runCatching { Vault.splitFrontmatter(vault.getOrThrow().read(n.path)).second.split(Regex("\\s+")).count { it.isNotBlank() } }.getOrDefault(0)
+            NoteInfo(n.path, n.modified, words, emptySet(), emptySet(), emptySet())
+        }
+    }
+    val shown = if (index == null) emptyList() else notesFor(index, filter, tag, inbox, staleDays, app.config.librarySort).let { if (filter == LibraryFilter.All && hidden.isNotEmpty()) byDate(it + hidden, app.config.librarySort) else it }
     val tags = index?.tagCounts.orEmpty()
     // The notes as a tree of folders (fold with Enter, h, l) unless the user chose the flat list, is typing a filter (matches are listed with their paths) or is in the tag list.
     val tree = app.config.libraryTree && !showingTags && picker.filter.isEmpty()
@@ -106,8 +114,8 @@ fun LibraryScreen(app: AppContext) {
     FocusMode(mode == LibraryMode.Rename || (mode == LibraryMode.List && (if (showingTags) tagPicker.filtering else picker.filtering)))
     when (mode) {
         LibraryMode.List -> if (picker.filtering || tagPicker.filtering) Hints("↑↓  move", "Enter  choose", "Esc  clear filter")
-        else if (tree) Hints("↑↓  move", "Enter  open / fold", "h l  fold", "+ -  all", "t  flat list", "←→  view", "a  AI", "r  rename", "d  trash", "/  filter")
-        else Hints("↑↓  move", "←→  view", "Enter  read", "a  AI", "r  rename", "o  Obsidian", "d  trash", "t  tree", "/  filter")
+        else if (tree) Hints("↑↓  move", "Enter  open / fold", "h l  fold", "+ -  all", "t  flat list", "←→  view", "a  AI", "r  rename", "d  trash", ".  hidden", "/  filter")
+        else Hints("↑↓  move", "←→  view", "Enter  read", "a  AI", "r  rename", "o  Obsidian", "d  trash", "t  tree", ".  hidden", "/  filter")
         LibraryMode.Reading -> Hints("↑↓/Space  scroll", "a  AI", "r  rename", "o  Obsidian", "Esc  back")
         LibraryMode.Rename -> Hints("Enter  rename", "Esc  cancel")
         LibraryMode.ConfirmDelete -> Hints("y  move to trash", "any other key  keep")
@@ -215,6 +223,11 @@ fun LibraryScreen(app: AppContext) {
                 tree && key.char == 'h' -> { foldOrParent(); true }
                 tree && key.char == '+' -> { app.libraryExpanded = allFolders(shown); true }
                 tree && key.char == '-' -> { app.libraryExpanded = emptySet(); picker.index = 0; true }
+                key.char == '.' -> {
+                    showHidden = !showHidden; picker.reset()
+                    navigator.showToast(if (showHidden) "Showing hidden folders (the All view)" else "Hidden folders are hidden again", isError = false)
+                    true
+                }
                 key.char == 't' -> { app.update(app.config.copy(libraryTree = !app.config.libraryTree)); picker.index = 0; true }
                 key == Key.Left || key == Key.Right -> {
                     filter = cycle(filter, if (key == Key.Right) 1 else -1)
@@ -226,9 +239,9 @@ fun LibraryScreen(app: AppContext) {
                 key == Key.Escape -> if (tag != null) { tag = null; picker.reset(); true } else false
                 key.char == 'a' -> { current?.let { askAi(it) }; true }
                 key.char == 'c' -> { current?.let { chatAbout(it) }; true }
-                key.char == 'r' -> { current?.let { startRename(it) }; true }
+                key.char == 'r' -> { current?.let { if (isHiddenPath(it.path)) navigator.showToast("Notes in hidden folders are Arcana's own: rename them in a file manager.", isError = true) else startRename(it) }; true }
                 key.char == 'o' -> { current?.let { openInObsidian(it) }; true }
-                key.char == 'd' -> { if (current != null) mode = LibraryMode.ConfirmDelete; true }
+                key.char == 'd' -> { if (current != null) { if (isHiddenPath(current.path)) navigator.showToast("Notes in hidden folders are Arcana's own: they cannot be trashed here.", isError = true) else mode = LibraryMode.ConfirmDelete }; true }
                 key.char == 'p' && filter == LibraryFilter.Inbox -> { navigator.navigate(Screen.Inbox); true }
                 else -> false
             }
@@ -279,6 +292,7 @@ fun LibraryScreen(app: AppContext) {
                 *(if (filter == LibraryFilter.Inbox) arrayOf(ActionItem("p", "Process inbox with AI", accent = Palette.Cta)) else emptyArray()),
                 *(if (tree) arrayOf(ActionItem("h l", "Fold"), ActionItem("+ -", "All")) else emptyArray()),
                 *(if (!showingTags) arrayOf(ActionItem("t", if (app.config.libraryTree) "Flat list" else "Tree")) else emptyArray()),
+                ActionItem(".", if (showHidden) "Hide hidden" else "Hidden"),
                 ActionItem("←→", "View"),
                 ActionItem("/", "Filter"),
             )
@@ -329,6 +343,8 @@ fun LibraryScreen(app: AppContext) {
         ActionBar(actions)
     }
 }
+
+private fun isHiddenPath(path: String): Boolean = path.split('/').any { it.startsWith(".") }
 
 private fun cycle(f: LibraryFilter, by: Int): LibraryFilter = LibraryFilter.entries[(f.ordinal + by).mod(LibraryFilter.entries.size)]
 
