@@ -1757,9 +1757,12 @@ class CoreTest {
         Files.writeString(Files.createDirectories(vaultDir.resolve("Research/Arcana")).resolve("Architecture-Improvements.md"), "# Plan")
         val box = ToolBox(Vault(vaultDir), emptyList(), root.resolve("backups"))
         val wrong = "Research/Architecture-Improvements.md"
-        for (tool in listOf("read_note", "read_file")) {
-            val out = box.execute(call(tool, "path" to wrong))
-            assertTrue("does not exist" in out && "Did you mean" in out && "Research/Arcana/Architecture-Improvements.md" in out, "$tool: $out")
+        val file = box.execute(call("read_file", "path" to wrong))
+        assertTrue("does not exist" in file && "Did you mean" in file && "Research/Arcana/Architecture-Improvements.md" in file, "read_file: $file")
+        // a note is found by its name: the missing folder, a [[wikilink]], an absolute path and a leading emoji do not matter
+        for (ref in listOf(wrong, "[[Architecture-Improvements]]", "$vaultDir/Research/Arcana/Architecture-Improvements.md", "📌 Architecture-Improvements")) {
+            val out = box.execute(call("read_note", "path" to ref))
+            assertTrue("# Plan" in out && "Research/Arcana/Architecture-Improvements.md" in out, "read_note $ref: $out")
         }
         assertTrue("# Plan" in box.execute(call("read_note", "path" to "Research/Arcana/Architecture-Improvements")))
         assertTrue("find_files" in box.execute(call("read_note", "path" to "Nowhere/Nothing.md")), "no match: the next step is named")

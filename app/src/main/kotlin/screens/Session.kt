@@ -1,7 +1,6 @@
 package com.arcana.brain.app.screens
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,8 +43,6 @@ fun SessionScreen(app: AppContext) {
     val gen = rememberGeneration(app, "Session")
     val output = remember { OutputState() }
     var mode by remember { mutableStateOf(SessionMode.Overview) }
-    val exiting = navigator.exitFlow
-    DisposableEffect(Unit) { onDispose { navigator.exitFlow = false } }
 
     fun toast(text: String, error: Boolean = false) = navigator.showToast(text, error)
 
@@ -66,7 +63,7 @@ fun SessionScreen(app: AppContext) {
         gen.start { messages }
     }
 
-    /** Writes the session to the vault as a note; [summary] may be empty for a plain log. Quits afterwards when exiting. */
+    /** Writes the session to the vault as a note; [summary] may be empty for a plain log. */
     fun save(summary: String) {
         val result = runCatching {
             val vault = app.openVault().getOrThrow()
@@ -80,14 +77,12 @@ fun SessionScreen(app: AppContext) {
             app.brain.changed()
             toast("Session saved as $path")
             mode = SessionMode.Overview
-            if (exiting) navigator.quitNow()
         }.onFailure { toast(it.message ?: "Could not save the session.", error = true) }
     }
 
     fun startNew() {
         gen.reset()
         app.startNewSession()
-        navigator.exitFlow = false
         navigator.navigate(Screen.Home, force = true)
         toast("New session started")
     }
@@ -112,7 +107,7 @@ fun SessionScreen(app: AppContext) {
 
     FocusMode(false)
     when (mode) {
-        SessionMode.Overview -> if (exiting) Hints("s  save summary & quit", "l  save log & quit", "Esc  keep working", "Ctrl+C  quit without saving") else Hints("s  save summary", "l  save log", "n  new session", "↑↓  scroll")
+        SessionMode.Overview -> Hints("s  save summary", "l  save log", "n  new session", "↑↓  scroll")
         SessionMode.Summary -> if (gen.state == GenState.Running) Hints("Esc  cancel") else Hints("n  save note", "r  redo", "↑↓/Space  scroll", "Esc  back")
         SessionMode.ConfirmNew -> Hints("y  start anyway", "s  summary first", "l  save log, then start", "Esc  cancel")
     }
@@ -126,7 +121,6 @@ fun SessionScreen(app: AppContext) {
                 key.char == 's' -> { startSummary(); true }
                 key.char == 'l' -> { save(""); true }
                 key.char == 'n' -> { if (session.needsSaving) mode = SessionMode.ConfirmNew else startNew(); true }
-                key == Key.Escape && exiting -> { navigator.exitFlow = false; navigator.quitPending = false; true }
                 else -> false
             }
             SessionMode.Summary -> when {
@@ -154,26 +148,20 @@ fun SessionScreen(app: AppContext) {
         when (mode) {
             SessionMode.Overview -> {
                 val actions = listOf(
-                    ActionItem("s", if (exiting) "Save summary & quit" else "Save summary note", app.connection is Connection.Online),
-                    ActionItem("l", if (exiting) "Save log & quit" else "Save log only"),
-                    ActionItem("n", "New session", !exiting),
-                    ActionItem("Esc", if (exiting) "Keep working" else "Back", accent = Palette.Cta),
+                    ActionItem("s", "Save summary note", app.connection is Connection.Online),
+                    ActionItem("l", "Save log only"),
+                    ActionItem("n", "New session"),
+                    ActionItem("Esc", "Back", accent = Palette.Cta),
                 )
                 ScreenHeader("Session", "Started ${SessionReport.clock(session.started)} · $duration · ${session.events.size} events")
                 VGap()
-                if (exiting) {
-                    Panel("Before you go", accent = Palette.Warn) {
-                        Warning("This session has ${session.unsavedCount} event${if (session.unsavedCount == 1) "" else "s"} that are not saved to your vault.")
-                        Hint("Save a summary so your second brain keeps what you did and learned, or just the plain log. Ctrl+C again quits without saving.")
-                    }
-                }
                 Panel("Activity") {
                     val width = outputWidth()
                     val lines = remember(session.events.size, width, Palette.themeId) { timeline(session.activity, width) }
                     if (lines.isEmpty()) {
                         Hint("Nothing yet. Ask a question, write a note, capture a thought: it all appears here, and can be saved to your vault as a note.")
                     } else {
-                        ScrollView(lines, outputRows(fixed = 3 + (if (exiting) 5 else 0) + 2 + 2, actions = actions), output)
+                        ScrollView(lines, outputRows(fixed = 3 + 2 + 2, actions = actions), output)
                     }
                     Label(
                         "${stats.describe()} · ⚡ ${UsageStats.compact(app.sessionTokens)} tokens" + (session.savedAs?.let { "  ·  ✓ saved as $it" } ?: ""),
@@ -184,7 +172,7 @@ fun SessionScreen(app: AppContext) {
             }
             SessionMode.Summary -> {
                 val actions = listOf(
-                    ActionItem("n", if (exiting) "Save note & quit" else "Save as note", gen.state == GenState.Done),
+                    ActionItem("n", "Save as note", gen.state == GenState.Done),
                     ActionItem("r", "Regenerate", gen.state != GenState.Running),
                     ActionItem("Esc", if (gen.state == GenState.Running) "Cancel" else "Back", accent = Palette.Cta),
                 )

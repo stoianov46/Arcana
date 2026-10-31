@@ -113,8 +113,8 @@ Startup: `main()` clears the screen, installs `ResizeSignalGuard`, starts `Termi
 `runBlocking`, composes `ArcanaApp`. `ArcanaApp` wires theme (`Palette.use(...)`), connection check, brain refresh, and renders
 `key(app.revision) { <current screen> }` inside `Shell`.
 
-Quit: Ctrl+C is **always handled by Arcana** (never left to Mosaic): first press shows a confirmation (or the "Before you go"
-session-save flow when `AppSession.needsSaving`), the second quits. Quit = `session.finish()` → complete a `CompletableDeferred`
+Quit: Ctrl+C is **always handled by Arcana** (never left to Mosaic): first press shows a confirmation, the second quits
+(no session-save dialog: the Session screen is the only place a session is saved). Quit = `session.finish()` → complete a `CompletableDeferred`
 → cancel the Mosaic job → `Runtime.halt(0)` (background loops must not keep the JVM alive).
 
 ## Key design decisions (and why)

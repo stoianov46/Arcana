@@ -16,7 +16,7 @@ make dist                                  # app/build/distributions/arcana.zip:
 The loop it is built around: **capture** a thought from anywhere (`Ctrl+N` → today's daily note) → **see** how the vault is doing
 (Brain: notes, links, tags, inbox, islands, broken links, stale notes) → **think** (Chat: attach notes with `@`, pictures, PDFs and text files with `Ctrl+O` (also in AI notes and Capture),
 or answer from the vault with `/vault`; turn on `/tools` and it can search and read your notes and files, ask you questions, and (always after you confirm) change, move or delete them, run commands and read web pages; **skills**: runbooks in your vault (`Skills/<name>/…`) that it follows step by step, picked from the `/` menu; type `/` for the menu of commands, skills and tools, coloured by what each can do) → **shape** (AI notes: summarize, improve, translate, connect…) → **keep** (each session can be
-saved into the vault as a note of what you did and learned; Arcana offers it before you quit).
+saved into the vault as a note of what you did and learned; from the Session screen, whenever you like).
 
 Screens: Brain, Chat, Library (browse by inbox / no links / no tags / broken links / stale / tags, with links, backlinks and preview),
 Inbox (AI proposes a title, folder, tags and links for each new note; you review and apply, the original is always kept),

@@ -46,7 +46,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 |---|---|---|---|
 | `search_notes` | Read | `query`, `limit?` | `Vault.search`, ≤20 results with excerpts. Finds notes with ANY word of the query (3+ letters, `stopWords` such as "the" skipped, case-insensitive, titles weigh more); a query left with no words ("the", "AI") is searched as the literal text (`literalFallback`, tool only: the automatic Ask-your-vault search keeps skipping them); an empty query is an error; a miss names the words searched, says the vault has N notes ("the search is not broken") and points to `grep_files` for exact text, so a model does not mistake a miss for a bug |
 | `list_notes` | Read | `folder?` | vault-relative paths, ≤200 |
-| `read_note` | Read | `path` | `.md` optional; truncated at 20,000 chars |
+| `read_note` | Read | `path` | `.md` optional; a title, `[[wikilink]]`, absolute path inside the vault or a path without its folder/emoji also works (the one note with that name is used, `(found at …)` is prefixed; several matches list their paths; same for `set_properties`, `add_tags`, `append_to_note`); truncated at 20,000 chars |
 | `list_dir` | Read | `path`, `recursive?` | folders end with `/`; recursive = whole tree as relative paths (≤500, 10 levels; hidden files shown, `.git`/`.ssh`-style folders and build/media folders skipped) |
 | `find_files` | Read | `name?`, `glob?`, `path?` | by part of the name and/or a glob (`**/*.kt`; without a `/` it matches the file name); breadth-first, 20 levels, ≤40 hits, 25 s; no `path` = every allowed folder |
 | `grep_files` | Read | `pattern`, `path?`, `glob?` | regex (case-insensitive) inside text files: `file:line: text`, ≤60 hits; skips binary, PDFs, files over 2 MB |

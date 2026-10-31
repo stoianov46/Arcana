@@ -38,7 +38,7 @@ Arcana connects your Obsidian vault with a local AI model (Gemma, run by Ollama)
 - `Ctrl+P` opens the **command palette**: every action by name, searchable. If you forget a key, use this.
 - `Ctrl+N` captures a thought into today's daily note. `?` shows the keys of the current screen. `Ctrl+B` folds the sidebar.
 - `Esc` leaves what you are doing; from a top-level screen it goes back to Brain.
-- Quit with `Ctrl+C` twice. If the session has unsaved activity, Arcana first offers to save it.
+- Quit with `Ctrl+C` twice.
 
 ## First steps
 1. Start Ollama with a Gemma model (`ollama pull gemma4`).
@@ -166,7 +166,7 @@ Talk to the model (Gemma, Qwen… whichever you chose). The message field **alwa
 Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use tools instead of only talking:
 - **Asking for what it needs:** with tools off (or in Plan mode) the model can call `request_access` and you are asked, right there, to turn them on or leave Plan mode; `use_skill` loads a skill when your request matches one (see the **Skills** page).
 - **Tags:** `list_tags` shows the vault's tags, `add_tags` (asks first) adds tags to a note without losing its own; the Library's Tags tab picks up tags however a model wrote them.
-- **Reading** (runs at once): `cat` (a file with line numbers), `search_notes`, `list_notes`, `read_note`, `list_dir` (also recursive), `current_time` (the date and time, in any time zone), `elapsed_time` (how long since a moment, so the model does not do clock math), `wait` (pauses up to 120 s, to sit out a web rate limit before retrying), `find_files` (by name or glob such as `**/*.kt`), `grep_files` (search *inside* files, with line numbers), `read_file` (text, code, JSON, PDF; long files in parts with a line range).
+- **Reading** (runs at once): `cat` (a file with line numbers), `search_notes`, `list_notes`, `read_note` (finds a note by its title too: `[[wikilink]]`, a missing folder or emoji prefix does not matter), `list_dir` (also recursive), `current_time` (the date and time, in any time zone), `elapsed_time` (how long since a moment, so the model does not do clock math), `wait` (pauses up to 120 s, to sit out a web rate limit before retrying), `find_files` (by name or glob such as `**/*.kt`), `grep_files` (search *inside* files, with line numbers), `read_file` (text, code, JSON, PDF; long files in parts with a line range).
 - **Changing** (always asks first): `create_note` (a properties block at the top of its text is merged with Arcana's), `append_to_note`, `set_properties` (change a note's properties in place), `write_file`, `edit_file`. A panel shows exactly what would change (for `edit_file` and an overwrite it is a diff like `git diff`, `-` red and `+` green); `y` allows, `n` denies, `a` allows that tool for the rest of the session.
 - Each step shows in the chat as `⚙ tool  what` and `↳ ✓ result`. It may take up to *Steps per question* rounds before it must answer. At that limit a dialog offers more steps; *Settings → Tools → At the step limit* can give them automatically (up to 3 times) or stop at once. Changes, commands and web addresses still ask one by one.
 - **Watching the model think:** `/thinking` (or *Settings → Console → Thinking pane*); opens a split window beside the conversation that follows a reasoning model's thoughts while it works, and shows the last ones when it is idle. *Thinking pane placement* puts it at the bottom, top, left or right; *Thinking pane size* is a percent of the main axis (of the height at the bottom or top, of the width left or right; 10 to 90). `Ctrl+T` changes the size at any moment, also while you type or a reply streams (15, 25, 35, 50 % (half of the window), 75 or 85 %; the conversation always keeps a few rows or 40 columns, so on a small window the largest sizes are cut short; one more press turns the pane off, and the next brings it back). It needs a model that can think; a strip needs a terminal at least 26 rows tall, a side column about 80 columns wide. (The `/compare` split view is something else: columns of answers from several models.)
@@ -327,9 +327,6 @@ A timeline of the activity, with counts and the tokens used. From here:
 - `n` **New session**: closes this one and starts fresh without restarting Arcana. The chat starts empty (the old one stays in the history).
 
 Notes are saved in `Sessions` inside your output folder, with `[[links]]` to the notes the session touched, so Obsidian connects them.
-
-## Before you quit
-When the session has activity that is not saved to the vault, the first `Ctrl+C` opens the Session screen with **Before you go**: `s` or `l` saves and then quits, `Esc` keeps working, and `Ctrl+C` again quits without saving.
 
 The palette (`Ctrl+P`) has the same actions.
 """.trim(),

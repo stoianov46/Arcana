@@ -136,12 +136,6 @@ class Navigator {
      */
     var leaveGuard: ((Screen) -> Boolean)? = null
 
-    /** True while Arcana is asking whether to save the session before quitting (the Session screen shows the question). */
-    var exitFlow by mutableStateOf(false)
-
-    /** Quits Arcana for real (set by the shell); the Session screen calls it once the session has been saved. */
-    var quitNow: () -> Unit = {}
-
     /** What the Session screen should do as it opens: set by the palette, read once. */
     var sessionIntent by mutableStateOf<String?>(null)
 

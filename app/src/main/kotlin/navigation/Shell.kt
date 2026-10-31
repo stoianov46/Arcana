@@ -91,7 +91,6 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
 
     // Quitting for real also closes the session file.
     val quit = { app.session.finish(); onQuit() }
-    navigator.quitNow = quit
     // The overlays (key map, command palette, capture) take every key while one is open.
     val latestCommands by rememberUpdatedState(paletteCommands(app, navigator, quit))
     val dispatcher = remember {
@@ -110,17 +109,8 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
     val onKey: (KeyEvent) -> Boolean = { e ->
         when {
             e.ctrl && e.key.equals("c", ignoreCase = true) -> {
-                // The first press asks (and, when the session has unsaved activity, shows the Session screen so it can be
-                // saved first); the second quits (main() then cancels Mosaic and exits).
-                when {
-                    navigator.quitPending -> quit()
-                    app.session.needsSaving && !navigator.exitFlow -> {
-                        navigator.exitFlow = true
-                        navigator.navigate(Screen.Session, force = true)
-                        navigator.quitPending = true
-                    }
-                    else -> navigator.quitPending = true
-                }
+                // The first press asks; the second quits (main() then cancels Mosaic and exits).
+                if (navigator.quitPending) quit() else navigator.quitPending = true
                 true
             }
             e.ctrl && e.key.equals("b", ignoreCase = true) -> {
@@ -185,7 +175,7 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
     }
     // With an action bar on screen the footer keeps only what the bar does not show: the key map and quitting.
     val hint = when {
-        navigator.quitPending -> quitPrompt(size.columns - app.badgeWidth(navigator, size.columns) - 2, navigator.exitFlow)
+        navigator.quitPending -> quitPrompt(size.columns - app.badgeWidth(navigator, size.columns) - 2)
         navigator.overlayOpen -> overlayHint(navigator)
         navigator.actionBars > 0 -> Shortcuts.label("Ctrl+P  commands   Ctrl+N  capture   ?  keys")
         // the two global keys come first, so they are always seen
@@ -441,8 +431,7 @@ private fun Footer(app: AppContext, navigator: Navigator, hint: String, columns:
 }
 
 /** The second-press question, shortened when the footer is narrow so it never runs off the edge. */
-private fun quitPrompt(room: Int, unsaved: Boolean): String {
-    if (unsaved) return "Ctrl+C again quits WITHOUT saving · s save summary · l save log · Esc keep working".take(room.coerceAtLeast(0))
+private fun quitPrompt(room: Int): String {
     val full = "Press Ctrl+C again to quit (any other key cancels)"
     val short = "Press Ctrl+C again to quit"
     return if (full.length <= room) full else short.take(room.coerceAtLeast(0))

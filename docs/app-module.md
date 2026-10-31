@@ -26,7 +26,7 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
   - `Screen` enum (Home, Chat, Library, Inbox, Compose, Session, Usage, Settings, Guide, Changelog) with `title`, `icon`, `group`
     (`ScreenGroup.Workspace`="BRAIN", `Account`="SYSTEM"); `ScreenOrder` applies the user's `tabOrder`; `SHORTCUT_KEYS="1234567890"`.
   - `Navigator` holds: `current`, `navigate(screen, force)`, `leaveGuard` (a screen may veto leaving), overlays
-    (`helpOpen`, `paletteOpen`, `captureOpen`, `palette`, `captureField`), `toast`/`showToast`, `exitFlow`/`quitPending`,
+    (`helpOpen`, `paletteOpen`, `captureOpen`, `palette`, `captureField`), `toast`/`showToast`, `quitPending`,
     cross-screen requests (`libraryFilter`, `libraryNote`, `libraryTag`, `noteRequest` to open AI notes with a note,
     `sessionIntent`), `focusMode`, `actionBars`.
   - Screen-side API (composable effects): `Hints(vararg)` footer hints, `FocusMode(active)` (true while typing: global letter keys

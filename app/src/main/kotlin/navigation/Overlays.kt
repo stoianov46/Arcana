@@ -30,14 +30,7 @@ fun paletteCommands(app: AppContext, navigator: Navigator, onQuit: () -> Unit): 
     })
     add(Command("Keys of this screen", "Help", "?") { navigator.helpHint = navigator.hint; navigator.helpOpen = true })
     add(Command("Quit Arcana", "Arcana", "Ctrl+C ×2") {
-        // with unsaved activity, the Session screen asks first
-        if (app.session.needsSaving) {
-            navigator.exitFlow = true
-            navigator.navigate(Screen.Session, force = true)
-            navigator.quitPending = true
-        } else {
-            onQuit()
-        }
+        onQuit()
     })
     add(Command("Session: save a summary note…", "Session") { navigator.sessionIntent = "summary"; navigator.navigate(Screen.Session) })
     add(Command("Session: save the log", "Session") { navigator.sessionIntent = "log"; navigator.navigate(Screen.Session) })

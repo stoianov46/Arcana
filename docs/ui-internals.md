@@ -38,7 +38,7 @@ Order: **overlay → screen `KeyHandler` → global (Shell)**. A handler returns
 - Chat's field always has focus (`FocusMode(!browsing)`). Letters never trigger actions there; actions are Ctrl keys, `/commands`,
   `@`, the palette.
 - Pending approval (tools) and the file browser (`attachments.browsing`) take the keys first inside the screen.
-- Ctrl+C: first press → confirmation (or session-save flow), second → quit. Never swallow Ctrl+C in a screen handler (return `false`).
+- Ctrl+C: first press → confirmation, second → quit (no session-save dialog). Never swallow Ctrl+C in a screen handler (return `false`).
 - Text editing (caret, selection, word moves, Ctrl+U…) is `TextEdit`/`TextFieldState`; call `field.onKey(key)` last in a handler.
 - Cyrillic keys map to the QWERTY key at the same position for shortcuts (`KeyboardLayout`), but text fields receive what was typed.
 - Never use `z`/`Z` as control keys.

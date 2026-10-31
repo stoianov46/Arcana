@@ -394,7 +394,8 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
             val path = notePath(a.str("path"))
             val file = vault.root.resolve(path).normalize()
             require(file.startsWith(vault.root) && Files.isRegularFile(file)) { "$path does not exist in the vault, ${vault.root}." + didYouMean(path).ifEmpty { " Find the exact path with find_files or search_notes." } }
-            cut(vault.read(path))
+            val asked = a.str("path").trim().trim('/').let { if (it.endsWith(".md")) it else "$it.md" }
+            (if (asked != path) "(found at $path)\n" else "") + cut(vault.read(path))
         },
         ToolSpec(
             "create_note", "Create a new Markdown note in the vault. It is saved in the given folder (default: the output folder).",
@@ -471,10 +472,30 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         },
     )
 
+    /**
+     * The vault-relative path of a note from what a model wrote. Models usually know a note by its title or wikilink (that is how
+     * Obsidian names notes), not by its folder and emoji prefix, so this accepts `[[Title]]`, an absolute path inside the vault, and a
+     * bare name: when the exact path is missing, the one note with that name (case and leading emoji ignored) anywhere in the vault is used.
+     */
     private fun notePath(raw: String): String {
-        val path = raw.trim().trim('/')
+        var path = raw.trim().removeSurrounding("[[", "]]").substringBefore('|').trim()
+        val root = vault?.root
+        if (root != null && path.startsWith("/")) {
+            val absolute = Path.of(path).normalize()
+            if (absolute.startsWith(root)) path = root.relativize(absolute).toString().replace('\\', '/')
+        }
+        path = path.trim('/')
         require(path.isNotEmpty()) { "The path is empty." }
-        return if (path.endsWith(".md")) path else "$path.md"
+        if (!path.endsWith(".md")) path = "$path.md"
+        if (vault == null || Files.isRegularFile(vault.root.resolve(path))) return path
+        fun key(name: String) = name.substringAfterLast('/').removeSuffix(".md").dropWhile { !it.isLetterOrDigit() }.trim().lowercase()
+        val wanted = key(path)
+        val same = vault.notes().map { it.path }.filter { key(it) == wanted }
+        return when {
+            same.size == 1 -> same.first()
+            same.size > 1 -> throw IllegalArgumentException("$path is ambiguous, several notes have that name: ${same.take(5).joinToString(" or ")}. Use the full path.")
+            else -> path
+        }
     }
 
     // ----- files -----

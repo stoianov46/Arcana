@@ -113,8 +113,7 @@ backup), or copy. Leaving with an unapplied draft asks first (the only leave gua
 
 Every run is a session logged to `~/.config/arcana/sessions/` as it happens (asked, task, created, appended, replaced, renamed, deleted,
 saved, captured, processed, attached, tool). Actions: save a **summary note** (model-written from the log and chat transcripts) or the
-**plain log** into the vault; **start a new session** without restarting. Quitting with unsaved activity opens the "Before you go" flow
-(`s` save summary, `l` save log, `Esc` keep working).
+**plain log** into the vault; **start a new session** without restarting. Quitting never asks about unsaved activity.
 
 ## Capture (`Ctrl+N`)
 
@@ -208,6 +207,7 @@ ships, add a bullet to the newest page.
 Tabs (groups) and rows:
 - **Ollama**: URL, Model (picker with size and tools/vision/thinking per installed model), Temperature, Context window (model default … 1M),
   Timeout, Price for prompt/reply tokens (only for the estimated price).
+- **Notes are found by name:** `ToolBox.notePath` (used by `read_note`, `set_properties`, `add_tags`, append) strips `[[ ]]`/`|alias`, turns an absolute path inside the vault into a relative one, and when the exact path is missing uses the single note with the same name (case and leading emoji ignored) anywhere in the vault; several matches throw with their paths; `read_note` prefixes `(found at <path>)` when it resolved one.
 - **Cut notes are never silent:** a note found by `/vault` that is longer than *Chars per note* reaches the model as an excerpt ending in `… (cut: only N of M characters of this note are shown; read the whole note with read_note…)` (`Prompts.hitText`, `SearchHit.missing`), and the answer's sources line is followed by an orange `⚠ Only the start was read of: …` (`ChatMessage.sourcesCut`). A note attached with `@` that is longer than 60,000 characters (`ChatSession.MAX_NOTE_CHARS`) asks first: *send the first 60k* / *send the whole note (may not fit the context window)* / *cancel* (the text you typed comes back); the choice holds for the rest of that chat (`wholeNotes`, `cutAccepted`), and a note sent cut ends with the same marker.
 - **Vault**: Vault path (folder browser), Output folder, *Where Arcana's own files are (this vault)* and *Where YOUR files are (every vault)* (read-only rows showing `.arcana/` and `~/.config/arcana/`), Context notes, Inbox folder, Daily notes folder/format, Stale after, Chars per note.
 - **Appearance**: Colour theme, Navigation (left/right/top), Sidebar (full/icons), Logo animation.

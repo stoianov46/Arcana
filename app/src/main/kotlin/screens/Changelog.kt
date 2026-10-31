@@ -24,9 +24,10 @@ private fun changePages() = listOf(
         "Latest", "The latest work",
         """
 # The latest work
-Built on 24–25 October 2026. Last updated 28 October 2026.
+Built on 24–25 October 2026. Last updated 31 October 2026.
 
 ## Cancel asks first
+- **Notes are found by name:** `read_note`, `set_properties`, `add_tags` and `append_to_note` accept a title, a `[[wikilink]]`, an absolute path inside the vault, or a path with the folder or the leading emoji left out, and use the one note that matches (several matches list the paths). Models used to miss paths because Obsidian knows notes by title, not by folder.
 - `Esc` on a running reply (or an Oracul run) opens *Cancel this reply?*: `Enter` cancels, any other key keeps going, and the reply keeps streaming meanwhile. The double `Esc` is gone; **Settings → Console → Confirm before cancelling** turns the question off.
 
 ## Models as a pipeline
@@ -267,7 +268,7 @@ The conversation with your second brain.
 - Describe a note or attach pictures, PDFs and files; refine the draft with follow-up prompts; save it into the vault when you are happy.
 
 ## Session
-- Everything you did is logged; at the end save a summary note or only the log. Leaving unsaved work asks first.
+- Everything you did is logged; save a summary note or only the log whenever you like. Quitting no longer asks about unsaved activity.
 """.trimIndent(),
     ),
     ChangePage(
