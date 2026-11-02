@@ -21,10 +21,13 @@ import com.arcana.brain.app.navigation.LibraryFilter
 import com.arcana.brain.app.navigation.LocalNavigator
 import com.arcana.brain.app.navigation.Navigator
 import com.arcana.brain.app.navigation.Screen
+import com.arcana.brain.core.BacklogItem
 import com.arcana.brain.core.BrainHealth
 import com.arcana.brain.core.HygieneKind
 import com.arcana.brain.core.HygieneReport
+import com.arcana.brain.core.ResearchBacklog
 import com.arcana.brain.core.SessionReport
+import com.arcana.brain.core.Skills
 import com.arcana.brain.core.UsageStats
 import com.arcana.brain.core.VaultHygiene
 import kotlinx.coroutines.Dispatchers
@@ -85,15 +88,52 @@ fun HomeScreen(app: AppContext) {
     }.orEmpty()
     val chosenIssue = listed.getOrNull(hygieneSel.coerceIn(0, (listed.size - 1).coerceAtLeast(0)))
 
-    val rows = buildRows(app, navigator, health, vault.isSuccess, recents = if (wide) 12 else 5, topTags = if (wide) 8 else 0, hygiene = hygiene, openHygiene = ::openHygiene)
+    // the research backlog (Research/Research Backlog.md): read, and ticked by the reports that answer its questions, off the UI thread whenever the vault was read again
+    var backlog by rememberKept(app, "brain.backlog@$where") { mutableStateOf<List<BacklogItem>>(emptyList()) }
+    LaunchedEffect(index) {
+        val v = vault.getOrNull()
+        if (index != null && v != null) backlog = withContext(Dispatchers.IO) { runCatching { ResearchBacklog.reconcile(v); ResearchBacklog.open(v) }.getOrDefault(emptyList()) }
+    }
+    var backlogOpen by rememberKept(app, "brain.backlogOpen@$where") { mutableStateOf(false) }
+    var backlogSel by rememberKept(app, "brain.backlogSel@$where") { mutableIntStateOf(0) }
+    fun openBacklog() { backlogSel = 0; backlogOpen = true }
+    val chosenQuestion = backlog.getOrNull(backlogSel.coerceIn(0, (backlog.size - 1).coerceAtLeast(0)))
+    // a fresh chat with the research skill attached (the first one named ...research-report) and the question waiting in the field: Enter starts typing, Enter again sends
+    fun startResearch(item: BacklogItem) {
+        val skill = if (app.config.skillsEnabled) vault.getOrNull()?.let { v -> Skills.discoverAll(v, app.skillsFolder()).firstOrNull { it.name.endsWith("research-report") } } else null
+        app.chat.startNew()
+        skill?.let { app.chat.attachments.notes += it.path }
+        app.chat.input.set(item.question)
+        backlogOpen = false
+        navigator.navigate(Screen.Chat)
+    }
+    fun markDone(item: BacklogItem) {
+        val v = vault.getOrNull() ?: return
+        runCatching { ResearchBacklog.tick(v, item); backlog = ResearchBacklog.open(v) }
+        backlogSel = backlogSel.coerceIn(0, (backlog.size - 1).coerceAtLeast(0))
+    }
+    val backlogRows = backlog.map { BrainRow.Item("?", Palette.Cta, it.question, it.date, open = {}) }
+
+    val rows = buildRows(app, navigator, health, vault.isSuccess, recents = if (wide) 12 else 5, topTags = if (wide) 8 else 0, hygiene = hygiene, openHygiene = ::openHygiene, backlog = backlog, openBacklog = ::openBacklog)
     val items = rows.nowItems + rows.backItems
     val current = selected.coerceIn(0, (items.size - 1).coerceAtLeast(0))
 
-    if (hygieneOpen) Hints("↑↓  choose", "Enter  open the note", "c  chat to fix it", "Esc  back")
-    else Hints("↑↓  choose", "←→  column", "Enter  open", "h  vault hygiene", "r  re-read the vault")
-    Commands(listOf(Command("Re-read the vault", "Brain", "r") { app.brain.changed() }, Command("Vault hygiene: names, properties, reports, islands", "Brain", "h") { openHygiene(null) }))
+    if (backlogOpen) Hints("↑↓  choose", "Enter  start the research", "x  mark done", "Esc  back")
+    else if (hygieneOpen) Hints("↑↓  choose", "Enter  open the note", "c  chat to fix it", "Esc  back")
+    else Hints("↑↓  choose", "←→  column", "Enter  open", "h  vault hygiene", "b  research backlog", "r  re-read the vault")
+    Commands(listOf(Command("Re-read the vault", "Brain", "r") { app.brain.changed() }, Command("Vault hygiene: names, properties, reports, islands", "Brain", "h") { openHygiene(null) }, Command("Research backlog: questions captured with “? ”", "Brain", "b") { openBacklog() }))
 
     KeyHandler { key ->
+        // the research backlog list has the keys while it is open; `b` opens it from the dashboard (not while the hygiene list is open)
+        if (backlogOpen) return@KeyHandler when {
+            key == Key.Escape -> { backlogOpen = false; true }
+            key == Key.Up || key.char == 'k' -> { backlogSel = (backlogSel - 1).coerceAtLeast(0); true }
+            key == Key.Down || key.char == 'j' -> { backlogSel = (backlogSel + 1).coerceAtMost((backlog.size - 1).coerceAtLeast(0)); true }
+            key == Key.Enter -> { chosenQuestion?.let(::startResearch); true }
+            key.char == 'x' -> { chosenQuestion?.let(::markDone); true }
+            else -> true
+        }
+        if (!hygieneOpen && key.char == 'b') { openBacklog(); return@KeyHandler true }
         if (hygieneOpen) when {
             key == Key.Escape -> { hygieneOpen = false; true }
             key == Key.Up || key.char == 'k' -> { hygieneSel = (hygieneSel - 1).coerceAtLeast(0); true }
@@ -138,6 +178,10 @@ fun HomeScreen(app: AppContext) {
                 Cta("Press ${Screen.Settings.shortcut} to choose your vault folder.")
             }
             index == null -> Panel("Today") { Spinner("Reading your vault…") }
+            backlogOpen -> Panel("Research backlog · ${backlog.size} open", Modifier.height(height)) {
+                if (backlog.isEmpty()) Label("✓ No open questions. Capture one with Ctrl+N and start it with “? ”.", color = Palette.Green)
+                else RowList(backlogRows, backlogSel.coerceIn(0, (backlog.size - 1).coerceAtLeast(0)), height - 2)
+            }
             hygieneOpen -> Panel("Vault hygiene · ${hygiene?.total ?: 0} issues" + (hygieneKind?.let { " · ${it.label}" } ?: ""), Modifier.height(height)) {
                 when {
                     hygiene == null -> Spinner("Checking the vault…")
@@ -178,7 +222,7 @@ private fun Vitals(h: BrainHealth?, reading: Boolean) {
     Label(line, color = Palette.Text)
 }
 
-private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, hasVault: Boolean, recents: Int, topTags: Int, hygiene: HygieneReport? = null, openHygiene: (HygieneKind?) -> Unit = {}): BrainRows {
+private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, hasVault: Boolean, recents: Int, topTags: Int, hygiene: HygieneReport? = null, openHygiene: (HygieneKind?) -> Unit = {}, backlog: List<BacklogItem> = emptyList(), openBacklog: () -> Unit = {}): BrainRows {
     if (!hasVault) return BrainRows(emptyList(), emptyList())
     val now = buildList {
         val daily = app.openVault().getOrNull()?.let { v -> app.dailyNotes(v).pathFor(LocalDate.now()).let { it to Files.exists(v.root.resolve(it)) } }
@@ -216,6 +260,13 @@ private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, ha
                     hygiene.byKind.getValue(k).take(3).forEach { i -> add(BrainRow.Item("▤", Palette.Muted, i.title, i.message, open = { navigator.openLibrary(LibraryFilter.All, i.path) })) }
                 }
             }
+        }
+        // the questions waiting to be researched (captured with `? `): how many, the first three; Enter or b opens the list that starts the research
+        add(BrainRow.Heading("RESEARCH BACKLOG"))
+        if (backlog.isEmpty()) add(BrainRow.Item("?", Palette.Dim, "No open research questions", "Ctrl+N, then “? your question”", dim = true, open = openBacklog))
+        else {
+            add(BrainRow.Item("?", Palette.Cta, "${backlog.size} open ${if (backlog.size == 1) "question" else "questions"}", "Enter or b: see them, start one", open = openBacklog))
+            backlog.take(3).forEach { q -> add(BrainRow.Item("·", Palette.Muted, q.question, q.date, open = openBacklog)) }
         }
         // the topics the vault is about: each opens the Library on that tag
         val tags = app.brain.index?.tagCounts?.take(topTags).orEmpty()

@@ -144,6 +144,7 @@ fun CaptureOverlay(app: AppContext, navigator: Navigator) {
                 Hint(if (folder.isEmpty()) "Enter adds it to today's daily note, “$target”, with the time. Tab saves it to a folder of your vault instead."
                 else "Enter saves it as a new note in “$folder/”, named after its first line. Tab chooses another folder, or the daily note.")
                 Hint("Ctrl+O attaches a file: it is copied into the vault and embedded. Esc cancels.")
+                Hint("Start with “? ” or “research: ” and the thought is also added to the research backlog (Brain, key b).")
             }
         }
     }
