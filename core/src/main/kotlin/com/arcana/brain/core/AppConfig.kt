@@ -57,6 +57,8 @@ data class AppConfig(
     /** Chats are saved to disk and the last one is reopened when Arcana starts. */
     /** The folder where new, unprocessed notes land; Arcana counts what is waiting there. */
     val inboxFolder: String = "Inbox",
+    /** The embedding model of the semantic search (`semantic_search` tool, `/reindex`): an installed Ollama model such as nomic-embed-text. Blank = the semantic search is off. */
+    val embedModel: String = "",
     /** Daily notes: used only when the vault has no Obsidian Daily notes settings of its own. */
     val dailyFolder: String = "",
     /** `thought-2026-11-02.md`: the prefix keeps the thought files apart from other date-named notes; `[text]` is literal (Obsidian's syntax). */

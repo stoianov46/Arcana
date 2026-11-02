@@ -68,6 +68,10 @@ import com.arcana.brain.core.ToolRisk
 import kotlinx.coroutines.runInterruptible
 import kotlinx.serialization.json.JsonArray
 import com.arcana.brain.core.Vault
+import com.arcana.brain.core.EmbeddingIndex
+import com.arcana.brain.core.Embedder
+import com.arcana.brain.core.SemanticSearch
+import com.arcana.brain.core.ModelStatus
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -612,8 +616,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     fun toolboxFor(config: AppConfig): ToolBox? {
         if (!config.toolsEnabled) return null
         val folders = config.toolFolders.split(';').map { it.trim() }.filter { it.isNotEmpty() }.map { AppContext.expandHome(it) }
+        val vault = app.openVault().getOrNull()
         return ToolBox(
-            app.openVault().getOrNull(), folders,
+            vault, folders,
             backups = ConfigStore.defaultPath().resolveSibling("backups"),
             outputFolder = config.outputFolder,
             project = projectFolder(config),
@@ -623,7 +628,55 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             web = config.toolWeb,
             searchBackend = config.searchBackend, searchUrl = config.searchUrl, searchKey = config.searchKey,
             skillsFolder = if (config.skillsEnabled) app.skillsFolder(config) else "",
+            semantic = semanticIndexFor(config, vault)?.let { SemanticSearch(it) },
         )
+    }
+
+    // ---- semantic search (docs/semantic-search.md)
+
+    /** The text of a running `/reindex` ("Indexing 120 notes… 40/120"), null when none runs: shown under the conversation. */
+    var indexing by mutableStateOf<String?>(null)
+        private set
+
+    private var semanticIndex: Triple<String, String, EmbeddingIndex>? = null
+
+    /**
+     * The semantic index of [vault] for the embedding model of [config], when one is set and installed on the Ollama server; null otherwise (then the
+     * `semantic_search` tool is not offered). One index object per vault and model is kept, so it is not read from disk for every message.
+     */
+    fun semanticIndexFor(config: AppConfig, vault: Vault?): EmbeddingIndex? {
+        val model = config.embedModel.trim()
+        if (vault == null || model.isEmpty()) return null
+        val installed = when (val c = app.connection) { is Connection.Online -> c.models; is Connection.ModelMissing -> c.models; else -> return null }
+        val name = installed.firstOrNull { ModelStatus.sameModel(it, model) } ?: return null
+        semanticIndex?.let { (root, m, index) -> if (root == vault.root.toString() && m == name) return index }
+        val index = EmbeddingIndex(EmbeddingIndex.fileFor(vault, name), vault, name, embedder = Embedder { texts -> app.client.embedBlocking(name, texts) })
+        semanticIndex = Triple(vault.root.toString(), name, index)
+        return index
+    }
+
+    /**
+     * `/reindex`: builds or refreshes the semantic index off the UI thread, with progress in [indexing]. [done] gets the closing text (a count and the
+     * time) and whether it failed; what was finished before a failure is kept.
+     */
+    fun reindex(done: (String, Boolean) -> Unit) {
+        if (indexing != null) return done("Already indexing.", true)
+        val config = app.config
+        if (config.embedModel.isBlank()) return done("No embedding model is set: choose one in Settings → Vault → Semantic search model (for example: ollama pull nomic-embed-text).", true)
+        val vault = app.openVault().getOrNull() ?: return done("Open a vault first (Settings → Vault).", true)
+        val index = semanticIndexFor(config, vault)
+            ?: return done("${config.embedModel} is not installed on the Ollama server, or Ollama cannot be reached. Run: ollama pull ${config.embedModel}", true)
+        indexing = "Indexing notes…"
+        app.scope.launch(Dispatchers.IO) {
+            try {
+                val r = index.refresh { d, t -> indexing = if (t == 0) "Indexing: nothing to do…" else "Indexing $t notes… $d/$t" }
+                done("Semantic index ready: ${r.notes} notes, ${r.chunks} passages (${r.embeddedNotes} embedded, ${r.removedNotes} dropped) in ${"%.1f".format(java.util.Locale.ROOT, r.millis / 1000.0)} s.", false)
+            } catch (e: Exception) {
+                done("Indexing stopped: ${e.message}. What was finished is kept; run /reindex to go on.", true)
+            } finally {
+                indexing = null
+            }
+        }
     }
 
     /** Runs the tools the model asked for (asking the user first when needed) and returns the messages to continue with. */

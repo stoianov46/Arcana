@@ -263,6 +263,22 @@ object OllamaProtocol {
 
     fun parseModels(body: String): List<String> =
         json.decodeFromString<WireTags>(body).models.map { it.name }.sorted()
+
+    /** The body of `/api/embed`: one vector per entry of [inputs], in order. */
+    fun embedRequest(model: String, inputs: List<String>): JsonObject = buildJsonObject {
+        put("model", model)
+        put("input", JsonArray(inputs.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+    }
+
+    /** The vectors of an `/api/embed` answer (`embeddings`: a list of lists of numbers); an older server's single `embedding` is taken too. Empty when there are none. */
+    fun parseEmbeddings(body: String): List<FloatArray> {
+        fun vector(e: kotlinx.serialization.json.JsonElement): FloatArray =
+            (e as JsonArray).map { (it as kotlinx.serialization.json.JsonPrimitive).content.toFloat() }.toFloatArray()
+        val root = Json.parseToJsonElement(body) as JsonObject
+        (root["embeddings"] as? JsonArray)?.let { all -> return all.map(::vector) }
+        (root["embedding"] as? JsonArray)?.let { return listOf(vector(it)) }
+        return emptyList()
+    }
 }
 
 class OllamaClient(private val config: () -> AppConfig) {
@@ -383,6 +399,37 @@ class OllamaClient(private val config: () -> AppConfig) {
         val response = try { http.send(request, HttpResponse.BodyHandlers.ofString()) } catch (e: Exception) { return@withContext emptyMap() }
         if (response.statusCode() != 200) emptyMap() else OllamaProtocol.parseModelSizes(response.body()).toMap()
     }
+
+    /**
+     * The embeddings of [inputs] from the embedding [model] (Ollama `/api/embed`), one vector per input, on the server of the settings. Blocking:
+     * the semantic search runs inside a tool call, which is not a coroutine; [embed] is the same call for coroutines.
+     */
+    fun embedBlocking(model: String, inputs: List<String>): List<FloatArray> {
+        if (inputs.isEmpty()) return emptyList()
+        val cfg = config()
+        val request = HttpRequest.newBuilder(endpoint(cfg, "/api/embed"))
+            .timeout(Duration.ofSeconds(cfg.timeoutSeconds.toLong()))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(OllamaProtocol.embedRequest(model, inputs).toString()))
+            .build()
+        val response = try {
+            http.send(request, HttpResponse.BodyHandlers.ofString())
+        } catch (e: Exception) {
+            throw OllamaException("Cannot reach Ollama at ${cfg.ollamaUrl}: ${e.message}", e)
+        }
+        if (response.statusCode() != 200) {
+            throw OllamaException("Ollama could not embed with \"$model\" (HTTP ${response.statusCode()}): ${errorText(response.body())}. Is it an embedding model (for example: ollama pull nomic-embed-text)?")
+        }
+        val vectors = try {
+            OllamaProtocol.parseEmbeddings(response.body())
+        } catch (e: Exception) {
+            throw OllamaException("Ollama answered the embedding request with something unreadable: ${e.message}", e)
+        }
+        if (vectors.size != inputs.size) throw OllamaException("Ollama returned ${vectors.size} embeddings for ${inputs.size} texts.")
+        return vectors
+    }
+
+    suspend fun embed(model: String, inputs: List<String>): List<FloatArray> = withContext(Dispatchers.IO) { embedBlocking(model, inputs) }
 
     suspend fun listModels(): List<String> = withContext(Dispatchers.IO) {
         val cfg = config()
