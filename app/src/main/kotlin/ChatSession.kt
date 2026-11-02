@@ -29,6 +29,7 @@ import com.arcana.brain.core.Skills
 import com.arcana.brain.core.SkillRun
 import com.arcana.brain.core.FileAttachment
 import com.arcana.brain.core.ImageAttachment
+import com.arcana.brain.core.ReportMeta
 import com.arcana.brain.core.Prompts
 import com.arcana.brain.core.ReplyStats
 import com.arcana.brain.core.SessionKind
@@ -495,7 +496,30 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     private fun startSkillRun(name: String, requirements: List<Requirement>) {
         skillRun = if (requirements.isEmpty()) null else SkillRun(name, requirements)
+        skillRunStart = System.currentTimeMillis()
+        stampedReports.clear()
         skillTick++
+    }
+
+    /** When the current skill run started (what the report's `tokens` and `work_time` are measured from) and the reports of this run already stamped. */
+    private var skillRunStart = 0L
+    private val stampedReports = HashSet<String>()
+
+    /**
+     * Report metadata (R7, see [ReportMeta]): when the skill run has all its steps done (or given up on), the notes it created that are `type: report` get `tokens`
+     * (every model, since the run started), `work_time` and `model`, written by Arcana, never composed by the model. Only missing keys are written. Best effort:
+     * a failure leaves the report as it is.
+     */
+    private fun stampReports() {
+        val run = skillRun ?: return
+        if (!run.finished || skillRunStart == 0L) return
+        val vault = app.openVault().getOrNull() ?: return
+        val now = System.currentTimeMillis()
+        val tokens = app.usage.filter { it.time >= skillRunStart }.sumOf { it.totalTokens.toLong() }
+        for (a in artifacts.toList()) {
+            if (a.tool != "create_note" || a.action != "created" || a.at < skillRunStart || !stampedReports.add(a.path)) continue
+            ReportMeta.stamp(vault, a.path, tokens, now - skillRunStart, app.config.model)
+        }
     }
 
     /** A change the model wants to make, waiting for the user's answer. */
@@ -1439,6 +1463,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         pendingSources = emptyList()
         pendingCut = emptyList()
         gen.consume()
+        stampReports()
         // the model ends its turn with open steps on its own todo list: back once, to finish them or close the list
         val open = todos.filter { !it.done }
         if (app.config.todoGuard && open.isNotEmpty() && todoNudges < 1 && toolbox != null && skillRun == null) {

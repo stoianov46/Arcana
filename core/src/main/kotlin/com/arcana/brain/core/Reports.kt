@@ -18,6 +18,11 @@ import java.time.temporal.ChronoUnit
  * @property skill the skill's name taken from the `skill:` property (`[[create-dev-research-report.skill]]` gives `create-dev-research-report`)
  * @property question what was asked (`question`, else `pair`), to run the skill again
  * @property ageDays days between [date] and the day of the scan; null when the date is missing or not a date
+ * @property model the model that made it (`model`, written by `create_note`)
+ * @property tokens what the run spent in all (every model, helpers included), written by Arcana when the skill run ends (see [ReportMeta]); null when not recorded
+ * @property workTime how long the run took, as text (`5 min 12 s`), written with [tokens]
+ * @property rating your rating 1 to 5 (`rating`), null when not given
+ * @property supersededBy the report that replaced this one (`superseded_by`, without the brackets); set together with `status: superseded`
  */
 data class ReportInfo(
     val path: String,
@@ -31,6 +36,11 @@ data class ReportInfo(
     val skill: String,
     val question: String,
     val ageDays: Long?,
+    val model: String = "",
+    val tokens: Long? = null,
+    val workTime: String = "",
+    val rating: Int? = null,
+    val supersededBy: String = "",
 )
 
 /** Finds the reports in a vault and says which have aged. Pure reading: it never writes. */
@@ -76,17 +86,28 @@ object Reports {
             skill = value("skill").removePrefix("[[").removeSuffix("]]").substringBefore('|').removeSuffix(".skill").trim(),
             question = value("question").ifEmpty { value("pair") },
             ageDays = age,
+            model = value("model"),
+            tokens = value("tokens").toLongOrNull(),
+            workTime = value("work_time"),
+            rating = value("rating").toIntOrNull()?.takeIf { it in 1..5 },
+            supersededBy = value("superseded_by").removePrefix("[[").removeSuffix("]]").substringBefore('|').trim(),
         )
     }
 
-    /** True when the report is older than its kind's limit ([STALE_AFTER_DAYS], else [DEFAULT_STALE_DAYS]). A report without a readable date is never stale. */
+    /** The status of a report that a newer one replaced (a refresh): it is kept as history, but it is neither unfinished nor stale any more. */
+    const val SUPERSEDED = "superseded"
+
+    fun isSuperseded(info: ReportInfo): Boolean = info.status == SUPERSEDED
+
+    /** True when the report is older than its kind's limit ([STALE_AFTER_DAYS], else [DEFAULT_STALE_DAYS]). A report without a readable date is never stale; a superseded one is not. */
     fun isStale(info: ReportInfo): Boolean {
+        if (isSuperseded(info)) return false
         val age = info.ageDays ?: return false
         return age > (STALE_AFTER_DAYS[info.kind] ?: DEFAULT_STALE_DAYS)
     }
 
-    /** True when the report is not finished: its status is `incomplete` (or the note does not say `done`). */
-    fun isIncomplete(info: ReportInfo): Boolean = info.status != "done"
+    /** True when the report is not finished: its status is `incomplete` (or the note does not say `done`). A superseded report is finished business. */
+    fun isIncomplete(info: ReportInfo): Boolean = info.status != "done" && !isSuperseded(info)
 
     /** `Research/LLM/Reports/x.md` gives `LLM`; a report anywhere else gives its folder's name, and one in the vault root `(vault)`. */
     fun domainOf(path: String): String {
