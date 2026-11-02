@@ -227,4 +227,6 @@ Values apply immediately and persist to `config.json`. Themes: Dark, Light, Soft
 `screens/Guide.kt` holds 13 pages (Markdown strings rendered by the same renderer; the **Skills** page explains skills, the progress badge and troubleshooting for users). **When you change behaviour, update the matching Guide
 page, the Changelog page and this file.**
 
+**Thought files:** `Vault.capture` appends to `thought-YYYY-MM-DD.md` (format `[thought-]YYYY-MM-DD`), and when it starts a new day it also lists the day in `Thoughts Index.md` beside it (`listThoughtDay`), so no thought file is an island in the graph.
+
 **Added after a real session:** Chat shows Arcana's own prompts (`Oracul.isSystemPrompt`) as a `⚙ System` block (`systemMessages`); `ChatSession.sendNow` attaches picture paths found in the text (`ImageFiles.pastedPaths`, `Attachments.takePastedPictures`); the bottom bar has a quiet `ram` meter (`memoryMeter`, `meterSegment`) and a token estimate (`ModelFit.tokenRoom` from `OllamaProtocol.parseKvBytesPerToken`, `AppContext.tokenRoom`); the thinking pane keeps a short strip while a dialog is open (`thinkingPaneLayout(dialog = true)`); top-level screens have no title/description header (the tab bar names the screen).

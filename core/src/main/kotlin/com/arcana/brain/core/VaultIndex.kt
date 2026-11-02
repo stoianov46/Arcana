@@ -217,11 +217,33 @@ fun Vault.capture(text: String, daily: DailyNotes, now: LocalDateTime = LocalDat
     if (!Files.exists(file)) {
         Files.createDirectories(file.parent)
         Files.writeString(file, line + "\n")
+        listThoughtDay(file)
     } else {
         val existing = Files.readString(file)
         Files.writeString(file, existing + (if (existing.endsWith("\n") || existing.isEmpty()) "" else "\n") + line + "\n")
     }
     return path
+}
+
+/** Where the days of the daily notes are listed: a note next to them, so no day is left without a link to it (it would be an island in the graph). */
+const val THOUGHTS_INDEX = "Thoughts Index"
+
+/** Adds the new daily note [file] to the index note beside it as `- [[name]]`, creating the index when it is missing; a day already listed is not added twice. Best effort: a failure never loses the thought. */
+private fun listThoughtDay(file: java.nio.file.Path) {
+    runCatching {
+        val name = file.fileName.toString().removeSuffix(".md")
+        val index = file.resolveSibling("$THOUGHTS_INDEX.md")
+        val link = "- [[$name]]"
+        if (!Files.exists(index)) {
+            Files.writeString(index, "---\ntags: [index, thoughts]\ntype: index\n---\n\n# $THOUGHTS_INDEX\n\nOne note per day: what Capture wrote, a line per thought. Arcana adds a day here when it starts that day's note.\n\n$link\n\nBack to [[Home]]\n")
+            return@runCatching
+        }
+        val text = Files.readString(index)
+        if (link in text) return@runCatching
+        // new days go above the "Back to" line, in order of time
+        val at = text.lastIndexOf("\nBack to ").takeIf { it >= 0 } ?: text.length
+        Files.writeString(index, text.substring(0, at).trimEnd('\n') + "\n$link\n" + text.substring(at))
+    }
 }
 
 /** How the vault is doing, in numbers. */

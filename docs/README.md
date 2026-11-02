@@ -65,7 +65,7 @@ Note: the vault note `ARCANA.md` (see [functionality.md](functionality.md)) is p
 | Brain | The home/dashboard screen (`Screen.Home`) showing vault health |
 | Session | One run of Arcana, logged to disk, can be saved to the vault as a summary note |
 | Inbox | A vault folder (default `Inbox`) of unprocessed notes that AI can file |
-| Capture | `Ctrl+N`: append a timestamped line to today's daily note |
+| Capture | `Ctrl+N`: append a timestamped line to today's thought file (`thought-YYYY-MM-DD.md`) |
 | Palette | `Ctrl+P`: searchable list of every action |
 | Tools | Model-callable functions: read/search notes and files, change or delete them, ask the user, run commands, read web pages; changes, commands and fetches need the user's confirmation |
 | Memory file | The vault note `ARCANA.md`: standing instructions and facts added to every chat |

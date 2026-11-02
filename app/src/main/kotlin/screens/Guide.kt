@@ -36,7 +36,7 @@ Arcana connects your Obsidian vault with a local AI model (Gemma, run by Ollama)
 ## Moving around
 - Press the **number** next to a screen in the sidebar to open it.
 - `Ctrl+P` opens the **command palette**: every action by name, searchable. If you forget a key, use this.
-- `Ctrl+N` captures a thought into today's daily note, or (`Tab` in the dialog) into a folder of your vault. `?` shows the keys of the current screen. `Ctrl+B` folds the sidebar.
+- `Ctrl+N` captures a thought into today's thought file (`thought-2026-11-02.md`, listed in `Thoughts Index`), or (`Tab` in the dialog) into a folder of your vault. `?` shows the keys of the current screen. `Ctrl+B` folds the sidebar.
 - `Esc` leaves what you are doing; from a top-level screen it goes back to Brain.
 - Quit with `Ctrl+C` twice.
 
@@ -89,7 +89,7 @@ A short list of things worth fixing. Each one opens the **Library** on exactly t
 When everything is in order it says so.
 
 ## Capture and jump back in
-- `Capture a thought` (`Ctrl+N` from anywhere) adds a timestamped line to today's daily note, creating it if needed. `Tab` (and `Shift+Tab`) in the dialog change **Save to**: the daily note, or one of the folders at the top of your vault (Research, Projects…). In a folder the thought becomes a **note of its own**, named after its first line, with a `created` property; Arcana remembers your last choice.
+- `Capture a thought` (`Ctrl+N` from anywhere) adds a timestamped line to today's thought file (`thought-YYYY-MM-DD.md`), creating it if needed and listing the new day in `Thoughts Index`. `Tab` (and `Shift+Tab`) in the dialog change **Save to**: the daily note, or one of the folders at the top of your vault (Research, Projects…). In a folder the thought becomes a **note of its own**, named after its first line, with a `created` property; Arcana remembers your last choice.
 - **Jump back in**: continue your chat, open AI notes, see this session, open the last saved session, or open a recently changed note.
 
 On a wide window there are two columns: **Now** (capture, what needs attention, your top tags) and **Jump back in**. `←` `→` switch columns, `↑` `↓` choose, `Enter` opens, `r` reads the vault again (it also refreshes by itself after changes).

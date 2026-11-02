@@ -213,6 +213,21 @@ class CoreTest {
     }
 
     @Test
+    fun aNewDailyNoteIsListedInTheThoughtsIndex() {
+        val dir = Files.createTempDirectory("thoughts")
+        val vault = Vault(dir)
+        val daily = DailyNotes("", AppConfig().dailyFormat)
+        val day = java.time.LocalDateTime.of(2026, 11, 2, 9, 0)
+        vault.capture("one", daily, day)
+        vault.capture("two", daily, day.plusHours(1))
+        vault.capture("next day", daily, day.plusDays(1))
+        val index = Files.readString(dir.resolve("Thoughts Index.md"))
+        assertEquals(1, Regex("\\[\\[thought-2026-11-02]]").findAll(index).count())
+        assertTrue("[[thought-2026-11-03]]" in index && index.indexOf("thought-2026-11-02") < index.indexOf("thought-2026-11-03"))
+        assertTrue(index.trimEnd().endsWith("Back to [[Home]]"))
+    }
+
+    @Test
     fun anOldDailyFormatInASavedConfigMovesToTheThoughtScheme() {
         val file = Files.createTempDirectory("cfg").resolve("config.json")
         Files.writeString(file, """{"dailyFormat": "YYYY-MM-DD"}""")
