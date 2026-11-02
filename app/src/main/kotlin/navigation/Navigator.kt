@@ -17,7 +17,7 @@ enum class ScreenGroup(val heading: String) { Workspace("BRAIN"), Account("SYSTE
 
 /** The views of the Library: every note, or the ones that need attention. */
 enum class LibraryFilter(val title: String) {
-    All("All"), Recent("Recent"), Inbox("Inbox"), Orphans("No links"), Untagged("No tags"), Broken("Broken links"), Stale("Stale"), Tags("Tags"),
+    All("All"), Recent("Recent"), Reports("Reports"), Inbox("Inbox"), Orphans("No links"), Untagged("No tags"), Broken("Broken links"), Stale("Stale"), Tags("Tags"),
 }
 
 enum class Screen(val title: String, val icon: String, val group: ScreenGroup = ScreenGroup.Workspace) {

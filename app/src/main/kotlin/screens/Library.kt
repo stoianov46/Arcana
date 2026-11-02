@@ -17,6 +17,9 @@ import com.arcana.brain.app.input.char
 import com.arcana.brain.app.navigation.FocusMode
 import com.arcana.brain.app.navigation.Hints
 import com.arcana.brain.app.navigation.LibraryFilter
+import com.arcana.brain.core.ReportInfo
+import com.arcana.brain.core.Reports
+import com.arcana.brain.core.Skills
 import com.arcana.brain.app.navigation.LocalNavigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.NoteInfo
@@ -32,9 +35,11 @@ import com.jakewharton.mosaic.ui.Row
 private enum class LibraryMode { List, Reading, ConfirmDelete, Rename, Edit, ConfirmDiscard }
 
 /** Notes in view [filter]; [tag] narrows the Tags view to one tag. */
-private fun notesFor(index: VaultIndex, filter: LibraryFilter, tag: String?, inbox: String, staleDays: Int, sort: String = "modified"): List<NoteInfo> = when (filter) {
+private fun notesFor(index: VaultIndex, filter: LibraryFilter, tag: String?, inbox: String, staleDays: Int, sort: String = "modified", reports: Map<String, ReportInfo> = emptyMap()): List<NoteInfo> = when (filter) {
     LibraryFilter.All -> byDate(index.notes, sort)
     LibraryFilter.Recent -> index.touchedSince(14)
+    // the reports in the order Reports.scan gave them: newest first (the notes are looked up by path, so a report outside the index is not listed)
+    LibraryFilter.Reports -> reports.values.mapNotNull { index.note(it.path) }
     LibraryFilter.Inbox -> byDate(index.inFolder(inbox), sort)
     LibraryFilter.Orphans -> index.orphans.sortedBy { it.title.lowercase() }
     LibraryFilter.Untagged -> byDate(index.untagged, sort)
@@ -70,6 +75,9 @@ fun LibraryScreen(app: AppContext) {
     var startNote by remember { mutableStateOf(navigator.libraryNote.also { navigator.libraryNote = null }) }
 
     val inbox = app.config.inboxFolder
+    // the notes with `type: report` (the research skills write them): read once per index, listed in the Reports view and counted on its tab
+    val reports = remember(index, vault) { vault.getOrNull()?.let { v -> runCatching { Reports.scan(v) }.getOrDefault(emptyList()) }.orEmpty() }
+    val reportByPath = remember(reports) { reports.associateBy { it.path } }
     val staleDays = app.config.staleDays
     val showingTags = filter == LibraryFilter.Tags && tag == null
     // `.` adds the notes of hidden folders (.arcana/…) to the All view; they are not part of the index, so no other view or count includes them
@@ -80,16 +88,16 @@ fun LibraryScreen(app: AppContext) {
             NoteInfo(n.path, n.modified, words, emptySet(), emptySet(), emptySet())
         }
     }
-    val shown = if (index == null) emptyList() else notesFor(index, filter, tag, inbox, staleDays, app.config.librarySort).let { if (filter == LibraryFilter.All && hidden.isNotEmpty()) byDate(it + hidden, app.config.librarySort) else it }
+    val shown = if (index == null) emptyList() else notesFor(index, filter, tag, inbox, staleDays, app.config.librarySort, reportByPath).let { if (filter == LibraryFilter.All && hidden.isNotEmpty()) byDate(it + hidden, app.config.librarySort) else it }
     val tags = index?.tagCounts.orEmpty()
     // The notes as a tree of folders (fold with Enter, h, l) unless the user chose the flat list, is typing a filter (matches are listed with their paths) or is in the tag list.
-    val tree = app.config.libraryTree && !showingTags && picker.filter.isEmpty()
+    val tree = app.config.libraryTree && !showingTags && picker.filter.isEmpty() && filter != LibraryFilter.Reports
     val expanded = app.libraryExpanded
     val rows: List<LibraryRow> = if (tree) libraryRows(shown, expanded) else shown.map { LibraryRow.Note(it, 0) }
     val labelOf: (LibraryRow) -> String = { row ->
         when (row) {
             is LibraryRow.Folder -> row.name + "/"
-            is LibraryRow.Note -> if (tree) row.info.title else row.info.path
+            is LibraryRow.Note -> if (filter == LibraryFilter.Reports) reportLabel(reportByPath[row.info.path], row.info) else if (tree) row.info.title else row.info.path
         }
     }
 
@@ -118,6 +126,7 @@ fun LibraryScreen(app: AppContext) {
     when (mode) {
         LibraryMode.List -> if (picker.filtering || tagPicker.filtering) Hints("↑↓  move", "Enter  choose", "Esc  clear filter")
         else if (tree) Hints("↑↓  move", "Enter  open / fold", "h l  fold", "+ -  all", "t  flat list", "←→  view", "a  AI", "e  edit", "r  rename", "d  trash", ".  hidden", "/  filter")
+        else if (filter == LibraryFilter.Reports) Hints("↑↓  move", "←→  view", "Enter  read", "s  run its skill again", "a  AI", "e  edit", "r  rename", "o  Obsidian", "d  trash", "/  filter")
         else Hints("↑↓  move", "←→  view", "Enter  read", "a  AI", "e  edit", "r  rename", "o  Obsidian", "d  trash", "t  tree", ".  hidden", "/  filter")
         LibraryMode.Reading -> Hints("↑↓/Space  scroll", "a  AI", "e  edit", "r  rename", "o  Obsidian", "Esc  back")
         LibraryMode.Rename -> Hints("Enter  rename", "Esc  cancel")
@@ -140,6 +149,20 @@ fun LibraryScreen(app: AppContext) {
     fun chatAbout(note: NoteInfo) {
         app.chat.startNew()
         app.chat.attachments.notes += note.path
+        navigator.navigate(Screen.Chat)
+    }
+
+    /** Runs the skill that made [note] again: a fresh chat with the skill attached and the report's question in the field (the user may change it, then sends). */
+    fun runAgain(note: NoteInfo) {
+        val report = reportByPath[note.path] ?: return
+        val v = vault.getOrNull() ?: return
+        if (report.skill.isEmpty()) return navigator.showToast("This report names no skill.", isError = true)
+        val skill = Skills.discoverAll(v, app.skillsFolder()).firstOrNull { it.name == report.skill }
+            ?: return navigator.showToast("The skill “${report.skill}” is not in ${app.skillsFolder()}/ any more.", isError = true)
+        app.chat.startNew()
+        app.chat.attachments.notes += skill.path
+        app.chat.input.set(report.question)
+        navigator.showToast("Skill ${skill.name} attached; the question is in the field. Press Enter to edit it, send it as it is or change it.")
         navigator.navigate(Screen.Chat)
     }
 
@@ -282,6 +305,7 @@ fun LibraryScreen(app: AppContext) {
                 key.char == 'r' -> { current?.let { if (isHiddenPath(it.path)) navigator.showToast("Notes in hidden folders are Arcana's own: rename them in a file manager.", isError = true) else startRename(it) }; true }
                 key.char == 'o' -> { current?.let { openInObsidian(it) }; true }
                 key.char == 'd' -> { if (current != null) { if (isHiddenPath(current.path)) navigator.showToast("Notes in hidden folders are Arcana's own: they cannot be trashed here.", isError = true) else mode = LibraryMode.ConfirmDelete }; true }
+                key.char == 's' && filter == LibraryFilter.Reports -> { current?.let { runAgain(it) }; true }
                 key.char == 'p' && filter == LibraryFilter.Inbox -> { navigator.navigate(Screen.Inbox); true }
                 else -> false
             }
@@ -289,10 +313,12 @@ fun LibraryScreen(app: AppContext) {
     }
 
     val health = remember(index, inbox, staleDays) { index?.health(inbox, staleDays) }
+    val listTitle = if (showingTags) "Tags" else if (filter == LibraryFilter.Reports) reportsTitle(reports) else "Notes · ${shown.size}"
     val tabs = LibraryFilter.entries.map { f ->
         val n = when (f) {
             LibraryFilter.All -> health?.notes
             LibraryFilter.Recent -> index?.touchedSince(14)?.size
+            LibraryFilter.Reports -> reports.size
             LibraryFilter.Inbox -> health?.inbox
             LibraryFilter.Orphans -> health?.orphans
             LibraryFilter.Untagged -> health?.untagged
@@ -332,6 +358,7 @@ fun LibraryScreen(app: AppContext) {
                 *(if (tree) arrayOf(ActionItem("h l", "Fold"), ActionItem("+ -", "All")) else emptyArray()),
                 *(if (!showingTags) arrayOf(ActionItem("t", if (app.config.libraryTree) "Flat list" else "Tree")) else emptyArray()),
                 ActionItem(".", if (showHidden) "Hide hidden" else "Hidden"),
+                *(if (filter == LibraryFilter.Reports) arrayOf(ActionItem("s", "Run its skill again", current != null)) else emptyArray()),
                 ActionItem("←→", "View"),
                 ActionItem("/", "Filter"),
             )
@@ -368,8 +395,8 @@ fun LibraryScreen(app: AppContext) {
                 Row(Modifier.fillMaxWidth()) {
                     Box(Modifier.weight(percent / 100f)) {
                         CompositionLocalProvider(LocalContentWidth provides left) {
-                            Panel(if (showingTags) "Tags" else "Notes · ${shown.size}", Modifier.height(listRows + 3), accent = if (mode == LibraryMode.List) Palette.Accent else Palette.Dim) {
-                                NoteList(showingTags, tags, tagPicker, shown, rows, labelOf, picker, listRows, filter)
+                            Panel(listTitle, Modifier.height(listRows + 3), accent = if (mode == LibraryMode.List) Palette.Accent else Palette.Dim) {
+                                NoteList(showingTags, tags, tagPicker, shown, rows, labelOf, picker, listRows, filter, reportByPath, app.config.plainGlyphs)
                             }
                         }
                     }
@@ -383,10 +410,47 @@ fun LibraryScreen(app: AppContext) {
                     }
                 }
             }
-            else -> Panel(if (showingTags) "Tags" else "Notes · ${shown.size}") { NoteList(showingTags, tags, tagPicker, shown, rows, labelOf, picker, listRows, filter) }
+            else -> Panel(listTitle) { NoteList(showingTags, tags, tagPicker, shown, rows, labelOf, picker, listRows, filter, reportByPath, app.config.plainGlyphs) }
         }
         ActionBar(actions)
     }
+}
+
+/** A report's row: date, kind, name without its date prefix, then its summary (the list cuts the end to the width). */
+private fun reportLabel(report: ReportInfo?, note: NoteInfo): String {
+    if (report == null) return note.title
+    val name = note.title.removePrefix(report.date).trim().ifEmpty { note.title }
+    return (if (report.date.isEmpty()) "----------" else report.date) + "  " + report.kind.padEnd(9) + "  " + name + (if (report.summary.isEmpty()) "" else "  ·  " + report.summary)
+}
+
+/** The status mark of a report row: unfinished first, then aged, then done (a plain-glyph variant for terminals without symbols). */
+private fun reportMark(report: ReportInfo?, plain: Boolean): String = when {
+    report == null -> "▤"
+    Reports.isIncomplete(report) -> if (plain) "!" else "⚠"
+    Reports.isStale(report) -> if (plain) "~" else "◷"
+    else -> if (plain) "+" else "✓"
+}
+
+private fun reportMarkColor(report: ReportInfo?) = when {
+    report == null -> Palette.Accent
+    Reports.isIncomplete(report) -> Palette.Orange
+    Reports.isStale(report) -> Palette.Muted
+    else -> Palette.Green
+}
+
+/** The right-hand text of a report row: what needs attention, else when the note last changed. */
+private fun reportMeta(report: ReportInfo?, note: NoteInfo): String = when {
+    report == null -> relativeTime(note.modified)
+    Reports.isIncomplete(report) -> "incomplete"
+    Reports.isStale(report) -> "stale, ${report.ageDays} d"
+    else -> relativeTime(note.modified)
+}
+
+/** The list's title in the Reports view: how many, and how many need attention. */
+private fun reportsTitle(reports: List<ReportInfo>): String {
+    val incomplete = reports.count { Reports.isIncomplete(it) }
+    val stale = reports.count { Reports.isStale(it) }
+    return "Reports · ${reports.size}" + (if (incomplete > 0) " · $incomplete incomplete" else "") + (if (stale > 0) " · $stale stale" else "")
 }
 
 private fun isHiddenPath(path: String): Boolean = path.split('/').any { it.startsWith(".") }
@@ -397,6 +461,7 @@ private fun cycle(f: LibraryFilter, by: Int): LibraryFilter = LibraryFilter.entr
 private fun NoteList(
     showingTags: Boolean, tags: List<Pair<String, Int>>, tagPicker: PickerState,
     shown: List<NoteInfo>, rows: List<LibraryRow>, labelOf: (LibraryRow) -> String, picker: PickerState, rowCount: Int, filter: LibraryFilter,
+    reports: Map<String, ReportInfo>, plain: Boolean,
 ) {
     if (showingTags) {
         Picker(tags, tagPicker, label = { it.first }, rows = rowCount, icon = { "#" }, iconColor = { Palette.Blue }, meta = { "${it.second} note${if (it.second == 1) "" else "s"}" }, emptyText = "No tags yet. Add #tags or a tags: line to your notes.", placeholder = "Press / to filter tags")
@@ -406,8 +471,8 @@ private fun NoteList(
             label = labelOf,
             rows = rowCount,
             // a folder is a cyan ▸ (folded) or ▾ (unfolded) with its name; a note a purple ▤; folders and notes sit two spaces further in per level
-            icon = { row -> if (row is LibraryRow.Folder) (if (row.expanded) "▾" else "▸") else "▤" },
-            iconColor = { row -> if (row is LibraryRow.Folder) Palette.Cta else Palette.Accent },
+            icon = { row -> if (row is LibraryRow.Folder) (if (row.expanded) "▾" else "▸") else if (filter == LibraryFilter.Reports) reportMark(reports[(row as LibraryRow.Note).info.path], plain) else "▤" },
+            iconColor = { row -> if (row is LibraryRow.Folder) Palette.Cta else if (filter == LibraryFilter.Reports) reportMarkColor(reports[(row as LibraryRow.Note).info.path]) else Palette.Accent },
             labelColor = { row -> if (row is LibraryRow.Folder) Palette.Cta else Palette.Text },
             indent = { it.depth },
             meta = { row ->
@@ -415,6 +480,7 @@ private fun NoteList(
                     is LibraryRow.Folder -> "${row.notes} note${if (row.notes == 1) "" else "s"}"
                     is LibraryRow.Note -> when (filter) {
                         LibraryFilter.Broken -> "${row.info.unresolved.size} broken"
+                        LibraryFilter.Reports -> reportMeta(reports[row.info.path], row.info)
                         else -> relativeTime(row.info.modified)
                     }
                 }
@@ -426,6 +492,7 @@ private fun NoteList(
                 LibraryFilter.Untagged -> "Every note has a tag."
                 LibraryFilter.Broken -> "No broken links."
                 LibraryFilter.Stale -> "Nothing has been forgotten."
+                LibraryFilter.Reports -> "No reports yet. A research skill (for example /create-dev-research-report <question>) writes them to Research/<Domain>/Reports/."
                 else -> "No notes here yet."
             },
         )
