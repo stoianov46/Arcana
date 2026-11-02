@@ -107,7 +107,8 @@ class FileAccess(roots: List<Path>) {
 class ToolBox(private val vault: Vault?, folders: List<Path>, private val backups: Path, private val outputFolder: String = "", private val model: String = "Arcana", private val readOnly: Boolean = false, private val shell: Boolean = false, private val web: Boolean = false,
     private val searchBackend: String = "duckduckgo", private val searchUrl: String = "", private val searchKey: String = "",
     /** The vault folder that holds skills (see [Skills]); blank turns skills off. */ private val skillsFolder: String = "",
-    /** The project the user works on (see [projectNote]): allowed like the vault, and what a relative path or a default folder means. */ private val project: Path? = null) {
+    /** The project the user works on (see [projectNote]): allowed like the vault, and what a relative path or a default folder means. */ private val project: Path? = null,
+    /** The semantic search of the vault ([SemanticSearch]); null = no embedding model is set up, and the `semantic_search` tool is not offered. */ private val semantic: SemanticSearch? = null) {
     val access = FileAccess(listOfNotNull(vault?.root, project) + folders + listOfNotNull(Layout.globalSkills().takeIf { skillsFolder.isNotBlank() && java.nio.file.Files.isDirectory(it) })) // the user's own skills (see [Layout]) are readable too
 
     /** The skills found now: a toolbox is built for each message, so a skill added in Obsidian is there at once. */
@@ -115,6 +116,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
 
     val specs: List<ToolSpec> = buildList {
         if (vault != null) addAll(vaultTools(vault))
+        if (vault != null && semantic != null) add(semanticTool(semantic))
         addAll(fileTools())
         add(askUserTool())
         add(timeTool())
@@ -562,6 +564,13 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         val to = a.str("to").trim().takeIf { it.isNotEmpty() }?.let { parseMoment(it, zone) } ?: java.time.Instant.now()
         describeElapsed(from, to, zone)
     }
+
+    private fun semanticTool(search: SemanticSearch) = ToolSpec(
+        "semantic_search", "Find the user's notes by MEANING, not by words: describe what you are looking for in a sentence and get the best matching notes with the matching heading, an excerpt and a score (0 to 1; above about 0.6 is a close match). " +
+            "Prefer it over search_notes for questions of meaning (\"find notes about how we decided on the database\"); use search_notes or grep_files for an exact word, name or phrase. Read a hit with read_note.",
+        schema("query" to ("string" to "What you are looking for, as a short sentence or a few words"), "limit" to ("integer" to "How many notes (default ${SemanticSearch.DEFAULT_LIMIT}, at most ${SemanticSearch.MAX_LIMIT})"), required = listOf("query")),
+        ToolRisk.Read, { it.str("query") },
+    ) { a -> search.answer(a.str("query"), a.int("limit") ?: SemanticSearch.DEFAULT_LIMIT) }
 
     private fun searchTool() = ToolSpec(
         "web_search", "Search the web and get the best results: title, address and a snippet each. Use it to find current information or a page, then read a result with fetch_url. The user approves every search; only the search words are sent. If it says search is paused, do not retry.",

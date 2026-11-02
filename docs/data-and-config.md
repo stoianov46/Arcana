@@ -60,6 +60,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `toolMode` | `ask` | `ask` / `auto` / `plan` |
 | `toolAutoShell` | false | shell commands run without asking (`/autorun`, Settings → Tools); `ShellPolicy.blockedReason` still refuses; Chat status bar shows red `▶ auto-run` |
 | `toolShell` / `toolWeb` | false / false | `run_command` / `fetch_url` and `web_search` may be used (each call still asks) |
+| `embedModel` | `""` | the Ollama embedding model of the semantic search (`semantic_search` tool, `/reindex`); blank = off. The index is the file `~/.config/arcana/embeddings/<hash of vault and model>/index.bin`; see [semantic-search.md](semantic-search.md) |
 | `searchBackend` | `duckduckgo` | `duckduckgo` / `searxng` / `brave`: where `web_search` looks |
 | `searchUrl` | `""` | address of the user's SearXNG server (used only by that backend) |
 | `searchKey` | `""` | Brave Search API key, stored in plain text in `config.json` (keep the file private); the Settings row shows only its last 4 characters |

@@ -44,7 +44,7 @@ private sealed interface Editor {
     /** Types a value; [apply] throws IllegalArgumentException with a user-facing message on invalid input. */
     class Text(val apply: (AppConfig, String) -> AppConfig) : Editor
     /** Enter lists the installed models; [set] stores the choice in the setting this editor belongs to ([allowNone]: blank is a valid choice and means off). */
-    class Model(val label: String, val get: (AppConfig) -> String, val set: (AppConfig, String) -> AppConfig, val allowNone: Boolean = false, val oracul: Boolean = false, val multi: Boolean = false) : Editor
+    class Model(val label: String, val get: (AppConfig) -> String, val set: (AppConfig, String) -> AppConfig, val allowNone: Boolean = false, val oracul: Boolean = false, val multi: Boolean = false, val embed: Boolean = false) : Editor
     data object Folder : Editor
     data object Theme : Editor
     /** Enter asks to clear the files of one [com.arcana.brain.core.Storage] area. */
@@ -144,6 +144,9 @@ private fun storageSetting(id: String): Setting {
 /** The editor of the main model setting (declared before [settings], which uses it). */
 private val MainModel = Editor.Model("Model", { it.model }, { c, v -> c.copy(model = v) })
 
+/** The embedding model of the semantic search; its picker lists the installed embedding models first. */
+private val EmbedModel = Editor.Model("Semantic search model", { it.embedModel }, { c, v -> c.copy(embedModel = v) }, allowNone = true, embed = true)
+
 private val OraculModel = Editor.Model("Oracul model", { it.oraculModel }, { c, v -> c.copy(oraculModel = v) }, allowNone = true, oracul = true)
 private val ExtraModels = Editor.Model("More Oracul models", { it.oraculExtra }, { c, v -> c.copy(oraculExtra = v.split(',').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")) }, allowNone = true, oracul = true, multi = true)
 private val AnalystRole = Editor.Model("Flow analyst", { it.flowAnalyst }, { c, v -> c.copy(flowAnalyst = v) }, allowNone = true, oracul = true)
@@ -193,6 +196,7 @@ private val declared: List<Setting> = listOf(
     text(Group.Vault, "Daily notes folder", "Where capture (Ctrl+N) writes today's note. Used only when Obsidian's Daily notes plugin has no setting of its own for the vault. Empty = the vault root.", { it.dailyFolder }, { c, v -> c.copy(dailyFolder = v.trim('/')) }, allowEmpty = true),
     text(Group.Vault, "Daily note format", "The file name of a daily note, like Obsidian's: YYYY-MM-DD, DD.MM.YYYY…; text in [brackets] is kept as it is. The default `[thought-]YYYY-MM-DD` gives thought-2026-11-02.md, so thought files stay apart from other notes named by date. Used only without an Obsidian setting.", { it.dailyFormat }, { c, v -> c.copy(dailyFormat = v.trim()) }),
     stepper(Group.Vault, "Stale after", "A note counts as stale after this many days without a change. ←/→ step by 30.", 7..1000, 30, { it.staleDays }, { c, n -> c.copy(staleDays = n) }, " days"),
+    Setting(Group.Vault, "Semantic search model", "Finds notes by meaning (the model's semantic_search tool, and /reindex in Chat builds the index). It needs an embedding model installed in Ollama, for example: ollama pull nomic-embed-text (others: qwen3-embedding, mxbai-embed-large). Everything is computed by your Ollama server and the index is a file in ~/.config/arcana/embeddings; changing the model rebuilds it. None = off.", { it.embedModel.ifEmpty { "(none: off)" } }, editor = EmbedModel),
     stepper(Group.Vault, "Chars per note", "How much of each note found by Answer from notes (/vault) is sent to the model. A longer note is cut: the model is told, and the answer lists which notes were only partly read. ←/→ step by 500.", 200..20_000, 500, { it.contextCharsPerNote }, { c, n -> c.copy(contextCharsPerNote = n) }),
 
     Setting(
@@ -336,6 +340,7 @@ private val sections: Map<Group, List<Pair<String, List<String>>>> = mapOf(
     Group.Vault to listOf(
         "Location" to listOf("Vault path", "Output folder", "Where Arcana's own files are (this vault)", "Where YOUR files are (every vault)"),
         "Notes" to listOf("Context notes", "Chars per note", "Inbox folder", "Daily notes folder", "Daily note format", "Stale after"),
+        "Search" to listOf("Semantic search model"),
     ),
     Group.Console to listOf(
         "Chat" to listOf("Answer from vault", "Render Markdown", "Confirm before cancelling", "Comparison view", "Copy as"),
@@ -475,7 +480,9 @@ fun SettingsScreen(app: AppContext) {
             is Editor.Model -> scope.launch {
                 try {
                     val details = (if (editor.oracul) com.arcana.brain.core.OllamaClient { com.arcana.brain.core.Oracul.serverConfig(app.config, app.config.model) } else app.client).modelDetails()
-                    val models = (if (editor.allowNone) listOf(NoModel) else emptyList()) + details.map { it.name } + CustomModel
+                    // the embedding picker lists the models whose name says "embed" first: those are the ones that can do it
+                    val listed = if (editor.embed) details.sortedByDescending { "embed" in it.name.lowercase() } else details
+                    val models = (if (editor.allowNone) listOf(NoModel) else emptyList()) + listed.map { it.name } + CustomModel
                     picker.reset()
                     picker.index = models.indexOf(editor.get(app.config)).coerceAtLeast(0)
                     // does it fit this machine's memory (the Oracul's own server: unknown, so no verdict), and which one would we pick
@@ -491,6 +498,7 @@ fun SettingsScreen(app: AppContext) {
                                 append(" · ").append(if (editor.oracul || fit == com.arcana.brain.core.ModelFit.Fit.TooBig) com.arcana.brain.core.ModelFit.label(fit) else "fits")
                             }
                             if (d.name == suggested) append(" · ★ suggested")
+                            if (editor.embed) append(if ("embed" in d.name.lowercase()) " · embedding model" else " · not named like an embedding model (bge-m3 and all-minilm are, despite the name)")
                         }
                     }
                     val machine = if (ram > 0) "this machine ${com.arcana.brain.core.ModelFit.gb(ram)}, ~${com.arcana.brain.core.ModelFit.gb(com.arcana.brain.core.ModelFit.budget(ram))} for models" else if (editor.oracul && app.config.oraculUrl.isNotBlank()) "the Oracul server's memory is unknown here" else ""

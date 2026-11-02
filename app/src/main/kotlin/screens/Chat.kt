@@ -113,6 +113,7 @@ internal val SlashCommands = listOf(
     SlashItem("/think", "Model thinking: model default, off (fast), on (cycles through what the model offers)", false),
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false, usage = "e.g. /memory check   (finds repeated lines and dead note paths, asks before removing)"),
     SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
+    SlashItem("/reindex", "Build or refresh the semantic search index of your vault (Settings → Vault → Semantic search model)", false),
     SlashItem("/helpers", "All helper models on or off: Oracul, judge, flow, specialists, router (toggle). Off = only the chat model works", false),
     SlashItem("/roles", "Skill roles on or off: the worker, planner and reviewer a skill uses (toggle)", false),
     SlashItem("/flow", "Flow: every message goes analyst, planner, worker, reviewer, controller (toggle)", false, usage = "e.g. /flow careful   or   /flow off   (without a name it switches)"),
@@ -188,6 +189,7 @@ fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf
         "/goal [text]" to "keep working until a checker says done",
         "/helpers, /roles" to "helper models, skill roles on or off",
         "/skills" to "skills from your vault on or off",
+        "/reindex" to "build or refresh the semantic search index",
     )),
     com.arcana.brain.app.navigation.KeySection("The message field", listOf(
         "Enter" to "send",
@@ -774,6 +776,7 @@ fun ChatScreen(app: AppContext) {
             "/tools" -> toggleTools()
             "/memory" -> when (args.lowercase()) { "" -> openMemory(); "check" -> openMemoryCheck(); else -> toast("/memory takes only “check” after it.", error = true) }
             "/skills" -> toggleSkills()
+            "/reindex" -> chat.reindex { text, error -> toast(text, error = error) }
             "/thinking" -> toggleThinkingPane()
             "/flow" -> setFlow(args)
             "/helpers" -> { val on = !app.config.oraculEnabled; app.update(app.config.copy(oraculEnabled = on)); toast(if (on) "Helper models on." else "Helper models off: only ${app.config.model} works (skill roles are separate: /roles).") }
@@ -834,6 +837,7 @@ fun ChatScreen(app: AppContext) {
             Command("Attach a file or picture…", "Chat", "Ctrl+O") { openAttach() },
             Command("Memory file (ARCANA.md): open and edit", "Chat", "/memory") { openMemory() },
             Command(if (app.config.skillsEnabled) "Skills: turn off" else "Skills: turn on (list them)", "Chat", "/skills") { toggleSkills() },
+            Command("Semantic search: build or refresh the index of the vault", "Chat", "/reindex") { chat.reindex { text, error -> toast(text, error = error) } },
             Command("Thinking pane: size, then off (Ctrl+T)", "Chat", "Ctrl+T") { resizeThinkingPane() },
             Command(if (app.config.thinkingPane) "Thinking pane: turn off" else "Thinking pane: show the model's thoughts live", "Chat", "/thinking") { toggleThinkingPane() },
             Command("Tools mode: ${app.config.toolMode} → next (ask, auto, plan)", "Chat", "/mode", app.config.toolsEnabled) { cycleMode() },
@@ -1254,7 +1258,8 @@ fun ChatScreen(app: AppContext) {
                 val panelActionRows = panelActions?.let { breakIntoLines(it, panelWidth()).size + (if (rememberDensity().tiny) 0 else 1) } ?: 0
                 val actions = if (panelActions != null) null else chatActions(browsing, entries.isNotEmpty(), chat.artifacts.isNotEmpty())
                 val pendingRow = chat.attachments.rows
-                val statusRow = if (chat.compacting || gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled || chat.consulting != null) 1 else 0
+                // the reply line (compacting, running, failed…) and, when /reindex runs, one more line with its progress
+                val statusRow = (if (chat.compacting || gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled || chat.consulting != null) 1 else 0) + (if (chat.indexing != null) 1 else 0)
                 // what sits under the conversation: the message field, or the change waiting for an answer
                 val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
                 // while a dialog is open the thinking pane stays (a short strip, or its column): the dialog gives up a few lines for it instead of pushing it out
@@ -1288,6 +1293,7 @@ fun ChatScreen(app: AppContext) {
                         output.copyPlain = app.config.copyAs == "plain"
                         ScrollView(lines, scrollRows, output)
                         ReplyStatus(app, gen, compactingSince = chat.compactingSince.takeIf { chat.compacting }, compactingAuto = chat.compactingAuto, consulting = chat.consulting, consultingSince = chat.consultingSince, consultingStage = chat.consultingStage)
+                        chat.indexing?.let { Label((if (app.config.plainGlyphs) "" else "◌ ") + it, color = Palette.Blue) }
                     }
                 }
                 if (pane != null && side) {
