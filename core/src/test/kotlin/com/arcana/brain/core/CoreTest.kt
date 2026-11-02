@@ -252,6 +252,11 @@ class CoreTest {
         assertEquals(listOf(plain), one); assertEquals("what is in ?", rest)
         val (two, rest2) = ImageFiles.pastedPaths("look ${spaced.toString().replace(" ", "\\ ")} and '$plain'", null)
         assertEquals(listOf(spaced, plain), two); assertEquals("look and", rest2)
+        // a bare slash, a root or a word without a file name is no picture and must not crash (it did: "Android / Kotlin")
+        val slash = "Compose Multiplatform / Kotlin Multiplatform, see / and /."
+        assertEquals(emptyList(), ImageFiles.pastedPaths(slash, null).first)
+        assertEquals(slash, ImageFiles.pastedPaths(slash, null).second)
+        assertTrue(!ImageFiles.isImage(java.nio.file.Path.of("/")))
         // not an image, not there, or not a path: the text is left alone
         val txt = dir.resolve("a.txt").also { Files.writeString(it, "x") }
         val same = "read $txt and ${dir.resolve("none.png")} and ./shot.png"

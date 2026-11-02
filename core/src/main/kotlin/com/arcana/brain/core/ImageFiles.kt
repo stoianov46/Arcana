@@ -14,7 +14,8 @@ object ImageFiles {
     const val MAX_FILE_BYTES = 10L * 1024 * 1024
     const val MAX_TOTAL_BYTES = 20L * 1024 * 1024
 
-    fun isImage(path: Path) = path.fileName.toString().substringAfterLast('.', "").lowercase() in extensions
+    /** A path with no file name (`/`, a drive root) is no image. */
+    fun isImage(path: Path) = path.fileName?.toString()?.substringAfterLast('.', "")?.lowercase() in extensions
 
     /** Why [paths] cannot be attached, or null when they can. [already] is how many are attached to the message already. */
     fun validate(paths: List<Path>, already: Int = 0): String? {
