@@ -1,6 +1,6 @@
 # Arcana
 
-Terminal control panel for your second brain: a local [Ollama](https://ollama.com) model (Gemma) working with your Obsidian vault.
+**A local-first research AI-agent system in your terminal.** Ask a question and local models served by [Ollama](https://ollama.com) research it: they search your Obsidian vault, read the web, follow your skills, call helper models (planner, reviewer, Oracul, judge), ask you which angles matter, and write a structured, sourced report back into the vault. The vault is the system's memory, a second brain that grows with every report.
 Built with Kotlin and [Mosaic](https://github.com/JakeWharton/mosaic) (Compose for the terminal).
 
 ```

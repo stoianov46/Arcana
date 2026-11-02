@@ -564,7 +564,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
     }
 
     private fun searchTool() = ToolSpec(
-        "web_search", "Search the web and get the best results: title, address and a snippet each. Use it to find current information or a page, then read a result with fetch_url. The user approves every search; only the search words are sent.",
+        "web_search", "Search the web and get the best results: title, address and a snippet each. Use it to find current information or a page, then read a result with fetch_url. The user approves every search; only the search words are sent. If it says search is paused, do not retry.",
         schema("query" to ("string" to "The search words"), "limit" to ("integer" to "How many results (default ${WebSearch.DEFAULT_LIMIT}, at most ${WebSearch.MAX_LIMIT})"), required = listOf("query")),
         ToolRisk.Web, { it.str("query") },
         preview = { a -> listOf("Search the web for:", a.str("query").trim(), "Sent to ${WebSearch.describe(searchBackend, searchUrl)}; nothing else leaves your computer.") },
@@ -575,7 +575,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
     }
 
     private fun webTool() = ToolSpec(
-        "fetch_url", "Read a public web page or document and get its text (HTML is reduced to readable text; JSON, text and PDF work too). Use it for documentation, articles and APIs the user points to or you need. The user approves each address. A long page is read in parts with offset.",
+        "fetch_url", "Read a public web page or document and get its text (HTML is reduced to readable text; JSON, text and PDF work too). Use it for documentation, articles and APIs the user points to or you need. The user approves each address. Never invent an address: use one from a web_search result, the user's message, a note, or a link on a page you read. A long page is read in parts with offset.",
         schema(
             "url" to ("string" to "The full http(s) address"),
             "offset" to ("integer" to "Character to start from, to read on in a long page (the previous result says which)"),

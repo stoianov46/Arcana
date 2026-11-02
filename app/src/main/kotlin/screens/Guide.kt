@@ -22,14 +22,14 @@ private class GuidePage(val tab: String, val title: String, val markdown: String
 
 private fun pages(): List<GuidePage> = listOf(
     GuidePage(
-        "Start", "Your second brain, with a control panel",
+        "Start", "A research system for your second brain",
         """
-# Your second brain, with a control panel
-Arcana connects your Obsidian vault with a local AI model (Gemma, run by Ollama). Your notes never leave your computer. It is built around one loop:
+# A research system for your second brain
+Arcana is a local-first **research AI-agent system**: local models (run by Ollama) research your questions with tools, your skills and helper models, over your Obsidian vault. They search your notes, read the web when you allow it, ask you which angles matter, and write a structured report with sources back into the vault (`Research/<Domain>/Reports/`; try `/create-dev-research-report <question>`). The vault is their memory: a second brain that grows with every report. Your notes never leave your computer. It is built around one loop:
 
 1. **Capture**: get a thought out of your head right now (`Ctrl+N`, from any screen).
 2. **See**: the **Brain** screen shows how healthy the vault is and what needs attention.
-3. **Think**: **Chat** with Gemma about your notes, attach notes, pictures, PDFs and files.
+3. **Research and think**: **Chat** with the model about your notes, attach notes, pictures, PDFs and files; run a research skill to get a sourced report.
 4. **Shape**: **AI notes** summarizes, improves, translates and connects notes.
 5. **Keep**: every **Session** can be saved into the vault as a note of what you did and learned.
 
@@ -175,7 +175,7 @@ Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use
 - **Repeated reads:** if the model asks for the exact same read, search or web page again in one question, Arcana answers "you already made this call" instead of running it (and asking you) again. *Settings → Tools → Remember repeated reads* sets how many seconds that lasts (default 45, 0 = off); changes, commands, waits, failures and your next message reset it.
 - **Loop guard:** a model sometimes goes round in circles without any error. If its thinking or answer repeats the same passage (5 times by default), Arcana stops that round, tells the model to decide and answer, and asks once more with a higher repeat penalty. If it makes the same tool call again and again (3 times by default; nothing changed in between) it is told to step back, and at twice as many the tools are taken away so it has to answer with what it has. *Settings → Opinions → Loop guard: repeated text / repeated calls* (Never switches a check off); *Usage → Orchestration* counts what it did.
 - **Search says "DuckDuckGo is limiting requests (HTTP 202)":** DuckDuckGo has no key and blocks some connections with a human check. Arcana then tries the other backends you set up and leaves DuckDuckGo alone for 10 minutes. To fix it for good: *Settings → Tools → Search backend* → **Brave** with a free key from api-dashboard.search.brave.com (paste it in *Search API key*), or **SearXNG** with the address of your own server.
-- **No key and no server?** Then `web_search` works only while DuckDuckGo allows your connection (a block often clears after a few hours; Arcana asks again after 10 minutes). Nothing else depends on it: tell the model an address (documentation, an API, a Wikipedia article) and it reads it with `fetch_url`; skills call their own APIs.
+- **No key and no server?** Then `web_search` works only while DuckDuckGo allows your connection (a block often clears after a few hours; Arcana asks again after 10 minutes). When search is paused or a page is not found (HTTP 404), the tool result tells the model what to do: not to guess addresses, not to retry a paused search, to carry on from your vault and to mark what needed the web as unverified. Nothing else depends on it: tell the model an address (documentation, an API, a Wikipedia article) and it reads it with `fetch_url`; skills call their own APIs.
 - **New folders:** when the model needs a folder that is not allowed yet (say `~/Desktop`), Arcana asks "Allow this folder?": `y` remembers it (see *Allowed folders*), `n` refuses. Home itself, system folders and hidden folders such as `~/.ssh` are never offered.
 - **Modes** (`/mode` cycles them, or Settings → Tools → Mode): *Ask* (default) waits for your `y` on every change; *Auto* runs changes at once, with the old file always backed up (new folders still ask); *Plan* is read-only: Gemma investigates and writes a plan, then you switch to Ask or Auto and tell her to go ahead. The header shows `⚙ tools ask|auto|plan`.
 - **Questions, deleting and moving:** `ask_user` puts a question with numbered options to you in the chat (`↑↓` and Enter or `1`-`9` choose; the last row, `t` or ↓ to it, is a text field inside the dialog for an answer of your own; `Esc` skips; quizzes work even with tools off). `delete_path` moves a file or folder to a trash folder (the vault's `.trash`, or `~/.config/arcana/trash`) and `move_path` renames or moves; both ask **every time, even in Auto mode**, and neither can be set to "always".

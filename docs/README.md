@@ -1,8 +1,9 @@
 # Arcana documentation
 
 Arcana is a terminal app (Kotlin + [Mosaic](https://github.com/JakeWharton/mosaic), i.e. Compose for the terminal) that is
-the **control panel of a personal "second brain"**: an Obsidian vault + a local LLM served by Ollama (default model
-`gemma4:latest`, which supports vision and tool calling). Command name: `arcana`.
+a **local-first research AI-agent system** around a personal "second brain": local LLMs served by Ollama (default model
+`gemma4:latest`, which supports vision and tool calling) act as research agents (tools, skills, helper models, questions to the
+user) over an Obsidian vault, which is their memory and the home of the structured reports they write. Command name: `arcana`.
 
 These docs are written for **AI coding agents first, humans second**: short facts, exact file paths, explicit invariants,
 no marketing. Read this page, then open only the file you need.

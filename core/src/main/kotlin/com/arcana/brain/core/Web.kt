@@ -46,6 +46,15 @@ private val http: HttpClient by lazy {
  * Redirects are followed by hand so that every hop is checked against [WebPolicy] (a public page must not bounce to your router).
  * A long page is read in parts with [offset].
  */
+/** What a failed page read says, with what to do next: a small model that is only told "HTTP 404" guesses another address, or retries a refusal. */
+internal fun statusMessage(url: String, status: Int): String = "$url answered HTTP $status" + when (status) {
+    404, 410 -> ": that address does not exist. Do not guess addresses: use only one that came from a web_search result, from the user's message or notes, or from a link on a page you have read; if you have none, run web_search or say you could not find it."
+    401, 403 -> ": the site refuses automated readers. Use another source; do not retry the same address."
+    429 -> ": it is limiting requests. Use the wait tool (up to 120 seconds) once and retry once."
+    in 500..599 -> ": the server has an error. Retry once later, then use another source."
+    else -> "."
+}
+
 internal fun fetchUrl(url: String, offset: Int = 0, allowPrivate: Boolean = false): String {
     var current = url.trim()
     repeat(WebPolicy.MAX_REDIRECTS + 1) {
@@ -67,7 +76,7 @@ internal fun fetchUrl(url: String, offset: Int = 0, allowPrivate: Boolean = fals
         }
         val type = response.headers().firstValue("Content-Type").orElse("").substringBefore(';').trim().lowercase()
         val bytes = response.body().use { it.readNBytes(WebPolicy.MAX_BYTES + 1) }
-        if (status !in 200..299) throw IllegalArgumentException("$current answered HTTP $status.")
+        if (status !in 200..299) throw IllegalArgumentException(statusMessage(current, status))
         val truncated = bytes.size > WebPolicy.MAX_BYTES
         val body = bytes.copyOf(minOf(bytes.size, WebPolicy.MAX_BYTES))
         val text = when {

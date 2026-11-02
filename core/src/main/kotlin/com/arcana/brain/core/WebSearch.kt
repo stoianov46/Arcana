@@ -60,7 +60,7 @@ object WebSearch {
                 said += e.message.orEmpty()
             }
         }
-        val advice = " Do not call web_search again now: read a page you know with fetch_url, or tell the user. To make searching dependable they can set up Brave Search (a free key from api-dashboard.search.brave.com, in Settings → Tools → Search API key) or their own SearXNG server (Settings → Tools → Search backend and Search address)."
+        val advice = " Web search is paused, and the wait tool cannot help (it sleeps at most 2 minutes). Do NOT call web_search again, and do NOT guess addresses for fetch_url. Carry on from the vault (search_notes, read_note), pages the user gave you and what you know; mark every claim that needs the web \"unverified\" and say in your answer or report that search was unavailable. Tell the user: Brave Search (a free key from api-dashboard.search.brave.com, in Settings → Tools → Search API key) or their own SearXNG server (Settings → Tools → Search backend and Search address) makes searching dependable."
         throw IllegalArgumentException(said.first() + (if (said.size > 1) " Also tried: " + said.drop(1).joinToString(" ") else "") + advice)
     }
 

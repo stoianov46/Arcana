@@ -851,8 +851,21 @@ class CoreTest {
             assertEquals("brave", used); assertEquals(listOf(hit), results); assertEquals(listOf("duckduckgo", "brave"), calls)
             // nothing set up: the error names the way out and says not to retry
             val e = runCatching { WebSearch.searchWithFallback("q", 5, "duckduckgo", "", "") { throw SearchLimited("DuckDuckGo is limiting requests right now (HTTP 202).") } }.exceptionOrNull()
-            assertTrue(e != null && "HTTP 202" in e.message.orEmpty() && "Brave Search" in e.message.orEmpty() && "Do not call web_search again" in e.message.orEmpty(), e?.message)
+            assertTrue(e != null && "HTTP 202" in e.message.orEmpty() && "Brave Search" in e.message.orEmpty() && "Do NOT call web_search again" in e.message.orEmpty(), e?.message)
+            // it says what to do instead: no guessing addresses, carry on from the vault, mark claims unverified; it no longer sends the model to "a page you know"
+            val advice = e!!.message.orEmpty()
+            assertTrue("do NOT guess addresses" in advice && "search_notes" in advice && "unverified" in advice && "wait tool cannot help" in advice, advice)
+            assertTrue("read a page you know" !in advice, advice)
         } finally { WebSearch.resetCooldown() }
+    }
+
+    @Test
+    fun aFailedPageReadSaysWhatToDoNext() {
+        assertTrue("HTTP 410" in statusMessage("https://a.dev/x", 410) && "does not exist" in statusMessage("https://a.dev/x", 410))
+        assertTrue("do not retry the same address" in statusMessage("https://a.dev/x", 403))
+        assertTrue("wait tool" in statusMessage("https://a.dev/x", 429) && "once" in statusMessage("https://a.dev/x", 429))
+        assertTrue("Retry once later" in statusMessage("https://a.dev/x", 503))
+        assertEquals("https://a.dev/x answered HTTP 418.", statusMessage("https://a.dev/x", 418))
     }
 
     @Test
@@ -1349,6 +1362,8 @@ class CoreTest {
             assertTrue("continue with offset=20000" in long, long.takeLast(80))
             assertTrue("continue" !in fetchUrl("$base/long", offset = 20_000, allowPrivate = true))
             assertTrue(runCatching { fetchUrl("$base/gone", allowPrivate = true) }.exceptionOrNull()!!.message!!.contains("HTTP 404"))
+            val gone = runCatching { fetchUrl("$base/gone", allowPrivate = true) }.exceptionOrNull()!!.message!!
+            assertTrue("does not exist" in gone && "Do not guess addresses" in gone && "web_search" in gone, gone)
             assertTrue(runCatching { fetchUrl("$base/bin", allowPrivate = true) }.exceptionOrNull()!!.message!!.contains("not text"))
             // the real tool never reaches this server: it is on the loopback address
             val vaultRoot = Files.createTempDirectory("arcana-web")

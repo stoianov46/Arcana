@@ -12,7 +12,7 @@ import java.nio.file.Files
  * ask for nothing special and the app should start.
  */
 object Cli {
-    const val HELP = """arcana: a terminal control panel for your second brain (Obsidian vault + local Ollama model)
+    const val HELP = """arcana: a terminal research system for your second brain (local Ollama models researching over your Obsidian vault)
 
 Usage:
   arcana                         start the app (the first start walks you through the setup)

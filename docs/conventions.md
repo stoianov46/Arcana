@@ -2,13 +2,13 @@
 
 ## Binding product rules
 
-1. **Arcana is the control panel of the user's second brain.** UI/UX serves: capture → see → think → shape → keep. Don't turn it into a
+1. **Arcana is a research system: the control panel of the user's second brain, whose model agents do research.** UI/UX serves: capture → see → research and think → shape → keep. A question becomes a sourced, structured report in the vault (`Research/<Domain>/Reports/`, see the vault note `Where Things Go`), not a long chat answer. Don't turn it into a
    generic chat client.
 2. **Chat opens unfocused; once you press `Enter` the message field has the keyboard.** (The Chat screen starts in browse mode so that opening the tab never drops you into editing; the screen state resets each time the tab is opened.) No letter shortcuts while typing; actions are Ctrl keys, `/commands`, `@`,
    the palette. `Esc` leaves the field for browse/select (while a reply runs, `Esc` asks to cancel it (Enter confirms) and number keys switch screens only with an empty field). Shortcuts are Ctrl chords, never ⌘.
 3. **Do not reintroduce separate "Summarize" or "Ask" screens.** They were merged into AI notes (tasks) and Chat (`/vault`).
 4. **The sidebar stays** (number keys + palette) but must be informative: badges, auto-fold under 90 columns. Top bar / right sidebar are options.
-5. **Follow CosmoCLI** (`/Users/stoianovk/IDEA Projects/CosmoCLI`, sibling project) for design system, navigation, hotkeys, text editing,
+5. **Follow CosmoCLI** (`../CosmoCLI`, a sibling project) for design system, navigation, hotkeys, text editing,
    scrolling, select mode and settings groups. Before building input/scroll/key behaviour, look at its equivalent; port rather than reinvent.
 6. **Never bind `z`/`Z` as controls.**
 7. **Nothing destructive without a way back**: deletes go to `.trash` (tools: a trash folder), replacements are backed up, tool writes need approval + backup; shell, web, delete and move always ask.

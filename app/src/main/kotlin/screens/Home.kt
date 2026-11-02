@@ -75,7 +75,7 @@ fun HomeScreen(app: AppContext) {
     }
 
     Stack {
-        ScreenHeader("Brain", vault.getOrNull()?.let { "${it.root.fileName} · control panel of your second brain" } ?: "Control panel of your second brain")
+        ScreenHeader("Brain", vault.getOrNull()?.let { "${it.root.fileName} · research control panel of your second brain" } ?: "Research control panel of your second brain")
         VGap()
         Vitals(health, reading = app.brain.reading)
         val offline = app.connection is Connection.Offline
