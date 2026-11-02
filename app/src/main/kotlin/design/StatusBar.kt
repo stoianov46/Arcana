@@ -37,6 +37,40 @@ fun statusSegment(label: String, value: String, color: Color, priority: Int = 5,
     second,
 )
 
+/**
+ * A quiet meter for a machine fact (memory): `label ████░░░░░░ detail`, in the muted colours so it does not compete with the context gauge; only [warn] (over what is safe) turns it orange.
+ * The figure belongs in [detail] (`17.3 of 64 GB`).
+ */
+fun meterSegment(label: String, fraction: Double, detail: String, warn: Boolean = false, priority: Int = 4, plain: Boolean = false, cells: Int = 8): StatusSegment {
+    val share = fraction.coerceIn(0.0, 1.0)
+    val filled = (share * cells).toInt().coerceIn(0, cells).let { if (it == 0 && share > 0.0) 1 else it }
+    val on = if (plain) "#" else "█"
+    val off = if (plain) "-" else "░"
+    return StatusSegment(listOf(
+        StatusPart("$label ", Palette.Muted),
+        StatusPart(on.repeat(filled), if (warn) Palette.Orange else Palette.Muted),
+        StatusPart(off.repeat(cells - filled), Palette.Dim),
+        StatusPart(" $detail", Palette.Muted),
+    ), priority)
+}
+
+/**
+ * The memory meter with two tones in one bar: [modelShare] (█) is what the models take, [otherShare] (▒) is the rest of what the machine uses (the system and other programs), the empty part (░) is free.
+ * Both are shares of the whole memory; muted colours, [warn] turns the bar orange.
+ */
+fun memoryBarSegment(label: String, modelShare: Double, otherShare: Double, detail: String, warn: Boolean = false, priority: Int = 4, plain: Boolean = false, cells: Int = 10): StatusSegment {
+    val model = (modelShare.coerceIn(0.0, 1.0) * cells).toInt().let { if (it == 0 && modelShare > 0.0) 1 else it }.coerceIn(0, cells)
+    val other = (otherShare.coerceIn(0.0, 1.0) * cells).toInt().let { if (it == 0 && otherShare > 0.0) 1 else it }.coerceIn(0, cells - model)
+    val c = if (warn) Palette.Orange else Palette.Muted
+    return StatusSegment(listOf(
+        StatusPart("$label ", Palette.Muted),
+        StatusPart((if (plain) "#" else "█").repeat(model), c),
+        StatusPart((if (plain) "+" else "▒").repeat(other), Palette.Muted),
+        StatusPart((if (plain) "-" else "░").repeat(cells - model - other), Palette.Dim),
+        StatusPart(" $detail", Palette.Muted),
+    ), priority)
+}
+
 /** A gauge: `label ▰▰▱▱▱▱▱▱ 12% detail`, green while there is room, orange from 60% and red from 85% (more is worse). */
 fun gaugeSegment(label: String, fraction: Double, detail: String, priority: Int = 8, plain: Boolean = false, cells: Int = 10): StatusSegment {
     val share = fraction.coerceIn(0.0, 1.0)

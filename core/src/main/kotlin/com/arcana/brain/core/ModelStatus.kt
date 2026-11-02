@@ -2,6 +2,31 @@ package com.arcana.brain.core
 
 /** What the machine's memory is doing, for the "waiting for the model" line: macOS reports swap through `sysctl`; elsewhere (or on any failure) it is simply unknown. */
 object SystemMemory {
+    /** Memory the machine really has in use (apps, system and loaded models; caches that are given back are not counted), in bytes; null when it cannot be read. */
+    fun usedBytes(): Long? = runCatching {
+        val os = System.getProperty("os.name").lowercase()
+        val total = ModelFit.physicalMemory()
+        when {
+            "mac" in os -> {
+                val p = ProcessBuilder("vm_stat").redirectErrorStream(true).start()
+                val text = p.inputStream.bufferedReader().readText()
+                p.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
+                usedFromVmStat(text)
+            }
+            "linux" in os -> java.io.File("/proc/meminfo").readLines().firstOrNull { it.startsWith("MemAvailable:") }
+                ?.filter { it.isDigit() }?.toLongOrNull()?.let { total - it * 1024 }
+            else -> (java.lang.management.ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean).freeMemorySize.let { total - it }
+        }?.takeIf { it > 0 }
+    }.getOrNull()
+
+    /** What `vm_stat` (macOS) says is in use: active, wired and compressed pages, times the page size. */
+    fun usedFromVmStat(text: String): Long? {
+        val page = Regex("page size of (\\d+)").find(text)?.groupValues?.get(1)?.toLongOrNull() ?: return null
+        fun pages(label: String) = Regex(Regex.escape(label) + ":\\s+(\\d+)").find(text)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        val used = pages("Pages active") + pages("Pages wired down") + pages("Pages occupied by compressor")
+        return if (used > 0) used * page else null
+    }
+
     /** How full the swap file is, in percent, or null when unknown or when there is no swap in use. */
     fun swapPercent(): Int? = runCatching {
         val process = ProcessBuilder("sysctl", "-n", "vm.swapusage").redirectErrorStream(true).start()

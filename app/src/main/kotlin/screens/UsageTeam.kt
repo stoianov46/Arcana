@@ -85,7 +85,7 @@ internal fun teamLines(stats: TeamStats, width: Int, plain: Boolean, priceIn: In
 /** The Team page: [teamLines] in a scrolling view of [rows] rows. */
 @Composable
 internal fun TeamPage(stats: TeamStats, output: OutputState, rows: Int, plain: Boolean, priceIn: Int, priceOut: Int) {
-    Panel("Team: what the orchestration cost and did") {
+    Panel("Orchestration: what the helpers cost and did") {
         ScrollView(teamLines(stats, panelWidth(), plain, priceIn, priceOut), (rows - 3).coerceAtLeast(3), output)
     }
 }

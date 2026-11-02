@@ -41,18 +41,19 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `plainGlyphs` | false | ASCII-only output (screen readers) |
 | `renderMarkdown` | true | rich Markdown vs raw text |
 | `showThinking` | true | "<model> is thinking…" status |
+| `systemMessages` | marked | how Arcana's own prompts to the model (todo reminder, redo, unmet goal, revise) show in Chat: `marked` (⚙ System block), `hidden` |
 | `thinkingView` | summary | how a reasoning model's thoughts show in Chat: `summary` (one dim line), `full`, `hidden`; the text is stored in `ChatMessage.thinking` (never sent back to the model) |
 | `comparisonView` | side | how a `/compare` result is drawn in Chat: `side` (answers in columns, verdict below) or `stacked`; narrow windows stack either way |
 | `autoCompactPercent` | 80 | compact the chat before a message when the context window is this percent full (0 = off); `/compact` always works (see `Compaction`) |
 | `compactKeepPercent` | 30 | when the chat is compacted, the latest turns that fit in this share of the context window stay word for word (0 = the last 2 turns); Settings → Console → *Keep after compacting* |
-| (file) `events.jsonl` | | next to `config.json`: one JSON line per orchestration event (`time`, `kind`, `detail`, `model`) for the Usage screen's Team page; cleared with the usage history |
+| (file) `events.jsonl` | | next to `config.json`: one JSON line per orchestration event (`time`, `kind`, `detail`, `model`) for the Usage screen's Orchestration page; cleared with the usage history |
 | `chatHistory` | 0 | latest messages sent as context; 0 = everything (the chat is compacted at `autoCompactPercent`, not cut). Configs saved before this change keep their old 20 until it is changed in Settings → Console → Chat history |
 | `confirmCancel` | true | `Esc` on a running reply asks "Cancel this reply?" first (Settings → Console → *Confirm before cancelling*); false = `Esc` cancels at once |
 | `keepChats` / `chatsKept` | true / 50 | persist chats / how many to keep |
 | `chatUseVault` | false | answer from vault (also `/vault`) |
 | `copyAs` | `markdown` | select-mode copy format: `markdown` / `plain` |
 | `inboxFolder` | `Inbox` | where unprocessed notes are |
-| `dailyFolder` / `dailyFormat` | `""` / `YYYY-MM-DD` | daily note fallback when Obsidian has no setting |
+| `dailyFolder` / `dailyFormat` | `""` / `[thought-]YYYY-MM-DD` (file `thought-2026-11-02.md`); a saved config that still holds the old default `YYYY-MM-DD` is moved to the new one when it is loaded | daily note fallback when Obsidian has no setting |
 | `staleDays` | 90 | stale threshold |
 | `lastPickerDir` | `""` | last folder of the file browser |
 | `toolsEnabled` | false | tools in Chat |
@@ -112,7 +113,7 @@ Adding a field: give it a default (old config files must still load), add a Sett
 - Frontmatter written by Arcana: `created`, `generator: arcana`, `model`, `tags: [arcana]`. `Vault.replace` and
   `mergeFrontmatterTags` preserve existing frontmatter.
 - Renaming a note (Library `r`, `Vault.rename`) rewrites the links to it in other notes; the memory file is `.arcana/ARCANA.md` (or an older `ARCANA.md` at the vault root).
-- Daily notes: path from `.obsidian/daily-notes.json` (`folder`, `format`) else settings. Capture appends `- HH:mm text`.
+- Daily notes: path from `.obsidian/daily-notes.json` (`folder`, `format`) else settings. Capture appends `- HH:mm text`, or with `captureFolder` set (the last folder chosen with Tab in the capture dialog; blank = daily note) writes a new note `<folder>/<first line>.md` with a `created` property.
 - Deletion is never permanent: `Vault.trash` → `.trash/`; the `delete_path` tool moves to `.trash/` (vault) or `<config>/trash`. Replacements/inbox processing back up originals into `.trash/`.
 - Session summary notes and saved chats are normal notes created in `outputFolder`.
 - **Where Arcana's own files live (`core/Layout.kt`; Settings → Vault has read-only rows that show the places, and *Skills folder* / *Memory file path* show the file in use: `skillsWhere`, `memoryWhere`).** Its working files are kept apart from the notes it produces (reports, research, AI notes, which stay visible in the vault in `outputFolder`, `Reports/…`, `Research/…`). *In the vault* the hidden folder `.arcana/`: `.arcana/skills/` and `.arcana/ARCANA.md` (hidden folders are skipped by Obsidian, by the note search and by `Vault.listNotes`, but every tool that opens a path reads them). *For the user*, in the settings folder `~/.config/arcana/`: `skills/` (every vault; a vault skill of the same name wins, `Skills.discoverAll`; a global skill is addressed by its absolute path and the toolbox may read that folder) and `ARCANA.md` (read first, then the vault's). Nothing moves by itself: a vault with `Skills/` or a root `ARCANA.md` keeps them until `arcana --migrate` (`Layout.migrate`) moves them (a target that exists is never overwritten; `[[links]]` to moved notes are not rewritten); a new vault gets `.arcana/`. Reference notes for the model (for example the LLM reference) live in `.arcana/reference/`, but Arcana does not create or read them itself (the memory file tells the model their path). **Links:** Obsidian does not resolve a `[[link]]` to a note inside the hidden folder, so a visible note (a report, research) must not wikilink to a skill or a reference note in `.arcana/`: write its name as plain text or in backticks; a skill that writes reports must not put such a link into them (`gt_forecast.py` writes `coingecko-forecast` as text). Links between notes inside `.arcana/`, and to visible notes, are fine.

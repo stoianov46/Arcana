@@ -218,6 +218,8 @@ Small models sometimes answer `fetch_url(url="…")` as plain text instead of a 
 `name` and `arguments`, so a reply that merely explains a tool is never executed. `AppConfig.textCalls`: **auto** (default) runs them as
 real calls (approvals still apply), **ask** shows "Run this tool call?" first, **off** leaves the text.
 
+**Unparsable tool calls:** a model (gpt-oss writing a long HTML file) can emit a tool call with broken JSON escapes; Ollama then answers HTTP 500 `error parsing tool call`. While tools are offered, `Generation` catches it and asks again with a hidden message (`BAD_CALL_NUDGE`, `MAX_BAD_CALL_RETRIES = 2`, not kept in the chat); a third failure is shown as the error.
+
 **Empty replies:** some models answer with nothing after a tool result or a finished skill. `Generation` asks once more with a hidden message (`EMPTY_NUDGE`, `MAX_EMPTY_RETRIES = 1`, not kept in the chat); only a second empty reply fails with "The model returned an empty response." (see `SkillGateTest`).
 
 The "keep going" nudge (`announcesAction`): a reply that only announces a step ("I will read…", "Let me check…", "This will help me

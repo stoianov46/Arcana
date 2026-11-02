@@ -71,7 +71,7 @@ class CompactTest {
         try {
             val chat = app(server).chat
             chat.add(ChatMessage.user("hi")); chat.add(ChatMessage.assistant("hello"))
-            assertTrue(assertFailsWith<IllegalStateException> { runBlocking { chat.compact() } }.message!!.contains("too short"))
+            assertTrue(assertFailsWith<IllegalStateException> { runBlocking { chat.compact() } }.message!!.contains("Nothing to compact"))
             assertTrue(bodies.isEmpty(), "no request for a chat that is too short")
             (2..4).forEach { chat.add(ChatMessage.user("question $it")); chat.add(ChatMessage.assistant("answer $it")) }
             val before = chat.messages.size

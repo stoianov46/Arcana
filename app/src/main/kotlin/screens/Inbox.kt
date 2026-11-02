@@ -234,8 +234,6 @@ private fun InboxContent(app: AppContext, vault: Vault) {
                     ActionItem("p", "Process all", pending.isNotEmpty(), Palette.Accent),
                     ActionItem("/", "Filter"),
                 )
-                ScreenHeader("Inbox", "Notes waiting in “$inbox”: AI proposes a title, folder, tags and links; you decide")
-                VGap()
                 Panel("Inbox · ${queue.size} note${if (queue.size == 1) "" else "s"}") {
                     if (queue.isEmpty()) {
                         Label("✓ Inbox zero.", color = Palette.Green, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
@@ -244,7 +242,7 @@ private fun InboxContent(app: AppContext, vault: Vault) {
                         Picker(
                             queue, picker,
                             label = { it.path },
-                            rows = outputRows(fixed = 3 + 2 + 1, actions = actions),
+                            rows = outputRows(fixed = 2 + 1, actions = actions),
                             icon = { if (outcome[it.path]?.startsWith("filed") == true) "✓" else if (outcome[it.path] == "skipped") "⊘" else if (results[it.path] is Analysis.Ready) "●" else "▣" },
                             iconColor = { if (outcome[it.path]?.startsWith("filed") == true) Palette.Green else if (outcome[it.path] == "skipped") Palette.Dim else Palette.Orange },
                             meta = { outcome[it.path] ?: if (results[it.path] is Analysis.Ready) "proposal ready" else relativeTime(it.modified) },

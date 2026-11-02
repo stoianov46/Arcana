@@ -80,6 +80,15 @@ object ModelFit {
         }
     }
 
+    /**
+     * How many tokens of context fit next to a model whose weights take [weightsBytes], on a machine with [ramBytes]: what the models may use ([budget])
+     * minus the weights, divided by what a token costs ([kvBytesPerToken]). 0 when the weights alone do not fit; null when it cannot be worked out. An estimate.
+     */
+    fun tokenRoom(ramBytes: Long, weightsBytes: Long, kvBytesPerToken: Long): Long? {
+        if (ramBytes <= 0 || weightsBytes <= 0 || kvBytesPerToken <= 0) return null
+        return ((budget(ramBytes) - weightsBytes) / kvBytesPerToken).coerceAtLeast(0)
+    }
+
     /** The physical memory of this machine in bytes, 0 when the JVM does not say. */
     fun physicalMemory(): Long = runCatching { (java.lang.management.ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean).totalMemorySize }.getOrDefault(0L)
 

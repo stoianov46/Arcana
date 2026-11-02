@@ -951,7 +951,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }
     }
 
-    private fun sendNow(text: String) {
+    private fun sendNow(typed: String) {
+        // a path to a picture in the text (pasted, or dropped into the terminal) is attached as the picture itself: a model cannot open a path
+        val text = attachments.takePastedPictures(typed)
         val sent = attachments.drain()
         val body = text.ifEmpty {
             if (sent.pictures.isEmpty() && sent.files.isNotEmpty()) "Explain the attached file${if (sent.files.size == 1) "" else "s"}."
@@ -1246,6 +1248,12 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     var compacting by mutableStateOf(false)
         private set
 
+    /** When the running compaction began, and whether Arcana started it (before a message) rather than `/compact`. */
+    var compactingSince = 0L
+        private set
+    var compactingAuto = false
+        private set
+
     /**
      * Compacts the chat: the model summarizes everything before the user's last [Compaction.KEEP_USER_TURNS] turns, and the summary is
      * inserted at that point. Nothing is removed from the chat; the model just stops being sent what is above the summary.
@@ -1254,8 +1262,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     suspend fun compact(auto: Boolean = false): String {
         check(!compacting) { "Already compacting." }
         val all = messages.toList()
-        val cut = Compaction.cutPoint(all, keepTokens()) ?: error("The chat is too short to compact: your latest messages stay as they are, and there must be a few messages before them.")
+        val cut = Compaction.cutPoint(all, keepTokens()) ?: error("Nothing to compact yet: your latest messages (and the latest tool rounds) stay as they are, and there must be a few messages before them.")
         val part = Compaction.toSummarize(all, cut)
+        compactingSince = System.currentTimeMillis()
+        compactingAuto = auto
         compacting = true
         app.busy++
         try {

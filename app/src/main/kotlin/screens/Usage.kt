@@ -32,7 +32,7 @@ import java.util.Locale
 
 private enum class Period(val title: String) { Session("This session"), Today("Today"), Week("7 days"), Month("30 days"), All("All time") }
 
-private enum class Page(val title: String) { Overview("Overview"), Breakdown("Breakdown"), Team("Team"), Tools("Tools"), Recent("Recent replies") }
+private enum class Page(val title: String) { Overview("Overview"), Breakdown("Breakdown"), Team("Orchestration"), Tools("Tools"), Recent("Recent replies") }
 
 private const val DAY = 86_400_000L
 

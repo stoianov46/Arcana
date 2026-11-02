@@ -128,6 +128,19 @@ class Attachments(
             .getOrElse { (it.message ?: "Could not read the file.") to true }
     }
 
+    /**
+     * Pictures named by path in [text] (pasted, or dropped into the terminal) become real attachments, so the model gets the picture itself and not a path it cannot open;
+     * returns the text without those paths. Nothing changes when the model cannot see, there is no room, or a file is refused: the text then stays as it was.
+     */
+    fun takePastedPictures(text: String): String {
+        if (!forModel || !modelCanSee()) return text
+        val (paths, rest) = ImageFiles.pastedPaths(text)
+        if (paths.isEmpty() || problem(paths) != null) return text
+        val ok = runCatching { paths.map(ImageFiles::load) }.getOrNull() ?: return text
+        pictures += ok; picturePaths += paths
+        return rest
+    }
+
     /** Opens the browser. [notify] is told the outcome (text, isError) when files were chosen or opening was refused. */
     fun open(notify: (String, Boolean) -> Unit) {
         if (room <= 0) {

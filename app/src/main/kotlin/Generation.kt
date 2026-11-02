@@ -16,6 +16,7 @@ import com.arcana.brain.core.TextToolCalls
 import com.arcana.brain.core.ToolCall
 import kotlinx.serialization.json.JsonArray
 import com.arcana.brain.core.OllamaClient
+import com.arcana.brain.core.OllamaException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -129,6 +130,7 @@ class Generation(
                 var nudges = 0
                 var emptyRetries = 0
                 var loopRetries = 0
+                var badCallRetries = 0
                 while (true) {
                     val buffer = StringBuilder()
                     val thoughts = StringBuilder()
@@ -187,6 +189,15 @@ class Generation(
                         }
                     } catch (e: LoopStop) {
                         // handled below: the stream is closed, what it wrote so far is still in the buffers
+                    } catch (e: OllamaException) {
+                        // the model wrote a tool call Ollama could not parse (broken JSON escapes in a long file body): not the user's fault, ask again, out of sight
+                        if (offered == null || !e.message.orEmpty().contains("error parsing tool call") || badCallRetries >= MAX_BAD_CALL_RETRIES) throw e
+                        badCallRetries++
+                        messages = messages + ChatMessage.user(BAD_CALL_NUDGE)
+                        text = ""
+                        liveThinking = ""
+                        stats = null
+                        continue
                     } finally {
                         // a cancelled or failed request never gets exact figures: do not leave its estimate in the counters
                         if (liveAdded != 0) onLive(-liveAdded)
@@ -344,6 +355,11 @@ private const val MAX_THINKING_CHARS = 20_000
 
 /** How often an empty reply is answered with [EMPTY_NUDGE] before it counts as an error. */
 private const val MAX_EMPTY_RETRIES = 1
+
+/** How often a tool call Ollama could not parse is answered with [BAD_CALL_NUDGE] before it counts as an error. */
+private const val MAX_BAD_CALL_RETRIES = 2
+private const val BAD_CALL_NUDGE = "Your last tool call was malformed (invalid JSON) and was not run. Make it again with plain, correctly escaped arguments; for a long file, write a shorter first version and extend it afterwards."
+
 
 /** The live token counters move in steps of this many streamed pieces (one recomposition per piece would be wasteful). */
 private const val LIVE_BATCH = 4

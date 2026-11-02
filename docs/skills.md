@@ -55,7 +55,8 @@ Skills as a folder of Markdown instructions with reference files and scripts, re
 | `version` | no | shown in `use_skill` output and `/skills` |
 | `output` | no | vault folder for the skill's results; `use_skill` tells the model (`Results go to (outside the skill): …`) |
 | `requires` | no | the required steps (section 5); quoted list items |
-| `type`, `tags`, `inputs`, `needs`, … | no | for people and Obsidian; Arcana ignores them |
+| `usage` | no | what the user types after `/name`, shown under the skill in the Chat menu (`/name <pair> [horizon]`); without it the `inputs:` list is shown as `<a> <b>` |
+| `type`, `tags`, `needs`, … | no | for people and Obsidian; Arcana ignores them |
 
 `Skills.discover` collects **problems** per skill (shown by `/skills`, the skill is still listed): `name` differs from the folder, folder name not
 lower-case-with-dashes, no `description`, an unreadable `requires:` line, entry note over `MAX_CHARS` (18,000 characters).

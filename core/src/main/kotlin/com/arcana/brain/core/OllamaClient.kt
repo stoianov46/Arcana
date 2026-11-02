@@ -119,7 +119,7 @@ data class ModelDetails(val name: String, val sizeBytes: Long, val capabilities:
 }
 
 /** What `/api/show` says about a model: its abilities, its context, its experts, and the values its `think` accepts (`true`, `false`, `low`…; empty when it cannot think or Ollama does not say). */
-data class ModelShow(val capabilities: List<String>, val contextLength: Int, val experts: Int, val thinkingValues: List<String>, val thinkingDefault: String = "")
+data class ModelShow(val capabilities: List<String>, val contextLength: Int, val experts: Int, val thinkingValues: List<String>, val thinkingDefault: String = "", val kvBytesPerToken: Long = 0)
 
 class OllamaException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
@@ -208,6 +208,21 @@ object OllamaProtocol {
         json.decodeFromString<WireShow>(body).modelInfo.entries
             .firstOrNull { it.key.endsWith(".context_length") }?.value?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() }?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0
     }.getOrDefault(0)
+
+    /**
+     * What one token of context costs in memory, from `model_info` (the cache keeps a key and a value per layer, per key/value head, 2 bytes each): 0 when the model does not say.
+     * An estimate: a model with some layers that keep no cache (a hybrid) needs less than this says.
+     */
+    fun parseKvBytesPerToken(body: String): Long = runCatching {
+        val info = json.decodeFromString<WireShow>(body).modelInfo
+        fun num(key: String) = (info[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull()?.toLong() ?: 0L
+        val arch = (info["general.architecture"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return@runCatching 0L
+        val layers = num("$arch.block_count")
+        val heads = num("$arch.attention.head_count")
+        val kvHeads = num("$arch.attention.head_count_kv").takeIf { it > 0 } ?: heads
+        val headDim = num("$arch.attention.key_length").takeIf { it > 0 } ?: if (heads > 0) num("$arch.embedding_length") / heads else 0L
+        if (layers <= 0 || kvHeads <= 0 || headDim <= 0) 0L else 2L * layers * kvHeads * headDim * 2
+    }.getOrDefault(0L)
 
     /** The context window Ollama has loaded [model] with, from `/api/ps` (`context_length`); 0 when the model is not loaded or Ollama does not say. */
     fun parseLoadedContext(body: String, model: String): Int = runCatching {
@@ -318,7 +333,7 @@ class OllamaClient(private val config: () -> AppConfig) {
         }
         if (response.statusCode() != 200) return@withContext ModelShow(emptyList(), 0, 0, emptyList())
         val (values, default) = OllamaProtocol.parseThinking(response.body())
-        ModelShow(OllamaProtocol.parseCapabilities(response.body()), OllamaProtocol.parseContextLength(response.body()), OllamaProtocol.parseExperts(response.body()), values, default)
+        ModelShow(OllamaProtocol.parseCapabilities(response.body()), OllamaProtocol.parseContextLength(response.body()), OllamaProtocol.parseExperts(response.body()), values, default, OllamaProtocol.parseKvBytesPerToken(response.body()))
     }
 
     /** The context window the running [model] really has (what Ollama loaded it with), or 0 when it is not loaded or this Ollama version does not say. */

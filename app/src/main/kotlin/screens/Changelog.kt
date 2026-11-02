@@ -24,9 +24,17 @@ private fun changePages() = listOf(
         "Latest", "The latest work",
         """
 # The latest work
-Built on 24–25 October 2026. Last updated 31 October 2026.
+Built on 24–25 October 2026. Last updated 1 November 2026.
 
 ## Nothing is hidden any more
+- **Five fixes from a real session:** (1) the *thinking pane* no longer disappears while a dialog (a change to approve, a question) is open: it stays as a short strip and the dialog gives up a few lines. (2) A **picture named by path** in your message (pasted, or dropped into the terminal) is attached as the picture itself, with the path removed from the text: a model cannot open a path, it only sees the bytes. (3) **Token estimate:** the bottom bar says about how many tokens of context fit in your memory next to the chat model (`~96k ctx fits`, from the model's cache size), a red-orange `⚠` when the window you ask for needs more, and Settings → Ollama → Context window says it too. (4) **Memory as a bar:** the bottom bar shows `ram ██▒▒▒░░░░░ models 8.7 · Σ 22.4 | 34 GB` as a quiet two-tone bar (█ what the models take, ▒ everything else in use, ░ free); `cpu` stays a percentage and `● loaded GPU` / `○ not loaded` says only whether the model is in memory (and the GPU share when part of it spilled to the CPU). (5) **System messages:** what Arcana sends in your name (open todo steps, redo, unmet goal, `/revise`) shows as a dim `⚙ System · Arcana to the model` block, never as *You* (Settings → Console → System messages: Marked / Hidden). Also: the title and description lines under the tab bar are gone (more room for content), and Usage → *Team* is now **Orchestration**.
+- **Thoughts into folders, notes edited in Arcana:** *Capture* (`Ctrl+N`) has a **Save to** line: `Tab` / `Shift+Tab` switch between today's daily note and the folders at the top of your vault (Research, Projects…); in a folder the thought becomes a note of its own, named after its first line. The last choice is remembered. In the *Library* `e` **edits** the note's text (`Ctrl+S` saves, `Esc` leaves and asks before dropping changes; it will not overwrite a note that changed elsewhere meanwhile).
+- **Thought files are named `thought-2026-11-02.md`:** the daily note that Capture (`Ctrl+N`) appends to has a `thought-` prefix, so it is told apart by name from other notes named by date (Settings → Vault → Daily note format, default `[thought-]YYYY-MM-DD`; Obsidian's own Daily notes setting still wins when the vault has one). Existing `2026-11-02.md` files are not renamed by Arcana: rename them in Obsidian.
+- **A skill's menu hint shows its arguments:** pick a skill in the `/` menu and the line under it says what to type after it (`/create-llm-compare-report <model A> vs <model B> [for <task>]`). A skill sets it with `usage:` in its properties; without it the `inputs:` list is shown as `<a> <b>`.
+- **Thinking pane stays during a dialog:** it used to vanish while the model asked a question or a change waited for approval, and came back after; now it stays where it is (a top or bottom strip is left out only when the dialog leaves no room for it).
+- **Broken tool calls are retried:** when a model writes a tool call Ollama cannot parse (`HTTP 500: error parsing tool call`, seen with gpt-oss writing long HTML files), the model is asked again out of sight, up to twice, to make a shorter, correctly escaped call, instead of the reply failing.
+- **Compacting is clear and the gauge follows it:** while the chat is summarized the line under the conversation says `Compacting the chat: … wait, then send your message` (or `your message is sent right after` when Arcana started it), the key hints say to wait, and sending is held until the summary is ready (your text stays in the field). The `ctx` gauge used to keep the old figure until the next reply; after a compaction it now shows an estimate of what the model is sent (`~5k/131k`).
+- **`/compact` works on one long turn:** a chat that is a single request followed by many tool rounds (the context at 73% and "too short to compact") is now cut between two rounds: the older rounds become the summary and the latest ones stay.
 - **Hidden folders in the Library:** `.` in the Library adds the notes of hidden folders (`.arcana/`: skills, `ARCANA.md`) to the *All* view, and `.` again hides them. They stay out of search, the Brain and every count, can be read, chatted about and opened in Obsidian, but not renamed or trashed (they are Arcana's own files).
 - **Scrolling screens:** a screen taller than the window no longer loses blocks. *Settings*: the option list scrolls inside its panel and follows the cursor (a scrollbar on the right), so every option stays reachable in a short window; the help line under it is cut with `…` instead of taking the list's rows. *Usage*: Overview and Breakdown keep all their panels and scroll with `↑` `↓` / `PgUp` `PgDn`; Recent replies (now up to 200) and Tools scroll inside their panel. Text that does not fit ends in `…`, as in CosmoCLI. *Usage* is a grid on a wide window (hours and speed side by side), a scroll press moves a few rows, and a block that does not fit whole is shown shortened instead of leaving a gap. *Inbox review*: the proposal fields scroll with the focus in a short window. *AI notes* and every list: the name of a row keeps its room and the detail beside it is shortened with `…` first.
 
@@ -336,8 +344,6 @@ fun ChangelogScreen(app: AppContext) {
     }
 
     Stack {
-        ScreenHeader("Changelog", "What has been built · page ${page + 1} of ${pages.size}")
-        VGap()
         TabBar(pages.map { it.tab }, page)
         VGap()
         Panel(current.title) {
@@ -346,8 +352,8 @@ fun ChangelogScreen(app: AppContext) {
                 renderMarkdown(parseMarkdown(current.markdown), width, plainGlyphs = app.config.plainGlyphs)
             }
             output.copyPlain = app.config.copyAs == "plain"
-            // header 3, the page tabs and their gaps 2, the panel's frame 2, and a notice row only while there is one
-            ScrollView(lines, outputRows(fixed = 7, notice = notice), output)
+            // the page tabs and their gaps 2, the panel's frame 2, and a notice row only while there is one
+            ScrollView(lines, outputRows(fixed = 4, notice = notice), output)
             NoticeLine(notice)
         }
     }

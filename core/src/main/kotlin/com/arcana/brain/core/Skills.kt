@@ -15,6 +15,7 @@ import kotlin.io.path.relativeTo
  * @property files everything else in the folder (reference notes, scripts…), relative to [folder]
  * @property output where the skill puts its results (`output:` in its properties, a vault folder; blank = it does not say). Results belong
  * outside the skill folder (for example `Reports/<name>`): a skill is stable instructions, results grow with every run.
+ * @property usage what the user types after `/name` (`usage:` in the properties, else the `inputs:` list as `<a> <b>`); blank = not said. The Chat menu shows it under the highlighted skill.
  * @property problems what is wrong with it (empty when it is fine); a skill with problems is still listed so the user can fix it
  */
 class Skill(
@@ -27,6 +28,7 @@ class Skill(
     val files: List<String>,
     val chars: Int,
     val problems: List<String>,
+    val usage: String = "",
 )
 
 /** The models a skill asks for (`worker:` and `reviewer:` in its properties); blank = not set, the settings decide. */
@@ -106,8 +108,15 @@ object Skills {
         if (text.length > MAX_CHARS) problems += "the entry note has ${text.length} characters; keep it under $MAX_CHARS or the model will not read the end (move detail into a reference/ note)"
         return Skill(
             name = dirName, description = description, version = meta["version"].orEmpty().trim(), output = meta["output"].orEmpty().trim().trim('/'),
-            path = shown(entry), folder = shown(sub), files = filesOf(sub, dirName), chars = text.length, problems = problems,
+            path = shown(entry), folder = shown(sub), files = filesOf(sub, dirName), chars = text.length, problems = problems, usage = usageOf(meta),
         )
+    }
+
+    /** What follows `/name`: the `usage:` property as written, else `inputs: [pair, horizon]` as `<pair> <horizon>`; "" when the skill names neither. */
+    internal fun usageOf(meta: Map<String, String>): String {
+        meta["usage"]?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        val inputs = meta["inputs"].orEmpty().trim().removeSurrounding("[", "]").split(',').map { it.trim().trim('"', '\'') }.filter { it.isNotEmpty() }
+        return inputs.joinToString(" ") { "<$it>" }
     }
 
     /** True when the note at [path] (vault-relative) is a skill's entry note. */

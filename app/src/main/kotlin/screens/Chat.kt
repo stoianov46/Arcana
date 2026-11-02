@@ -238,23 +238,36 @@ internal fun thinkingSegment(app: AppContext, plain: Boolean): StatusSegment {
     return statusSegment("", "${glyph}think $word", if (effective == "off") Palette.Blue else Palette.Accent, 8, bold = true)
 }
 
-/** How full the model's context was after the last reply (its prompt plus its answer) as a share and a `13.6k/131k` text; null before the first reply or when the size is unknown. */
+/**
+ * Tokens the context held: the last reply's prompt plus its answer, or, when the chat was compacted after that reply, an estimate of
+ * what the model is sent now (the summary and the latest messages, about 4 characters a token). The flag says it is an estimate.
+ */
+internal fun contextTokens(messages: List<ChatMessage>): Pair<Int, Boolean>? {
+    val statsAt = messages.indexOfLast { (it.stats?.promptTokens ?: 0) > 0 }
+    if (statsAt < 0) return null
+    if (messages.indexOfLast { Compaction.isSummary(it) } > statsAt) {
+        val chars = Compaction.forModel(messages).sumOf { it.content.length + it.toolCalls.sumOf { c -> c.function.arguments.toString().length } }
+        return (chars / 4) to true
+    }
+    val stats = messages[statsAt].stats!!
+    return (stats.promptTokens + stats.completionTokens) to false
+}
+
+/** How full the model's context was after the last reply (its prompt plus its answer) as a share and a `13.6k/131k` text (`~` after a compaction: an estimate); null before the first reply or when the size is unknown. */
 internal fun contextUsage(messages: List<ChatMessage>, limit: Int): Pair<Double, String>? {
-    val stats = messages.mapNotNull { it.stats }.lastOrNull { it.promptTokens > 0 } ?: return null
+    val (used, estimated) = contextTokens(messages) ?: return null
     if (limit <= 0) return null
-    val used = stats.promptTokens + stats.completionTokens
-    return (used.toDouble() / limit).coerceIn(0.0, 1.0) to "${UsageStats.compact(used.toLong())}/${UsageStats.contextSize(limit.toLong())}"
+    return (used.toDouble() / limit).coerceIn(0.0, 1.0) to "${if (estimated) "~" else ""}${UsageStats.compact(used.toLong())}/${UsageStats.contextSize(limit.toLong())}"
 }
 
 /** `ctx ▰▰▱▱▱▱▱▱ 12% 13k/131k`: how full the model's context was after the last reply (its prompt plus its answer); empty before the first reply or when the size is unknown. */
 internal fun contextMeter(messages: List<ChatMessage>, limit: Int): String {
-    val stats = messages.mapNotNull { it.stats }.lastOrNull { it.promptTokens > 0 } ?: return ""
+    val (used, estimated) = contextTokens(messages) ?: return ""
     if (limit <= 0) return ""
-    val used = stats.promptTokens + stats.completionTokens
     val share = (used * 100.0 / limit).coerceIn(0.0, 100.0)
     val filled = (share / 12.5).toInt().coerceIn(0, 8).let { if (it == 0 && used > 0) 1 else it }
     val full = com.arcana.brain.core.UsageStats::compact
-    return " · ctx " + "▰".repeat(filled) + "▱".repeat(8 - filled) + " ${"%.0f".format(share)}% ${full(used.toLong())}/${com.arcana.brain.core.UsageStats.contextSize(limit.toLong())}" +
+    return " · ctx " + "▰".repeat(filled) + "▱".repeat(8 - filled) + " ${"%.0f".format(share)}% ${if (estimated) "~" else ""}${full(used.toLong())}/${com.arcana.brain.core.UsageStats.contextSize(limit.toLong())}" +
         if (share >= 80) " ⚠ nearly full: /new starts fresh" else ""
 }
 
@@ -286,10 +299,9 @@ internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConf
 internal fun modelStateSegment(app: AppContext, plain: Boolean): StatusSegment? {
     val loaded = app.loaded
     val mine = loaded?.firstOrNull { com.arcana.brain.core.ModelStatus.sameModel(it.name, app.config.model) }
-    val detail = if (mine == null || mine.sizeBytes <= 0) "" else " ${"%.1f GB".format(mine.sizeBytes / 1e9)} ${100 - mine.cpuPercent}% GPU"
-    // every model Arcana has in memory (the chat model, the Oracul, the judge, the flow's stages): what they take together
-    val total = loaded.orEmpty().sumOf { it.sizeBytes }
-    val all = if (loaded.orEmpty().size > 1 && total > 0) " · ${loaded!!.size} models ${"%.1f GB".format(total / 1e9)}" else ""
+    // the memory figure lives in the ram meter; this says only where the model sits
+    val detail = if (mine == null || mine.sizeBytes <= 0) "" else " ${100 - mine.cpuPercent}% GPU"
+    val all = "" // what all the loaded models take together is the memory meter (see memoryMeter)
     // one indicator, one place: while a wait lasts it says what is going on (orange), after it the state of the model
     if (app.modelWhy.isNotEmpty()) {
         val why = app.modelWhy.substringBefore(";").replace("reading about ", "reading ").replace(" tokens of conversation", " tokens")
@@ -298,7 +310,30 @@ internal fun modelStateSegment(app: AppContext, plain: Boolean): StatusSegment? 
     }
     if (loaded == null) return null
     if (mine == null) return statusSegment("", if (plain) "not loaded" else "○ not loaded", Palette.Muted, 4)
-    return statusSegment("", (if (plain) "loaded" else "● loaded") + detail + all, if (mine.cpuPercent >= 10) Palette.Orange else Palette.Green, 6)
+    // loaded: where it sits is one word (GPU), with the share only when part of it has spilled to the CPU; the memory is the ram meter's business
+    val where = if (mine.sizeBytes <= 0) "" else if (mine.cpuPercent == 0) " GPU" else " ${100 - mine.cpuPercent}% GPU"
+    return statusSegment("", (if (plain) "loaded" else "● loaded") + where, if (mine.cpuPercent >= 10) Palette.Orange else Palette.Green, 6)
+}
+
+/**
+ * The memory meter of the bottom bar: what every model Arcana has loaded (the chat model, the Oracul, the judge, the flow's stages) takes of this machine's memory, as a quiet bar,
+ * with the models' count and, when the model's cache size is known, about how many tokens of context fit next to the chat model's weights (an estimate). Null while nothing is loaded.
+ * The processor and where the model sits stay percentages.
+ */
+internal fun memoryMeter(app: AppContext, plain: Boolean): StatusSegment? {
+    val loaded = app.loaded.orEmpty()
+    val total = loaded.sumOf { it.sizeBytes }
+    val ram = com.arcana.brain.core.ModelFit.physicalMemory()
+    if (total <= 0 || ram <= 0) return null
+    val gb = { b: Long -> "%.1f".format(b / 1e9).removeSuffix(".0") }
+    // the machine's whole use, never less than what the models take (the reading and the models' report come at different moments)
+    val used = maxOf(app.usedMemory ?: total, total)
+    val detail = buildString {
+        append("models ${gb(total)} · ${if (plain) "all" else "Σ"} ${gb(used)} | ${com.arcana.brain.core.ModelFit.gb(ram)}")
+        if (loaded.size > 1) append(" · ${loaded.size} models")
+        app.tokenRoom?.let { append(" · ~${UsageStats.contextSize(it)} ctx fits") }
+    }
+    return memoryBarSegment(if (plain) "mem" else "ram", total.toDouble() / ram, (used - total).toDouble() / ram, detail, warn = used > com.arcana.brain.core.ModelFit.budget(ram) + total / 2 && total > com.arcana.brain.core.ModelFit.budget(ram), plain = plain)
 }
 
 /**
@@ -313,6 +348,8 @@ internal fun hardwareWarnings(app: AppContext, plain: Boolean): List<Pair<String
     if (config.contextTokens > 0 && app.modelContext > 0 && config.contextTokens > app.modelContext)
         out += "$mark ctx ${UsageStats.contextSize(config.contextTokens.toLong())} > model ${UsageStats.contextSize(app.modelContext.toLong())}" to Palette.Orange
     val window = effectiveContext(config.contextTokens, app.modelContext, app.loadedContext)
+    // the window asked for needs more cache than this machine's memory leaves next to the model's weights
+    app.tokenRoom?.takeIf { config.contextTokens > 0 && config.contextTokens > it && it > 0 }?.let { out += "$mark ctx ${UsageStats.contextSize(config.contextTokens.toLong())} > ~${UsageStats.contextSize(it)} fits in memory" to Palette.Orange }
     if (window in 1 until COMFORTABLE_CONTEXT) out += "$mark ctx ${UsageStats.contextSize(window.toLong())} is small" to Palette.Orange
     return out
 }
@@ -760,6 +797,7 @@ fun ChatScreen(app: AppContext) {
     fun send() {
         var text = input.text.trim()
         if (text.isEmpty() && chat.attachments.isEmpty) return
+        if (chat.compacting) return toast("Compacting the chat: wait until the summary is ready, then send your message (your text stays in the field).", error = true)
         // while the model works a message is queued: it joins the turn at the next tool round, or follows the reply
         if (gen.state == GenState.Running) {
             if (text.isEmpty() || text.startsWith("/") || !chat.attachments.isEmpty) return toast("Only plain text can be queued while the model works. Wait for the reply, or cancel it with Esc Esc.", error = true)
@@ -823,7 +861,7 @@ fun ChatScreen(app: AppContext) {
         if (vault == null || !app.config.skillsEnabled) emptyList() else Skills.discoverAll(vault, app.skillsFolder())
     }
     val slashItems = remember(app.config.vaultPath, skillList) {
-        SlashCommands + skillList.map { SlashItem("/" + it.name, it.description.ifEmpty { "(no description)" }.substringBefore(". ").take(80).trimEnd('.'), false, skill = true, usage = "e.g. /${it.name} <what you want>   (attaches the skill and sends your request)") } + (chat.toolboxFor(app.config.copy(toolsEnabled = true, toolMode = "ask"))?.specs.orEmpty())
+        SlashCommands + skillList.map { SlashItem("/" + it.name, it.description.ifEmpty { "(no description)" }.substringBefore(". ").take(80).trimEnd('.'), false, skill = true, usage = if (it.usage.isEmpty()) "e.g. /${it.name} <what you want>   (attaches the skill and sends your request)" else "/${it.name} ${it.usage}   (attaches the skill; type the arguments and press Enter)") } + (chat.toolboxFor(app.config.copy(toolsEnabled = true, toolMode = "ask"))?.specs.orEmpty())
             .map { SlashItem(it.name, it.description.substringBefore(". ").substringBefore("\n").take(80).trimEnd('.'), true, kind = SlashKind.forTool(it.name, it.risk), usage = toolUsage(it.name, (it.parameters["required"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { r -> (r as? kotlinx.serialization.json.JsonPrimitive)?.content }.orEmpty())) }
     }
     slashItemsNow = slashItems
@@ -875,6 +913,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.PickTarget -> Hints("type  search", "↑↓  move", "Enter  ${target.verb.lowercase()}", "Esc  cancel")
         ChatMode.Chat -> when {
             output.selecting -> Hints("↑↓  move", "Space  tick", "c  copy", "b  code only", "Esc  leave")
+            chat.compacting -> Hints("Wait: summarizing the chat, then you can send", "↑↓  scroll")
             gen.state == GenState.Running -> Hints("Enter  queue a message", *(if (chat.queued.isNotEmpty()) arrayOf("Backspace  remove queued") else emptyArray()), "Esc  cancel reply", "↑↓  scroll", *(if (app.config.thinkingPane) arrayOf("Ctrl+T  thinking size") else emptyArray()))
             browsing -> Hints("Enter  type a message", "s  select & copy", "↑↓/Space  scroll", "1-9  screens")
             slashMatches.isNotEmpty() -> Hints("↑↓  choose", "Tab  complete", "Enter  run", "Esc  close")
@@ -1200,18 +1239,13 @@ fun ChatScreen(app: AppContext) {
                 // read again after every message, so an edit of the file shows up
                 val memoryChars = remember(chat.messages.size, app.config.memoryEnabled, mode) { if (app.config.memoryEnabled) app.openVault().getOrNull()?.memoryLength() ?: 0 else 0 }
                 val count = chat.messages.size
-                ScreenHeader(
-                    "Chat",
-                    "${chat.title} · ${if (count == 0) "empty" else "$count messages"}" +
-                        (if (count > 0 && app.config.keepChats) " · kept in history" else if (count > 0) " · not kept" else "") +
-                        (if (chat.unsaved && count > 0) " · not in vault (Ctrl+S)" else ""),
-                )
+                // no header: the tab bar says where you are; the chat's own facts ride on the conversation's frame
+                val conversationTitle = "Conversation · ${chat.title}" + (if (count > 0) " · $count messages" else "") + (if (count > 0 && !app.config.keepChats) " · not kept" else "") + (if (chat.unsaved && count > 0) " · not in vault (Ctrl+S)" else "")
                 // the status bar sits under the message field (above the buttons): one row more in the count below
                 // the status bar wraps instead of dropping facts: reserve as many rows as it needs at this width
                 val statusSegments = chatStatus(app, chat, app.config.plainGlyphs, memoryChars, LocalContentWidth.current)
                 val statusRows = statusRowCount(statusSegments, LocalContentWidth.current)
                 val bottomGap = if (rememberDensity().tiny) 0 else 1
-                VGap()
                 // Everything under the conversation is counted exactly, so it fills the rest of the height.
                 val inputRows = wrapRows(input.text, (LocalContentWidth.current - 4).coerceAtLeast(10)).size.coerceIn(1, maxInputRows())
                 val qLines = if (question != null) questionLines(question, panelWidth()) else emptyList()
@@ -1220,19 +1254,22 @@ fun ChatScreen(app: AppContext) {
                 val panelActionRows = panelActions?.let { breakIntoLines(it, panelWidth()).size + (if (rememberDensity().tiny) 0 else 1) } ?: 0
                 val actions = if (panelActions != null) null else chatActions(browsing, entries.isNotEmpty(), chat.artifacts.isNotEmpty())
                 val pendingRow = chat.attachments.rows
-                val statusRow = if (gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled || chat.consulting != null) 1 else 0
+                val statusRow = if (chat.compacting || gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled || chat.consulting != null) 1 else 0
                 // what sits under the conversation: the message field, or the change waiting for an answer
                 val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
+                // while a dialog is open the thinking pane stays (a short strip, or its column): the dialog gives up a few lines for it instead of pushing it out
+                val dialogOpen = question != null || approval != null
+                val paneReserve = if (app.config.thinkingPane && dialogOpen && app.config.thinkingPanePlacement.let { it != "left" && it != "right" }) DIALOG_STRIP_MAX else 0
                 val queuedRows = if (question == null && approval == null) chat.queued.size.coerceAtMost(QUEUE_SHOWN + 1) else 0
-                val below = queuedRows + (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval, approvalMax()).size + 3 else 2 + inputRows + pendingRow + slashMatches.size + (if (slashUsage.isEmpty()) 0 else 1)) + statusRows + panelActionRows
+                val below = queuedRows + (if (question != null) qLines.size + typeRows + 3 else if (approval != null) approvalLines(approval, approvalMax(paneReserve)).size + 3 else 2 + inputRows + pendingRow + slashMatches.size + (if (slashUsage.isEmpty()) 0 else 1)) + statusRows + panelActionRows
                 // the thinking pane: a split window around the conversation (a strip above or below it, a column beside it)
-                val freeRows = outputRows(fixed = 3 + 2 + statusRow + below + bottomGap, actions = actions)
-                val pane = if (app.config.thinkingPane && question == null && approval == null) thinkingPaneLayout(app.config.thinkingPanePlacement, app.config.thinkingPanePercent, LocalContentWidth.current, LocalContentHeight.current, freeRows + statusRow + 2) else null
+                val freeRows = outputRows(fixed = 2 + statusRow + below + bottomGap, actions = actions)
+                val pane = if (app.config.thinkingPane) thinkingPaneLayout(app.config.thinkingPanePlacement, app.config.thinkingPanePercent, LocalContentWidth.current, LocalContentHeight.current, freeRows + statusRow + 2, dialogOpen) else null
                 val side = pane != null && pane.placement.let { it == "left" || it == "right" }
                 val stripRows = if (pane != null && !side) pane.size + 2 else 0
-                val scrollRows = freeRows - stripRows
+                val scrollRows = (freeRows - stripRows).coerceAtLeast(3)
                 val conversation: @Composable () -> Unit = {
-                    Panel("Conversation") {
+                    Panel(conversationTitle) {
                         val width = outputWidth()
                         val lines = buildList {
                             if (chat.messages.isEmpty() && gen.text.isEmpty()) {
@@ -1250,7 +1287,7 @@ fun ChatScreen(app: AppContext) {
                         }
                         output.copyPlain = app.config.copyAs == "plain"
                         ScrollView(lines, scrollRows, output)
-                        ReplyStatus(app, gen, consulting = chat.consulting, consultingSince = chat.consultingSince, consultingStage = chat.consultingStage)
+                        ReplyStatus(app, gen, compactingSince = chat.compactingSince.takeIf { chat.compacting }, compactingAuto = chat.compactingAuto, consulting = chat.consulting, consultingSince = chat.consultingSince, consultingStage = chat.consultingStage)
                     }
                 }
                 if (pane != null && side) {
@@ -1289,7 +1326,7 @@ fun ChatScreen(app: AppContext) {
                 } else if (approval != null) {
                     Panel(approval.heading, accent = Palette.Warn) {
                         Label("${approval.icon} ${approval.title}", color = Palette.Warn, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
-                        approvalLines(approval, approvalMax()).forEach { l ->
+                        approvalLines(approval, approvalMax(paneReserve)).forEach { l ->
                             Label(l, color = when { l.startsWith("+ ") -> Palette.Green; l.startsWith("- ") -> Palette.Red; l.startsWith("@@") -> Palette.Blue; l.startsWith("…") -> Palette.Muted; else -> Palette.Text })
                         }
                         ActionBar(approvalActions(approval), panelWidth(), ActionStyle.Button)
@@ -1359,6 +1396,9 @@ internal fun wrapWords(text: String, width: Int): List<String> {
     return rows
 }
 
+/** The most rows (frame included) the thinking strip takes while a dialog is open; the dialog gives up as many lines. */
+private const val DIALOG_STRIP_MAX = 6
+
 /** The sizes (percent of the main axis) Ctrl+T steps through. */
 private val THINKING_SIZES = listOf(15, 25, 35, 50, 75, 85)
 
@@ -1370,12 +1410,14 @@ internal class ThinkingPaneLayout(val placement: String, val size: Int)
  * (its frame and status row included): the strip takes [percent] of it, and the conversation keeps at least 5 rows. A column takes [percent] of [width]
  * and leaves the conversation at least 40 columns; a window under 80 columns or 16 rows has no side column, so the pane goes to the bottom there.
  */
-internal fun thinkingPaneLayout(placement: String, percent: Int, width: Int, height: Int, blockRows: Int): ThinkingPaneLayout? {
+internal fun thinkingPaneLayout(placement: String, percent: Int, width: Int, height: Int, blockRows: Int, dialog: Boolean = false): ThinkingPaneLayout? {
     val p = percent.coerceIn(10, 90)
     if ((placement == "left" || placement == "right") && width >= 80 && height >= 16) {
         return ThinkingPaneLayout(placement, (width * p / 100).coerceIn(24, width - 41))
     }
     if (height < 26) return null
+    // a dialog takes most of the window: the strip then stays at a few rows (its text rows are 2 to 4) instead of going away with the conversation's room
+    if (dialog) return ThinkingPaneLayout(if (placement == "top") "top" else "bottom", ((blockRows * p / 100).coerceIn(4, DIALOG_STRIP_MAX)) - 2)
     val outer = (blockRows * p / 100).coerceAtMost(blockRows - 2 - 5 - 2)
     return if (outer < 4) null else ThinkingPaneLayout(if (placement == "top") "top" else "bottom", outer - 2)
 }
@@ -1402,6 +1444,15 @@ private fun ThinkingPane(gen: Generation, chat: ChatSession, rows: Int, model: S
 internal fun messageLines(app: AppContext, message: ChatMessage, entry: Int, width: Int, applyHint: Boolean = false): List<Line> {
     if (Compaction.isSummary(message)) return summaryLines(message, entry, app.config.plainGlyphs, width)
     if (Oracul.isOpinion(message)) return opinionLines(message, entry, app.config, width, applyHint)
+    // what Arcana sent in the user's name: marked as a system message (or left out), never shown as "You"
+    if (Oracul.isSystemPrompt(message)) {
+        if (app.config.systemMessages == "hidden") return emptyList()
+        return buildList {
+            add(Line(if (app.config.plainGlyphs) "[system] Arcana to the model" else "⚙ System · Arcana to the model", Palette.ConsoleDim, bold = true))
+            wrap(sanitizeForTerminal(message.content), (width - 2).coerceAtLeast(10)).forEach { add(Line("  $it", Palette.ConsoleDim)) }
+            add(Line(""))
+        }
+    }
     val user = message.role == "user"
     val config = app.config
     if (message.role == "tool") return toolResultLines(message, config.plainGlyphs, width, entry)
@@ -1540,7 +1591,7 @@ private fun approvalLines(a: ChatSession.Approval, max: Int): List<String> =
 
 /** How many lines of a change fit above the buttons: about a third of the screen, at least 8. */
 @Composable
-private fun approvalMax(): Int = (LocalContentHeight.current / 3).coerceIn(8, 24)
+private fun approvalMax(reserve: Int = 0): Int = (LocalContentHeight.current / 3 - reserve).coerceIn(5, 24)
 
 private fun approvalActions(a: ChatSession.Approval) = listOfNotNull(
     ActionItem("y", a.yes, accent = Palette.Cta),

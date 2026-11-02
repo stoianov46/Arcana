@@ -247,6 +247,40 @@ class Vault(root: Path, private val memoryPath: String = "") {
         return VaultIndex.frontmatterTags(mergeFrontmatterTags(block, clean))
     }
 
+    /** The folders at the top of the vault (Research, Projects…), by name: no hidden ones and none of Arcana's own `attachments`. */
+    fun rootFolders(): List<String> = try {
+        Files.newDirectoryStream(root).use { s -> s.filter { Files.isDirectory(it) && !it.name.startsWith(".") && it.name != "attachments" }.map { it.name }.sortedBy { it.lowercase() } }
+    } catch (e: Exception) { emptyList() }
+
+    /**
+     * Replaces the whole text of [note] (properties block included) with [text]; the note must exist. Returns the file's new modification time.
+     */
+    fun write(note: String, text: String): Long {
+        val file = resolve(note)
+        if (!Files.isRegularFile(file)) throw VaultException("$note does not exist.")
+        Files.writeString(file, text)
+        return Files.getLastModifiedTime(file).toMillis()
+    }
+
+    /**
+     * A thought as a note of its own in [folder] (made if needed): named after its first line (cut at 60 characters, a number after it when the name is taken),
+     * with `created` as its only property and the whole thought as its text. Returns the new note's path.
+     */
+    fun captureNote(folder: String, text: String, now: LocalDateTime = LocalDateTime.now()): String {
+        val clean = text.trim()
+        if (clean.isEmpty()) throw VaultException("Nothing to save.")
+        val dir = if (folder.isBlank()) root else resolve(folder.trim('/'))
+        Files.createDirectories(dir)
+        val first = clean.lineSequence().first().trim().removePrefix("#").trim().let { if (it.length > 60) it.take(60).trimEnd() else it }
+        val base = sanitizeTitle(first)
+        var file = dir.resolve("$base.md")
+        var n = 2
+        while (Files.exists(file)) file = dir.resolve("$base $n.md").also { n++ }
+        val created = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
+        Files.writeString(file, "---\ncreated: $created\n---\n\n$clean\n")
+        return file.relativeTo(root).toString().replace('\\', '/')
+    }
+
     /** Adds [body] to the end of [note], under a `## [heading]` line unless [heading] is null. */
     fun append(note: String, heading: String?, body: String) {
         val file = resolve(note)

@@ -80,7 +80,7 @@ fun GenerationView(app: AppContext, gen: Generation, output: OutputState, rows: 
 
 /** The line under a reply: a spinner while generating, or why it stopped. */
 @Composable
-fun ReplyStatus(app: AppContext, gen: Generation, consulting: String? = null, consultingSince: Long = 0L, consultingStage: String? = null) {
+fun ReplyStatus(app: AppContext, gen: Generation, compactingSince: Long? = null, compactingAuto: Boolean = false, consulting: String? = null, consultingSince: Long = 0L, consultingStage: String? = null) {
     // why nothing has come yet: asked of Ollama and the machine every few seconds while we wait for a model (loading, reading the prompt, memory tight)
     val target = consulting ?: app.chat.workerModel
     val waiting = consulting != null || (gen.state == GenState.Running && gen.text.isEmpty() && !(gen.thinking && app.config.showThinking))
@@ -102,6 +102,14 @@ fun ReplyStatus(app: AppContext, gen: Generation, consulting: String? = null, co
         } finally {
             app.modelWhy = ""
         }
+    }
+    if (compactingSince != null) {
+        // the chat is being summarized: say what is going on and what to do, so nobody wonders whether to type
+        Spinner {
+            val seconds = (System.currentTimeMillis() - compactingSince) / 1000
+            "Compacting the chat: ${app.config.model} is summarizing the older messages… ${seconds}s · " + if (compactingAuto) "your message is sent right after" else "wait, then send your message"
+        }
+        return
     }
     when (gen.state) {
         GenState.Running -> Spinner {

@@ -41,9 +41,28 @@ object Compaction {
         val from = messages.indexOfLast { isSummary(it) }.coerceAtLeast(0)
         val turns = messages.indices.filter { it >= from && messages[it].role == "user" && !isSummary(messages[it]) && !Oracul.isOpinion(messages[it]) }
         val keep = if (keepTokens > 0) keptTurns(messages, turns, keepTokens) else KEEP_USER_TURNS
-        if (keep < 1 || turns.size < keep) return null
-        val cut = turns[turns.size - keep]
-        return if (cut - from >= MIN_MESSAGES) cut else null
+        if (keep >= 1 && turns.size >= keep) {
+            val cut = turns[turns.size - keep]
+            if (cut - from >= MIN_MESSAGES) return cut
+        }
+        return insideTurn(messages, from, keepTokens)
+    }
+
+    /**
+     * A chat that is one long turn (a request and a long run of tool rounds) has no earlier turn to summarize: cut between two rounds instead, at an assistant message,
+     * so the latest rounds that fit in [keepTokens] (a quarter of nothing is not kept: at least the last round) stay and the rounds before them become the summary.
+     */
+    private fun insideTurn(messages: List<ChatMessage>, from: Int, keepTokens: Int): Int? {
+        var tokens = 0
+        var cut = -1
+        for (i in messages.indices.reversed()) {
+            if (i <= from) break
+            val m = messages[i]
+            tokens += (m.content.length + m.toolCalls.sumOf { c -> c.function.arguments.toString().length }) / 4 + 1
+            if (m.role == "assistant" && !isSummary(m) && tokens >= keepTokens.coerceAtLeast(1)) { cut = i; break }
+        }
+        // the latest round always stays, so the cut is never the last message's round start when it is the only one
+        return if (cut > 0 && cut - from >= MIN_MESSAGES) cut else null
     }
 
     /**

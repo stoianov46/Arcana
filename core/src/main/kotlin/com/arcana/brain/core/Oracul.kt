@@ -80,6 +80,10 @@ object Oracul {
 
     fun isOpinion(message: ChatMessage): Boolean = message.role == "user" && (message.content.startsWith(MARK) || message.content.startsWith(MARK_COMPARE) || message.content.startsWith(MARK_PLAN) || message.content.startsWith(MARK_ANALYSIS) || message.content.startsWith(MARK_CONTROL) || message.content.startsWith(MARK_VERDICT) || message.content.startsWith(MARK_GOAL))
 
+    /** A message Arcana itself sent to the model in the user's name (a redo, a todo reminder, an unmet goal, a revise): the user did not write it. */
+    fun isSystemPrompt(message: ChatMessage): Boolean = message.role == "user" && !isOpinion(message) &&
+        listOf(REDO_PROMPT, TODO_PROMPT, GOAL_PROMPT, REVISE_PROMPT).any { message.content.startsWith(it) }
+
     fun isPlan(message: ChatMessage): Boolean = message.role == "user" && message.content.startsWith(MARK_PLAN)
 
     fun isAnalysis(message: ChatMessage): Boolean = message.role == "user" && message.content.startsWith(MARK_ANALYSIS)

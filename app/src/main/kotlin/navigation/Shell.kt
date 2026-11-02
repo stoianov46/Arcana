@@ -370,6 +370,7 @@ private fun footerSegments(app: AppContext, navigator: Navigator): List<StatusSe
         if (app.sessionTokens > 0) add(statusSegment("", "⚡ ${UsageStats.compact(app.sessionTokens)} tok", Palette.Blue))
         // the machine: where the model sits and what all loaded models take, the processor, the memory file
         com.arcana.brain.app.screens.modelStateSegment(app, plain)?.let { add(it) }
+        com.arcana.brain.app.screens.memoryMeter(app, plain)?.let { add(it) }
         app.cpuPercent?.let { add(statusSegment("cpu", "$it%", if (it >= 85) Palette.Red else if (it >= 60) Palette.Orange else Palette.Green)) }
         if (app.chat.compacting) add(statusSegment("", if (plain) "compacting" else "◌ compacting…", Palette.Blue))
         com.arcana.brain.app.screens.hardwareWarnings(app, plain).forEach { (text, color) -> add(statusSegment("", text, color, bold = true)) }
@@ -399,6 +400,7 @@ private fun Footer(app: AppContext, navigator: Navigator, hint: String, columns:
     androidx.compose.runtime.LaunchedEffect(Unit) {
         while (true) {
             app.cpuPercent = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.arcana.brain.core.SystemCpu.percent() }
+            app.usedMemory = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.arcana.brain.core.SystemMemory.usedBytes() }
             kotlinx.coroutines.delay(2_000)
         }
     }
@@ -463,7 +465,7 @@ private fun AppContext.badgeWidth(navigator: Navigator, columns: Int): Int = row
 /** What the footer says while an overlay is open. */
 private fun overlayHint(navigator: Navigator): String = when {
     navigator.paletteOpen -> "↑↓  choose   Enter  run   Esc  close"
-    navigator.captureOpen -> Shortcuts.label("Enter  save the thought   Ctrl+O  attach a file   Esc  cancel")
+    navigator.captureOpen -> Shortcuts.label("Enter  save the thought   Tab  choose where   Ctrl+O  attach a file   Esc  cancel")
     else -> "any key  close"
 }
 

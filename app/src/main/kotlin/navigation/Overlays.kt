@@ -68,11 +68,16 @@ fun overlayKey(key: Key, app: AppContext, navigator: Navigator, commands: List<C
             when {
                 files.browsing -> files.handle(key)
                 key == Key.Escape -> { navigator.captureOpen = false; files.clear() }
+                key == Key.Tab || key == Key.BackTab -> {
+                    val places = listOf("") + (app.openVault().getOrNull()?.rootFolders().orEmpty())
+                    val at = places.indexOf(app.config.captureFolder).coerceAtLeast(0)
+                    app.update(app.config.copy(captureFolder = places[Math.floorMod(at + if (key == Key.Tab) 1 else -1, places.size)]))
+                }
                 handleAttachmentKey(files, navigator.captureField, key) { text, error -> navigator.showToast(text, error) } -> Unit
                 key == Key.Enter -> {
                     val text = navigator.captureField.text.trim()
                     if (text.isNotEmpty() || !files.isEmpty) {
-                        app.capture(text, files.plain.toList())
+                        app.capture(text, files.plain.toList(), captureFolderNow(app))
                             .onSuccess { path ->
                                 navigator.captureField.clear()
                                 navigator.captureOpen = false
@@ -113,7 +118,11 @@ fun PaletteOverlay(navigator: Navigator, commands: List<Command>) {
     }
 }
 
-/** Quick capture: one line that becomes a timestamped bullet in today's daily note. */
+/** The folder a thought goes to: the remembered one while it still exists at the top of the vault, else "" (today's daily note). */
+internal fun captureFolderNow(app: AppContext): String =
+    app.config.captureFolder.takeIf { f -> f.isNotBlank() && app.openVault().getOrNull()?.rootFolders()?.contains(f) == true }.orEmpty()
+
+/** Quick capture: a thought that becomes a timestamped bullet in today's daily note, or a note of its own in a folder of the vault (Tab chooses). */
 @Composable
 fun CaptureOverlay(app: AppContext, navigator: Navigator) {
     val target = app.openVault().getOrNull()?.let { app.dailyNotes(it).pathFor(LocalDate.now()) }
@@ -127,10 +136,14 @@ fun CaptureOverlay(app: AppContext, navigator: Navigator) {
         Panel("Capture a thought", accent = Palette.Cta) {
             TextInput("Thought", navigator.captureField, true, "e.g. Ask Anna about the Lisbon flights", maxRows = 3, attachments = app.captureAttachments)
             VGap()
+            val folder = captureFolderNow(app)
             if (target == null) {
                 Warning("No vault is set. Choose your vault folder in Settings first.")
             } else {
-                Hint("Enter adds it to today's daily note, “$target”, with the time. Ctrl+O attaches a file: it is copied into the vault and embedded. Esc cancels.")
+                Label("Save to  ◂ ${if (folder.isEmpty()) "Daily note" else "$folder/"} ▸", color = Palette.Cta)
+                Hint(if (folder.isEmpty()) "Enter adds it to today's daily note, “$target”, with the time. Tab saves it to a folder of your vault instead."
+                else "Enter saves it as a new note in “$folder/”, named after its first line. Tab chooses another folder, or the daily note.")
+                Hint("Ctrl+O attaches a file: it is copied into the vault and embedded. Esc cancels.")
             }
         }
     }

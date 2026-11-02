@@ -188,6 +188,63 @@ class CoreTest {
     }
 
     @Test
+    fun tokenRoomFollowsMemoryAndModel() {
+        val body = """{"model_info":{"general.architecture":"llama","llama.block_count":32,"llama.attention.head_count":32,"llama.attention.head_count_kv":8,"llama.embedding_length":4096}}"""
+        val kv = OllamaProtocol.parseKvBytesPerToken(body)
+        assertEquals(2L * 32 * 8 * 128 * 2, kv)
+        val gb = 1_000_000_000L
+        val big = ModelFit.tokenRoom(64 * gb, 5 * gb, kv)!!
+        assertTrue(big > ModelFit.tokenRoom(16 * gb, 5 * gb, kv)!!)
+        assertEquals(0L, ModelFit.tokenRoom(8 * gb, 9 * gb, kv))
+        assertNull(ModelFit.tokenRoom(16 * gb, 5 * gb, 0))
+    }
+
+    @Test
+    fun usedMemoryIsReadFromVmStat() {
+        val text = "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:   100.\nPages active:   1000.\nPages wired down:   500.\nPages occupied by compressor:   250.\n"
+        assertEquals(1750L * 16384, SystemMemory.usedFromVmStat(text))
+        assertNull(SystemMemory.usedFromVmStat("nothing"))
+    }
+
+    @Test
+    fun arcanasOwnPromptsAreSystemMessages() {
+        assertTrue(Oracul.isSystemPrompt(ChatMessage.user(Oracul.todoNudge(listOf("a")))))
+        assertTrue(!Oracul.isSystemPrompt(ChatMessage.user("hello")))
+    }
+
+    @Test
+    fun anOldDailyFormatInASavedConfigMovesToTheThoughtScheme() {
+        val file = Files.createTempDirectory("cfg").resolve("config.json")
+        Files.writeString(file, """{"dailyFormat": "YYYY-MM-DD"}""")
+        assertEquals("[thought-]YYYY-MM-DD", ConfigStore(file).load().dailyFormat)
+        Files.writeString(file, """{"dailyFormat": "DD.MM.YYYY"}""")
+        assertEquals("DD.MM.YYYY", ConfigStore(file).load().dailyFormat)
+    }
+
+    @Test
+    fun aSkillSaysWhatToTypeAfterItsName() {
+        assertEquals("<pair> [horizon]", Skills.usageOf(mapOf("usage" to "<pair> [horizon]", "inputs" to "[a, b]")))
+        assertEquals("<pair> <horizon>", Skills.usageOf(mapOf("inputs" to "[pair, horizon]")))
+        assertEquals("", Skills.usageOf(emptyMap()))
+    }
+
+    @Test
+    fun aPictureNamedByPathInTheTextBecomesAnAttachment() {
+        val dir = Files.createTempDirectory("pasted")
+        val plain = dir.resolve("shot.png").also { Files.write(it, byteArrayOf(1)) }
+        val spaced = dir.resolve("my shot.jpg").also { Files.write(it, byteArrayOf(1)) }
+        val (one, rest) = ImageFiles.pastedPaths("what is in $plain ?", null)
+        assertEquals(listOf(plain), one); assertEquals("what is in ?", rest)
+        val (two, rest2) = ImageFiles.pastedPaths("look ${spaced.toString().replace(" ", "\\ ")} and '$plain'", null)
+        assertEquals(listOf(spaced, plain), two); assertEquals("look and", rest2)
+        // not an image, not there, or not a path: the text is left alone
+        val txt = dir.resolve("a.txt").also { Files.writeString(it, "x") }
+        val same = "read $txt and ${dir.resolve("none.png")} and ./shot.png"
+        assertEquals(emptyList(), ImageFiles.pastedPaths(same, null).first)
+        assertEquals(same, ImageFiles.pastedPaths(same, null).second)
+    }
+
+    @Test
     fun imagesAreValidatedAndEncoded() {
         val dir = Files.createTempDirectory("img")
         val png = dir.resolve("a.PNG").also { Files.write(it, byteArrayOf(1, 2, 3)) }
@@ -355,11 +412,29 @@ class CoreTest {
         val day = java.time.LocalDate.of(2026, 10, 25)
         assertEquals("Journal/2026-10-25 Sunday.md", daily.pathFor(day))
         assertEquals("yyyy-MM-dd 'at' HH", DailyNotes.javaPattern("YYYY-MM-DD [at] HH"))
+        assertEquals("thought-2026-11-02.md", DailyNotes("", AppConfig().dailyFormat).pathFor(java.time.LocalDate.of(2026, 11, 2)))
         val at = java.time.LocalDateTime.of(2026, 10, 25, 9, 5)
         assertEquals("Journal/2026-10-25 Sunday.md", vault.capture("first thought", daily, at))
         vault.capture("second thought", daily, at.plusMinutes(10))
         assertEquals("- 09:05 first thought\n- 09:15 second thought\n", vault.read("Journal/2026-10-25 Sunday.md"))
         assertEquals(DailyNotes("Daily", "YYYY-MM-DD"), DailyNotes.detect(Vault(Files.createTempDirectory("none")), "Daily"), "defaults when the vault has no settings")
+    }
+
+    @Test
+    fun aThoughtCanBecomeANoteInAFolderAndANoteCanBeRewritten() {
+        val root = Files.createTempDirectory("vault")
+        Files.createDirectories(root.resolve("Research")); Files.createDirectories(root.resolve("Projects")); Files.createDirectories(root.resolve(".obsidian")); Files.createDirectories(root.resolve("attachments"))
+        val vault = Vault(root)
+        assertEquals(listOf("Projects", "Research"), vault.rootFolders(), "no hidden folders and no attachments")
+        val at = java.time.LocalDateTime.of(2026, 11, 1, 9, 5)
+        assertEquals("Research/Ask Anna about flights.md", vault.captureNote("Research", "Ask Anna about flights\nand hotels", at))
+        assertEquals("Research/Ask Anna about flights 2.md", vault.captureNote("Research", "Ask Anna about flights", at), "a taken name gets a number")
+        assertEquals("---\ncreated: 2026-11-01T09:05\n---\n\nAsk Anna about flights\nand hotels\n", vault.read("Research/Ask Anna about flights.md"))
+        assertEquals("New/Idea.md", vault.captureNote("New", "Idea", at), "the folder is made when it is missing")
+        vault.write("Research/Ask Anna about flights.md", "edited\n")
+        assertEquals("edited\n", vault.read("Research/Ask Anna about flights.md"))
+        assertFailsWith<VaultException> { vault.write("Research/Nothing.md", "x") }
+        assertFailsWith<VaultException> { vault.captureNote("Research", "  ") }
     }
 
     @Test
@@ -1002,6 +1077,8 @@ class CoreTest {
         val chat = listOf(u(1), a(1), u(2), a(2), u(3), a(3), u(4), a(4))
         assertEquals(4, Compaction.cutPoint(chat), "the last two user turns stay")
         assertEquals(null, Compaction.cutPoint(listOf(u(1), a(1), u(2), a(2))), "too little to summarize")
+        val longTurn = listOf(u(1)) + (1..8).map { a(it) }
+        assertEquals(8, Compaction.cutPoint(longTurn), "one long turn is cut between its rounds, the latest round stays")
         assertEquals(chat, Compaction.forModel(chat), "no summary yet: the model sees everything")
         val summary = Compaction.summaryMessage("they asked four things")
         assertTrue(Compaction.isSummary(summary) && Compaction.summaryText(summary) == "they asked four things" && !Compaction.isSummary(u(1)))

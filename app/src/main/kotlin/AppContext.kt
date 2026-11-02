@@ -68,6 +68,13 @@ class AppContext(
     var thinkingDefault by mutableStateOf("")
         private set
 
+    /** What a token of context costs in memory for the chat model (0 = unknown), from `/api/show`: with the weights and this machine's memory it gives [tokenRoom]. */
+    var kvBytesPerToken by mutableStateOf(0L)
+        private set
+
+    /** About how many tokens of context fit in this machine's memory next to the chat model's weights; null when it cannot be worked out. An estimate (see [com.arcana.brain.core.ModelFit.tokenRoom]). */
+    val tokenRoom: Long? get() = com.arcana.brain.core.ModelFit.tokenRoom(com.arcana.brain.core.ModelFit.physicalMemory(), modelSizes[config.model] ?: 0L, kvBytesPerToken)
+
     /** How many experts the model has when it is a mixture of experts (0 = dense or unknown). */
     var experts by mutableStateOf(0)
         private set
@@ -87,6 +94,9 @@ class AppContext(
         loaded = all
         offloads = all.orEmpty().filter { it.cpuPercent >= 10 }.sortedByDescending { it.cpuPercent }.map { com.arcana.brain.core.Offload(it.name, it.cpuPercent, it.sizeBytes) }
     }
+
+    /** Memory in use on the whole machine in bytes (null = not read yet): the second tone of the ram meter. Read with [cpuPercent]. */
+    var usedMemory by mutableStateOf<Long?>(null)
 
     /** How busy the whole processor is (like htop), null until read: the `cpu` figure of the Chat status bar. Read every two seconds while the Chat is shown. */
     var cpuPercent by mutableStateOf<Int?>(null)
@@ -225,6 +235,7 @@ class AppContext(
         audio = capabilities?.let { "audio" in it }
         thinking = capabilities?.let { "thinking" in it }
         experts = shown?.experts ?: 0
+        kvBytesPerToken = shown?.kvBytesPerToken ?: 0L
         thinkingValues = shown?.thinkingValues.orEmpty()
         thinkingDefault = shown?.thinkingDefault.orEmpty()
         tools = capabilities?.let { "tools" in it }
@@ -251,13 +262,13 @@ class AppContext(
     val captureAttachments: Attachments by lazy { attachments(forModel = false) }
 
     /**
-     * Writes a thought to the end of today's daily note, stamped with the time. Each of [files] is copied into the vault's
-     * attachments folder and embedded in the thought. Returns the note's vault path.
+     * Writes a thought to the end of today's daily note, stamped with the time, or, with a [folder] (a folder at the top of the vault), as a note of
+     * its own there. Each of [files] is copied into the vault's attachments folder and embedded in the thought. Returns the note's vault path.
      */
-    fun capture(text: String, files: List<Path> = emptyList()): Result<String> = openVault().mapCatching { vault ->
+    fun capture(text: String, files: List<Path> = emptyList(), folder: String = ""): Result<String> = openVault().mapCatching { vault ->
         val embeds = files.map { "![[${vault.copyAttachment(config.outputFolder, it)}]]" }
-        val full = (listOf(text.trim()) + embeds).filter { it.isNotEmpty() }.joinToString(" ")
-        val path = vault.capture(full, dailyNotes(vault))
+        val full = (listOf(text.trim()) + embeds).filter { it.isNotEmpty() }.joinToString(if (folder.isBlank()) " " else "\n\n")
+        val path = if (folder.isBlank()) vault.capture(full, dailyNotes(vault)) else vault.captureNote(folder, full)
         session.log(SessionKind.Captured, full, path)
         brain.changed()
         path

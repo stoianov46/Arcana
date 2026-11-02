@@ -42,6 +42,8 @@ data class AppConfig(
     val showThinking: Boolean = true,
     /** How a reasoning model's thoughts show in Chat: "hidden", "summary" (one line with the length) or "full" (the whole text, dimmed, before the answer). */
     val thinkingView: String = "summary",
+    /** How Arcana's own prompts to the model (todo reminder, redo, unmet goal, revise) show in Chat: `marked` (a System block) or `hidden` (they are still sent). */
+    val systemMessages: String = "marked",
     /** How a `/compare` result is drawn in Chat: `side` (the answers next to each other, when the window is wide enough) or `stacked` (one under another). */
     val comparisonView: String = "side",
     /** Compact the chat automatically (summarize the older part, see [Compaction]) before a message when the context window is this percent full; 0 turns it off. */
@@ -57,7 +59,10 @@ data class AppConfig(
     val inboxFolder: String = "Inbox",
     /** Daily notes: used only when the vault has no Obsidian Daily notes settings of its own. */
     val dailyFolder: String = "",
-    val dailyFormat: String = "YYYY-MM-DD",
+    /** `thought-2026-11-02.md`: the prefix keeps the thought files apart from other date-named notes; `[text]` is literal (Obsidian's syntax). */
+    val dailyFormat: String = "[thought-]YYYY-MM-DD",
+    /** Where capture (Ctrl+N) saves a thought: empty = a line in today's daily note, else a folder at the top of the vault (each thought becomes a note there). Remembered from the last capture. */
+    val captureFolder: String = "",
     /** A note counts as stale after this many days without a change. */
     val staleDays: Int = 90,
     val keepChats: Boolean = true,
@@ -218,8 +223,13 @@ class ConfigStore(val path: Path = defaultPath()) {
     fun load(): AppConfig {
         if (!Files.exists(path)) return AppConfig()
         return runCatching { json.decodeFromString<AppConfig>(Files.readString(path)) }
+            .map(::migrated)
             .getOrElse { AppConfig() }
     }
+
+    /** A config saved before thought files got their prefix still holds the old default format: it is moved to the new one, so every next file follows the scheme. */
+    private fun migrated(config: AppConfig): AppConfig =
+        if (config.dailyFormat == "YYYY-MM-DD") config.copy(dailyFormat = AppConfig().dailyFormat) else config
 
     fun save(config: AppConfig) {
         Files.createDirectories(path.parent)

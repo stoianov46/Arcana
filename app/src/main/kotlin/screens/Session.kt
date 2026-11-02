@@ -153,15 +153,13 @@ fun SessionScreen(app: AppContext) {
                     ActionItem("n", "New session"),
                     ActionItem("Esc", "Back", accent = Palette.Cta),
                 )
-                ScreenHeader("Session", "Started ${SessionReport.clock(session.started)} · $duration · ${session.events.size} events")
-                VGap()
                 Panel("Activity") {
                     val width = outputWidth()
                     val lines = remember(session.events.size, width, Palette.themeId) { timeline(session.activity, width) }
                     if (lines.isEmpty()) {
                         Hint("Nothing yet. Ask a question, write a note, capture a thought: it all appears here, and can be saved to your vault as a note.")
                     } else {
-                        ScrollView(lines, outputRows(fixed = 3 + 2 + 2, actions = actions), output)
+                        ScrollView(lines, outputRows(fixed = 2 + 2, actions = actions), output)
                     }
                     Label(
                         "${stats.describe()} · ⚡ ${UsageStats.compact(app.sessionTokens)} tokens" + (session.savedAs?.let { "  ·  ✓ saved as $it" } ?: ""),

@@ -67,7 +67,7 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 | Subsystem | Where | One line |
 |---|---|---|
 | Oracul | `core/Oracul.kt`, `ChatSession.secondOpinion/compare/maybeConsult` | a second (and judge) model advises on the worker's answer; it may use the worker's tools (changes always ask), local Ollama; see [oracul.md](oracul.md) |
-| Compaction | `core/Compaction.kt`, `ChatSession.compact` / `autoCompactDue` | a summary message is inserted into the chat; `Compaction.forModel` decides what the model is sent; nothing is deleted |
+| Compaction | `core/Compaction.kt`, `ChatSession.compact` / `autoCompactDue` | a summary message is inserted into the chat; `Compaction.forModel` decides what the model is sent; nothing is deleted. `ChatSession.compacting` / `compactingSince` / `compactingAuto` drive the "Compacting…" line (`ReplyStatus`) and hold `send()`; `contextTokens` (Chat.kt) estimates the gauge after a compaction (`~`) because the last reply's stats are stale |
 | Context window | `AppContext.loadedContext` (`/api/ps`), `effectiveContext`, `UsageStats.contextSize` | the gauge counts against what Ollama really loaded |
 | Pseudo-tools | `ChatSession.runTools`: `ask_user`, `request_access`, `request_mode`, `chat_stats`, `todo` | answered by the chat, not by `ToolBox` |
 | Previews | `core/Diff.kt`, `ToolSpec.preview` | git-style diff in the approval panel |
