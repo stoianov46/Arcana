@@ -39,6 +39,8 @@ no marketing. Read this page, then open only the file you need.
 | [conventions.md](conventions.md) | follow project rules; recipes for "add a screen / setting / key / tool" |
 | [research-reports.md](research-reports.md) | the Library's *Reports* view: how reports (`type: report`) are found, marks, stale rules, `s` to run a report's skill again |
 | [vault-hygiene.md](vault-hygiene.md) | the Brain screen's hygiene checks: each rule, the list, open-in-Library and chat-to-fix |
+| [research-backlog.md](research-backlog.md) | the research backlog: `? ` in Capture, `Research/Research Backlog.md`, the Brain list, auto-tick |
+| [report-lifecycle.md](report-lifecycle.md) | what happens to a report after it is written: tokens, work time and rating, refreshing a stale report, the reviewer pass |
 | [semantic-search.md](semantic-search.md) | the embedding index, the `semantic_search` tool, `/reindex`, privacy and limits |
 
 ## Build and run

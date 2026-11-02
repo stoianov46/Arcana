@@ -72,7 +72,7 @@ Closing review (2026-10-28): #11 stays *needs repro* (skipped until a screenshot
 
 ## Phase R: Research system
 
-Arcana as a local-first research AI-agent system (positioning of 2026-11-03: models with tools, skills and helpers research a question over the vault and write sourced reports into `Research/<Domain>/Reports/`; see the vault note `Research/Where Things Go.md`). Proposals with sizes, risks and how to verify them later: [plan-next.md](plan-next.md) section *Research system* (R1 to R10).
+Arcana as a local-first research AI-agent system (positioning of 2026-11-03: models with tools, skills and helpers research a question over the vault and write sourced reports into `Research/<Domain>/Reports/`; see the vault note `Research/Where Things Go.md`). R1 to R4 and R6 to R9 are built and wait for the owner's verification; R5 and R10 are skipped. Proposals with sizes, risks and how to verify them later: [plan-next.md](plan-next.md) section *Research system* (R1 to R10).
 
 | # | Task | Status |
 |---|---|---|
@@ -81,10 +81,10 @@ Arcana as a local-first research AI-agent system (positioning of 2026-11-03: mod
 | R3 | Vault hygiene panel on the Brain screen: notes without `type`, bad or generic names, duplicates, root clutter, incomplete and stale reports, islands ([vault-hygiene.md](vault-hygiene.md)) | built, needs your verification |
 | R4 | Semantic search: local Ollama embeddings, an on-disk index, the `semantic_search` tool and `/reindex` ([semantic-search.md](semantic-search.md)) | built, needs your verification |
 | R5 | Headless runs and scheduling: `arcana run <skill> "<text>"` without a UI, so digests can run from cron and other tools (Hermes, scripts) can call Arcana | skipped (decided 2026-11-03; the write-up stays in plan-next.md) |
-| R6 | Research backlog from Capture: a thought starting with `? ` becomes a backlog item; Brain shows the count; one key runs the matching skill | proposal |
-| R7 | Report metadata: model, tokens, work time and a rating written to each report's properties; feeds `llm-compare` and Usage → Orchestration | proposal |
-| R8 | Stale-report nudges on Brain: landscape and compare reports past their age, with a refresh action | proposal |
-| R9 | Reviewer pass on reports: the reviewer model audits claims against sources and writes the findings into the note | proposal |
+| R6 | Research backlog from Capture: a thought starting with `? ` becomes a backlog item; Brain shows the count; one key runs the matching skill | built, needs your verification ([research-backlog.md](research-backlog.md)) |
+| R7 | Report metadata: model, tokens, work time and a rating written to each report's properties; feeds `llm-compare` and Usage → Orchestration | built, needs your verification ([report-lifecycle.md](report-lifecycle.md)) |
+| R8 | Stale-report nudges on Brain: landscape and compare reports past their age, with a refresh action | built, needs your verification ([report-lifecycle.md](report-lifecycle.md)) |
+| R9 | Reviewer pass on reports: the reviewer model audits claims against sources and writes the findings into the note | built (vault only), needs your verification ([report-lifecycle.md](report-lifecycle.md)) |
 | R10 | MCP client: plug external tools and agents into the same tool loop and permission layer | skipped (decided 2026-11-03; the write-up stays in plan-next.md) |
 
 ## Added later (not on the original list)

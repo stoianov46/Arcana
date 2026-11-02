@@ -221,7 +221,7 @@ A **preset** is a named combination of these. Your five stages are one preset (a
 
 ## Research system (R1 to R10)
 
-Status 2026-11-03. R1 to R4 are built (see [roadmap.md](roadmap.md) Phase R; each has a feature page with a *How to verify (manual)* list) and wait for the owner's verification. R6 to R9 are **proposals**: nothing is built. R5 and R10 were skipped on 2026-11-03. Sizes are rough (S under half a day, M about a day, L several days).
+Status 2026-11-03. R1 to R4 are built (see [roadmap.md](roadmap.md) Phase R; each has a feature page with a *How to verify (manual)* list) and wait for the owner's verification. R6 to R9 were built on 2026-11-03/04 and wait for the owner's verification (the text under each heading is the original proposal). R5 and R10 were skipped on 2026-11-03. Sizes are rough (S under half a day, M about a day, L several days).
 
 | Order | # | Task | Size | Risk | Needs your decision |
 |---|---|---|---|---|---|
@@ -241,23 +241,31 @@ Status 2026-11-03. R1 to R4 are built (see [roadmap.md](roadmap.md) Phase R; eac
 **Verify later.** Run it for the dev-digest skill with a pasted text file, check that the report appears and passes `rpt.py check`, that a write outside `output:` is refused and logged, and that cron can start it.
 
 ### R6. Research backlog from Capture
+**Status: built (2026-11-03/04), waiting for your verification; what was built and how to check it: [research-backlog.md](research-backlog.md).**
+
 **Problem.** Questions occur while you do other things; `Ctrl+N` only stores a thought.
 **Proposal.** A thought that starts with `? ` (or `research: `) is also appended to a vault note `Research Backlog` (a checklist line `- [ ] question`, with the day). Brain shows the open count; a key on Brain or a `/backlog` command lists them and runs `/create-dev-research-report <question>` for the chosen one, ticking it when its report is `done` (the report's `question` property links back).
 **Risks.** Matching a backlog line to its report: use the `question:` property text, not a fuzzy match. Keep the backlog note under `Research/` and linked from Home (the Thoughts Index pattern in `listThoughtDay` is the model).
 **Verify later.** Capture `? what is the outbox pattern`, see it in the backlog and the Brain count, run it, confirm the box is ticked after the report.
 
 ### R7. Report metadata
+**Status: built (2026-11-03/04), waiting for your verification; what was built and how to check it: [report-lifecycle.md](report-lifecycle.md).**
+
 **Problem.** A report does not say which model made it, what it cost or how good it was, so `llm-compare` and Usage cannot learn from real runs.
 **Proposal.** The closing `set_properties` step of every report skill also sets `model` (already added by `create_note`), `tokens` and `work_time` (from `chat_stats` / `elapsed_time`), and an optional `rating: 1-5` that the skill asks with `ask_user` at the very end (skippable). The Reports view (R2) and Usage → Orchestration can then show cost and rating per model. Mostly skill text plus a small reader in `Reports.kt`.
 **Risks.** The model may copy numbers wrongly: have `rpt.py` print a ready `PROPERTY=` line from `chat_stats` output instead of asking the model to compose it. A rating asked after every report may annoy: it is one skippable question.
 **Verify later.** Run a skill, check the three properties on the note, and see them in the Reports view.
 
 ### R8. Stale-report nudges
+**Status: built (2026-11-03/04), waiting for your verification; what was built and how to check it: [report-lifecycle.md](report-lifecycle.md).**
+
 **Problem.** A landscape report ages in weeks; nothing says so.
 **Proposal.** Brain (and the Reports view) mark reports past their age (landscape and compare 90 days, digests never, others 365) and offer *refresh*: Chat opens with the report's skill attached and its `question`/topic prefilled, and the new report links the old one (`supersedes: [[old]]`). R3's hygiene check already counts stale reports; this adds the action.
 **Verify later.** Backdate a report's `date`, see the mark, run the refresh, check the `supersedes` link.
 
 ### R9. Reviewer pass on reports
+**Status: built (2026-11-03/04), waiting for your verification; what was built and how to check it: [report-lifecycle.md](report-lifecycle.md).**
+
 **Problem.** `rpt.py check` verifies structure and R1 verifies that sources exist, but not that a claim is supported by its source.
 **Proposal.** After the checks, the skill's `reviewer:` model (the role already exists) reads the report and each cited page excerpt and writes a `## Review` section: claims without a source, claims the source does not support, overconfidence. Optional per skill via the `reviewer:` property; it never edits the body.
 **Risks.** Cost (one more model run with the sources) and a small reviewer rubber-stamping: give it a fixed checklist and require it to quote the supporting sentence for each claim it accepts.
