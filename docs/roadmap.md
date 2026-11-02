@@ -91,6 +91,7 @@ Arcana as a local-first research AI-agent system (positioning of 2026-11-03: mod
 
 | Task | Where | Status |
 |---|---|---|
+| Screens keep their state while another tab is open: the Library (view, tag, selected row and scroll, open note) and the Brain (selected line, hygiene list); `rememberKept` / `ScreenMemory` | `design/ScreenMemory.kt`, `Library.kt`, `Home.kt`, [ui-internals.md](ui-internals.md) | done (checked in a pty; needs your verification in real use) |
 | Oracul as a whole: second opinion, judge, `/takeover`, skill roles (worker / reviewer / planner and a role table), a second Ollama server, several models in `/compare`, stepping into a worker that keeps failing (thresholds are settings), status bars | [oracul.md](oracul.md) | done |
 | Side-by-side comparison in Chat (setting Console → Comparison view) | [oracul.md](oracul.md) | done |
 | Memory fit and a suggested Oracul and judge in the model pickers | [oracul.md](oracul.md) | done |

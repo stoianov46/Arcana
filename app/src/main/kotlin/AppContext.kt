@@ -175,6 +175,9 @@ class AppContext(
     /** The Library folders that are unfolded (vault-relative paths); kept while Arcana runs, so leaving the Library and coming back keeps the tree as it was. */
     var libraryExpanded by mutableStateOf<Set<String>>(emptySet())
 
+    /** State the screens keep while another tab is open: the Library's selection and scroll, the Brain's selected line (see [com.arcana.brain.app.design.ScreenMemory]). */
+    val screenMemory = com.arcana.brain.app.design.ScreenMemory()
+
     /** Tokens used since Arcana started (including the reply streaming right now, as an estimate until it ends). */
     val sessionTokens: Long get() = usage.filter { it.time >= sessionStart }.sumOf { it.totalTokens.toLong() } + liveTokens
 

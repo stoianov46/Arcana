@@ -54,6 +54,10 @@ act when the caller passes `letters = true` (never while typing).
 Entry numbering must match between the `entries` list passed to `output.handle(...)` and the `entry` numbers given to
 `messageLines` (Chat uses `entriesOf(m)` for both).
 
+## State that survives a tab switch (`design/ScreenMemory.kt`)
+
+`App.kt` draws only `navigator.current`, so everything a screen holds in `remember` is gone when you open another tab. State that should survive is created with `rememberKept(app, "screen.name@$vaultPath") { … }` instead: the same object comes back on the next visit (the holders are the screens' own: `PickerState`, `OutputState`, a `MutableState`; nothing is copied or saved, it lives as long as the app runs). Rules: (1) a navigation request (`navigator.libraryFilter`, `libraryTag`, `libraryNote`) is read once per visit, in a plain `remember { }`, and wins over the kept state; (2) dialogs and their buffers (rename, edit, discard, delete) are never kept: the Library's kept `mode` is reset to Reading or List on a visit; (3) put the vault path in the key. The Library keeps its view, tag, selected row and scroll (tree expansion already lived in `AppContext.libraryExpanded`), the open note and its scroll; the Brain keeps its selected line and the hygiene list. The first visit of a run opens the Library's *Opens on* view. Chat is deliberately not kept (it opens unfocused, `docs/conventions.md` rule 2).
+
 ## Markdown renderer (`design/Markdown.kt`)
 
 Two stages: `parseMarkdown(text)` → `MdBlock(raw, kind)` blocks (these are the select-mode entries; `raw` is what copy returns),

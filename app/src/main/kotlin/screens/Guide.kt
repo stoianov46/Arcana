@@ -86,6 +86,8 @@ A short list of things worth fixing. Each one opens the **Library** on exactly t
 - **Broken links**: `[[links]]` to notes that do not exist.
 - **Untouched for 90+ days**: notes that may have been forgotten.
 
+The **Vault hygiene** section checks the habits that keep the vault navigable (a `type` on every note, plain and unique names, nothing loose in the root, reports finished and fresh, no islands) and shows a count per kind. `h` opens the full list: `Enter` opens the note in the Library, `c` starts a chat with the note attached and the fix ready to send.
+
 When everything is in order it says so.
 
 ## Capture and jump back in
@@ -108,7 +110,7 @@ Every note in the vault, with the web of links around it.
 Notes are shown as **folders that fold and unfold**, like in a file manager: folders first (with how many notes are inside), then the notes of that level, each level indented. `Enter` (or `Space`) folds and unfolds the folder under the cursor; `l` unfolds it (and steps into it when it is already open); `h` folds it, or, on a note or a folded folder, jumps to the folder above. `+` unfolds every folder and `-` folds them all. `t` switches to a **flat list** with the full path of every note (and back); Settings → Vault → *Library as a tree* sets the default. `.` adds the notes of **hidden folders** (such as `.arcana/` with your skills and memory) to the *All* view and hides them again; they are never counted or searched, and cannot be renamed or trashed here. Typing a filter (`/`) lists the matches flat with their paths; `Esc` brings the tree back. The tree remembers which folders were open while Arcana runs, and a note you jump to from the Brain screen opens its folders by itself. Every view (Recent, Stale…) is a tree of just its notes, each folder in the view's own order.
 
 ## Views
-`←` `→` switch the view: **All**, **Recent**, **Inbox**, **No links**, **No tags**, **Broken links**, **Stale**, and **Tags** (pick a tag to see its notes). The numbers on the tabs are live counts. `/` filters the list; typing several words finds notes containing all of them.
+The Library remembers where you were while you visit other tabs (view, unfolded folders, selected note, scroll). `←` `→` switch the view: **All**, **Recent**, **Inbox**, **No links**, **No tags**, **Broken links**, **Stale**, **Tags** (pick a tag to see its notes) and **Reports**. The **Reports** view lists the reports your research skills wrote, marks unfinished and stale ones (`landscape` and `compare` after 90 days, others after a year), and `s` runs a report's skill again with its question. The numbers on the tabs are live counts. `/` filters the list; typing several words finds notes containing all of them.
 
 ## The preview
 Beside the list (or on `Enter` in a narrow window) you see the selected note: its path, word count and when it changed, its tags, what it **links to**, what is **linked from** it, **related** notes (sharing tags or neighbours), any **broken links**, and then the text. `↑` `↓` and `Space` scroll it.
@@ -166,6 +168,7 @@ Talk to the model (Gemma, Qwen… whichever you chose). The message field **alwa
 ## Letting it act: tools
 Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use tools instead of only talking:
 - **Asking for what it needs:** with tools off (or in Plan mode) the model can call `request_access` and you are asked, right there, to turn them on or leave Plan mode; `use_skill` loads a skill when your request matches one (see the **Skills** page).
+- **Finding notes by meaning:** choose an embedding model in Settings → Vault → *Semantic search model* (for example `ollama pull nomic-embed-text`), run `/reindex` once, and the model can find your notes by meaning with `semantic_search` (it still uses `search_notes` for exact words). The index is a file on this computer.
 - **Tags:** `list_tags` shows the vault's tags, `add_tags` (asks first) adds tags to a note without losing its own; the Library's Tags tab picks up tags however a model wrote them.
 - **Reading** (runs at once): `cat` (a file with line numbers), `search_notes`, `list_notes`, `read_note` (finds a note by its title too: `[[wikilink]]`, a missing folder or emoji prefix does not matter), `list_dir` (also recursive), `current_time` (the date and time, in any time zone), `elapsed_time` (how long since a moment, so the model does not do clock math), `wait` (pauses up to 120 s, to sit out a web rate limit before retrying), `find_files` (by name or glob such as `**/*.kt`), `grep_files` (search *inside* files, with line numbers), `read_file` (text, code, JSON, PDF; long files in parts with a line range).
 - **Changing** (always asks first): `create_note` (a properties block at the top of its text is merged with Arcana's), `append_to_note`, `set_properties` (change a note's properties in place), `write_file`, `edit_file`. A panel shows exactly what would change (for `edit_file` and an overwrite it is a diff like `git diff`, `-` red and `+` green); `y` allows, `n` denies, `a` allows that tool for the rest of the session.

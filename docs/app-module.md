@@ -83,6 +83,7 @@ Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `
 | `Shortcuts.kt` | `Shortcuts.label(text)`: the one place shortcut labels pass through (Ctrl chords) |
 | `Messages.kt` | `Notice`, `NoticeLine`, `Hint`, `Warning`, `Cta`, `Loading`, `Spinner` |
 | `Picker.kt` | `PickerState` + `Picker<T>`: `/` filters (any order of words), ↑↓, Enter; optional `icon`/`iconColor`/`meta`, and for trees `indent` (two spaces per level), `labelColor` and `total` (the count shown in the search strip) |
+| `ScreenMemory.kt` | `ScreenMemory` (in `AppContext.screenMemory`) and `rememberKept(app, key) { … }`: a screen's state holders that outlive its tab (the shell draws only the current screen, so plain `remember` state is lost on every tab switch). Used by the Library (view, tag, mode, `PickerState`s, preview scroll, show-hidden) and the Brain (selected line, hygiene list). Key = name + `@` + vault path |
 | `FilePicker.kt` | `FilePickerState`/`FilePicker`: folder browser returning files (tick with Space, Tab to attach) |
 | `DirectoryPicker.kt` | folder-only picker (vault path) |
 | `Attachments.kt` | `Attachments` state (pictures, files, notes, plain), `AttachmentLine`, `SentAttachments`, `attachBrowserHints` |

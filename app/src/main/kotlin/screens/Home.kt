@@ -55,21 +55,23 @@ private class BrainRows(val now: List<BrainRow>, val back: List<BrainRow>) {
 @Composable
 fun HomeScreen(app: AppContext) {
     val navigator = LocalNavigator.current
-    var selected by remember { mutableIntStateOf(0) }
+    // what the Brain remembers while another tab is open: the selected line and the hygiene list (see ScreenMemory)
+    val where = app.config.vaultPath
+    var selected by rememberKept(app, "brain.selected@$where") { mutableIntStateOf(0) }
     val index = app.brain.index
     val vault = remember(app.config.vaultPath) { app.openVault() }
     val health = remember(index, app.config.inboxFolder, app.config.staleDays) { index?.health(app.config.inboxFolder, app.config.staleDays) }
     val wide = LocalContentWidth.current >= 100
 
     // the hygiene check reads every note once: it runs off the UI thread whenever the vault was read again, and the last result stays on screen meanwhile
-    var hygiene by remember { mutableStateOf<HygieneReport?>(null) }
+    var hygiene by rememberKept(app, "brain.hygiene@$where") { mutableStateOf<HygieneReport?>(null) }
     LaunchedEffect(index) {
         val v = vault.getOrNull()
         if (index != null && v != null) hygiene = withContext(Dispatchers.IO) { runCatching { VaultHygiene.check(v, index = index) }.getOrNull() }
     }
-    var hygieneOpen by remember { mutableStateOf(false) }
-    var hygieneKind by remember { mutableStateOf<HygieneKind?>(null) }
-    var hygieneSel by remember { mutableIntStateOf(0) }
+    var hygieneOpen by rememberKept(app, "brain.hygieneOpen@$where") { mutableStateOf(false) }
+    var hygieneKind by rememberKept(app, "brain.hygieneKind@$where") { mutableStateOf<HygieneKind?>(null) }
+    var hygieneSel by rememberKept(app, "brain.hygieneSel@$where") { mutableIntStateOf(0) }
     fun openHygiene(kind: HygieneKind?) { hygieneKind = kind; hygieneSel = 0; hygieneOpen = true }
     // the issues the list shows, in the order of its rows (a kind after a kind)
     val listed = hygiene?.let { r -> (hygieneKind?.let { listOf(it) } ?: HygieneKind.entries).flatMap { r.byKind.getValue(it) } }.orEmpty()

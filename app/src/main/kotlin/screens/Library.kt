@@ -60,13 +60,27 @@ fun LibraryScreen(app: AppContext) {
     val navigator = LocalNavigator.current
     val index = app.brain.index
     val vault = remember(app.config.vaultPath) { app.openVault() }
-    // a link from the dashboard names its view once; a visit from the sidebar opens the view of Settings → Library → Opens on (it used to keep the last view a link had set)
-    var filter by remember { mutableStateOf(navigator.libraryFilter ?: defaultLibraryFilter(app.config)).also { navigator.libraryFilter = null } }
-    var tag by remember { mutableStateOf(navigator.libraryTag.also { navigator.libraryTag = null }) }
-    var mode by remember { mutableStateOf(LibraryMode.List) }
-    val picker = remember { PickerState() }
-    val tagPicker = remember { PickerState() }
-    val preview = remember { OutputState() }
+    // What the Library remembers while another tab is open: the view and tag, the selected row and its scroll, the open note and its scroll (the vault path is in the key).
+    // The first visit of a run opens the view of Settings → Library → Opens on; a link from the dashboard names its view once; later visits come back to where you left.
+    val where = app.config.vaultPath
+    val filterState = rememberKept(app, "library.filter@$where") { mutableStateOf(defaultLibraryFilter(app.config)) }
+    val tagState = rememberKept(app, "library.tag@$where") { mutableStateOf<String?>(null) }
+    val modeState = rememberKept(app, "library.mode@$where") { mutableStateOf(LibraryMode.List) }
+    remember {
+        val linked = navigator.libraryFilter
+        val linkedTag = navigator.libraryTag
+        navigator.libraryFilter = null
+        navigator.libraryTag = null
+        if (linked != null) { filterState.value = linked; tagState.value = linkedTag }
+        // a dialog (rename, edit, delete, discard) is never restored: the buffer it held is gone, so the visit goes back to the note being read, or to the list
+        if (modeState.value != LibraryMode.List && modeState.value != LibraryMode.Reading) modeState.value = if (modeState.value == LibraryMode.ConfirmDelete) LibraryMode.List else LibraryMode.Reading
+    }
+    var filter by filterState
+    var tag by tagState
+    var mode by modeState
+    val picker = rememberKept(app, "library.picker@$where") { PickerState() }
+    val tagPicker = rememberKept(app, "library.tags@$where") { PickerState() }
+    val preview = rememberKept(app, "library.preview@$where") { OutputState() }
     val renameField = remember { TextFieldState() }
     // the note being edited by hand: its whole text (properties included), and what the file held when it was opened
     val editField = remember { TextFieldState(multiline = true, max = 2_000_000) }
@@ -81,7 +95,7 @@ fun LibraryScreen(app: AppContext) {
     val staleDays = app.config.staleDays
     val showingTags = filter == LibraryFilter.Tags && tag == null
     // `.` adds the notes of hidden folders (.arcana/…) to the All view; they are not part of the index, so no other view or count includes them
-    var showHidden by remember { mutableStateOf(false) }
+    var showHidden by rememberKept(app, "library.hidden@$where") { mutableStateOf(false) }
     val hidden = remember(showHidden, index, vault) {
         if (!showHidden) emptyList() else vault.getOrNull()?.hiddenNotes().orEmpty().map { n ->
             val words = runCatching { Vault.splitFrontmatter(vault.getOrThrow().read(n.path)).second.split(Regex("\\s+")).count { it.isNotBlank() } }.getOrDefault(0)

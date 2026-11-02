@@ -37,6 +37,9 @@ no marketing. Read this page, then open only the file you need.
 | [ui-internals.md](ui-internals.md) | debug rendering: Mosaic quirks, row accounting, key dispatch, Markdown renderer |
 | [testing.md](testing.md) | run/add tests, drive the real app in a pty |
 | [conventions.md](conventions.md) | follow project rules; recipes for "add a screen / setting / key / tool" |
+| [research-reports.md](research-reports.md) | the Library's *Reports* view: how reports (`type: report`) are found, marks, stale rules, `s` to run a report's skill again |
+| [vault-hygiene.md](vault-hygiene.md) | the Brain screen's hygiene checks: each rule, the list, open-in-Library and chat-to-fix |
+| [semantic-search.md](semantic-search.md) | the embedding index, the `semantic_search` tool, `/reindex`, privacy and limits |
 
 ## Build and run
 
