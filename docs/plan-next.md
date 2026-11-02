@@ -219,6 +219,54 @@ A **preset** is a named combination of these. Your five stages are one preset (a
 
 ---
 
+## Research system (R1 to R10)
+
+Status 2026-11-03. R1 to R4 are built (see [roadmap.md](roadmap.md) Phase R; each has a feature page with a *How to verify (manual)* list) and wait for the owner's verification. R5 to R10 are **proposals**: nothing is built. Sizes are rough (S under half a day, M about a day, L several days).
+
+| Order | # | Task | Size | Risk | Needs your decision |
+|---|---|---|---|---|---|
+| 1 | R7 | Report metadata | S | low | which fields, and whether a rating is asked at the end |
+| 2 | R8 | Stale-report nudges | S | low | the age limits per kind (the Reports view already uses 90 days for landscape and compare, 365 for the rest) |
+| 3 | R6 | Research backlog from Capture | S | low | the marker (`? `), where the backlog lives |
+| 4 | R9 | Reviewer pass on reports | S | medium | whether it may edit the report or only append a `## Review` section |
+| 5 | R5 | Headless runs and scheduling | M | medium | the approval policy for unattended runs |
+| 6 | R10 | MCP client | L | high | which servers first |
+
+### R5. Headless runs and scheduling
+**Problem.** Research that should happen on a schedule (a daily dev digest, a weekly landscape refresh) needs the terminal UI open and a person at the approvals.
+**Proposal.** `arcana run <skill> "<text>" [--vault P] [--yes-folders A,B]`: starts the same `ChatSession` and tool loop without Mosaic, prints progress to stdout, exits 0/1 with the report path. Unattended approvals follow an explicit allow-list: write only inside the skill's `output:` folder, `run_command` only for scripts inside the skill's own folder and the report kit; everything else is refused (never auto-approved). A plain `cron`/`launchd` line then runs it; Hermes or another agent can call it as a tool.
+**Risks.** Unattended file writes and shell: the allow-list must be strict and logged (a run log in the session store). Long runs need timeouts and a lock so two runs do not load two models at once.
+**Verify later.** Run it for the dev-digest skill with a pasted text file, check that the report appears and passes `rpt.py check`, that a write outside `output:` is refused and logged, and that cron can start it.
+
+### R6. Research backlog from Capture
+**Problem.** Questions occur while you do other things; `Ctrl+N` only stores a thought.
+**Proposal.** A thought that starts with `? ` (or `research: `) is also appended to a vault note `Research Backlog` (a checklist line `- [ ] question`, with the day). Brain shows the open count; a key on Brain or a `/backlog` command lists them and runs `/create-dev-research-report <question>` for the chosen one, ticking it when its report is `done` (the report's `question` property links back).
+**Risks.** Matching a backlog line to its report: use the `question:` property text, not a fuzzy match. Keep the backlog note under `Research/` and linked from Home (the Thoughts Index pattern in `listThoughtDay` is the model).
+**Verify later.** Capture `? what is the outbox pattern`, see it in the backlog and the Brain count, run it, confirm the box is ticked after the report.
+
+### R7. Report metadata
+**Problem.** A report does not say which model made it, what it cost or how good it was, so `llm-compare` and Usage cannot learn from real runs.
+**Proposal.** The closing `set_properties` step of every report skill also sets `model` (already added by `create_note`), `tokens` and `work_time` (from `chat_stats` / `elapsed_time`), and an optional `rating: 1-5` that the skill asks with `ask_user` at the very end (skippable). The Reports view (R2) and Usage → Orchestration can then show cost and rating per model. Mostly skill text plus a small reader in `Reports.kt`.
+**Risks.** The model may copy numbers wrongly: have `rpt.py` print a ready `PROPERTY=` line from `chat_stats` output instead of asking the model to compose it. A rating asked after every report may annoy: it is one skippable question.
+**Verify later.** Run a skill, check the three properties on the note, and see them in the Reports view.
+
+### R8. Stale-report nudges
+**Problem.** A landscape report ages in weeks; nothing says so.
+**Proposal.** Brain (and the Reports view) mark reports past their age (landscape and compare 90 days, digests never, others 365) and offer *refresh*: Chat opens with the report's skill attached and its `question`/topic prefilled, and the new report links the old one (`supersedes: [[old]]`). R3's hygiene check already counts stale reports; this adds the action.
+**Verify later.** Backdate a report's `date`, see the mark, run the refresh, check the `supersedes` link.
+
+### R9. Reviewer pass on reports
+**Problem.** `rpt.py check` verifies structure and R1 verifies that sources exist, but not that a claim is supported by its source.
+**Proposal.** After the checks, the skill's `reviewer:` model (the role already exists) reads the report and each cited page excerpt and writes a `## Review` section: claims without a source, claims the source does not support, overconfidence. Optional per skill via the `reviewer:` property; it never edits the body.
+**Risks.** Cost (one more model run with the sources) and a small reviewer rubber-stamping: give it a fixed checklist and require it to quote the supporting sentence for each claim it accepts.
+**Verify later.** Seed a report with a claim its source does not support and check that the review flags it.
+
+### R10. MCP client
+**Problem.** Every external capability (a browser, a database, another agent such as Hermes) needs hand-written glue.
+**Proposal.** An MCP client in `core` that starts configured servers (stdio first), lists their tools and offers them in the same tool loop with the same permission layer (every MCP tool is at least *ask* by default; per-server allow lists in Settings). Already listed in [tools-and-agent.md](tools-and-agent.md) as future work.
+**Risks.** Security (untrusted servers, prompt injection in tool results: treat results as untrusted text like web pages), process lifecycle, protocol churn. Large.
+**Verify later.** Connect a trivial local MCP server (echo), then a filesystem server limited to one folder, and confirm the approval dialog shows its tool calls.
+
 ## What happens next
 
 Decided, except one N10 question. Proposed order, with N10 first because N9 and N5 sit on it:
