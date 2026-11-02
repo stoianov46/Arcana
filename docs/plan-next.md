@@ -221,7 +221,7 @@ A **preset** is a named combination of these. Your five stages are one preset (a
 
 ## Research system (R1 to R10)
 
-Status 2026-11-03. R1 to R4 are built (see [roadmap.md](roadmap.md) Phase R; each has a feature page with a *How to verify (manual)* list) and wait for the owner's verification. R5 to R10 are **proposals**: nothing is built. Sizes are rough (S under half a day, M about a day, L several days).
+Status 2026-11-03. R1 to R4 are built (see [roadmap.md](roadmap.md) Phase R; each has a feature page with a *How to verify (manual)* list) and wait for the owner's verification. R6 to R9 are **proposals**: nothing is built. R5 and R10 were skipped on 2026-11-03. Sizes are rough (S under half a day, M about a day, L several days).
 
 | Order | # | Task | Size | Risk | Needs your decision |
 |---|---|---|---|---|---|
@@ -229,10 +229,12 @@ Status 2026-11-03. R1 to R4 are built (see [roadmap.md](roadmap.md) Phase R; eac
 | 2 | R8 | Stale-report nudges | S | low | the age limits per kind (the Reports view already uses 90 days for landscape and compare, 365 for the rest) |
 | 3 | R6 | Research backlog from Capture | S | low | the marker (`? `), where the backlog lives |
 | 4 | R9 | Reviewer pass on reports | S | medium | whether it may edit the report or only append a `## Review` section |
-| 5 | R5 | Headless runs and scheduling | M | medium | the approval policy for unattended runs |
-| 6 | R10 | MCP client | L | high | which servers first |
+| - | R5 | Headless runs and scheduling | M | medium | **skipped** (2026-11-03) |
+| - | R10 | MCP client | L | high | **skipped** (2026-11-03) |
 
 ### R5. Headless runs and scheduling
+**Status: skipped (2026-11-03).** Kept here in case it comes back; nothing is built.
+
 **Problem.** Research that should happen on a schedule (a daily dev digest, a weekly landscape refresh) needs the terminal UI open and a person at the approvals.
 **Proposal.** `arcana run <skill> "<text>" [--vault P] [--yes-folders A,B]`: starts the same `ChatSession` and tool loop without Mosaic, prints progress to stdout, exits 0/1 with the report path. Unattended approvals follow an explicit allow-list: write only inside the skill's `output:` folder, `run_command` only for scripts inside the skill's own folder and the report kit; everything else is refused (never auto-approved). A plain `cron`/`launchd` line then runs it; Hermes or another agent can call it as a tool.
 **Risks.** Unattended file writes and shell: the allow-list must be strict and logged (a run log in the session store). Long runs need timeouts and a lock so two runs do not load two models at once.
@@ -262,6 +264,8 @@ Status 2026-11-03. R1 to R4 are built (see [roadmap.md](roadmap.md) Phase R; eac
 **Verify later.** Seed a report with a claim its source does not support and check that the review flags it.
 
 ### R10. MCP client
+**Status: skipped (2026-11-03).** Kept here in case it comes back; nothing is built.
+
 **Problem.** Every external capability (a browser, a database, another agent such as Hermes) needs hand-written glue.
 **Proposal.** An MCP client in `core` that starts configured servers (stdio first), lists their tools and offers them in the same tool loop with the same permission layer (every MCP tool is at least *ask* by default; per-server allow lists in Settings). Already listed in [tools-and-agent.md](tools-and-agent.md) as future work.
 **Risks.** Security (untrusted servers, prompt injection in tool results: treat results as untrusted text like web pages), process lifecycle, protocol churn. Large.

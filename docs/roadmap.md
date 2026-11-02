@@ -80,12 +80,12 @@ Arcana as a local-first research AI-agent system (positioning of 2026-11-03: mod
 | R2 | Research view: a *Reports* view in the Library listing every `type: report` note with kind, status, age and summary ([research-reports.md](research-reports.md)) | built, needs your verification |
 | R3 | Vault hygiene panel on the Brain screen: notes without `type`, bad or generic names, duplicates, root clutter, incomplete and stale reports, islands ([vault-hygiene.md](vault-hygiene.md)) | built, needs your verification |
 | R4 | Semantic search: local Ollama embeddings, an on-disk index, the `semantic_search` tool and `/reindex` ([semantic-search.md](semantic-search.md)) | built, needs your verification |
-| R5 | Headless runs and scheduling: `arcana run <skill> "<text>"` without a UI, so digests can run from cron and other tools (Hermes, scripts) can call Arcana | proposal |
+| R5 | Headless runs and scheduling: `arcana run <skill> "<text>"` without a UI, so digests can run from cron and other tools (Hermes, scripts) can call Arcana | skipped (decided 2026-11-03; the write-up stays in plan-next.md) |
 | R6 | Research backlog from Capture: a thought starting with `? ` becomes a backlog item; Brain shows the count; one key runs the matching skill | proposal |
 | R7 | Report metadata: model, tokens, work time and a rating written to each report's properties; feeds `llm-compare` and Usage → Orchestration | proposal |
 | R8 | Stale-report nudges on Brain: landscape and compare reports past their age, with a refresh action | proposal |
 | R9 | Reviewer pass on reports: the reviewer model audits claims against sources and writes the findings into the note | proposal |
-| R10 | MCP client: plug external tools and agents into the same tool loop and permission layer | proposal |
+| R10 | MCP client: plug external tools and agents into the same tool loop and permission layer | skipped (decided 2026-11-03; the write-up stays in plan-next.md) |
 
 ## Added later (not on the original list)
 
