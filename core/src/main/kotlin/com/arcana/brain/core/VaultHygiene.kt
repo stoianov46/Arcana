@@ -95,19 +95,21 @@ object VaultHygiene {
             if (props["type"] == "report") {
                 // 6. a report is finished when its status says done
                 val status = props["status"].orEmpty()
-                if (status != "done") {
+                // a report that a newer one replaced (status superseded) is kept as history: it is neither unfinished nor stale
+                val superseded = status == Reports.SUPERSEDED
+                if (status != "done" && !superseded) {
                     out += HygieneIssue(HygieneKind.ReportNotDone, path, "report status is \"${status.ifEmpty { "missing" }}\"",
                         "finish it with its skill (the report check must say REPORT_VALID=yes, then set status: done) or delete it")
                 }
                 // 7. and fresh: landscape and comparison reports age fast
                 val kind = props["kind"].orEmpty()
                 val date = runCatching { LocalDate.parse(props["date"].orEmpty().take(10)) }.getOrNull()
-                if (date != null) {
+                if (date != null && !superseded) {
                     val limit = STALE_DAYS[kind] ?: DEFAULT_STALE_DAYS
                     val age = ChronoUnit.DAYS.between(date, today)
                     if (age > limit) {
                         out += HygieneIssue(HygieneKind.StaleReport, path, "report from $date is $age days old (limit $limit for ${kind.ifEmpty { "this" }} reports)",
-                            "run its skill again to refresh it, then keep the new report and mark this one superseded")
+                            "refresh it: open the Library, switch to the Reports view (←/→), select it and press f; the new report replaces it and this one is marked superseded")
                     }
                 }
             }

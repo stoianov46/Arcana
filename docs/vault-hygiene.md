@@ -16,7 +16,7 @@ Code: `core/.../VaultHygiene.kt` (`HygieneKind`, `HygieneIssue`, `HygieneReport`
 | `DuplicateName` | ⧉ | two notes whose names are equal when only letters and digits are kept, lower-cased ("🐍 Phi Reference" = "phi reference"), in any folders; both are listed | merge them (keep the newer, trash the older) or rename |
 | `LooseRoot` | ⌂ | a note in the vault root other than `Home`, `Thoughts Index` and `thought-*` | move it into the folder of its subject |
 | `ReportNotDone` | ◔ | `type: report` and `status` is not `done` (a missing status shows as "missing") | finish it with its skill (`REPORT_VALID=yes`, then `status: done`) or delete it |
-| `StaleReport` | ◷ | `type: report` older than its limit by `date:` (first 10 characters): **90 days** for `kind: landscape` and `compare`, **365** for every other kind (`VaultHygiene.STALE_DAYS`, `DEFAULT_STALE_DAYS`); a report without a readable date is not judged | run its skill again |
+| `StaleReport` | ◷ | `type: report` older than its limit by `date:` (first 10 characters): **90 days** for `kind: landscape` and `compare`, **365** for every other kind (`VaultHygiene.STALE_DAYS`, `DEFAULT_STALE_DAYS`); a report without a readable date is not judged | open the Library, Reports view, press `f` (refresh: the old report becomes `superseded`, see [report-lifecycle.md](report-lifecycle.md)); superseded reports are skipped by this check and by *not finished* |
 | `Island` | ⊘ | no note links to it and it links to no note (`VaultIndex.orphans`, the same figure as "not linked to anything"); `thought-*` files are skipped | link it from the index of its area or from Home, or delete it |
 
 Hidden folders (`.arcana/`, `.trash`, …) are never read: `Vault.notes()` leaves them out, as it does for the rest of the Brain.

@@ -29,6 +29,7 @@ Keys (as in the rest of the Library): `Enter` reads the report (preview with lin
 `o` Obsidian, `d` trash. New: **`s` runs the report's skill again**: it opens a fresh Chat with the skill from the `skill:` property attached as a
 chip and the report's `question` (else `pair`) property in the message field; you edit it if you like and send it. Without a `skill:` property,
 or when that skill is not in the skills folder any more, a toast says so.
+**`f` refreshes a report**: the same, but the field starts `Refresh [[<this report>]]: ` so the new report replaces the old one (the old one becomes `superseded`); a row also shows `★4` (your rating) and the tokens the run spent, and a superseded report shows `↻ replaced by …`. Details: [report-lifecycle.md](report-lifecycle.md).
 
 ## Files and symbols
 

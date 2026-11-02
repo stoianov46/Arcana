@@ -20,6 +20,7 @@ import com.arcana.brain.app.navigation.LibraryFilter
 import com.arcana.brain.core.ReportInfo
 import com.arcana.brain.core.Reports
 import com.arcana.brain.core.Skills
+import com.arcana.brain.core.UsageStats
 import com.arcana.brain.app.navigation.LocalNavigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.NoteInfo
@@ -140,7 +141,7 @@ fun LibraryScreen(app: AppContext) {
     when (mode) {
         LibraryMode.List -> if (picker.filtering || tagPicker.filtering) Hints("↑↓  move", "Enter  choose", "Esc  clear filter")
         else if (tree) Hints("↑↓  move", "Enter  open / fold", "h l  fold", "+ -  all", "t  flat list", "←→  view", "a  AI", "e  edit", "r  rename", "d  trash", ".  hidden", "/  filter")
-        else if (filter == LibraryFilter.Reports) Hints("↑↓  move", "←→  view", "Enter  read", "s  run its skill again", "a  AI", "e  edit", "r  rename", "o  Obsidian", "d  trash", "/  filter")
+        else if (filter == LibraryFilter.Reports) Hints("↑↓  move", "←→  view", "Enter  read", "s  run its skill again", "f  refresh", "a  AI", "e  edit", "r  rename", "o  Obsidian", "d  trash", "/  filter")
         else Hints("↑↓  move", "←→  view", "Enter  read", "a  AI", "e  edit", "r  rename", "o  Obsidian", "d  trash", "t  tree", ".  hidden", "/  filter")
         LibraryMode.Reading -> Hints("↑↓/Space  scroll", "a  AI", "e  edit", "r  rename", "o  Obsidian", "Esc  back")
         LibraryMode.Rename -> Hints("Enter  rename", "Esc  cancel")
@@ -166,17 +167,21 @@ fun LibraryScreen(app: AppContext) {
         navigator.navigate(Screen.Chat)
     }
 
-    /** Runs the skill that made [note] again: a fresh chat with the skill attached and the report's question in the field (the user may change it, then sends). */
-    fun runAgain(note: NoteInfo) {
+    /**
+     * Runs the skill that made [note] again: a fresh chat with the skill attached and the report's question in the field (the user may change it, then sends).
+     * With [refresh] the message starts `Refresh [[<this report>]]: ` so the skill makes the new report replace this one (`supersedes`, and this one becomes `superseded`).
+     */
+    fun runAgain(note: NoteInfo, refresh: Boolean = false) {
         val report = reportByPath[note.path] ?: return
         val v = vault.getOrNull() ?: return
         if (report.skill.isEmpty()) return navigator.showToast("This report names no skill.", isError = true)
+        if (refresh && Reports.isSuperseded(report)) return navigator.showToast("This report was already replaced${if (report.supersededBy.isEmpty()) "" else " by ${report.supersededBy}"}.", isError = true)
         val skill = Skills.discoverAll(v, app.skillsFolder()).firstOrNull { it.name == report.skill }
             ?: return navigator.showToast("The skill “${report.skill}” is not in ${app.skillsFolder()}/ any more.", isError = true)
         app.chat.startNew()
         app.chat.attachments.notes += skill.path
-        app.chat.input.set(report.question)
-        navigator.showToast("Skill ${skill.name} attached; the question is in the field. Press Enter to edit it, send it as it is or change it.")
+        app.chat.input.set(refreshMessage(report, refresh))
+        navigator.showToast("Skill ${skill.name} attached; the ${if (refresh) "refresh request" else "question"} is in the field. Press Enter to edit it, send it as it is or change it.")
         navigator.navigate(Screen.Chat)
     }
 
@@ -320,6 +325,7 @@ fun LibraryScreen(app: AppContext) {
                 key.char == 'o' -> { current?.let { openInObsidian(it) }; true }
                 key.char == 'd' -> { if (current != null) { if (isHiddenPath(current.path)) navigator.showToast("Notes in hidden folders are Arcana's own: they cannot be trashed here.", isError = true) else mode = LibraryMode.ConfirmDelete }; true }
                 key.char == 's' && filter == LibraryFilter.Reports -> { current?.let { runAgain(it) }; true }
+                key.char == 'f' && filter == LibraryFilter.Reports -> { current?.let { runAgain(it, refresh = true) }; true }
                 key.char == 'p' && filter == LibraryFilter.Inbox -> { navigator.navigate(Screen.Inbox); true }
                 else -> false
             }
@@ -372,7 +378,7 @@ fun LibraryScreen(app: AppContext) {
                 *(if (tree) arrayOf(ActionItem("h l", "Fold"), ActionItem("+ -", "All")) else emptyArray()),
                 *(if (!showingTags) arrayOf(ActionItem("t", if (app.config.libraryTree) "Flat list" else "Tree")) else emptyArray()),
                 ActionItem(".", if (showHidden) "Hide hidden" else "Hidden"),
-                *(if (filter == LibraryFilter.Reports) arrayOf(ActionItem("s", "Run its skill again", current != null)) else emptyArray()),
+                *(if (filter == LibraryFilter.Reports) arrayOf(ActionItem("s", "Run its skill again", current != null), ActionItem("f", "Refresh", current != null)) else emptyArray()),
                 ActionItem("←→", "View"),
                 ActionItem("/", "Filter"),
             )
@@ -440,6 +446,7 @@ private fun reportLabel(report: ReportInfo?, note: NoteInfo): String {
 /** The status mark of a report row: unfinished first, then aged, then done (a plain-glyph variant for terminals without symbols). */
 private fun reportMark(report: ReportInfo?, plain: Boolean): String = when {
     report == null -> "▤"
+    Reports.isSuperseded(report) -> if (plain) ">" else "↻"
     Reports.isIncomplete(report) -> if (plain) "!" else "⚠"
     Reports.isStale(report) -> if (plain) "~" else "◷"
     else -> if (plain) "+" else "✓"
@@ -447,18 +454,34 @@ private fun reportMark(report: ReportInfo?, plain: Boolean): String = when {
 
 private fun reportMarkColor(report: ReportInfo?) = when {
     report == null -> Palette.Accent
+    Reports.isSuperseded(report) -> Palette.Dim
     Reports.isIncomplete(report) -> Palette.Orange
     Reports.isStale(report) -> Palette.Muted
     else -> Palette.Green
 }
 
-/** The right-hand text of a report row: what needs attention, else when the note last changed. */
-private fun reportMeta(report: ReportInfo?, note: NoteInfo): String = when {
-    report == null -> relativeTime(note.modified)
-    Reports.isIncomplete(report) -> "incomplete"
-    Reports.isStale(report) -> "stale, ${report.ageDays} d"
-    else -> relativeTime(note.modified)
+/**
+ * The right-hand text of a report row: your rating (`★4`) and what the run spent (`12.3k tok`) when they are recorded, then what needs attention, else when the note
+ * last changed. A superseded report says `replaced` (and by what, when it is known).
+ */
+internal fun reportMeta(report: ReportInfo?, note: NoteInfo, plain: Boolean = false): String {
+    if (report == null) return relativeTime(note.modified)
+    val state = when {
+        Reports.isSuperseded(report) -> "replaced" + (if (report.supersededBy.isEmpty()) "" else " by ${report.supersededBy}")
+        Reports.isIncomplete(report) -> "incomplete"
+        Reports.isStale(report) -> "stale, ${report.ageDays} d"
+        else -> relativeTime(note.modified)
+    }
+    return listOfNotNull(
+        report.rating?.let { (if (plain) "*" else "★") + it },
+        report.tokens?.let { UsageStats.compact(it) + " tok" },
+        state,
+    ).joinToString(" · ")
 }
+
+/** What a refresh or a re-run puts in the message field: `Refresh [[<this report>]]: <question>` for a refresh (the skills read that start), else just the question. */
+internal fun refreshMessage(report: ReportInfo, refresh: Boolean): String =
+    if (refresh) "Refresh [[${report.title}]]: ${report.question}".trimEnd().removeSuffix(":") else report.question
 
 /** The list's title in the Reports view: how many, and how many need attention. */
 private fun reportsTitle(reports: List<ReportInfo>): String {
@@ -494,7 +517,7 @@ private fun NoteList(
                     is LibraryRow.Folder -> "${row.notes} note${if (row.notes == 1) "" else "s"}"
                     is LibraryRow.Note -> when (filter) {
                         LibraryFilter.Broken -> "${row.info.unresolved.size} broken"
-                        LibraryFilter.Reports -> reportMeta(reports[row.info.path], row.info)
+                        LibraryFilter.Reports -> reportMeta(reports[row.info.path], row.info, plain)
                         else -> relativeTime(row.info.modified)
                     }
                 }
