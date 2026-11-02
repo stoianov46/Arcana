@@ -2,8 +2,10 @@ package com.arcana.brain.app.screens
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.arcana.brain.app.AppContext
@@ -20,8 +22,13 @@ import com.arcana.brain.app.navigation.LocalNavigator
 import com.arcana.brain.app.navigation.Navigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.BrainHealth
+import com.arcana.brain.core.HygieneKind
+import com.arcana.brain.core.HygieneReport
 import com.arcana.brain.core.SessionReport
 import com.arcana.brain.core.UsageStats
+import com.arcana.brain.core.VaultHygiene
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.jakewharton.mosaic.layout.background
 import com.jakewharton.mosaic.layout.fillMaxWidth
 import com.jakewharton.mosaic.layout.height
@@ -54,15 +61,55 @@ fun HomeScreen(app: AppContext) {
     val health = remember(index, app.config.inboxFolder, app.config.staleDays) { index?.health(app.config.inboxFolder, app.config.staleDays) }
     val wide = LocalContentWidth.current >= 100
 
-    val rows = buildRows(app, navigator, health, vault.isSuccess, recents = if (wide) 12 else 5, topTags = if (wide) 8 else 0)
+    // the hygiene check reads every note once: it runs off the UI thread whenever the vault was read again, and the last result stays on screen meanwhile
+    var hygiene by remember { mutableStateOf<HygieneReport?>(null) }
+    LaunchedEffect(index) {
+        val v = vault.getOrNull()
+        if (index != null && v != null) hygiene = withContext(Dispatchers.IO) { runCatching { VaultHygiene.check(v, index = index) }.getOrNull() }
+    }
+    var hygieneOpen by remember { mutableStateOf(false) }
+    var hygieneKind by remember { mutableStateOf<HygieneKind?>(null) }
+    var hygieneSel by remember { mutableIntStateOf(0) }
+    fun openHygiene(kind: HygieneKind?) { hygieneKind = kind; hygieneSel = 0; hygieneOpen = true }
+    // the issues the list shows, in the order of its rows (a kind after a kind)
+    val listed = hygiene?.let { r -> (hygieneKind?.let { listOf(it) } ?: HygieneKind.entries).flatMap { r.byKind.getValue(it) } }.orEmpty()
+    val listRows = hygiene?.let { r ->
+        buildList {
+            (hygieneKind?.let { listOf(it) } ?: HygieneKind.entries).filter { r.count(it) > 0 }.forEach { k ->
+                add(BrainRow.Heading("${k.icon} ${k.label.uppercase()} (${r.count(k)})"))
+                r.byKind.getValue(k).forEach { i -> add(BrainRow.Item("▤", Palette.Muted, i.path.removeSuffix(".md"), i.message, open = { navigator.openLibrary(LibraryFilter.All, i.path) })) }
+            }
+        }
+    }.orEmpty()
+    val chosenIssue = listed.getOrNull(hygieneSel.coerceIn(0, (listed.size - 1).coerceAtLeast(0)))
+
+    val rows = buildRows(app, navigator, health, vault.isSuccess, recents = if (wide) 12 else 5, topTags = if (wide) 8 else 0, hygiene = hygiene, openHygiene = ::openHygiene)
     val items = rows.nowItems + rows.backItems
     val current = selected.coerceIn(0, (items.size - 1).coerceAtLeast(0))
 
-    Hints("↑↓  choose", "←→  column", "Enter  open", "r  re-read the vault")
-    Commands(listOf(Command("Re-read the vault", "Brain", "r") { app.brain.changed() }))
+    if (hygieneOpen) Hints("↑↓  choose", "Enter  open the note", "c  chat to fix it", "Esc  back")
+    else Hints("↑↓  choose", "←→  column", "Enter  open", "h  vault hygiene", "r  re-read the vault")
+    Commands(listOf(Command("Re-read the vault", "Brain", "r") { app.brain.changed() }, Command("Vault hygiene: names, properties, reports, islands", "Brain", "h") { openHygiene(null) }))
 
     KeyHandler { key ->
-        when {
+        if (hygieneOpen) when {
+            key == Key.Escape -> { hygieneOpen = false; true }
+            key == Key.Up || key.char == 'k' -> { hygieneSel = (hygieneSel - 1).coerceAtLeast(0); true }
+            key == Key.Down || key.char == 'j' -> { hygieneSel = (hygieneSel + 1).coerceAtMost((listed.size - 1).coerceAtLeast(0)); true }
+            key == Key.Enter -> { chosenIssue?.let { navigator.openLibrary(LibraryFilter.All, it.path) }; true }
+            key.char == 'c' -> {
+                chosenIssue?.let { i ->
+                    // a fresh chat with the note attached, and the instruction waiting in the field (Enter starts typing, Enter again sends)
+                    app.chat.startNew()
+                    app.chat.attachments.notes += i.path
+                    app.chat.input.set("Fix this vault issue: ${i.message}. Suggested fix: ${i.fix}")
+                    navigator.navigate(Screen.Chat)
+                }
+                true
+            }
+            else -> true
+        } else when {
+            key.char == 'h' -> { openHygiene(null); true }
             key == Key.Up || key.char == 'k' -> { selected = (current - 1).coerceAtLeast(0); true }
             key == Key.Down || key.char == 'j' -> { selected = (current + 1).coerceAtMost((items.size - 1).coerceAtLeast(0)); true }
             // the two columns are one list: ← goes to the first item of the left, → to the first of the right
@@ -89,6 +136,13 @@ fun HomeScreen(app: AppContext) {
                 Cta("Press ${Screen.Settings.shortcut} to choose your vault folder.")
             }
             index == null -> Panel("Today") { Spinner("Reading your vault…") }
+            hygieneOpen -> Panel("Vault hygiene · ${hygiene?.total ?: 0} issues" + (hygieneKind?.let { " · ${it.label}" } ?: ""), Modifier.height(height)) {
+                when {
+                    hygiene == null -> Spinner("Checking the vault…")
+                    listRows.isEmpty() -> Label("✓ Nothing to fix here.", color = Palette.Green)
+                    else -> RowList(listRows, hygieneSel.coerceIn(0, (listed.size - 1).coerceAtLeast(0)), height - 2)
+                }
+            }
             wide -> {
                 val half = ((LocalContentWidth.current - 1) / 2).coerceAtLeast(30)
                 Row(Modifier.fillMaxWidth()) {
@@ -122,7 +176,7 @@ private fun Vitals(h: BrainHealth?, reading: Boolean) {
     Label(line, color = Palette.Text)
 }
 
-private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, hasVault: Boolean, recents: Int, topTags: Int): BrainRows {
+private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, hasVault: Boolean, recents: Int, topTags: Int, hygiene: HygieneReport? = null, openHygiene: (HygieneKind?) -> Unit = {}): BrainRows {
     if (!hasVault) return BrainRows(emptyList(), emptyList())
     val now = buildList {
         val daily = app.openVault().getOrNull()?.let { v -> app.dailyNotes(v).pathFor(LocalDate.now()).let { it to Files.exists(v.root.resolve(it)) } }
@@ -144,6 +198,21 @@ private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, ha
             attention("◷", h.stale, "notes untouched for ${app.config.staleDays}+ days", LibraryFilter.Stale, Palette.Muted)
             if (h.inbox + h.orphans + h.untagged + h.brokenNotes + h.stale == 0) {
                 add(BrainRow.Item("✓", Palette.Green, "Everything is in order", "no inbox, no islands, no broken links", dim = true, open = { navigator.openLibrary(LibraryFilter.All) }))
+            }
+        }
+        // the habits that keep the vault navigable (names, properties, reports, islands): one line per kind, examples for the two worst
+        if (hygiene != null) {
+            add(BrainRow.Heading("VAULT HYGIENE"))
+            if (hygiene.total == 0) add(BrainRow.Item("✓", Palette.Green, "Vault hygiene is clean", "names, properties, reports and links all follow the rules", dim = true, open = {}))
+            else {
+                HygieneKind.entries.forEach { k ->
+                    val n = hygiene.count(k)
+                    if (n == 0) add(BrainRow.Item("✓", Palette.Green, k.counted(0), "", dim = true, open = {}))
+                    else add(BrainRow.Item(k.icon, if (k == HygieneKind.ReportNotDone) Palette.Red else Palette.Orange, k.counted(n), "Enter or h: see them", open = { openHygiene(k) }))
+                }
+                hygiene.worst.take(2).forEach { k ->
+                    hygiene.byKind.getValue(k).take(3).forEach { i -> add(BrainRow.Item("▤", Palette.Muted, i.title, i.message, open = { navigator.openLibrary(LibraryFilter.All, i.path) })) }
+                }
             }
         }
         // the topics the vault is about: each opens the Library on that tag
