@@ -60,6 +60,10 @@ plus `DEFAULT_STALE_DAYS`. A report without a readable date is never stale. Stal
 
 The index lists every report, and `rpt.py index` (the last step of each report skill) ends every report with `Back to [[<Domain> Reports Index]]` (idempotent), so the link goes both ways in the graph. Vault notes a report used are `[[linked]]` in its Sources. `Reports Overview` links the newest report of each domain.
 
+## Vault shape per domain
+
+Every `Research/<Domain>/` has the same shape: a hub `<Domain> Index` (Dev, LLM, DeFi, Arcana), `<Domain> Reports Index` (generated; links the hub back when it exists), area folders each with its own index (Dev: Architecture, Design, Engineering; LLM: Model-Families, Benchmark, Comparison; DeFi: Reference; Arcana: Architecture, Testing) and a flat `Reports/` folder. Home links every hub. The rules are in the vault note `Where Things Go`.
+
 ## How to verify (manual)
 
 1. Make sure the vault has a few reports (run `/create-dev-research-report <question>` or `/create-llm-compare-report …`, or copy the properties of
