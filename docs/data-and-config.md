@@ -53,7 +53,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `chatUseVault` | false | answer from vault (also `/vault`) |
 | `copyAs` | `markdown` | select-mode copy format: `markdown` / `plain` |
 | `inboxFolder` | `Inbox` | where unprocessed notes are |
-| `dailyFolder` / `dailyFormat` | `""` / `[thought-]YYYY-MM-DD` (file `thought-2026-11-02.md`); a saved config that still holds the old default `YYYY-MM-DD` is moved to the new one when it is loaded | daily note fallback when Obsidian has no setting |
+| `dailyFolder` / `dailyFormat` | `Thoughts` / `[thought-]YYYY-MM-DD` (file `Thoughts/thought-2026-11-02.md`); a saved config with an empty `dailyFolder` is moved to `Thoughts` when it is loaded; a saved config that still holds the old default `YYYY-MM-DD` is moved to the new one when it is loaded | daily note fallback when Obsidian has no setting |
 | `staleDays` | 90 | stale threshold |
 | `lastPickerDir` | `""` | last folder of the file browser |
 | `toolsEnabled` | false | tools in Chat |

@@ -597,11 +597,20 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         return named ?: beside.trim().lines().lastOrNull { it.isNotBlank() }?.trim()?.take(300).orEmpty()
     }
 
+    private val bouncedQuestions = mutableSetOf<String>()
+    private val ChoiceWords = Regex("""choose (one|an? |from)|select (one|an? )|pick (one|an? )|which of (these|the following)""", RegexOption.IGNORE_CASE)
+
     private suspend fun askUser(call: ToolCall, beside: String): String {
         val args = call.arguments
         val text = questionText(call, beside).ifEmpty { return "Error: ask_user needs the question itself. Call it again with question set to the text you want to ask, and options (2 to 5 short answers)." }
         val options = (args["options"] as? JsonArray)?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.let(::cleanOption)?.takeIf { s -> s.isNotEmpty() } }.orEmpty().take(9)
-        val multiple = (args["multiple"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true" && options.size > 1
+        val asksMultiple = (args["multiple"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
+        // a question that says "choose one" (or multiple=true) but came without options would show only a text field: a small model forgets the options, so it is sent back once
+        if (options.size < 2 && (asksMultiple || ChoiceWords.containsMatchIn(text)) && bouncedQuestions.add(text)) {
+            return "Error: this question asks the user to choose, but options is missing. Call ask_user again with the same question and options: 2 to 5 short answers (an array of strings)" +
+                (if (asksMultiple) " and multiple=true." else ".")
+        }
+        val multiple = asksMultiple && options.size > 1
         val q = Question(text, options, multiple)
         question = q
         val answer = try { q.answer.await() } finally { question = null }

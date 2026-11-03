@@ -15,6 +15,7 @@ import com.arcana.brain.core.Layout
 import com.arcana.brain.core.ResearchBacklog
 import com.arcana.brain.core.Skills
 import com.arcana.brain.core.DailyNotes
+import com.arcana.brain.core.listThought
 import com.arcana.brain.core.SessionKind
 import com.arcana.brain.core.SessionStore
 import com.arcana.brain.core.capture
@@ -272,7 +273,7 @@ class AppContext(
     fun capture(text: String, files: List<Path> = emptyList(), folder: String = ""): Result<String> = openVault().mapCatching { vault ->
         val embeds = files.map { "![[${vault.copyAttachment(config.outputFolder, it)}]]" }
         val full = (listOf(text.trim()) + embeds).filter { it.isNotEmpty() }.joinToString(if (folder.isBlank()) " " else "\n\n")
-        val path = if (folder.isBlank()) vault.capture(full, dailyNotes(vault)) else vault.captureNote(folder, full)
+        val path = if (folder.isBlank()) vault.capture(full, dailyNotes(vault)) else vault.captureNote(folder, full).also { if (folder.trim('/') == dailyNotes(vault).folder.trim('/')) vault.listThought(it) }
         // a thought that starts with `? ` or `research: ` is also a question for the research backlog (best effort: the thought is saved either way)
         ResearchBacklog.capturedQuestion(text)?.let { q -> runCatching { ResearchBacklog.add(vault, q) } }
         session.log(SessionKind.Captured, full, path)

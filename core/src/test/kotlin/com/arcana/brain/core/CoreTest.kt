@@ -216,12 +216,18 @@ class CoreTest {
     fun aNewDailyNoteIsListedInTheThoughtsIndex() {
         val dir = Files.createTempDirectory("thoughts")
         val vault = Vault(dir)
-        val daily = DailyNotes("", AppConfig().dailyFormat)
+        val daily = DailyNotes(AppConfig().dailyFolder, AppConfig().dailyFormat)
+        assertEquals("Thoughts", daily.folder)
         val day = java.time.LocalDateTime.of(2026, 11, 2, 9, 0)
         vault.capture("one", daily, day)
         vault.capture("two", daily, day.plusHours(1))
         vault.capture("next day", daily, day.plusDays(1))
-        val index = Files.readString(dir.resolve("Thoughts Index.md"))
+        assertTrue(Files.exists(dir.resolve("Thoughts/thought-2026-11-02.md")) && !Files.exists(dir.resolve("thought-2026-11-02.md")), "the day is in the Thoughts folder, not the root")
+        val own = vault.captureNote("Thoughts", "an idea of its own", day)
+        vault.listThought(own)
+        vault.listThought(own)
+        val index = Files.readString(dir.resolve("Thoughts/Thoughts Index.md"))
+        assertEquals(1, Regex("\\[\\[an idea of its own]]").findAll(index).count(), "a thought saved as a note is listed once")
         assertEquals(1, Regex("\\[\\[thought-2026-11-02]]").findAll(index).count())
         assertTrue("[[thought-2026-11-03]]" in index && index.indexOf("thought-2026-11-02") < index.indexOf("thought-2026-11-03"))
         assertTrue(index.trimEnd().endsWith("Back to [[Home]]"))
@@ -234,6 +240,15 @@ class CoreTest {
         assertEquals("[thought-]YYYY-MM-DD", ConfigStore(file).load().dailyFormat)
         Files.writeString(file, """{"dailyFormat": "DD.MM.YYYY"}""")
         assertEquals("DD.MM.YYYY", ConfigStore(file).load().dailyFormat)
+    }
+
+    @Test
+    fun anEmptyDailyFolderInASavedConfigMovesToThoughts() {
+        val file = Files.createTempDirectory("cfg").resolve("config.json")
+        Files.writeString(file, """{"dailyFolder": ""}""")
+        assertEquals("Thoughts", ConfigStore(file).load().dailyFolder)
+        Files.writeString(file, """{"dailyFolder": "Journal"}""")
+        assertEquals("Journal", ConfigStore(file).load().dailyFolder)
     }
 
     @Test

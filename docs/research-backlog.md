@@ -48,7 +48,7 @@ Only lines of the form `- [ ] question (YYYY-MM-DD)` and `- [x] question (YYYY-M
 ## How to verify (manual)
 
 1. Press `Ctrl+N`. The dialog has the line "Start with “? ” or “research: ” …". Type `? what is the outbox pattern`, `Enter`. Then capture `buy milk`, then `research: Navigation 3 on KMP`.
-2. Open `thought-YYYY-MM-DD.md` in the vault root: all three lines are there as typed.
+2. Open `Thoughts/thought-YYYY-MM-DD.md` in the vault: all three lines are there as typed.
 3. Open `Research/Research Backlog.md`: two unticked lines (`what is the outbox pattern`, `Navigation 3 on KMP`), each with today's date, above `Back to [[Home]]`. `buy milk` is not there. Capture `? What is the outbox pattern?`: no third line.
 4. Brain (`1`): a RESEARCH BACKLOG section with `2 open questions` and both questions (scroll down in a 24-row window).
 5. Press `b`: a list of two. `↓`, `x`: the second is gone from the list (count 1); in the note its line is `- [x] …` without a link.

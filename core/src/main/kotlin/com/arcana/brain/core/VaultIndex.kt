@@ -228,6 +228,9 @@ fun Vault.capture(text: String, daily: DailyNotes, now: LocalDateTime = LocalDat
 /** Where the days of the daily notes are listed: a note next to them, so no day is left without a link to it (it would be an island in the graph). */
 const val THOUGHTS_INDEX = "Thoughts Index"
 
+/** Lists the thought note at vault path [note] (a thought saved as a note of its own in the thoughts folder) in the Thoughts Index beside it. Best effort. */
+fun Vault.listThought(note: String) = listThoughtDay(root.resolve(note))
+
 /** Adds the new daily note [file] to the index note beside it as `- [[name]]`, creating the index when it is missing; a day already listed is not added twice. Best effort: a failure never loses the thought. */
 private fun listThoughtDay(file: java.nio.file.Path) {
     runCatching {
@@ -235,7 +238,7 @@ private fun listThoughtDay(file: java.nio.file.Path) {
         val index = file.resolveSibling("$THOUGHTS_INDEX.md")
         val link = "- [[$name]]"
         if (!Files.exists(index)) {
-            Files.writeString(index, "---\ntags: [index, thoughts]\ntype: index\n---\n\n# $THOUGHTS_INDEX\n\nOne note per day: what Capture wrote, a line per thought. Arcana adds a day here when it starts that day's note.\n\n$link\n\nBack to [[Home]]\n")
+            Files.writeString(index, "---\ntags: [index, thoughts]\ntype: index\n---\n\n# $THOUGHTS_INDEX\n\nEverything Capture wrote: one note per day (a line per thought) and thoughts saved as notes of their own. Arcana adds each here when it starts it.\n\n$link\n\nBack to [[Home]]\n")
             return@runCatching
         }
         val text = Files.readString(index)

@@ -16,7 +16,7 @@ class VaultHygieneTest {
 
     @Test
     fun aNoteWithoutATypeIsFlaggedButAThoughtFileIsNot() {
-        val found = kinds("Research/A.md" to note(type = null), "Research/B.md" to note(), "thought-2026-11-02.md" to "- 09:00 hi\n", "Research/C.md" to "no properties at all")
+        val found = kinds("Research/A.md" to note(type = null), "Research/B.md" to note(), "Thoughts/thought-2026-11-02.md" to "- 09:00 hi\n", "Research/C.md" to "no properties at all")
         assertEquals(listOf(HygieneKind.MissingType to "Research/A.md", HygieneKind.MissingType to "Research/C.md"), found)
         // an empty type counts as missing
         assertEquals(1, kinds("A/X.md" to "---\ntype:\ntags: [x]\n---\nbody").count { it.first == HygieneKind.MissingType })
@@ -48,10 +48,10 @@ class VaultHygieneTest {
     }
 
     @Test
-    fun onlyHomeThoughtsIndexAndThoughtFilesMayStayInTheRoot() {
-        val found = kinds("Home.md" to note("index"), "Thoughts Index.md" to note("index"), "thought-2026-11-02.md" to "x", "Stray.md" to note(), "Research/Fine.md" to note())
+    fun onlyHomeMayStayInTheRootAndThoughtsBelongInTheThoughtsFolder() {
+        val found = kinds("Home.md" to note("index"), "Thoughts/Thoughts Index.md" to note("index"), "Thoughts/thought-2026-11-02.md" to "x", "thought-2026-11-01.md" to "x", "Stray.md" to note(), "Research/Fine.md" to note())
             .filter { it.first == HygieneKind.LooseRoot }
-        assertEquals(listOf(HygieneKind.LooseRoot to "Stray.md"), found)
+        assertEquals(listOf(HygieneKind.LooseRoot to "Stray.md", HygieneKind.LooseRoot to "thought-2026-11-01.md"), found.sortedBy { it.second })
     }
 
     @Test
@@ -86,7 +86,7 @@ class VaultHygieneTest {
 
     @Test
     fun islandsComeFromTheIndexAndSkipThoughtFiles() {
-        val found = kinds("A/Lonely.md" to note(), "A/Linked.md" to note(), "thought-2026-11-02.md" to "x", islands = setOf("A/Lonely.md", "thought-2026-11-02.md"))
+        val found = kinds("A/Lonely.md" to note(), "A/Linked.md" to note(), "Thoughts/thought-2026-11-02.md" to "x", islands = setOf("A/Lonely.md", "Thoughts/thought-2026-11-02.md"))
             .filter { it.first == HygieneKind.Island }
         assertEquals(listOf(HygieneKind.Island to "A/Lonely.md"), found)
     }

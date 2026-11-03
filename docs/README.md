@@ -32,6 +32,8 @@ no marketing. Read this page, then open only the file you need.
 | [distribution.md](distribution.md) | build `arcana.zip`, install, the first-run setup, `arcana --init`, where files live and how to move them |
 | [oracul.md](oracul.md) | work on anything that asks another model than the chat model: second opinions, `/compare`, `/takeover`, skill roles, the second Ollama server, the split view: principles, flow, message conventions, safety, decisions |
 | [roadmap.md](roadmap.md) | see the TODO list by phase and what is done; update it with every piece of work |
+| [plan-next.md](plan-next.md) | proposals for the next TODOs (draft for decision), with the plan of each research feature R1-R10 |
+| [try-it.md](try-it.md) | a hands-on tour: things to type and press in a real session with the usual models |
 | [skills.md](skills.md) | understand or change **skills** (vault runbooks), the `/` menu entries, the skill chip, the required-steps gate and its progress badge |
 | [data-and-config.md](data-and-config.md) | touch `config.json`, on-disk stores, vault conventions, frontmatter |
 | [ui-internals.md](ui-internals.md) | debug rendering: Mosaic quirks, row accounting, key dispatch, Markdown renderer |
@@ -71,7 +73,7 @@ Note: the vault note `ARCANA.md` (see [functionality.md](functionality.md)) is p
 | Brain | The home/dashboard screen (`Screen.Home`) showing vault health |
 | Session | One run of Arcana, logged to disk, can be saved to the vault as a summary note |
 | Inbox | A vault folder (default `Inbox`) of unprocessed notes that AI can file |
-| Capture | `Ctrl+N`: append a timestamped line to today's thought file (`thought-YYYY-MM-DD.md`) |
+| Capture | `Ctrl+N`: append a timestamped line to today's thought file (`Thoughts/thought-YYYY-MM-DD.md`) |
 | Palette | `Ctrl+P`: searchable list of every action |
 | Tools | Model-callable functions: read/search notes and files, change or delete them, ask the user, run commands, read web pages; changes, commands and fetches need the user's confirmation |
 | Memory file | The vault note `ARCANA.md`: standing instructions and facts added to every chat |

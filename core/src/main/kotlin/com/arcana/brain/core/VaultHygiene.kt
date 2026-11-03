@@ -46,7 +46,7 @@ object VaultHygiene {
 
     private val GenericNames = Regex("""(index|notes?|untitled( \d+)?|readme|new note( \d+)?)""", RegexOption.IGNORE_CASE)
     private val SymbolStart = Regex("""^[^\p{L}\p{N}(\[]""")
-    private val RootAllowed = setOf("home", "thoughts index")
+    private val RootAllowed = setOf("home")
     private val Key = Regex("""^([A-Za-z][\w-]*):\s*(.*)$""")
 
     /** Reads every note of [vault] once and checks it. [index] (the Brain's) tells which notes are islands; it is built here when not given. */
@@ -87,10 +87,10 @@ object VaultHygiene {
                 out += HygieneIssue(HygieneKind.DuplicateName, path, "same name as ${same.joinToString(", ") { it.first }}",
                     "merge the notes (keep the newer, move the older to the trash) or give each a distinct name")
             }
-            // 5. the root holds only Home, Thoughts Index and the thought files
-            if ('/' !in path && !thought && name.lowercase() !in RootAllowed) {
+            // 5. the root holds only Home; thought files and their index live in Thoughts/
+            if ('/' !in path && name.lowercase() !in RootAllowed) {
                 out += HygieneIssue(HygieneKind.LooseRoot, path, "sits in the vault root",
-                    "move it into the folder of its subject (Research/<Domain>/..., Projects/..., Explore/)")
+                    if (thought || name.equals("Thoughts Index", true)) "move it into the Thoughts folder" else "move it into the folder of its subject (Research/<Domain>/..., Projects/..., Explore/, Thoughts/)")
             }
             if (props["type"] == "report") {
                 // 6. a report is finished when its status says done

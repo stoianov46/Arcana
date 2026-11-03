@@ -59,7 +59,7 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 | `busy`, `revision` | `busy` counts running generations (drives logo animation + sidebar badge); `revision` forces screens to rebuild (`key(app.revision)`) |
 | `openVault()` | `Result<Vault>` from `config.vaultPath` (`~` expanded) |
 | `attachments(forModel)` | factory for an `Attachments` set wired to model capabilities and last picker dir |
-| `capture(text, files)` | writes to today's thought file (the daily note) via `Vault.capture`, which also lists a new day in `Thoughts Index`, copies attached files |
+| `capture(text, files)` | writes to today's thought file (the daily note, in the `Thoughts` folder) via `Vault.capture`, which also lists a new day in `Thoughts Index` (as does a thought saved as a note into that folder: `Vault.listThought`), copies attached files |
 | `newSession()` | ends the session, starts fresh (empty chat, zero usage) without restarting |
 
 ## Subsystems added around the chat loop

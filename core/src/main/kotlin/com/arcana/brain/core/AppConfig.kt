@@ -60,7 +60,7 @@ data class AppConfig(
     /** The embedding model of the semantic search (`semantic_search` tool, `/reindex`): an installed Ollama model such as nomic-embed-text. Blank = the semantic search is off. */
     val embedModel: String = "",
     /** Daily notes: used only when the vault has no Obsidian Daily notes settings of its own. */
-    val dailyFolder: String = "",
+    val dailyFolder: String = "Thoughts",
     /** `thought-2026-11-02.md`: the prefix keeps the thought files apart from other date-named notes; `[text]` is literal (Obsidian's syntax). */
     val dailyFormat: String = "[thought-]YYYY-MM-DD",
     /** Where capture (Ctrl+N) saves a thought: empty = a line in today's daily note, else a folder at the top of the vault (each thought becomes a note there). Remembered from the last capture. */
@@ -230,8 +230,13 @@ class ConfigStore(val path: Path = defaultPath()) {
     }
 
     /** A config saved before thought files got their prefix still holds the old default format: it is moved to the new one, so every next file follows the scheme. */
-    private fun migrated(config: AppConfig): AppConfig =
-        if (config.dailyFormat == "YYYY-MM-DD") config.copy(dailyFormat = AppConfig().dailyFormat) else config
+    private fun migrated(config: AppConfig): AppConfig {
+        var c = config
+        if (c.dailyFormat == "YYYY-MM-DD") c = c.copy(dailyFormat = AppConfig().dailyFormat)
+        // and one saved when thought files lay in the vault root: they now get a folder of their own
+        if (c.dailyFolder.isEmpty()) c = c.copy(dailyFolder = AppConfig().dailyFolder)
+        return c
+    }
 
     fun save(config: AppConfig) {
         Files.createDirectories(path.parent)
