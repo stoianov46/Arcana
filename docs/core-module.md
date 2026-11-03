@@ -94,7 +94,7 @@ question with vault excerpts when `hits != null`, keeps tool output older than t
 ## `VaultIndex.kt`
 
 `VaultIndex.build(vault)` (companion) scans every note once: word count, frontmatter + inline `#tags`, `[[wikilinks]]` resolved to
-paths (unresolved kept separately). **Code blocks and inline code are ignored** for links and tags. Derived: `backlinks`,
+paths (unresolved kept separately; a name is tried as a note first, so `[[Qwen3.8 27B vs …]]` with dots is a note, and only a missing name that ends in a dot and 1-5 letters or digits, like `shot.png`, counts as a picture or file and is ignored). **Code blocks and inline code are ignored** for links and tags. Derived: `backlinks`,
 `orphans`, `untagged`, `stale(days)`, `inFolder`, `tagCounts`, `related(path)` (shared tags/links), `touchedSince(days)`,
 `health(inboxFolder, staleDays) -> BrainHealth` (counts + `connectedPercent`/`taggedPercent`).
 `DailyNotes.detect(vault, folder, format)` reads `.obsidian/daily-notes.json` (`folder`, `format` in moment.js tokens) else

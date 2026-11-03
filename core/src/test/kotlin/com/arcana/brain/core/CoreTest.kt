@@ -395,6 +395,20 @@ class CoreTest {
     }
 
     @Test
+    fun aNoteWithADotInItsNameIsLinkedButAPictureIsNot() {
+        val dir = Files.createTempDirectory("brain-dots")
+        fun note(path: String, text: String) { val f = dir.resolve(path); Files.createDirectories(f.parent); Files.writeString(f, text) }
+        note("Hub.md", "See [[Qwen3.8 27B vs Qwen3.6 35B-A3B Showdown]] and [[v1.2]] and ![[shot.png]] and [[notes.txt]] and [[Missing.Note here]].")
+        note("Qwen3.8 27B vs Qwen3.6 35B-A3B Showdown.md", "text")
+        note("v1.2.md", "text")
+        val index = VaultIndex.build(Vault(dir))
+        val hub = index.note("Hub.md")!!
+        assertEquals(setOf("Qwen3.8 27B vs Qwen3.6 35B-A3B Showdown.md", "v1.2.md"), hub.links, "a dot in a note's name is not a file extension")
+        assertEquals(setOf("Missing.Note here"), hub.unresolved, "a missing note with a dot is a broken link, a missing picture or file is not")
+        assertTrue(index.orphans.isEmpty())
+    }
+
+    @Test
     fun theVaultIsIndexedForLinksTagsAndHealth() {
         val dir = Files.createTempDirectory("brain")
         fun note(path: String, text: String, ageDays: Long = 0) {

@@ -104,6 +104,8 @@ class VaultIndex(val notes: List<NoteInfo>) {
         private val InlineTag = Regex("""(?:^|[\s(])#([\p{L}\p{N}_][\p{L}\p{N}_/-]*)""")
         private val FencedCode = Regex("""```.*?```""", RegexOption.DOT_MATCHES_ALL)
         private val InlineCode = Regex("""`[^`\n]*`""")
+        /** A file name's end: a dot and one to five letters or digits, no space (`photo.png`, but not the `.6 35B-A3B…` inside `Qwen3.6 35B-A3B…`). */
+        private val FileExtension = Regex("""\.[A-Za-z0-9]{1,5}$""")
 
         /** Scans the vault once. Reading every note is the cost; the result is a plain value that screens can share. */
         fun build(vault: Vault): VaultIndex {
@@ -114,10 +116,11 @@ class VaultIndex(val notes: List<NoteInfo>) {
             fun resolve(raw: String): String? {
                 var target = raw.substringBefore('|').substringBefore('#').trim()
                 if (target.isEmpty()) return null
-                if (target.contains('.') && !target.endsWith(".md", ignoreCase = true)) return "" // an embedded picture or file, not a note
-                target = target.removeSuffix(".md").trim('/')
+                target = target.removeSuffix(".md").removeSuffix(".MD").trim('/')
                 byPathLower[target.lowercase()]?.let { return it.path }
-                return byTitle[target.substringAfterLast('/').lowercase()]?.minByOrNull { it.path.length }?.path
+                byTitle[target.substringAfterLast('/').lowercase()]?.minByOrNull { it.path.length }?.let { return it.path }
+                // no note of that name: `[[photo.png]]` is a picture or file (a dot and a short extension without spaces), `[[Missing note]]` is a broken link
+                return if (FileExtension.containsMatchIn(target)) "" else null
             }
             return VaultIndex(
                 files.map { f ->
