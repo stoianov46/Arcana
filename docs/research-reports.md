@@ -56,6 +56,10 @@ plus `DEFAULT_STALE_DAYS`. A report without a readable date is never stale. Stal
 
 `rpt.py new` names a report `<Title> <YYYY-MM-DD>` (title first, date last; ` 2` after the date when the name is taken). Reason: Obsidian's and Arcana's file trees are narrow and cut the end of a long name, so a date at the start hid the subject. `Reports.nameWithoutDate` removes the date from the row (both orders). The `date` property is the source for sorting and staleness, never the file name.
 
+## Links
+
+The index lists every report, and `rpt.py index` (the last step of each report skill) ends every report with `Back to [[<Domain> Reports Index]]` (idempotent), so the link goes both ways in the graph. Vault notes a report used are `[[linked]]` in its Sources. `Reports Overview` links the newest report of each domain.
+
 ## How to verify (manual)
 
 1. Make sure the vault has a few reports (run `/create-dev-research-report <question>` or `/create-llm-compare-report …`, or copy the properties of
