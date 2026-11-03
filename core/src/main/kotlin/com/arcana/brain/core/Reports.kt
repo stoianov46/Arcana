@@ -45,6 +45,18 @@ data class ReportInfo(
 
 /** Finds the reports in a vault and says which have aged. Pure reading: it never writes. */
 object Reports {
+    private val DateAtEnd = Regex("""\s*\d{4}-\d{2}-\d{2}(\s+\d+)?$""")
+
+    /**
+     * A report's name without its date, for a row that shows the date in a column of its own. Reports are named `<Title> 2026-11-03` (the date last, with
+     * ` 2` after it when the name was taken); older ones `2026-11-03 <Title>`. A name that is only a date stays as it is.
+     */
+    fun nameWithoutDate(title: String, date: String): String {
+        val lead = if (date.isNotEmpty()) title.removePrefix(date).trim() else title
+        val cut = DateAtEnd.replace(lead, "").trim()
+        return cut.ifEmpty { title }
+    }
+
     /** After how many days a report of a kind counts as stale: what is written about changes fast for these kinds (new models appear every month). */
     val STALE_AFTER_DAYS: Map<String, Int> = mapOf("landscape" to 90, "compare" to 90)
 

@@ -21,7 +21,7 @@ Library → `←` `→` to the **Reports** tab (third: All, Recent, **Reports**,
 | `⚠` orange | not finished: `status` is not `done` (normally `incomplete`) | `!` |
 | `◷` grey | finished but older than its kind's limit | `~` |
 
-Order of priority when several apply: incomplete, then stale, then done. The text is date, kind, the file name without its date prefix, and the
+Order of priority when several apply: incomplete, then stale, then done. The text is date, kind, the file name without its date (the date is last in the file name, `<Title> 2026-11-03`; older reports have it first, both are handled), and the
 `summary` property; the list cuts the end to the window width. The filter (`/`) matches that whole text, so `landscape`, `incomplete` or a word of
 a summary narrow the list. The tree and the hidden-folders switch do not apply to this view (it is always a flat list).
 
@@ -51,6 +51,10 @@ first 6,000 characters of each, takes the properties block (`Vault.splitFrontmat
 A report is **stale** when its age (today minus its `date`) is more than its kind's limit: **90 days for `landscape` and `compare`** (new models appear every
 month, what was true then ages fast), **365 days for every other kind** (`digest`, `research`, `pool`, `forecast`). The table is `Reports.STALE_AFTER_DAYS`
 plus `DEFAULT_STALE_DAYS`. A report without a readable date is never stale. Staleness is only a mark here; nothing refreshes a report by itself.
+
+## File names
+
+`rpt.py new` names a report `<Title> <YYYY-MM-DD>` (title first, date last; ` 2` after the date when the name is taken). Reason: Obsidian's and Arcana's file trees are narrow and cut the end of a long name, so a date at the start hid the subject. `Reports.nameWithoutDate` removes the date from the row (both orders). The `date` property is the source for sorting and staleness, never the file name.
 
 ## How to verify (manual)
 

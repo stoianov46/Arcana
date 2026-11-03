@@ -75,4 +75,13 @@ class ReportsTest {
         assertEquals(listOf("Dev", "LLM"), groups.keys.toList())
         assertEquals(2, groups.getValue("LLM").size)
     }
+
+    @Test
+    fun aReportNameLosesItsDateAtTheEndOrAtTheStart() {
+        assertEquals("Jetpack Navigation V3", Reports.nameWithoutDate("Jetpack Navigation V3 2026-11-03", "2026-11-03"))
+        assertEquals("Jetpack Navigation V3", Reports.nameWithoutDate("Jetpack Navigation V3 2026-11-03 2", "2026-11-03"), "a taken name has a number after the date")
+        assertEquals("Jetpack Navigation V3", Reports.nameWithoutDate("2026-11-03 Jetpack Navigation V3", "2026-11-03"), "an older report has the date first")
+        assertEquals("Plan for 2026", Reports.nameWithoutDate("Plan for 2026 2026-11-03", "2026-11-03"))
+        assertEquals("2026-11-03", Reports.nameWithoutDate("2026-11-03", "2026-11-03"), "a name that is only a date stays")
+    }
 }

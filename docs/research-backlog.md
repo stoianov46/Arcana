@@ -19,7 +19,7 @@ tags: [index, research]
 Questions to research, one per line. …
 
 - [ ] what is the outbox pattern (2026-11-03)
-- [x] Navigation 3 on KMP (2026-11-03) -> [[2026-11-04 Nav report]]
+- [x] Navigation 3 on KMP (2026-11-03) -> [[Nav report 2026-11-04]]
 
 Back to [[Home]]
 ```

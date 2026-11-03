@@ -45,7 +45,7 @@ Hidden folders (`.arcana/`, `.trash`, …) are never read: `Vault.notes()` leave
    - `Research/Index.md` with `type: index` → ≈ 1
    - `Research/Dup.md` and `Projects/dup.md` (`type: reference`) → ⧉ 2
    - `Stray.md` in the root (`type: reference`) → ⌂ 1
-   - `Research/Dev/Reports/2026-11-02 Half.md`: `type: report`, `kind: research`, `date: <today>`, `status: incomplete` → ◔ 1
+   - `Research/Dev/Reports/Half 2026-11-02.md`: `type: report`, `kind: research`, `date: <today>`, `status: incomplete` → ◔ 1
    - `Research/Dev/Reports/2026-01-05 Landscape Old.md`: `type: report`, `kind: landscape`, `date: 2026-01-05`, `status: done` → ◷ 1 (more than 90 days ago)
    - a `Home.md` that links some of them, and `Research/Lonely.md` that nothing links to → ⊘ for the unlinked ones
 2. Open Arcana: the Brain shows the **VAULT HYGIENE** section with a count for every kind and examples for the two worst. Expected counts for the notes above: 1, 1, 1, 2, 1, 1, 1 and the islands (every note `Home` does not link and that links nothing).

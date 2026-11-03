@@ -436,10 +436,10 @@ fun LibraryScreen(app: AppContext) {
     }
 }
 
-/** A report's row: date, kind, name without its date prefix, then its summary (the list cuts the end to the width). */
+/** A report's row: date, kind, name without its date (at the end of the file name, or at the start in older reports), then its summary (the list cuts the end to the width). */
 private fun reportLabel(report: ReportInfo?, note: NoteInfo): String {
     if (report == null) return note.title
-    val name = note.title.removePrefix(report.date).trim().ifEmpty { note.title }
+    val name = Reports.nameWithoutDate(note.title, report.date)
     return (if (report.date.isEmpty()) "----------" else report.date) + "  " + report.kind.padEnd(9) + "  " + name + (if (report.summary.isEmpty()) "" else "  ·  " + report.summary)
 }
 
