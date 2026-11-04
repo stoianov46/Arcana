@@ -30,7 +30,7 @@ object Compaction {
     /** What the model is sent: everything from the latest summary on (the summary included), or the whole chat when there is none. */
     fun forModel(messages: List<ChatMessage>): List<ChatMessage> {
         val last = messages.indexOfLast { isSummary(it) }
-        return if (last < 0) messages else messages.subList(last, messages.size)
+        return (if (last < 0) messages else messages.subList(last, messages.size)).filter { !it.displayOnly }
     }
 
     /**

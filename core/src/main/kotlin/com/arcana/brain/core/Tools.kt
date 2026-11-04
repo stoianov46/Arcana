@@ -116,7 +116,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
 
     val specs: List<ToolSpec> = buildList {
         if (vault != null) addAll(vaultTools(vault))
-        if (vault != null && semantic != null) add(semanticTool(semantic))
+        if (vault != null) add(semanticTool(semantic))
         addAll(fileTools())
         add(askUserTool())
         add(timeTool())
@@ -565,12 +565,13 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         describeElapsed(from, to, zone)
     }
 
-    private fun semanticTool(search: SemanticSearch) = ToolSpec(
+    private fun semanticTool(search: SemanticSearch?) = ToolSpec(
         "semantic_search", "Find the user's notes by MEANING, not by words: describe what you are looking for in a sentence and get the best matching notes with the matching heading, an excerpt and a score (0 to 1; above about 0.6 is a close match). " +
-            "Prefer it over search_notes for questions of meaning (\"find notes about how we decided on the database\"); use search_notes or grep_files for an exact word, name or phrase. Read a hit with read_note.",
+            "Prefer it over search_notes for questions of meaning (\"find notes about how we decided on the database\"); use search_notes or grep_files for an exact word, name or phrase. Read a hit with read_note." +
+            (if (search == null) " NOT SET UP YET: no embedding model is installed, so the first call asks the user once to download a small one (they may decline: you then get an error, and search_notes is the fallback)." else ""),
         schema("query" to ("string" to "What you are looking for, as a short sentence or a few words"), "limit" to ("integer" to "How many notes (default ${SemanticSearch.DEFAULT_LIMIT}, at most ${SemanticSearch.MAX_LIMIT})"), required = listOf("query")),
         ToolRisk.Read, { it.str("query") },
-    ) { a -> search.answer(a.str("query"), a.int("limit") ?: SemanticSearch.DEFAULT_LIMIT) }
+    ) { a -> search?.answer(a.str("query"), a.int("limit") ?: SemanticSearch.DEFAULT_LIMIT) ?: "Error: semantic search is not set up (no embedding model). Use search_notes or grep_files with a few likely words instead." }
 
     private fun searchTool() = ToolSpec(
         "web_search", "Search the web and get the best results: title, address and a snippet each. Use it to find current information or a page, then read a result with fetch_url. The user approves every search; only the search words are sent. If it says search is paused, do not retry.",

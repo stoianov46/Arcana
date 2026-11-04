@@ -24,6 +24,7 @@ import com.arcana.brain.app.navigation.LocalNavigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.Compaction
+import com.arcana.brain.core.OraculSteps
 import com.arcana.brain.app.navigation.LibraryFilter
 import com.arcana.brain.core.Artifacts
 import com.arcana.brain.core.Events
@@ -110,7 +111,7 @@ internal val SlashCommands = listOf(
     SlashItem("/compact", "Summarize the older part of this chat to free the context window", false),
     SlashItem("/mode", "Tools mode: ask, auto, plan (cycles)", false),
     SlashItem("/autorun", "Run shell commands without asking (toggle)", false),
-    SlashItem("/think", "Model thinking: model default, off (fast), on (cycles through what the model offers)", false),
+    SlashItem("/think", "Reasoning effort for the next message: pick from what the model offers (off, on, low, medium, high, xhigh…)", false),
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false, usage = "e.g. /memory check   (finds repeated lines and dead note paths, asks before removing)"),
     SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
     SlashItem("/reindex", "Build or refresh the semantic search index of your vault (Settings → Vault → Semantic search model)", false),
@@ -171,7 +172,7 @@ internal fun slashMatches(items: List<SlashItem>, query: String): List<SlashItem
 /** The Chat key map (`?`): every key and command by what it is for, the ones about the model first. */
 fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf(
     com.arcana.brain.app.navigation.KeySection("The model: thinking, tools, memory", listOf(
-        "/think" to "thinking: model default, off (fast), on",
+        "/think" to "reasoning effort for the next message: pick from what the model offers",
         "/thinking" to "thinking pane under the conversation",
         "/mode" to "tools: ask, auto, plan",
         "/tools" to "tools on or off",
@@ -206,6 +207,7 @@ fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf
         "Enter" to "queue a message for after the reply",
         "Esc" to "cancel the reply (asks first)",
         Shortcuts.label("Ctrl+T") to "thinking pane: show it, resize it, then hide it",
+        Shortcuts.label("Ctrl+G") to "reasoning effort: choose what the model offers (off, low, medium, xhigh…) for the next message",
         "↑↓" to "scroll while it writes",
     )),
     com.arcana.brain.app.navigation.KeySection("Browsing (Esc from the field)", listOf(
@@ -228,14 +230,88 @@ fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf
 internal fun thinkOptions(values: List<String>): List<String> =
     if (values.isEmpty()) listOf("default") else listOf("default") + values.map { when (it) { "false" -> "off"; "true" -> "on"; else -> it } }.distinct()
 
+/** The `/think` choices of the model in use (what [thinkOptions] gives for the values Ollama lists), for the Settings row, which cannot see the app. Set when the model's details are read. */
+internal object ThinkLevels {
+    @Volatile var options: List<String> = listOf("default")
+
+    /** What the model does when nothing is sent, as Ollama reports it (`medium`, `on`, `off`), or blank when it does not say. */
+    @Volatile var defaultWord: String = ""
+}
+
+/** The model's own default as a word: Ollama's `false`/`true` are off/on, a level stays as it is; blank when Ollama does not say. */
+internal fun thinkDefaultWord(raw: String): String = when (raw) { "" -> ""; "false" -> "off"; "true" -> "on"; else -> raw }
+
+/**
+ * What a choice does to the work with the model, in plain words. [options] is the model's own list (`thinkOptions`), so a level is described by where it stands in THAT list:
+ * the lowest is light, the highest is the deepest, those between are balanced. More reasoning means more thinking tokens, which take time and count against the context window.
+ */
+internal fun thinkEffect(value: String, options: List<String>, defaultWord: String): String {
+    val levels = options.filter { it != "default" && it != "off" && it != "on" }
+    return when (value) {
+        "off" -> "No reasoning: the fastest and cheapest, and the whole window is left for the conversation. Right for simple questions and chat; weaker on hard, multi-step or tool-heavy tasks."
+        "on" -> "The model reasons before it answers: slower, and its thinking uses tokens of the context window. Better on hard questions."
+        "default" -> "Nothing is sent: the model decides" + (if (defaultWord.isEmpty()) "." else " ($defaultWord). " + thinkEffect(defaultWord, options, "").takeIf { defaultWord != "default" }.orEmpty())
+        else -> when {
+            levels.size > 1 && value == levels.first() -> "Light reasoning: a short think before the answer. Quicker and cheaper than the higher levels; good for everyday questions."
+            levels.size > 1 && value == levels.last() -> "The deepest reasoning: the most thinking tokens, so the slowest and the most context used, but the best on hard, multi-step or agentic tasks."
+            else -> "Balanced reasoning: a fair amount of thinking before the answer. A good default when you do not know how hard the task is."
+        }
+    }
+}
+
+/** `auto (medium)`: the model default with what it really is, so "auto" is never a mystery; just `auto` when Ollama does not say. */
+internal fun autoWord(defaultWord: String): String = if (defaultWord.isEmpty()) "auto" else "auto ($defaultWord)"
+
+/** The name of a thinking choice as a person reads it: `Model default`, `Off`, `On`, `Xhigh`. */
+internal fun thinkLabel(value: String): String = when (value) { "default" -> "Model default"; "off" -> "Off"; "on" -> "On"; else -> value.replaceFirstChar { it.uppercase() } }
+
 internal fun thinkText(setting: String): String = if (setting == "default") "MODEL DEFAULT" else setting.uppercase()
+
+/** What the reasoning-effort control says and how it looks: [text] is `✦ think xhigh`, [width] the columns it takes with its key hint and a gap before it. */
+private class EffortView(val text: String, val color: com.jakewharton.mosaic.ui.Color, val rainbow: Boolean, val width: Int)
+
+/**
+ * The reasoning-effort control at the right end of the message field's first row: `Ctrl+G ✦ think xhigh`. Off is quiet blue, the model default and the middle levels sit in the
+ * accent colour, and **the model's highest level** (xhigh for qwen3.8, high for gpt-oss, on for a model that only has on/off) wears the logo's flowing rainbow, like Claude Code's
+ * ultrathink; so does any level while the model is thinking right now. A level picked for the next message says so. The text always names what is sent, so the animation is
+ * only decoration (Settings → Appearance → Logo animation turns it off). Null for a model that cannot think, or when the field is too narrow to share its row.
+ */
+private fun effortView(app: AppContext, thinkingNow: Boolean, fieldWidth: Int): EffortView? {
+    if (app.thinkingValues.isEmpty()) return null
+    val plain = app.config.plainGlyphs
+    val options = thinkOptions(app.thinkingValues)
+    val next = app.chat.thinkNext
+    val inUse = if (next.isEmpty() && thinkingNow || next.isEmpty() && app.chat.gen.state == GenState.Running) app.chat.thinkNow() else ""
+    val setting = next.ifEmpty { inUse.ifEmpty { app.config.thinking } }
+    val effective = if (setting in options) setting else "default"
+    val top = options.lastOrNull()?.takeIf { it != "off" && it != "default" }
+    val word = (if (effective == "default") autoWord(thinkDefaultWord(app.thinkingDefault)) else effective) + if (next.isNotEmpty()) " · next" else if (inUse.isNotEmpty()) " · this" else ""
+    val text = "${if (effective == "off") (if (plain) "" else "◌ ") else (if (plain) "" else "✦ ")}think $word"
+    val color = when (effective) { "off" -> Palette.Blue; "default" -> Palette.Muted; else -> Palette.Accent }
+    val width = Shortcuts.label("Ctrl+G").length + 1 + text.length + 2
+    // the typed text keeps at least this much of the row
+    if (fieldWidth < width + 30) return null
+    return EffortView(text, color, app.config.animateLogo && (thinkingNow || (top != null && effective == top)), width)
+}
+
+@Composable
+private fun EffortInline(view: EffortView) {
+    Row {
+        Label("  " + Shortcuts.label("Ctrl+G") + " ", color = Palette.Hint)
+        RainbowText(view.text, view.rainbow, view.color)
+    }
+}
 
 /** `✦ think auto`, `◌ think off` or `✦ think low`: what is sent as `think`; off is blue (fast), the rest accent. */
 internal fun thinkingSegment(app: AppContext, plain: Boolean): StatusSegment {
-    val setting = app.config.thinking
+    // a level picked for the next message wins until that message is sent
+    val next = app.chat.thinkNext
+    // while a reply runs, the level that message was sent with (a /think pick) is the one in use
+    val inUse = if (next.isEmpty() && app.chat.gen.state == GenState.Running) app.chat.thinkNow() else ""
+    val setting = next.ifEmpty { inUse.ifEmpty { app.config.thinking } }
     // a setting the model does not list is not sent: the model decides
     val effective = if (setting in thinkOptions(app.thinkingValues)) setting else "default"
-    val word = if (effective == "default") "auto" else effective
+    val word = (if (effective == "default") autoWord(thinkDefaultWord(app.thinkingDefault)) else effective) + if (next.isNotEmpty()) " · next message" else if (inUse.isNotEmpty()) " · this message" else ""
     val glyph = if (plain) "" else if (effective == "off") "◌ " else "✦ "
     return statusSegment("", "${glyph}think $word", if (effective == "off") Palette.Blue else Palette.Accent, 8, bold = true)
 }
@@ -247,7 +323,9 @@ internal fun thinkingSegment(app: AppContext, plain: Boolean): StatusSegment {
 internal fun contextTokens(messages: List<ChatMessage>): Pair<Int, Boolean>? {
     val statsAt = messages.indexOfLast { (it.stats?.promptTokens ?: 0) > 0 }
     if (statsAt < 0) return null
-    if (messages.indexOfLast { Compaction.isSummary(it) } > statsAt) {
+    // the counts of the last reply are stale when a summary came after it, or was inserted before it while that reply was made from the whole chat (a manual or automatic compaction)
+    val summaryAt = messages.indexOfLast { Compaction.isSummary(it) }
+    if (summaryAt > statsAt || (summaryAt >= 0 && statsAt < messages[summaryAt].contextAt)) {
         val chars = Compaction.forModel(messages).sumOf { it.content.length + it.toolCalls.sumOf { c -> c.function.arguments.toString().length } }
         return (chars / 4) to true
     }
@@ -456,10 +534,13 @@ private const val MaxNotes = 5
 /** How many queued messages are listed above the message field; the rest are counted. */
 private const val QUEUE_SHOWN = 3
 
-private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory, Artifacts }
+private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory, Artifacts, Think }
 
 /** What happens to the last answer when it is sent to an existing note. */
 private enum class Target(val verb: String) { Append("Append"), Replace("Replace") }
+
+/** One row of the `/think` picker: [value] is what is stored (blank = the Settings value), [label] and [note] are what is shown. */
+private class ThinkChoice(val value: String, val label: String, val note: String)
 
 /** A note offered in a picker: its vault path and when it last changed. */
 private class NoteChoice(val path: String, val modified: Long)
@@ -476,6 +557,8 @@ fun ChatScreen(app: AppContext) {
     val navigator = LocalNavigator.current
     val output = remember { OutputState() }
     val historyPicker = remember { PickerState() }
+    val thinkPicker = remember { PickerState() }
+    var thinkChoices by remember { mutableStateOf(emptyList<ThinkChoice>()) }
     val notePicker = remember { PickerState() }
     val input = chat.input
     var mode by remember { mutableStateOf(ChatMode.Chat) }
@@ -713,18 +796,25 @@ fun ChatScreen(app: AppContext) {
         }
     }
 
-    /** `/think`: the next thinking value the model accepts (model default, off, on, or its levels). */
-    fun cycleThinking() {
+    /**
+     * `/think`: a list of the reasoning choices **the current model offers** (read from Ollama's `/api/show` → `thinking.values`: `off`/`on` for most, `low · medium · high` for gpt-oss,
+     * `low · medium · xhigh` for qwen3.8). Enter picks one for the next message only; `d` makes it the Settings value.
+     */
+    fun openThinkPicker() {
         val options = thinkOptions(app.thinkingValues)
-        if (options.size < 2) return toast(if (app.thinkingValues.isEmpty()) "${app.config.model} does not offer a thinking switch (Ollama lists none), so nothing is sent." else "${app.config.model} has no thinking choice.", error = true)
-        val next = options[(options.indexOf(app.config.thinking).coerceAtLeast(0) + 1) % options.size]
-        app.update(app.config.copy(thinking = next))
-        toast(when (next) {
-            "off" -> "Thinking off: the model answers at once (much faster; weaker on hard questions)."
-            "default" -> "Thinking: the model decides (its default is ${if (app.thinkingDefault == "false") "off" else "on"})."
-            "on" -> "Thinking on: the model reasons before it answers."
-            else -> "Thinking effort: $next."
-        })
+        if (app.thinkingValues.isEmpty()) return toast("${app.config.model} does not offer a thinking switch (Ollama lists none), so nothing is sent.", error = true)
+        val modelDefault = thinkDefaultWord(app.thinkingDefault)
+        val settingNow = app.config.thinking.takeIf { it in options } ?: "default"
+        fun note(v: String) = when (v) {
+            "default" -> "model decides${if (modelDefault.isEmpty()) "" else " ($modelDefault)"}"
+            "off" -> "no reasoning: fast"
+            "on" -> "reasons first"
+            else -> "effort level${if (v == modelDefault) " · default" else ""}"
+        }
+        thinkChoices = listOf(ThinkChoice("", "Use the Settings value", "now: ${if (settingNow == "default") "model default" + (if (modelDefault.isEmpty()) "" else " ($modelDefault)") else thinkLabel(settingNow).lowercase()}")) + options.map { ThinkChoice(it, thinkLabel(it), note(it)) }
+        thinkPicker.reset()
+        thinkPicker.index = if (chat.thinkNext.isEmpty()) 0 else thinkChoices.indexOfFirst { it.value == chat.thinkNext }.coerceAtLeast(0)
+        mode = ChatMode.Think
     }
 
     fun toggleAutoRun() {
@@ -785,7 +875,7 @@ fun ChatScreen(app: AppContext) {
             "/goal" -> runGoal(args)
             "/mode" -> cycleMode()
             "/autorun" -> toggleAutoRun()
-            "/think" -> cycleThinking()
+            "/think" -> openThinkPicker()
             "/compact" -> runCompact()
             "/oracul" -> runOracul(compare = false, only = args.ifEmpty { null })
             "/compare" -> runOracul(compare = true, only = args.ifEmpty { null })
@@ -899,6 +989,7 @@ fun ChatScreen(app: AppContext) {
             // while a reply runs and the field is empty, the number keys switch screens (the reply keeps going); the first letter typed brings the field back
             ChatMode.Chat -> if (attachments.browsing) attachments.filtering else !browsing && !(gen.state == GenState.Running && input.text.isEmpty())
             ChatMode.History -> historyPicker.filtering
+            ChatMode.Think -> thinkPicker.filtering
             ChatMode.PickNote, ChatMode.PickTarget -> notePicker.filtering
             else -> true
         },
@@ -913,6 +1004,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.ConfirmCancel -> Hints("Enter  cancel it", "y  cancel it", "any other key  keep going")
         ChatMode.ConfirmReplace -> Hints("y  replace", "any other key  keep the note")
         ChatMode.History -> Hints("↑↓  move", "Enter  open", "/  filter", "Esc  back")
+        ChatMode.Think -> Hints("↑↓  move", "Enter  use for the next message", "d  make it the Settings value", "Esc  back")
         ChatMode.PickNote -> Hints("type  search", "↑↓  move", "Enter  attach", "Esc  cancel")
         ChatMode.PickTarget -> Hints("type  search", "↑↓  move", "Enter  ${target.verb.lowercase()}", "Esc  cancel")
         ChatMode.Chat -> when {
@@ -1052,6 +1144,28 @@ fun ChatScreen(app: AppContext) {
                 key == Key.Escape -> { mode = ChatMode.Chat; true }
                 else -> false
             }
+            ChatMode.Think -> when {
+                thinkPicker.handle(key, thinkChoices) { it.label } -> true
+                key == Key.Enter -> {
+                    thinkPicker.selected(thinkChoices) { it.label }?.let { picked ->
+                        chat.thinkNext = picked.value
+                        toast(if (picked.value.isEmpty()) "The next message uses the Settings value (think ${thinkLabel(app.config.thinking).lowercase()})." else "Next message: think ${picked.value}. After you send it, the Settings value (${thinkLabel(app.config.thinking).lowercase()}) is used again.")
+                    }
+                    mode = ChatMode.Chat
+                    true
+                }
+                key.char == 'd' && !thinkPicker.filtering -> {
+                    thinkPicker.selected(thinkChoices) { it.label }?.let { picked ->
+                        app.update(app.config.copy(thinking = picked.value.ifEmpty { app.config.thinking }))
+                        chat.thinkNext = ""
+                        toast("Settings → Thinking is now ${thinkLabel(app.config.thinking).lowercase()} for every message.")
+                    }
+                    mode = ChatMode.Chat
+                    true
+                }
+                key == Key.Escape -> { mode = ChatMode.Chat; true }
+                else -> false
+            }
             ChatMode.PickNote, ChatMode.PickTarget -> {
                 val choices = noteChoices()
                 when {
@@ -1087,6 +1201,7 @@ fun ChatScreen(app: AppContext) {
                 // a digit with an empty field during a reply is a screen number: leave it to the shell
                 gen.state == GenState.Running && input.text.isEmpty() && !browsing && key.char?.let { it in '0'..'9' } == true -> false
                 key == Key.Thinking -> { resizeThinkingPane(); true }
+                key == Key.Effort -> { openThinkPicker(); true }
                 key == Key.Save -> { openSave(null); true }
                 key == Key.Browse -> { openAttach(); true }
                 output.selecting -> output.handle(key, entries, onNotice = { toast(it.text) })
@@ -1229,6 +1344,28 @@ fun ChatScreen(app: AppContext) {
                     )
                 }
             }
+            ChatMode.Think -> {
+                ScreenHeader("Reasoning effort", "${app.config.model}: what Ollama lists · Enter next message only · d Settings value")
+                VGap()
+                Panel("Thinking & effort") {
+                    Picker(
+                        thinkChoices, thinkPicker,
+                        label = { it.label },
+                        rows = bodyRows(extra = 4),
+                        icon = { if (it.value == chat.thinkNext) "●" else "»" },
+                        iconColor = { if (it.value == chat.thinkNext) Palette.Green else Palette.Accent },
+                        meta = { it.note },
+                    )
+                }
+                // what the choice means, as the other pickers explain themselves under their table: the levels are the model's own, thinking and effort are one setting
+                val picked = thinkPicker.selected(thinkChoices) { it.label }
+                Hint(
+                    "The choices are what ${app.config.model} lists in Ollama (/api/show), so they differ per model. Thinking and effort are one setting: Off = no thinking at all, a level = thinking at that effort, " +
+                        "Model default = nothing is sent and the model decides. Enter uses the highlighted choice for your next message only; d makes it the Settings value for every message." +
+                        (picked?.takeIf { it.value.isNotEmpty() }?.let { "\n${it.label}: ${thinkEffect(it.value, thinkOptions(app.thinkingValues), thinkDefaultWord(app.thinkingDefault))}" }.orEmpty()) +
+                        (picked?.takeIf { it.value.isEmpty() }?.let { "\nUse the Settings value: ${it.note.removePrefix("now: ")}." }.orEmpty()),
+                )
+            }
             ChatMode.PickNote, ChatMode.PickTarget -> {
                 ScreenHeader(
                     if (mode == ChatMode.PickNote) "Attach a note" else if (overwriting != null) "Overwrite a note" else "${target.verb} a note",
@@ -1251,7 +1388,9 @@ fun ChatScreen(app: AppContext) {
                 val statusRows = statusRowCount(statusSegments, LocalContentWidth.current)
                 val bottomGap = if (rememberDensity().tiny) 0 else 1
                 // Everything under the conversation is counted exactly, so it fills the rest of the height.
-                val inputRows = wrapRows(input.text, (LocalContentWidth.current - 4).coerceAtLeast(10)).size.coerceIn(1, maxInputRows())
+                // the reasoning-effort control shares the message field's first row (nothing in a small window, or while a dialog has the screen)
+                val effort = if (question == null && approval == null && !rememberDensity().tiny && !rememberDensity().inline) effortView(app, gen.thinking, LocalContentWidth.current - 4) else null
+                val inputRows = wrapRows(input.text, (LocalContentWidth.current - 4 - (effort?.width ?: 0)).coerceAtLeast(10)).size.coerceIn(1, maxInputRows())
                 val qLines = if (question != null) questionLines(question, panelWidth()) else emptyList()
                 // the buttons of a dialog sit inside it, at the bottom; the message field keeps its buttons under the status bar
                 val panelActions = if (question != null) questionActions(question) else if (approval != null) approvalActions(approval) else null
@@ -1302,7 +1441,7 @@ fun ChatScreen(app: AppContext) {
                     val paneHeight = scrollRows + statusRow + 2
                     val paneBox: @Composable RowScope.() -> Unit = {
                         Box(Modifier.weight(pane.size.toFloat() / total)) {
-                            CompositionLocalProvider(LocalContentWidth provides pane.size) { ThinkingPane(gen, chat, paneHeight - 2, app.config.model, Modifier.height(paneHeight)) }
+                            CompositionLocalProvider(LocalContentWidth provides pane.size) { ThinkingPane(app, gen, chat, paneHeight - 2, app.config.model, Modifier.height(paneHeight)) }
                         }
                     }
                     Row(Modifier.fillMaxWidth()) {
@@ -1311,9 +1450,9 @@ fun ChatScreen(app: AppContext) {
                         if (pane.placement == "right") { HGap(); paneBox() }
                     }
                 } else {
-                    if (pane?.placement == "top") ThinkingPane(gen, chat, pane.size, app.config.model)
+                    if (pane?.placement == "top") ThinkingPane(app, gen, chat, pane.size, app.config.model)
                     conversation()
-                    if (pane != null && pane.placement == "bottom") ThinkingPane(gen, chat, pane.size, app.config.model)
+                    if (pane != null && pane.placement == "bottom") ThinkingPane(app, gen, chat, pane.size, app.config.model)
                 }
                 if (question != null) {
                     val qLines = questionLines(question, panelWidth())
@@ -1370,7 +1509,7 @@ fun ChatScreen(app: AppContext) {
                         Label(fit("  ⏳ queued  " + q.replace('\n', ' '), room.coerceAtLeast(20)) + (if (lastShown) queueHint else ""), color = Palette.Muted)
                     }
                     if (chat.queued.size > QUEUE_SHOWN) Label("  ⏳ … and ${chat.queued.size - QUEUE_SHOWN} more queued", color = Palette.Muted)
-                    TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = maxInputRows(), attachments = chat.attachments)
+                    TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = maxInputRows(), attachments = chat.attachments, trailing = effort?.let { v -> { EffortInline(v) } })
                     StatusBar(statusSegments)
                     ActionBar(chatActions(browsing, entries.isNotEmpty(), chat.artifacts.isNotEmpty()))
                 }
@@ -1428,17 +1567,45 @@ internal fun thinkingPaneLayout(placement: String, percent: Int, width: Int, hei
     return if (outer < 4) null else ThinkingPaneLayout(if (placement == "top") "top" else "bottom", outer - 2)
 }
 
+/**
+ * What the thinking pane says while a reply runs and no thoughts have come yet: not a generic "waiting", but what is true for THIS message. The level is the one the message was
+ * sent with (`/think` for that message, else the Settings value, as the model lists it); before the first token the model is still reading the prompt, which can take a while.
+ */
+private fun thinkingWaitText(app: AppContext, gen: Generation, model: String): String {
+    if (app.thinkingValues.isEmpty()) return "$model has no thinking mode, so no thoughts will appear here; the answer comes directly."
+    val options = thinkOptions(app.thinkingValues)
+    val sent = app.chat.thinkNow().ifEmpty { app.config.thinking }
+    val effective = if (sent in options) sent else "default"
+    if (effective == "off") return "Thinking is off for this message, so no thoughts will appear. Ctrl+G picks a level for the next one."
+    val level = if (effective == "default") autoWord(thinkDefaultWord(app.thinkingDefault)) else effective
+    return if (gen.streamed == 0) "$model is reading the conversation first (think $level). Its thoughts appear here as soon as it starts."
+    else "$model has started answering without thoughts (think $level): a model may skip thinking on an easy question."
+}
+
+/**
+ * ` · think xhigh` for the title of the thinking pane: the level of the message whose thoughts it shows (while a reply runs, the one it was sent with; when idle, the last message's),
+ * with the model default spelled out (`auto (medium)`); nothing for a model that cannot think.
+ */
+private fun thinkTitleWord(app: AppContext, chat: ChatSession, running: Boolean): String {
+    if (app.thinkingValues.isEmpty()) return ""
+    val options = thinkOptions(app.thinkingValues)
+    val own = if (running) chat.thinkNow() else chat.messages.lastOrNull { Oracul.isRealUser(it) }?.think.orEmpty()
+    val setting = own.ifEmpty { app.config.thinking }
+    val effective = if (setting in options) setting else "default"
+    return " · think " + if (effective == "default") autoWord(thinkDefaultWord(app.thinkingDefault)) else effective
+}
+
 /** The split window under the conversation: the model's thoughts as they stream (the end of them, [rows] rows), or the last thoughts it had when it is idle. */
 @Composable
-private fun ThinkingPane(gen: Generation, chat: ChatSession, rows: Int, model: String, modifier: Modifier = Modifier) {
+private fun ThinkingPane(app: AppContext, gen: Generation, chat: ChatSession, rows: Int, model: String, modifier: Modifier = Modifier) {
     val running = gen.state == GenState.Running
     val text = (if (running) gen.liveThinking else chat.messages.lastOrNull { it.role == "assistant" && it.thinking.isNotBlank() }?.thinking.orEmpty()).trim()
     val width = panelWidth()
     val wrapped = if (text.isEmpty()) emptyList() else wrapWords(sanitizeForTerminal(text), width)
     val shown = wrapped.takeLast(rows)
-    Panel("Thinking · $model" + (if (running) " · live" else "") + (if (text.isEmpty()) "" else " · ${UsageStats.compact(text.length.toLong())} characters")) {
+    Panel("Thinking · $model" + thinkTitleWord(app, chat, running) + (if (running) " · live" else "") + (if (text.isEmpty()) "" else " · ${UsageStats.compact(text.length.toLong())} characters")) {
         // nothing to show yet: say so, wrapped to the pane (a side column is narrow)
-        val empty = if (shown.isNotEmpty()) emptyList() else wrapWords(if (running) "Waiting for the model's thoughts… (a model without a thinking mode shows none)" else "The thoughts of a reasoning model appear here while it works.", width)
+        val empty = if (shown.isNotEmpty()) emptyList() else wrapWords(if (running) thinkingWaitText(app, gen, model) else "The thoughts of a reasoning model appear here while it works.", width)
         for (i in 0 until rows) {
             if (empty.isNotEmpty()) Label(empty.getOrNull(i) ?: " ", color = Palette.Dim)
             else if (shown.isNotEmpty()) Label(shown.getOrNull(i)?.takeIf { it.isNotEmpty() } ?: " ", color = Palette.Muted)
@@ -1449,6 +1616,7 @@ private fun ThinkingPane(gen: Generation, chat: ChatSession, rows: Int, model: S
 /** The lines of one message; [entry] is the number of its first select-mode entry (a reply uses one per Markdown block). */
 internal fun messageLines(app: AppContext, message: ChatMessage, entry: Int, width: Int, applyHint: Boolean = false): List<Line> {
     if (Compaction.isSummary(message)) return summaryLines(message, entry, app.config.plainGlyphs, width)
+    OraculSteps.parse(message)?.let { return oraculStepLines(it, entry, app.config.plainGlyphs, width) }
     if (Oracul.isOpinion(message)) return opinionLines(message, entry, app.config, width, applyHint)
     // what Arcana sent in the user's name: marked as a system message (or left out), never shown as "You"
     if (Oracul.isSystemPrompt(message)) {
@@ -1466,7 +1634,7 @@ internal fun messageLines(app: AppContext, message: ChatMessage, entry: Int, wid
         if (user) {
             // Your messages sit on an amber band, so they stand apart from the model's answers.
             val band = Palette.UserBg
-            add(Line("${ModelIcon.user(config.plainGlyphs)} You", Palette.UserName, bold = true, background = band, entry = entry))
+            add(Line("${ModelIcon.user(config.plainGlyphs)} You" + if (message.think.isEmpty()) "" else "  ·  ${if (config.plainGlyphs) "" else "✦ "}think ${message.think}", Palette.UserName, bold = true, background = band, entry = entry))
             wrap(sanitizeForTerminal(message.content), width).forEach { add(Line(it, Palette.UserText, background = band, entry = entry)) }
             message.noteNames.forEach { add(Line(Skills.chipLabel(it)?.let { chip -> sanitizeForTerminal(chip) } ?: "▤ ${sanitizeForTerminal(it.removeSuffix(".md"))}", Palette.UserName, background = band, entry = entry)) }
             message.files.forEach { add(Line("❐ ${sanitizeForTerminal(it.name)}", Palette.UserName, background = band, entry = entry)) }
@@ -1511,6 +1679,24 @@ internal fun thinkingLines(thinking: String, view: String, plain: Boolean, width
     return listOf(Line(header, Palette.ConsoleDim, bold = true)) + wrap(sanitizeForTerminal(text), (width - 2).coerceAtLeast(10)).map { Line("  $it", Palette.ConsoleDim) } + Line("")
 }
 
+/** A tool call of the Oracul, quiet and dim like a tool's own lines but in the Oracul's colour: `Ψ model  tool  what it was about`, then `↳ ✓ how it ended`. */
+private fun oraculStepLines(step: OraculSteps.Step, entry: Int, plain: Boolean, width: Int): List<Line> {
+    val failed = step.status != OraculSteps.OK
+    val head = "${if (plain) "*" else Oracul.GLYPH} ${sanitizeForTerminal(step.model)}  ${step.tool}  ${sanitizeForTerminal(step.summary)}".trim()
+    val mark = if (plain) (if (failed) "x" else "ok") else if (failed) "✕" else "✓"
+    val size = if (step.status == OraculSteps.OK && step.size > 80) "  (${step.size} characters)" else ""
+    val said = when (step.status) {
+        OraculSteps.DENIED -> "you did not allow it"
+        else -> sanitizeForTerminal(step.outcome).ifEmpty { "done" }
+    }
+    val result = "  ${if (plain) "->" else "↳"} $mark ${said.take((width - 8 - size.length).coerceAtLeast(10))}$size"
+    return listOf(
+        Line(head.take(width), Palette.Blue, entry = entry),
+        Line(result.take(width), if (failed) Palette.Red else Palette.Muted, entry = entry),
+        Line(""),
+    )
+}
+
 /** What the Oracul said: a header with the model(s), then the text as Markdown, dimmed apart from its own colours. The whole block is one entry for select mode. */
 private fun opinionLines(message: ChatMessage, entry: Int, config: AppConfig, width: Int, applyHint: Boolean): List<Line> = buildList {
     // a comparison in the window is drawn as columns when the setting says so and every column is wide enough to read
@@ -1547,6 +1733,8 @@ private fun summaryLines(message: ChatMessage, entry: Int, plain: Boolean, width
 
 /** What select mode can pick in [m]: your message as one entry, a reply as its Markdown blocks, tool results as none. */
 internal fun entriesOf(m: ChatMessage): List<String> = when (m.role) {
+    // what the Oracul did with a tool: one entry, so it can be copied
+    OraculSteps.ROLE -> listOf(OraculSteps.parse(m)?.let { OraculSteps.text(it) } ?: m.content)
     "user" -> listOf(m.content)
     // a tool result is one entry, so it can be selected and copied like an answer
     "tool" -> listOf("${m.toolName ?: "tool"} result:\n${m.content.trim()}")
@@ -1601,7 +1789,7 @@ private fun approvalMax(reserve: Int = 0): Int = (LocalContentHeight.current / 3
 
 private fun approvalActions(a: ChatSession.Approval) = listOfNotNull(
     ActionItem("y", a.yes, accent = Palette.Cta),
-    ActionItem("n", if (a.tool == "access" || a.tool == "steps" || a.tool == "memory" || a.tool == "mode") "Not now" else "Deny"),
+    ActionItem("n", if (a.tool == "access" || a.tool == "steps" || a.tool == "memory" || a.tool == "mode" || a.tool == "pull") "Not now" else "Deny"),
     if (a.always) ActionItem("a", "Always this session") else null,
 )
 
@@ -1610,7 +1798,7 @@ private data class SaveRequest(val after: Screen?, val lastAnswerOnly: Boolean =
 
 /** The whole conversation as Markdown: a heading per speaker. */
 private fun transcript(messages: List<ChatMessage>, model: String): String =
-    messages.filter { it.role != "tool" && !(it.toolCalls.isNotEmpty() && it.content.isBlank()) }.joinToString("\n\n") {
+    messages.filter { it.role != "tool" && !it.displayOnly && !(it.toolCalls.isNotEmpty() && it.content.isBlank()) }.joinToString("\n\n") {
         val attached = (it.imageNames + it.files.map { f -> f.name } + it.noteNames.map { n -> "[[${n.removeSuffix(".md")}]]" }).let { a -> if (a.isEmpty()) "" else "\n\n_Attached: ${a.joinToString(", ")}_" }
         val sources = if (it.sources.isEmpty()) "" else "\n\n_Sources: ${it.sources.joinToString(", ") { s -> "[[${s.removeSuffix(".md")}]]" }}_"
         if (Oracul.isOpinion(it)) "## ${Oracul.title(it)}\n\n${Oracul.body(it)}"

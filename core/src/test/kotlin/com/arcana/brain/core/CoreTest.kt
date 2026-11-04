@@ -1704,10 +1704,31 @@ class CoreTest {
     fun theModelListSaysWhatEachModelCanDo() {
         val tags = """{"models":[{"name":"qwen3:30b","size":19000000000},{"name":"gemma4:latest","size":9500000000},{"name":"tiny","size":400000000}]}"""
         assertEquals(listOf("qwen3:30b" to 19_000_000_000L, "gemma4:latest" to 9_500_000_000L, "tiny" to 400_000_000L), OllamaProtocol.parseModelSizes(tags))
-        assertEquals("19 GB · tools · thinking", ModelDetails("qwen3:30b", 19_000_000_000, listOf("completion", "tools", "thinking"), 40960).summary())
-        assertEquals("9.5 GB · tools · vision", ModelDetails("g", 9_500_000_000, listOf("tools", "vision"), 0).summary())
+        assertEquals("19 GB · dense · tools · thinking", ModelDetails("qwen3:30b", 19_000_000_000, listOf("completion", "tools", "thinking"), 40960, dense = true).summary())
+        assertEquals("9.5 GB · dense · tools · vision", ModelDetails("g", 9_500_000_000, listOf("tools", "vision"), 0, dense = true).summary())
         assertEquals("1.2 GB · no tools", ModelDetails("old", 1_200_000_000, listOf("completion"), 0).summary())
+        assertEquals("19.8 GB · tools", ModelDetails("mlx", 19_800_000_000, listOf("tools"), 262144).summary(), "an MLX build says nothing about experts: no architecture is shown")
+        val moe = """{"tensors":[{"name":"draft.model.layers.0.mlp.gate_proj.weight","shape":[8,8]},{"name":"model.language_model.layers.0.experts.down_proj.weight","shape":[128,2816,704]},{"name":"model.language_model.layers.0.mlp.gate_proj.weight","shape":[2112,2816]}]}"""
+        assertEquals(128 to false, OllamaProtocol.parseTensorLayout(moe))
+        assertEquals(0 to true, OllamaProtocol.parseTensorLayout("""{"tensors":[{"name":"language_model.model.layers.0.mlp.gate_proj.weight","shape":[17408,5120]}]}"""))
+        assertEquals(0 to false, OllamaProtocol.parseTensorLayout("""{"tensors":[]}"""))
+        // the Oracul's tool calls are lines for the reader only: kept in the chat, never in a request
+        val step = OraculSteps.message("qwen3.8:27b", "web_search", "qwen3.5 moe", OraculSteps.ERROR, "Error: DuckDuckGo is limiting requests\nTry later")
+        val parsed = OraculSteps.parse(step)!!
+        assertEquals(listOf("qwen3.8:27b", "web_search", "qwen3.5 moe", "error", "Error: DuckDuckGo is limiting requests"), listOf(parsed.model, parsed.tool, parsed.summary, parsed.status, parsed.outcome))
+        assertTrue(step.displayOnly && !ChatMessage.user("x").displayOnly && OraculSteps.parse(ChatMessage.user("x")) == null)
+        val history = listOf(ChatMessage.user("q"), step, ChatMessage.assistant("a"))
+        assertEquals(listOf("user", "assistant"), Compaction.forModel(history).map { it.role })
+        val wire = OllamaProtocol.chatRequest(AppConfig(), history).toString()
+        assertTrue("oracul_step" !in wire && "DuckDuckGo" !in wire, wire)
+        assertEquals(0, Oracul.turnFacts(history, 0).toolErrors, "a step is not a failed tool call of the worker")
+        // the model's own sampling defaults and when Ollama unloads it
+        assertEquals(mapOf("temperature" to "1", "top_k" to "20", "top_p" to "0.95"), OllamaProtocol.parseParameters("""{"parameters":"temperature                    1\ntop_k                          20\ntop_p                          0.95\nstop                           \"<|eot_id|>\""}"""))
+        assertEquals(emptyMap(), OllamaProtocol.parseParameters("""{"capabilities":[]}"""))
+        val ps = OllamaProtocol.parseLoaded("""{"models":[{"name":"qwen3.8:27b","size":30257852136,"size_vram":30257852136,"context_length":131072,"expires_at":"2026-11-04T19:53:13.417599+03:00"}]}""").single()
+        assertEquals(java.time.OffsetDateTime.parse("2026-11-04T19:53:13.417599+03:00").toInstant().toEpochMilli(), ps.expiresAtMillis)
         assertEquals("400 MB", ModelDetails("x", 400_000_000, emptyList(), 0).summary())
+        assertEquals("22.6 GB · MoE · tools · vision · thinking", ModelDetails("m", 22_600_000_000, listOf("tools", "vision", "thinking"), 262144, experts = 128).summary())
     }
 
     @Test

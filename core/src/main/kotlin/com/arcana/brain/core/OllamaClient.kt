@@ -47,8 +47,21 @@ data class ChatMessage(
     @SerialName("tool_name") val toolName: String? = null,
     /** For a reply: what a reasoning model thought before it answered. Kept with the chat to be shown; never sent back to the model. */
     val thinking: String = "",
+    /** For a message of yours: the reasoning level chosen for this message alone (`/think`: a value the model listed, such as `xhigh`, or `off`); blank = the Settings value was used. */
+    val think: String = "",
+    /**
+     * For a summary ([Compaction]): how many messages the chat had right after it was inserted. A reply at or after that position was made with the summary; one before it
+     * was made with the full chat, so its token counts no longer say what the model is sent (0 = not known: a summary from an older version).
+     */
+    val contextAt: Int = 0,
 ) {
     companion object {
+        /**
+     * Roles of messages that are only for the person reading the chat: what a helper model did on its own (see [OraculSteps]). They are kept with the chat and drawn in it,
+     * but every request to a model leaves them out ([Compaction.forModel] and [OllamaProtocol.chatRequest]), so they cost no context and cannot confuse the worker.
+     */
+    val DISPLAY_ONLY = setOf(OraculSteps.ROLE)
+
         fun system(content: String) = ChatMessage("system", content)
         fun user(content: String, images: List<ImageAttachment> = emptyList(), notes: List<String> = emptyList(), files: List<FileAttachment> = emptyList()) =
             ChatMessage("user", content, images.map { it.base64 }, images.map { it.name }, noteNames = notes, files = files)
@@ -58,6 +71,9 @@ data class ChatMessage(
             ChatMessage("assistant", content, stats = stats, toolCalls = calls, thinking = thinking)
         fun toolResult(name: String, content: String) = ChatMessage("tool", content, toolName = name)
     }
+
+    /** A line for the reader only (see [ChatMessage.DISPLAY_ONLY]): shown and saved with the chat, never sent to any model. */
+    val displayOnly: Boolean get() = role in DISPLAY_ONLY
 
     /** The same message with its text files written into its text, which is how the model receives them. */
     fun withFilesInlined() = if (files.isEmpty()) this else copy(content = content + files.joinToString("") { "\n\n---\n" + TextFiles.block(it) }, files = emptyList())
@@ -96,7 +112,7 @@ data class ReplyStats(val promptTokens: Int, val completionTokens: Int, val tota
 }
 
 /** A model Ollama has loaded, from `/api/ps`: its [sizeBytes] (with the context cache), the part in graphics memory ([vramBytes]) and the context it was loaded with. */
-data class LoadedModel(val name: String, val sizeBytes: Long, val vramBytes: Long, val context: Int) {
+data class LoadedModel(val name: String, val sizeBytes: Long, val vramBytes: Long, val context: Int, val expiresAtMillis: Long = 0) {
     /** The share that runs on the CPU, in percent. */
     val cpuPercent: Int get() = if (sizeBytes <= 0) 0 else ((sizeBytes - vramBytes).coerceAtLeast(0) * 100 / sizeBytes).toInt()
 }
@@ -105,21 +121,35 @@ data class LoadedModel(val name: String, val sizeBytes: Long, val vramBytes: Lon
 data class Offload(val model: String, val cpuPercent: Int, val sizeBytes: Long)
 
 /** An installed model: what it can do and how big it is, as Ollama reports it. */
-data class ModelDetails(val name: String, val sizeBytes: Long, val capabilities: List<String>, val contextLength: Int) {
-    /** `19 GB · tools · vision · thinking`, or just the size when Ollama named no capabilities. */
+data class ModelDetails(val name: String, val sizeBytes: Long, val capabilities: List<String>, val contextLength: Int, val experts: Int = 0, val dense: Boolean = false) {
+    /**
+     * The architecture, when Ollama described the model: `MoE` (a mixture of experts: only some experts work on each token, so it is faster than a dense model of its size,
+     * but all of it must fit in memory) or `dense` (Ollama lists a feed-forward size and no experts, or its tensors have no experts); null when neither says (nothing is guessed).
+     */
+    val architecture: String? get() = if (experts > 1) "MoE" else if (dense) "dense" else null
+
+    /** `19 GB · MoE · tools · vision · thinking`, or just the size when Ollama named no capabilities. */
     fun summary(): String {
         val size = if (sizeBytes <= 0) "" else if (sizeBytes >= 1_000_000_000) "%.1f GB".format(sizeBytes / 1e9).replace(".0 GB", " GB") else "${sizeBytes / 1_000_000} MB"
         val can = listOf("tools", "vision", "thinking").filter { it in capabilities }
         return buildList {
             if (size.isNotEmpty()) add(size)
+            architecture?.let { add(it) }
             addAll(can)
             if (capabilities.isNotEmpty() && "tools" !in capabilities) add("no tools")
         }.joinToString(" · ")
     }
 }
 
+/** One line of a model download (`/api/pull`): what Ollama is doing, and for a file being fetched how much of it is done. */
+data class PullProgress(val status: String, val total: Long = 0, val completed: Long = 0) {
+    /** 0 to 100 for a file being fetched; -1 when there is no size (a step like "verifying" or "writing manifest"). */
+    val percent: Int get() = if (total > 0) (completed * 100 / total).toInt().coerceIn(0, 100) else -1
+    val done: Boolean get() = status == "success"
+}
+
 /** What `/api/show` says about a model: its abilities, its context, its experts, and the values its `think` accepts (`true`, `false`, `low`…; empty when it cannot think or Ollama does not say). */
-data class ModelShow(val capabilities: List<String>, val contextLength: Int, val experts: Int, val thinkingValues: List<String>, val thinkingDefault: String = "", val kvBytesPerToken: Long = 0)
+data class ModelShow(val capabilities: List<String>, val contextLength: Int, val experts: Int, val thinkingValues: List<String>, val thinkingDefault: String = "", val kvBytesPerToken: Long = 0, val dense: Boolean = false, val parameters: Map<String, String> = emptyMap())
 
 class OllamaException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
@@ -138,7 +168,13 @@ private data class WireChunk(
 private data class WireMessage(val content: String = "", val thinking: String = "", @SerialName("tool_calls") val toolCalls: List<ToolCall> = emptyList())
 
 @Serializable
-private data class WireShow(val capabilities: List<String> = emptyList(), @SerialName("model_info") val modelInfo: JsonObject = JsonObject(emptyMap()), val thinking: JsonObject? = null)
+private data class WireShow(val capabilities: List<String> = emptyList(), @SerialName("model_info") val modelInfo: JsonObject = JsonObject(emptyMap()), val thinking: JsonObject? = null, val tensors: List<WireTensor> = emptyList(), val parameters: String? = null)
+
+@Serializable
+private data class WireTensor(val name: String = "", val shape: List<Long> = emptyList())
+
+@Serializable
+private data class WirePull(val status: String = "", val digest: String = "", val total: Long = 0, val completed: Long = 0, val error: String? = null)
 
 @Serializable
 private data class WireTags(val models: List<WireModel> = emptyList())
@@ -154,9 +190,10 @@ object OllamaProtocol {
         put("model", config.model)
         put("stream", true)
         if (think != null) put("think", think)
+        config.keepAliveValue()?.let { put("keep_alive", it) }
         if (jsonMode) put("format", "json")
         if (tools != null && tools.isNotEmpty()) put("tools", tools)
-        put("messages", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ChatMessage.serializer()), messages.map { it.withFilesInlined().copy(thinking = "") }))
+        put("messages", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ChatMessage.serializer()), messages.filter { !it.displayOnly }.map { it.withFilesInlined().copy(thinking = "", think = "") }))
         put("options", buildJsonObject {
             put("temperature", config.temperature)
             if (config.contextTokens > 0) put("num_ctx", config.contextTokens)
@@ -189,6 +226,25 @@ object OllamaProtocol {
         values to ((t["default"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "")
     }.getOrDefault(emptyList<String>() to "")
 
+    /**
+     * The model's own sampling defaults, from the `parameters` text of `/api/show` (its Modelfile: `temperature 1`, `top_k 20`…), in the order written. `stop` lines are left out. A model that
+     * lists none (a plain GGUF) gives an empty map: then Ollama's general defaults apply.
+     */
+    fun parseParameters(body: String): Map<String, String> = runCatching {
+        val text = json.decodeFromString<WireShow>(body).parameters.orEmpty()
+        text.lineSequence().mapNotNull { l ->
+            val parts = l.trim().split(Regex("\\s+"), limit = 2)
+            if (parts.size == 2 && parts[0] != "stop") parts[0] to parts[1].trim() else null
+        }.toMap(LinkedHashMap())
+    }.getOrDefault(emptyMap())
+
+    /** One line of the stream of `/api/pull`; an `error` line throws (the model does not exist, the disk is full, the registry cannot be reached). */
+    fun parsePull(line: String): PullProgress {
+        val w = json.decodeFromString<WirePull>(line)
+        w.error?.let { throw OllamaException(it) }
+        return PullProgress(w.status, w.total, w.completed)
+    }
+
     /** The `think` value a setting asks for ("off", "on", a level; "default" asks for none), or null. */
     fun thinkValue(setting: String): kotlinx.serialization.json.JsonElement? = when (setting.lowercase()) {
         "", "default" -> null
@@ -202,6 +258,28 @@ object OllamaProtocol {
         json.decodeFromString<WireShow>(body).modelInfo.entries
             .firstOrNull { it.key.endsWith(".expert_count") }?.value?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() } ?: 0
     }.getOrDefault(0)
+
+    /**
+     * True when `model_info` positively describes a dense model: it names a feed-forward size and no expert count. A model Ollama describes only thinly (the MLX builds, for
+     * example, list a few keys and no expert count even when they are a mixture of experts) is not dense, it is unknown.
+     */
+    fun parseDense(body: String): Boolean = runCatching {
+        val keys = json.decodeFromString<WireShow>(body).modelInfo.keys
+        keys.any { it.endsWith(".feed_forward_length") } && keys.none { it.endsWith(".expert_count") }
+    }.getOrDefault(false)
+
+    /**
+     * The layout from the tensor list of `/api/show` with `verbose` (for builds whose `model_info` is thin, such as MLX): `experts` is the expert count when a layer has expert
+     * tensors (a name with `experts` or `_exps`, shape `[experts, …]`) and `dense` is true when there are feed-forward tensors and no expert ones. Both are 0/false when unknown.
+     * Draft models shipped inside the model (`draft.…`) are not looked at.
+     */
+    fun parseTensorLayout(body: String): Pair<Int, Boolean> = runCatching {
+        val tensors = json.decodeFromString<WireShow>(body).tensors.filter { !it.name.startsWith("draft.") }
+        val expert = Regex("""(^|[._])(experts|ffn_(gate|up|down)_exps)([._]|$)""")
+        val experts = tensors.filter { expert.containsMatchIn(it.name) && it.shape.size >= 3 }.maxOfOrNull { it.shape[0] }?.toInt() ?: 0
+        val ffn = tensors.any { Regex("""(mlp|ffn)[._](gate|up|down)""").containsMatchIn(it.name) }
+        experts to (experts == 0 && ffn && tensors.none { expert.containsMatchIn(it.name) })
+    }.getOrDefault(0 to false)
 
     /** The longest context the model supports, from `model_info` (`<architecture>.context_length`); 0 when it does not say. */
     fun parseContextLength(body: String): Int = runCatching {
@@ -253,7 +331,8 @@ object OllamaProtocol {
         models.mapNotNull { it as? kotlinx.serialization.json.JsonObject }.mapNotNull { m ->
             fun long(key: String) = (m[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() ?: 0L
             val name = listOf("name", "model").firstNotNullOfOrNull { (m[it] as? kotlinx.serialization.json.JsonPrimitive)?.content } ?: return@mapNotNull null
-            LoadedModel(name, long("size"), long("size_vram"), long("context_length").toInt())
+            val expires = (m["expires_at"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() } ?: 0L
+            LoadedModel(name, long("size"), long("size_vram"), long("context_length").toInt(), expires)
         }
     }.getOrDefault(emptyList())
 
@@ -349,7 +428,26 @@ class OllamaClient(private val config: () -> AppConfig) {
         }
         if (response.statusCode() != 200) return@withContext ModelShow(emptyList(), 0, 0, emptyList())
         val (values, default) = OllamaProtocol.parseThinking(response.body())
-        ModelShow(OllamaProtocol.parseCapabilities(response.body()), OllamaProtocol.parseContextLength(response.body()), OllamaProtocol.parseExperts(response.body()), values, default, OllamaProtocol.parseKvBytesPerToken(response.body()))
+        var experts = OllamaProtocol.parseExperts(response.body())
+        var dense = OllamaProtocol.parseDense(response.body())
+        if (experts == 0 && !dense) {
+            // a thin `model_info` (MLX builds): the tensor list tells; asked once per model, it is long
+            val (e, d) = layoutCache.getOrPut(cfg.ollamaUrl + " " + model) { runCatching { tensorLayout(cfg, model) }.getOrNull() ?: return@getOrPut 0 to false }
+            experts = e; dense = d
+        }
+        ModelShow(OllamaProtocol.parseCapabilities(response.body()), OllamaProtocol.parseContextLength(response.body()), experts, values, default, OllamaProtocol.parseKvBytesPerToken(response.body()), dense, OllamaProtocol.parseParameters(response.body()))
+    }
+
+    private val layoutCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Int, Boolean>>()
+
+    private fun tensorLayout(cfg: AppConfig, model: String): Pair<Int, Boolean> {
+        val request = HttpRequest.newBuilder(endpoint(cfg, "/api/show"))
+            .timeout(Duration.ofSeconds(10))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(buildJsonObject { put("model", model); put("verbose", true) }.toString()))
+            .build()
+        val response = http.send(request, HttpResponse.BodyHandlers.ofString())
+        return if (response.statusCode() == 200) OllamaProtocol.parseTensorLayout(response.body()) else 0 to false
     }
 
     /** The context window the running [model] really has (what Ollama loaded it with), or 0 when it is not loaded or this Ollama version does not say. */
@@ -388,7 +486,7 @@ class OllamaClient(private val config: () -> AppConfig) {
         if (response.statusCode() != 200) throw OllamaException("Ollama returned HTTP ${response.statusCode()}")
         OllamaProtocol.parseModelSizes(response.body()).map { (name, size) ->
             val shown = runCatching { show(name) }.getOrNull()
-            ModelDetails(name, size, shown?.capabilities.orEmpty(), shown?.contextLength ?: 0)
+            ModelDetails(name, size, shown?.capabilities.orEmpty(), shown?.contextLength ?: 0, shown?.experts ?: 0, shown?.dense ?: false)
         }
     }
 
@@ -430,6 +528,37 @@ class OllamaClient(private val config: () -> AppConfig) {
     }
 
     suspend fun embed(model: String, inputs: List<String>): List<FloatArray> = withContext(Dispatchers.IO) { embedBlocking(model, inputs) }
+
+    /**
+     * Downloads [model] into Ollama (what `ollama pull` does, over HTTP, so it works wherever the server runs and needs no command line): a stream of progress lines, the last one
+     * `success`. Cancelling the collector closes the connection; what was fetched is kept by Ollama, so the next pull continues from there.
+     */
+    fun pull(model: String): Flow<PullProgress> = flow {
+        val cfg = config()
+        val request = HttpRequest.newBuilder(endpoint(cfg, "/api/pull"))
+            .timeout(Duration.ofHours(4))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(buildJsonObject { put("model", model); put("stream", true) }.toString()))
+            .build()
+        val future = http.sendAsync(request, HttpResponse.BodyHandlers.ofLines())
+        val handle = currentCoroutineContext().job.invokeOnCompletion { future.cancel(true) }
+        try {
+            val response = try { future.get() } catch (e: Exception) { throw OllamaException("Cannot reach Ollama at ${cfg.ollamaUrl}: ${e.cause?.message ?: e.message}", e) }
+            if (response.statusCode() != 200) {
+                val body = response.body().use { it.toList().joinToString("\n") }
+                throw OllamaException("Ollama returned HTTP ${response.statusCode()}: ${errorText(body)}")
+            }
+            response.body().use { lines ->
+                for (line in lines) {
+                    currentCoroutineContext().ensureActive()
+                    if (line.isBlank()) continue
+                    emit(OllamaProtocol.parsePull(line))
+                }
+            }
+        } finally {
+            handle.dispose()
+        }
+    }.flowOn(Dispatchers.IO)
 
     suspend fun listModels(): List<String> = withContext(Dispatchers.IO) {
         val cfg = config()

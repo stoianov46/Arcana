@@ -311,3 +311,17 @@ class SemanticSearch(val index: EmbeddingIndex) {
         const val MAX_LIMIT = 10
     }
 }
+
+
+/** The one-step setup of semantic search from the app (`/semantic`): which embedding model, how big, and how its download is told to the user. */
+object SemanticSetup {
+    const val RECOMMENDED = "nomic-embed-text"
+    const val APPROX_SIZE = "about 270 MB"
+
+    /** `Downloading nomic-embed-text 45% (121 of 270 MB)`, or the step Ollama is on (`verifying sha256 digest`). */
+    fun progressText(model: String, p: PullProgress): String = when {
+        p.done -> "Downloaded $model."
+        p.percent >= 0 -> "Downloading $model ${p.percent}% (${p.completed / 1_000_000} of ${p.total / 1_000_000} MB)"
+        else -> "Downloading $model: ${p.status}"
+    }
+}

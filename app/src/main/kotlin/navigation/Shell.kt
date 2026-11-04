@@ -24,6 +24,7 @@ import com.arcana.brain.app.design.LocalContentWidth
 import com.arcana.brain.app.design.LocalPlainGlyphs
 import com.arcana.brain.app.design.LocalUiScale
 import com.arcana.brain.app.design.Palette
+import com.arcana.brain.app.design.RainbowText
 import com.arcana.brain.app.design.Panel
 import com.arcana.brain.app.design.StatusPart
 import com.arcana.brain.app.design.StatusSegment
@@ -326,25 +327,7 @@ private fun Sidebar(navigator: Navigator, width: Int, collapsed: Boolean, rows: 
  * is laid over the letters twice and moves, so every colour appears two times in the word.
  */
 @Composable
-private fun Logo(text: String, busy: Boolean) {
-    var tick by remember { mutableStateOf(0) }
-    LaunchedEffect(busy) {
-        while (busy) {
-            delay(150)
-            tick = (tick + 1) % 40
-        }
-    }
-    if (!busy) {
-        Label(text, color = Palette.Accent, textStyle = TextStyle.Bold)
-        return
-    }
-    Row {
-        text.forEachIndexed { i, ch ->
-            val phase = 2 * i.toDouble() / text.length.coerceAtLeast(2) - tick.toDouble() / 40
-            Label(ch.toString(), color = Palette.logoShade(phase), textStyle = TextStyle.Bold)
-        }
-    }
-}
+private fun Logo(text: String, busy: Boolean) = RainbowText(text, busy, Palette.Accent)
 
 /**
  * What the bottom bar says, as plain coloured text (no blocks of colour): the model and its connection, the Oracul, the tokens used since Arcana started, then everything about the

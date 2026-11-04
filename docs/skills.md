@@ -83,7 +83,7 @@ model replies WITHOUT a tool call (it wants to finish)
    └─ all steps done or skipped ─► the reply is accepted, the turn ends
    │
    ▼
-the run ends at the user's NEXT message or /new (the badge disappears); a new chip starts a new run
+the run ends at the user's NEXT message or /new (the badge disappears); a new chip starts a new run. Exception: a run that was CUT OFF (the server did not answer, a reply failed: no final answer followed its last step) survives a next message without a chip, such as `continue`: its badge, its counts and its gate stay (`ChatSession.runInterrupted`)
 ```
 
 Chip vs `use_skill`: with a chip the text is part of the **user message** (and is re-sent with every request while that message is inside the

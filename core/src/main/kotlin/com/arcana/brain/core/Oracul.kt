@@ -36,7 +36,7 @@ object Oracul {
 
     /** [config] as the Oracul and the judge see it: asking [model], on their own server when [AppConfig.oraculUrl] is set. */
     fun serverConfig(config: AppConfig, model: String): AppConfig =
-        config.oraculUrl.trim().let { if (it.isEmpty()) config.copy(model = model) else config.copy(model = model, ollamaUrl = it.trimEnd('/')) }
+        config.oraculUrl.trim().let { if (it.isEmpty()) config.forModel(model) else config.forModel(model).copy(ollamaUrl = it.trimEnd('/'), keepAlive = "") }
 
     /** Every model that answers a comparison: the Oracul model, then the extra ones ([AppConfig.oraculExtra], comma-separated), without blanks or repeats. Empty when the Oracul is off. */
     fun models(config: AppConfig): List<String> {
@@ -363,10 +363,12 @@ object Oracul {
     data class TurnFacts(val toolErrors: Int, val skippedSteps: Int, val toolNames: List<String>, val failedTurns: Int = 0)
 
     /** A tool result that says the call failed: an error, a timeout or a non-zero exit code (a refusal by the user is not a failure of the worker). */
-    fun isFailure(message: ChatMessage): Boolean =
-        message.role == "tool" && (message.content.startsWith("Error:") || message.content.startsWith("Timed out") || message.content.startsWith("exit code ") && !message.content.startsWith("exit code 0"))
+    fun isFailure(message: ChatMessage): Boolean = message.role == "tool" && isFailureText(message.content)
 
-    internal fun isRealUser(message: ChatMessage) = message.role == "user" && !isOpinion(message) && !Compaction.isSummary(message)
+    /** Whether a tool's result text says it failed. */
+    fun isFailureText(text: String): Boolean = text.startsWith("Error:") || text.startsWith("Timed out") || text.startsWith("exit code ") && !text.startsWith("exit code 0")
+
+    fun isRealUser(message: ChatMessage) = message.role == "user" && !isOpinion(message) && !Compaction.isSummary(message)
 
     /** The messages from the user's last real message to the end. */
     fun lastTurn(messages: List<ChatMessage>): List<ChatMessage> = messages.subList(messages.indexOfLast { isRealUser(it) }.coerceAtLeast(0), messages.size)
@@ -466,4 +468,38 @@ object Oracul {
         }
         return text.toString().trim()
     }
+}
+
+
+/**
+ * One tool call the Oracul made on its own (checking an answer, advising a worker that is stuck, answering for a comparison), as a line of the chat for the reader: which model, which
+ * tool, what it was about and how it ended. Its role is [ROLE], one of [ChatMessage.DISPLAY_ONLY]: kept with the chat, never sent to a model (the worker would pay for the result in
+ * context on every later turn, and a small model confuses calls it never made with its own; what the Oracul concluded is in its block, which the worker does read).
+ */
+object OraculSteps {
+    const val ROLE = "oracul_step"
+    const val OK = "ok"
+    const val ERROR = "error"
+    const val DENIED = "denied"
+
+    /** What one step shows. [outcome] is the first line of the result, shortened; [size] its length in characters. */
+    data class Step(val model: String, val tool: String, val summary: String, val status: String, val outcome: String, val size: Int)
+
+    /** The step for a call of [tool] ([summary]: what it was about) that ended as [status] with [result] (the text the tool returned, or the reason it was not run). */
+    fun message(model: String, tool: String, summary: String, status: String, result: String): ChatMessage {
+        val flat = { text: String -> text.replace(Regex("\\s+"), " ").trim() }
+        val first = flat(result.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()).take(160)
+        return ChatMessage(ROLE, listOf(flat(model), flat(summary).take(120), status, first, result.length.toString()).joinToString("\n"), toolName = tool)
+    }
+
+    /** The step in [message], or null when it is not one. */
+    fun parse(message: ChatMessage): Step? {
+        if (message.role != ROLE) return null
+        val p = message.content.split("\n", limit = 5)
+        if (p.size < 5) return null
+        return Step(p[0], message.toolName.orEmpty(), p[1], p[2], p[3], p[4].toIntOrNull() ?: 0)
+    }
+
+    /** The plain text of a step, for copying and for the Markdown export. */
+    fun text(step: Step): String = "${Oracul.GLYPH} ${step.model} used ${step.tool}${if (step.summary.isEmpty()) "" else " " + step.summary}: ${when (step.status) { DENIED -> "not allowed"; ERROR -> "failed: " + step.outcome; else -> step.outcome.ifEmpty { "done" } + if (step.size > 80) " (${step.size} characters)" else "" }}"
 }

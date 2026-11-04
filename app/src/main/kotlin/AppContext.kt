@@ -68,6 +68,9 @@ class AppContext(
 
     /** What the model does when `think` is not sent (`true` or `false`; empty when unknown). */
     var thinkingDefault by mutableStateOf("")
+
+    /** The model's own sampling defaults from its Modelfile (`temperature`, `top_k`, `top_p`…), as `/api/show` lists them; empty when it lists none. */
+    var modelParameters by mutableStateOf<Map<String, String>>(emptyMap())
         private set
 
     /** What a token of context costs in memory for the chat model (0 = unknown), from `/api/show`: with the weights and this machine's memory it gives [tokenRoom]. */
@@ -242,7 +245,10 @@ class AppContext(
         experts = shown?.experts ?: 0
         kvBytesPerToken = shown?.kvBytesPerToken ?: 0L
         thinkingValues = shown?.thinkingValues.orEmpty()
+        modelParameters = shown?.parameters.orEmpty()
+        com.arcana.brain.app.screens.ThinkLevels.options = com.arcana.brain.app.screens.thinkOptions(thinkingValues)
         thinkingDefault = shown?.thinkingDefault.orEmpty()
+        com.arcana.brain.app.screens.ThinkLevels.defaultWord = com.arcana.brain.app.screens.thinkDefaultWord(thinkingDefault)
         tools = capabilities?.let { "tools" in it }
     }
 

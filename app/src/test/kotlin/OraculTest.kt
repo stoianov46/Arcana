@@ -84,6 +84,23 @@ class OraculTest {
     }
 
     @Test
+    fun severalMessagesQueuedWhileTheModelWorksAreSentTogetherAsOneMessage() {
+        val f = fake()
+        try {
+            f.script = { model, _ -> if (model == "worker") Thread.sleep(800).let { null } else null } // the first reply takes a while, so both are queued before it ends
+            val chat = app(f).chat
+            chat.send("first")
+            chat.enqueue("second")
+            chat.enqueue("third")
+            val deadline = System.currentTimeMillis() + 15_000
+            while (chat.messages.count { it.role == "assistant" } < 2 && System.currentTimeMillis() < deadline) Thread.sleep(50)
+            assertEquals(listOf("first", "second\n\nthird"), chat.messages.filter { it.role == "user" }.map { it.content }, "one message with both, not two requests")
+            assertEquals(2, chat.messages.count { it.role == "assistant" })
+            assertTrue(chat.queued.isEmpty())
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun theThoughtsOfAReasoningModelAreFollowedLiveAndKeptWithTheAnswer() {
         val f = fake()
         try {
@@ -211,8 +228,14 @@ class OraculTest {
             assertTrue("seven is prime" in f.asked[1].second, "the result of the tool went back to the Oracul")
             assertTrue(f.asked[0].second.contains("\"tools\"") && "CHECK the answer" in f.asked[0].second, "it was given tools and told to check with them")
             val block = chat.messages.last().content
-            assertTrue("misses the edge case" in block && block.trimEnd().endsWith("_Checked with: read_note_"), block)
+            assertTrue("misses the edge case" in block && "_Checked with: read_note (" in block && "facts.md" in block.substringAfter("_Checked with:"), block)
             assertEquals(listOf("read_note"), app.toolUsage.map { it.tool }, "its tool calls are recorded like the worker's")
+            // the reader sees the call in the chat, before the block; no model is ever sent it
+            val steps = chat.messages.mapNotNull { com.arcana.brain.core.OraculSteps.parse(it) }
+            assertEquals(1, steps.size, "one line for the one call")
+            assertTrue(steps[0].model == "big" && steps[0].tool == "read_note" && "facts.md" in steps[0].summary && steps[0].status == "ok", steps[0].toString())
+            assertTrue(chat.messages.indexOfFirst { it.displayOnly } < chat.messages.lastIndex, "the call comes before the opinion block")
+            assertTrue(com.arcana.brain.core.Compaction.forModel(chat.messages.toList()).none { it.displayOnly }, "the model's history has none")
         } finally { f.server.stop(0) }
     }
 

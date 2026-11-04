@@ -23,6 +23,8 @@ import com.arcana.brain.core.Flow
 import com.arcana.brain.core.MAX_CONSULTS
 import com.arcana.brain.core.Route
 import com.arcana.brain.core.Router
+import com.arcana.brain.core.OraculSteps
+import com.arcana.brain.core.SemanticSetup
 import com.arcana.brain.core.SkillRoles
 import com.arcana.brain.core.StageKind
 import com.arcana.brain.core.Skills
@@ -90,7 +92,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /**
      * Messages typed while the model works. A tool turn picks them up at its next round (they join it as your messages, so a correction or a
-     * clarification reaches the model before it goes further); a turn without tool rounds sends them one by one when its reply is done.
+     * clarification reaches the model before it goes further); a turn without tool rounds sends them all together, as one message, when its reply is done.
      * Cancelling or a failure gives them back to the message field (see [takeQueued]).
      */
     val queued = mutableStateListOf<String>()
@@ -134,7 +136,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** The reply being written. It lives as long as the app does. */
     val gen: Generation by lazy {
         Generation(
-            app.scope, OllamaClient { app.config.let { c -> runWorker?.let { m -> c.copy(model = m) } ?: c } },
+            app.scope, OllamaClient { app.config.let { c -> (runWorker?.let { m -> c.forModel(m) } ?: c).let { w -> thinkNow().takeIf { it.isNotEmpty() }?.let { level -> w.copy(thinking = level) } ?: w } } },
             onBusy = { busy -> app.busy = (app.busy + if (busy) 1 else -1).coerceAtLeast(0) },
             onUsage = { chunk -> app.recordUsage("Chat", chunk, runWorker ?: app.config.model) },
             onComplete = { text, stats -> finishReply(text, stats) },
@@ -156,6 +158,15 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      */
     var skillRun by androidx.compose.runtime.mutableStateOf<SkillRun?>(null)
         private set
+
+    /**
+     * The reasoning level picked for the next message only (`/think`: a value of the model's own list, such as `xhigh`, `off` or `default`); blank = the Settings value. It
+     * goes onto the message when it is sent ([ChatMessage.think]) and is cleared then.
+     */
+    var thinkNext by androidx.compose.runtime.mutableStateOf("")
+
+    /** The level the message being answered was sent with (every round of its tool use too); blank = the Settings value. */
+    fun thinkNow(): String = messages.lastOrNull { Oracul.isRealUser(it) }?.think.orEmpty()
 
     /** Changes whenever [skillRun] makes progress, so the status bar redraws. */
     var skillTick by androidx.compose.runtime.mutableIntStateOf(0)
@@ -673,6 +684,69 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     private var semanticIndex: Triple<String, String, EmbeddingIndex>? = null
 
+    /** The semantic search is on: an embedding model is set and installed on the server (what [semanticIndexFor] needs besides a vault). */
+    fun semanticOn(config: AppConfig = app.config): Boolean {
+        val model = config.embedModel.trim().ifEmpty { return false }
+        val installed = when (val c = app.connection) { is Connection.Online -> c.models; is Connection.ModelMissing -> c.models; else -> return false }
+        return installed.any { ModelStatus.sameModel(it, model) }
+    }
+
+    /**
+     * Makes sure the embedding model for `semantic_search` is installed and chosen, for the first call of the tool: when it is not, **asks the user once** (a dialog "Download a model?"
+     * with the model, its size and where it comes from), downloads it through Ollama's `/api/pull` with progress under the conversation, and selects it in the settings. The first search
+     * then builds the index by itself. Returns null when it is ready, else the reason, as the tool's error: the user said no, Ollama could not be reached, the download failed.
+     */
+    private suspend fun ensureSemanticModel(): String? {
+        if (semanticOn()) return null
+        val model = app.config.embedModel.trim().ifEmpty { SemanticSetup.RECOMMENDED }
+        val have = try { app.client.listModels().any { ModelStatus.sameModel(it, model) } } catch (e: kotlin.coroutines.cancellation.CancellationException) { throw e } catch (e: Exception) {
+            return "semantic search could not be set up: ${e.message}. Use search_notes or grep_files instead."
+        }
+        if (!have) {
+            val choice = awaitApproval(Approval(
+                "pull", "ollama pull $model",
+                listOf(
+                    "The model wants to search your notes by meaning (semantic_search), which needs an embedding model, and none is installed.",
+                    "Download $model (${if (model == SemanticSetup.RECOMMENDED) SemanticSetup.APPROX_SIZE else "size depends on the model"}) into Ollama at ${app.config.ollamaUrl}? Only the model file is downloaded, from the Ollama library; your notes stay on this machine.",
+                    "Esc stops the download; Ollama keeps what it fetched. This is asked once.",
+                ),
+                heading = "Download a model?", icon = "⇩", yes = "Download", always = false,
+            ))
+            if (choice == ApprovalChoice.Deny) return "the user declined to download the embedding model $model. Use search_notes or grep_files instead."
+        }
+        return installEmbeddingModel(model) {}?.let { "$it Use search_notes or grep_files instead." }
+    }
+
+    /**
+     * Downloads [model] through Ollama's `/api/pull` when it is not installed (progress to [onProgress] and under the conversation), selects it as the semantic search model in the
+     * settings and reads the server's model list again. Returns null when it is ready, else why not (Ollama cannot be reached, the download failed, the model is not there afterwards).
+     * It asks nothing: the callers are a dialog (the model called `semantic_search`) and the Settings row the user chose on purpose (Settings → Vault → Semantic search model).
+     */
+    suspend fun installEmbeddingModel(model: String, onProgress: (String) -> Unit): String? {
+        try {
+            val have = app.client.listModels().any { ModelStatus.sameModel(it, model) }
+            if (!have) {
+                indexing = "Downloading $model…"
+                try {
+                    var shown = 0L
+                    app.client.pull(model).collect { p ->
+                        val now = System.currentTimeMillis()
+                        if (now - shown > 150 || p.done) { shown = now; SemanticSetup.progressText(model, p).let { indexing = it; onProgress(it) } }
+                    }
+                } finally {
+                    indexing = null
+                }
+            }
+            app.update(app.config.copy(embedModel = model))
+            app.refreshConnection()
+            return if (semanticOn()) null else "the embedding model $model is not available on the Ollama server after the download."
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return "semantic search could not be set up: ${e.message}."
+        }
+    }
+
     /**
      * The semantic index of [vault] for the embedding model of [config], when one is set and installed on the Ollama server; null otherwise (then the
      * `semantic_search` tool is not offered). One index object per vault and model is kept, so it is not read from disk for every message.
@@ -720,6 +794,17 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         added += request
         var loopStep = LoopGuard.Step.None
         for (call in calls) {
+            // the first semantic_search without an embedding model: set it up now (the user is asked once), then the call goes on with a toolbox that has the index
+            if (call.name == "semantic_search" && toolbox != null && !semanticOn()) {
+                val problem = ensureSemanticModel()
+                if (problem != null) {
+                    val message = ChatMessage.toolResult(call.name, "Error: $problem")
+                    add(message)
+                    added += message
+                    continue
+                }
+                toolbox = toolboxFor(app.config)
+            }
             // read again for every call: an earlier call of this round may have switched the mode, which rebuilds the toolbox
             val box = toolbox
             if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || call.name == CHAT_STATS || call.name == TODO || call.name == CONSULT || box == null) {
@@ -1047,7 +1132,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }
         // an automatic opinion on the previous answer, still being written, is out of date now: the user has moved on (and it must not keep the Oracul pill lit through the new turn)
         autoConsult?.cancel()
-        add(ChatMessage.user(body, sent.pictures, sent.notes, sent.files))
+        // a level picked with /think counts for this message only, and only when the model lists it (the model may have been changed since)
+        val level = thinkNext.takeIf { it in com.arcana.brain.app.screens.thinkOptions(app.thinkingValues) }.orEmpty()
+        thinkNext = ""
+        add(ChatMessage.user(body, sent.pictures, sent.notes, sent.files).copy(think = level))
         app.session.log(SessionKind.Asked, body)
         // a job that clearly needs file tools, with tools off: offer them now instead of letting the model say it cannot
         if (!app.config.toolsEnabled && app.tools != false && !toolsDeclined && looksLikeToolTask(body)) {
@@ -1109,7 +1197,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             if (calls.isEmpty()) return text.toString().trim() to used
             messages = messages + ChatMessage.assistantCalls(text.toString().trim(), calls)
             for (call in calls) {
-                used += call.name
+                // what it did is told twice: live in the reply line while the tool runs (see oraculCall), and in the closing "Checked with" line of its block, with the arguments
+                used += call.name + (box.find(call.name)?.summary(call.arguments)?.trim()?.takeIf { it.isNotEmpty() }?.let { " (" + it.replace(Regex("\\s+"), " ").take(70) + ")" } ?: "")
                 messages = messages + ChatMessage.toolResult(call.name, oraculCall(model, box, call))
             }
         }
@@ -1133,8 +1222,13 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             allowed = awaitApproval(pending) != ApprovalChoice.Deny
         }
         val startedAt = System.currentTimeMillis()
-        val result = if (allowed) runInterruptible(Dispatchers.IO) { box.execute(call) } else "The user denied this action. Do not try it again; say what you would have done instead."
+        // the reply line names the call while it runs: "Ψ model is using read_file …" (without this the Oracul's tools were invisible until its block was added)
+        val stage = consultingStage
+        if (allowed) consultingStage = "using ${call.name} ${spec.summary(call.arguments).replace(Regex("\\s+"), " ").take(60)}".trim()
+        val result = if (allowed) try { runInterruptible(Dispatchers.IO) { box.execute(call) } } finally { consultingStage = stage } else "The user denied this action. Do not try it again; say what you would have done instead."
         app.recordToolUse(ToolUseRecord(startedAt, call.name, System.currentTimeMillis() - startedAt, if (!allowed) "denied" else if (result.startsWith("Error:")) "error" else "ok", result.length))
+        // the reader sees every call in the chat (what it was about, how it ended); no model is sent it: see OraculSteps
+        add(OraculSteps.message(model, call.name, spec.summary(call.arguments), when { !allowed -> OraculSteps.DENIED; Oracul.isFailureText(result) -> OraculSteps.ERROR; else -> OraculSteps.OK }, result))
         if (allowed && !result.startsWith("Error:")) {
             app.session.log(SessionKind.Tool, "Oracul: ${call.name} ${spec.summary(call.arguments)}")
             if (spec.risk != ToolRisk.Read) app.brain.changed()
@@ -1266,7 +1360,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     suspend fun takeOver(): String {
         val model = Oracul.model(app.config).ifEmpty { error(Oracul.missingModelMessage(app.config)) }
         check(consulting == null) { "The Oracul is already working." }
-        check(messages.lastOrNull()?.role == "user" || messages.lastOrNull()?.role == "tool") { "There is no unanswered message to take over." }
+        check(messages.lastOrNull { !it.displayOnly }?.role.let { it == "user" || it == "tool" }) { "There is no unanswered message to take over." }
         consulting = model
         try {
             val config = app.config.copy(model = model)
@@ -1365,6 +1459,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             // the chat may have grown while the model wrote (the cut is counted from the start, so it is still the right place)
             val at = cut.coerceAtMost(messages.size)
             messages.add(at, Compaction.summaryMessage(summary))
+            // the last reply's token counts are from before this: the context meter estimates until the next reply says (see contextTokens)
+            messages[at] = messages[at].copy(contextAt = messages.size)
             if (savedMessages >= at) savedMessages++
             persist()
             app.recordEvent(Events.COMPACT, if (auto) "auto" else "manual")
@@ -1389,13 +1485,23 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         return usage.first * 100 >= percent
     }
 
+    /** The run was cut off: the message before the one being answered is not a final answer of the model (it is a tool call or result, or your own message that got no reply). */
+    private fun runInterrupted(history: List<ChatMessage>): Boolean {
+        if (skillRun?.finished != false) return false
+        val before = history.dropLast(1).lastOrNull() ?: return false
+        return before.role != "assistant" || before.toolCalls.isNotEmpty()
+    }
+
     private fun ask(body: String) {
         val history = messages.toList()
         val modelCanUseTools = app.tools != false
         val box = if (!modelCanUseTools) null else toolboxFor(app.config)
         toolbox = box
         // a new message of the user ends any earlier run (the gate must not drag an unrelated question back into an unfinished skill)...
-        if (skillRun != null) { skillRun = null; skillTick++ }
+        // ...unless the run was cut off (the server did not answer, a failed reply: no final answer followed its last step) and this message has no skill chip of its own:
+        // then it is the same job going on ("continue"), and its progress and its gate stay
+        val newChip = history.lastOrNull { it.role == "user" }?.noteNames?.any { Skills.isEntry(it) } == true
+        if (skillRun != null && !(runInterrupted(history) && !newChip)) { skillRun = null; skillTick++ }
         clearRoles()
         stuckAdvised = 0
         turnCalls.clear()
@@ -1480,9 +1586,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             app.recordEvent(Events.TODO_NUDGE, open.size.toString())
             app.scope.launch { yield(); send(Oracul.todoNudge(open.map { it.text })) }
         }
-        // typed while this reply was written and no tool round took it: it is the next question, sent after this one is out of the way
+        // typed while this reply was written and no tool round took it: it is the next question, sent after this one is out of the way. All of it goes at once, as one message
+        // (what a tool round does too): a later message is often a correction or an addition to an earlier one, and answering them one by one would answer the first without it
         if (queued.isNotEmpty()) {
-            val next = queued.removeAt(0)
+            val next = takeQueued()
             app.scope.launch { yield(); sendNow(next) }
         }
     }
@@ -1490,6 +1597,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** Starts an empty conversation. The old one stays saved and can be opened again from the history. */
     fun startNew() {
         skillRun = null
+        thinkNext = ""
         clearRoles()
         clearGoal()
         artifacts.clear()

@@ -52,14 +52,15 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
   - `show(model): Pair<capabilities, contextLength>` (`/api/show`: capabilities such as `completion`, `vision`, `tools`, `thinking`; the model's
     maximum context from `model_info`); `capabilities(model)` is its first part. Empty/0 when unknown.
   - `listModels(): List<String>` and `modelDetails(): List<ModelDetails>` (`/api/tags` + `show` per model: size, capabilities; `summary()` is
-    the `19 GB · tools · thinking` text of the model picker).
+    the `19 GB · dense · tools · thinking`, `MoE` for a mixture of experts, from `model_info`, else from the tensor list (`OllamaProtocol.parseTensorLayout`) text of the model picker).
   - `loadedContext(model)` (`/api/ps`, `OllamaProtocol.parseLoadedContext`): the `context_length` Ollama loaded the model with; 0 when it is not loaded or this Ollama is too old to say.
   - `chatRequest` sends `options.temperature`, and `num_ctx` when `AppConfig.contextTokens > 0`.
 - `OllamaProtocol` (pure, unit-tested): `chatRequest(config, messages, jsonMode, tools)`, `parseChunk(line)`, `parseCapabilities`,
   `parseModels`. Messages are serialized with `ChatMessage.withFilesInlined()` (text files become part of `content`).
   Defaults are not encoded, so app-only fields (`imageNames`, `stats`, `noteNames`, `sources`) never reach Ollama when empty.
 - `ChatMessage(role, content, images(base64), imageNames, stats, noteNames, sources, files, toolCalls, toolName, thinking)`:
-  - roles: `system | user | assistant | tool`.
+  - `think`: for a message of yours, the reasoning level chosen for it alone (never sent to a model).
+  - roles: `system | user | assistant | tool`, and `oracul_step` (`ChatMessage.DISPLAY_ONLY`): a tool call the Oracul made, for the reader only (`OraculSteps`, in `Oracul.kt`). It is kept with the chat and drawn in it, but `Compaction.forModel` and `OllamaProtocol.chatRequest` drop every display-only message, so no model ever receives one; select/copy treats it as one entry.
   - `images` are kept in memory only; stored chats use `withoutImageData()`.
   - `noteNames` are vault paths whose text is read **at send time** (so changed notes are seen as they are).
   - `files: List<FileAttachment>` (text/PDF) are inlined into the content when the request is built.

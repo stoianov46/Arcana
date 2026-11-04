@@ -175,6 +175,11 @@ private val declared: List<Setting> = listOf(
         },
     ),
     choice(Group.Ollama, "Context window", "How many tokens of conversation the model may hold (num_ctx). Model default leaves Ollama's own setting. A larger window remembers more of a long chat or a big file, but its memory (the KV cache) grows with it and replies get slower: a 30B model at 128k needs roughly 12 GB more than at 8k. It can never exceed what the model was built for (the status bar shows that maximum; most models stop at 128k–256k, a million needs a special model and a lot of memory). The Chat status bar counts against this.", listOf("0" to "Model default", "8192" to "8k", "16384" to "16k", "32768" to "32k", "65536" to "64k", "131072" to "128k", "262144" to "256k", "524288" to "512k", "1048576" to "1M"), { it.contextTokens.toString() }, { c, v -> c.copy(contextTokens = v.toInt()) }),
+    choice(
+        Group.Ollama, "Keep model loaded",
+        "How long Ollama keeps the chat model in memory after your last message. Ollama's default is 5 minutes: after a longer pause the model is loaded again and the whole conversation is read again (a 26-minute pause cost one turn 7 minutes in a real log). A longer time avoids that but keeps the memory taken; Always holds it until Ollama stops. Sent only with requests to the chat model.",
+        listOf("" to "Ollama default (5 min)", "30m" to "30 minutes", "1h" to "1 hour", "-1" to "Always"), { it.keepAlive }, { c, v -> c.copy(keepAlive = v) },
+    ),
     stepper(Group.Ollama, "Timeout", "How long to wait for a reply before giving up. ←/→ step by 15 s.", 5..3600, 15, { it.timeoutSeconds }, { c, n -> c.copy(timeoutSeconds = n) }, " s"),
 
     Setting(
@@ -196,7 +201,7 @@ private val declared: List<Setting> = listOf(
     text(Group.Vault, "Daily notes folder", "Where capture (Ctrl+N) writes the thought files, with their Thoughts Index. Default Thoughts, a folder of its own so the vault root stays free. Used only when Obsidian's Daily notes plugin has no setting of its own for the vault. Empty = the vault root.", { it.dailyFolder }, { c, v -> c.copy(dailyFolder = v.trim('/')) }, allowEmpty = true),
     text(Group.Vault, "Daily note format", "The file name of a daily note, like Obsidian's: YYYY-MM-DD, DD.MM.YYYY…; text in [brackets] is kept as it is. The default `[thought-]YYYY-MM-DD` gives thought-2026-11-02.md, so thought files stay apart from other notes named by date. Used only without an Obsidian setting.", { it.dailyFormat }, { c, v -> c.copy(dailyFormat = v.trim()) }),
     stepper(Group.Vault, "Stale after", "A note counts as stale after this many days without a change. ←/→ step by 30.", 7..1000, 30, { it.staleDays }, { c, n -> c.copy(staleDays = n) }, " days"),
-    Setting(Group.Vault, "Semantic search model", "Finds notes by meaning (the model's semantic_search tool, and /reindex in Chat builds the index). It needs an embedding model installed in Ollama, for example: ollama pull nomic-embed-text (others: qwen3-embedding, mxbai-embed-large). Everything is computed by your Ollama server and the index is a file in ~/.config/arcana/embeddings; changing the model rebuilds it. None = off.", { it.embedModel.ifEmpty { "(none: off)" } }, editor = EmbedModel),
+    Setting(Group.Vault, "Semantic search model", "Finds notes by meaning (the model's semantic_search tool, and /reindex in Chat builds the index). You can leave it empty: the first time the model uses semantic_search, Arcana asks once to download nomic-embed-text through Ollama and selects it here. By hand it needs an embedding model installed in Ollama, for example: ollama pull nomic-embed-text (others: qwen3-embedding, mxbai-embed-large). Everything is computed by your Ollama server and the index is a file in ~/.config/arcana/embeddings; changing the model rebuilds it. None = off.", { it.embedModel.ifEmpty { "(none: off)" } }, editor = EmbedModel),
     stepper(Group.Vault, "Chars per note", "How much of each note found by Answer from notes (/vault) is sent to the model. A longer note is cut: the model is told, and the answer lists which notes were only partly read. ←/→ step by 500.", 200..20_000, 500, { it.contextCharsPerNote }, { c, n -> c.copy(contextCharsPerNote = n) }),
 
     Setting(
@@ -210,7 +215,16 @@ private val declared: List<Setting> = listOf(
     ),
     choice(Group.Appearance, "Navigation", "Where the screens are listed: a sidebar on the left or the right, or a bar across the top. Switches at once, so you can compare.", listOf("left" to "Left sidebar", "right" to "Right sidebar", "top" to "Top bar"), { it.navPosition }, { c, v -> c.copy(navPosition = v) }),
     choice(Group.Appearance, "Sidebar", "Full: screen names. Icons: only the number key and an icon, which leaves the content more width. Ctrl+B switches it from any screen.", listOf("full" to "Full", "icons" to "Icons"), { if (it.sidebarCollapsed) "icons" else "full" }, { c, v -> c.copy(sidebarCollapsed = v == "icons") }),
-    choice(Group.Ollama, "Thinking", "Whether the model reasons before it answers (Ollama's think). Model default leaves it to the model (Qwen and Gemma think every time). Off answers at once: a simple question took 0.3 s instead of 10 s in a test, but hard questions come out weaker. On makes it think even if it would not. A level (Low, Medium, High) is sent only to a model that lists it (gpt-oss does; Qwen and Gemma only have on and off, so for them it falls back to the model default). The Chat status bar shows `think auto / off / on`, and `/think` cycles it.", listOf("default" to "Model default", "off" to "Off (fast)", "on" to "On", "low" to "Low", "medium" to "Medium", "high" to "High"), { it.thinking }, { c, v -> c.copy(thinking = v) }),
+    Setting(
+        Group.Ollama, "Thinking & effort",
+        "How much the model reasons before it answers (Ollama's think): more reasoning is better on hard tasks but slower and uses more of the context window. The choices are the ones this model lists in Ollama, so they change with the model. A value the model does not list is not sent. In Chat, Ctrl+G (/think) picks a level for the next message only.",
+        value = { c -> (if (c.thinking == "default" && ThinkLevels.defaultWord.isNotEmpty()) "Model default (${ThinkLevels.defaultWord})" else thinkLabel(c.thinking)) + if (c.thinking in ThinkLevels.options) "" else "  · not offered by this model" },
+        step = { c, dir ->
+            // the model's own list; a value kept from another model is stepped from the model default
+            val options = ThinkLevels.options.ifEmpty { listOf("default") }
+            c.copy(thinking = options[(options.indexOf(c.thinking).coerceAtLeast(0) + dir).mod(options.size)])
+        },
+    ),
     toggle(Group.Ollama, "Model abilities in the bottom bar", "Next to the model name the bottom bar names what Ollama says the model can do: `vision` (it can look at pictures: attach one with Ctrl+O), `thinking` (it reasons before it answers: Ctrl+T shows or hides that), `tools` (it can use your notes and run commands), `♪ audio` (it can hear sound) and `MoE 128` (a mixture of experts with 128 experts: only a few of them work on each token, so it answers faster than a dense model of the same file size, though all of it must still fit in memory). Nothing is shown for a model that has none of these, or when Ollama does not say.", { it.showModelTraits }, { c, v -> c.copy(showModelTraits = v) }),
     toggle(Group.Appearance, "Logo animation", "While a reply is being generated, the colours of the sidebar logo sweep along it. Off keeps the logo still.", { it.animateLogo }, { c, v -> c.copy(animateLogo = v) }),
 
@@ -334,7 +348,7 @@ private val declared: List<Setting> = listOf(
 private val sections: Map<Group, List<Pair<String, List<String>>>> = mapOf(
     Group.Ollama to listOf(
         "Connection" to listOf("Ollama URL", "Model", "Timeout"),
-        "Generation" to listOf("Temperature", "Context window", "Thinking"),
+        "Generation" to listOf("Temperature", "Context window", "Thinking & effort", "Keep model loaded"),
         "Display and cost" to listOf("Model abilities in the bottom bar", "Price: prompt tokens", "Price: reply tokens"),
     ),
     Group.Vault to listOf(
@@ -373,6 +387,9 @@ private val settings: List<Setting> = declared.sortedBy { s ->
 private const val CustomModel = "✎ Type a custom name…"
 private const val NoModel = "∅ None (off)"
 
+/** In the semantic search model list, when no embedding model is installed yet: choosing it downloads `nomic-embed-text` through Ollama and selects it. */
+private const val DownloadEmbed = "⇩ Download nomic-embed-text and use it (about 270 MB)"
+
 /** What the screen is doing with the highlighted setting. */
 private sealed interface Editing {
     data class Typing(val setting: Setting, val editor: Editor.Text) : Editing
@@ -402,14 +419,60 @@ private fun adviceFor(app: AppContext, label: String): String? {
     }
 }
 
+/** What Ollama says about the model that bears on a setting, added under its help: loaded memory, expiry, the model's own sampling defaults. */
+private fun settingNote(app: AppContext, label: String): String = when (label) {
+    "Context window" -> contextNote(app)
+    "Keep model loaded" -> keepAliveNote(app)
+    "Temperature" -> samplingNote(app)
+    "Thinking & effort" -> thinkingNote(app)
+    else -> ""
+}
+
+private fun gb(bytes: Long) = "%.1f GB".format(java.util.Locale.ROOT, bytes / 1e9)
+
+private fun keepAliveNote(app: AppContext): String {
+    val config = app.config
+    val now = app.loaded?.firstOrNull { it.name == config.model }
+    val room = com.arcana.brain.core.ModelFit.physicalMemory().takeIf { it > 0 }?.let { " This machine has ${gb(it)}." }.orEmpty()
+    val state = if (now == null) "\nRight now: ${config.model} is not loaded (or Ollama cannot be asked)." else {
+        val left = if (now.expiresAtMillis > System.currentTimeMillis()) ((now.expiresAtMillis - System.currentTimeMillis()) / 60_000).let { if (it >= 600) ", pinned (it stays until Ollama stops)" else ", it unloads in about ${it + 1} min unless you use it" } else ""
+        "\nRight now: ${config.model} holds ${gb(now.sizeBytes)} in memory${if (now.context > 0) " (window ${com.arcana.brain.core.UsageStats.contextSize(now.context.toLong())})" else ""}$left.$room"
+    }
+    val pin = if (config.keepAlive == "-1") "\n⚠ Always keeps that memory taken for good; other programs get the rest." else ""
+    return state + pin
+}
+
+private fun samplingNote(app: AppContext): String {
+    val own = app.modelParameters
+    val line = if (own.isEmpty()) "\n${app.config.model} lists no sampling defaults of its own, so Ollama's general ones apply."
+        else "\n${app.config.model}'s own defaults (from its Modelfile): " + own.entries.joinToString(", ") { "${it.key} ${it.value}" } + "."
+    val differs = own["temperature"]?.toDoubleOrNull()?.takeIf { kotlin.math.abs(it - app.config.temperature) > 0.05 }
+    return line + (differs?.let { "\nArcana sends ${app.config.temperature} with every request, so that replaces the model's $it." }.orEmpty())
+}
+
+private fun thinkingNote(app: AppContext): String {
+    val values = app.thinkingValues
+    if (values.isEmpty()) return "\n${app.config.model} lists no thinking choices in Ollama: nothing is sent."
+    val shown = values.joinToString(", ") { when (it) { "false" -> "off"; "true" -> "on"; else -> it } }
+    val default = thinkDefaultWord(app.thinkingDefault)
+    val now = app.config.thinking.takeIf { it in ThinkLevels.options } ?: "default"
+    return "\n${app.config.model} offers: $shown${if (default.isEmpty()) "" else " (its default: $default)"}." +
+        "\nNow, ${thinkLabel(now)}: ${thinkEffect(now, ThinkLevels.options, default)}"
+}
+
 private fun contextNote(app: AppContext): String {
     val config = app.config
     val loaded = app.loadedContext
     val real = com.arcana.brain.core.UsageStats::contextSize
     val tooBig = config.contextTokens > 0 && app.modelContext > 0 && config.contextTokens > app.modelContext
     val slow = app.offloads.joinToString("") { "\n⚠ ${it.model} runs ${it.cpuPercent}% on the CPU because it does not fit in memory with this window (${com.arcana.brain.core.UsageStats.compact(it.sizeBytes / 1_000_000)} MB): replies are several times slower and a long prompt can time out. Choose a smaller window or a smaller model." }
+    val held = app.loaded?.firstOrNull { it.name == config.model }?.let { m ->
+        val memory = com.arcana.brain.core.ModelFit.physicalMemory()
+        "\nOllama holds ${gb(m.sizeBytes)} for ${config.model} with this window (weights plus the cache)." +
+            if (memory > 0 && m.sizeBytes > memory * 0.8) " ⚠ That is ${m.sizeBytes * 100 / memory}% of this machine's ${gb(memory)}: other programs will swap. A smaller window frees most of it." else ""
+    }.orEmpty()
     val room = app.tokenRoom?.let { "\nMemory: about ${real(it)} of context fit on this machine next to ${config.model}'s weights (an estimate from the model's cache size and ~70% of the memory)." }.orEmpty()
-    return slow + room + (if (tooBig) "\n⚠ You ask for ${real(config.contextTokens.toLong())} but ${config.model} is built for ${real(app.modelContext.toLong())}: the rest is wasted memory (the cache for the window is allocated up front) and can make your Mac swap. Choose ${real(app.modelContext.toLong())} or less." else "") + "\nRight now: " + when {
+    return slow + held + room + (if (tooBig) "\n⚠ You ask for ${real(config.contextTokens.toLong())} but ${config.model} is built for ${real(app.modelContext.toLong())}: the rest is wasted memory (the cache for the window is allocated up front) and can make your Mac swap. Choose ${real(app.modelContext.toLong())} or less." else "") + "\nRight now: " + when {
         loaded > 0 -> "Ollama runs ${config.model} with a window of ${real(loaded.toLong())}" +
             (if (config.contextTokens > 0 && loaded != config.contextTokens) " (you asked for ${real(config.contextTokens.toLong())}; Ollama's figure is the one that counts)" else "") +
             (if (loaded < COMFORTABLE_CONTEXT) ". ⚠ That is small: long chats, notes and tool results get cut. Choose 32k or more." else ".")
@@ -482,7 +545,9 @@ fun SettingsScreen(app: AppContext) {
                     val details = (if (editor.oracul) com.arcana.brain.core.OllamaClient { com.arcana.brain.core.Oracul.serverConfig(app.config, app.config.model) } else app.client).modelDetails()
                     // the embedding picker lists the models whose name says "embed" first: those are the ones that can do it
                     val listed = if (editor.embed) details.sortedByDescending { "embed" in it.name.lowercase() } else details
-                    val models = (if (editor.allowNone) listOf(NoModel) else emptyList()) + listed.map { it.name } + CustomModel
+                    // no embedding model installed: offer the one Arcana recommends, as a row to choose (it is downloaded through Ollama, nothing to type)
+                    val offerDownload = editor.embed && details.none { com.arcana.brain.core.ModelStatus.sameModel(it.name, com.arcana.brain.core.SemanticSetup.RECOMMENDED) }
+                    val models = (if (editor.allowNone) listOf(NoModel) else emptyList()) + (if (offerDownload) listOf(DownloadEmbed) else emptyList()) + listed.map { it.name } + CustomModel
                     picker.reset()
                     picker.index = models.indexOf(editor.get(app.config)).coerceAtLeast(0)
                     // does it fit this machine's memory (the Oracul's own server: unknown, so no verdict), and which one would we pick
@@ -490,7 +555,7 @@ fun SettingsScreen(app: AppContext) {
                     val workerBytes = if (editor.oracul) details.firstOrNull { it.name == app.config.model }?.sizeBytes ?: 0L else 0L
                     val picks = com.arcana.brain.core.ModelFit.suggest(details, app.config.model, ram, app.config.oraculTools)
                     val suggested = when { !editor.oracul -> null; editor === JudgeModel -> picks.judge; else -> picks.oracul }
-                    val notes = details.associate { d ->
+                    val notes = (if (offerDownload) mapOf(DownloadEmbed to "recommended · small and fast · only the model file is downloaded, from the Ollama library; your notes stay here") else emptyMap()) + details.associate { d ->
                         d.name to buildString {
                             append(d.summary())
                             if (ram > 0 && d.sizeBytes > 0) {
@@ -594,7 +659,7 @@ fun SettingsScreen(app: AppContext) {
             is Editing.PickModel -> when {
                 // several models: Space ticks the highlighted one (while filtering, a space belongs to the filter)
                 mode.target.multi && !picker.filtering && key.char == ' ' -> {
-                    picker.selected(mode.models) { it }?.takeIf { it != CustomModel && it != NoModel }?.let { if (it in mode.ticked) mode.ticked.remove(it) else mode.ticked.add(it) }
+                    picker.selected(mode.models) { it }?.takeIf { it != CustomModel && it != NoModel && it != DownloadEmbed }?.let { if (it in mode.ticked) mode.ticked.remove(it) else mode.ticked.add(it) }
                     true
                 }
                 picker.handle(key, mode.models) { it } -> true
@@ -606,6 +671,15 @@ fun SettingsScreen(app: AppContext) {
                             editing = Editing.Typing(settings.first { it.editor === mode.target }, Editor.Text { c, v -> require(mode.target.allowNone || v.isNotBlank()) { "Model name cannot be empty" }; mode.target.set(c, v.trim()) })
                         }
                         NoModel -> { changed(mode.target.set(app.config, ""), mode.target.label); editing = null }
+                        DownloadEmbed -> {
+                            editing = null
+                            notice = Notice("Downloading ${com.arcana.brain.core.SemanticSetup.RECOMMENDED}…")
+                            app.scope.launch {
+                                val problem = app.chat.installEmbeddingModel(com.arcana.brain.core.SemanticSetup.RECOMMENDED) { notice = Notice(it) }
+                                notice = if (problem == null) Notice("${com.arcana.brain.core.SemanticSetup.RECOMMENDED} is installed and selected. The first semantic search builds the index (or /reindex in Chat).")
+                                    else Notice(problem, isError = true)
+                            }
+                        }
                         // nothing ticked: Enter on a model chooses just that one
                         else -> { changed(mode.target.set(app.config, if (mode.target.multi) mode.ticked.ifEmpty { listOf(choice) }.joinToString(", ") else choice), mode.target.label); editing = null }
                     }
@@ -698,7 +772,7 @@ fun SettingsScreen(app: AppContext) {
                 if (group == Group.Tabs) {
                     if (!rememberDensity().compact) Hint("The first tab is where Arcana opens, and a tab's position decides its number key. Tabs move within their own section.")
                 } else {
-                    selected?.let { if (!rememberDensity().compact) Hint(shortened("${it.label}: ${it.help}" + (if (it.label == "Context window") contextNote(app) else "") + (adviceFor(app, it.label)?.let { advice -> "\n$advice" } ?: ""))) }
+                    selected?.let { if (!rememberDensity().compact) Hint(shortened("${it.label}: ${it.help}" + settingNote(app, it.label) + (adviceFor(app, it.label)?.let { advice -> "\n$advice" } ?: ""))) }
                 }
             }
             is Editing.Typing -> {
@@ -707,7 +781,7 @@ fun SettingsScreen(app: AppContext) {
                 Panel(mode.setting.label) {
                     TextInput(mode.setting.label, field, true, maxRows = 4)
                     VGap()
-                    Hint(mode.setting.help + (if (mode.setting.label == "Context window") contextNote(app) else ""))
+                    Hint(mode.setting.help + settingNote(app, mode.setting.label))
                     NoticeLine(notice)
                 }
             }
@@ -715,7 +789,7 @@ fun SettingsScreen(app: AppContext) {
                 ScreenHeader("Settings › ${mode.target.label}", "Installed on ${if (mode.target.oracul) com.arcana.brain.core.Oracul.serverConfig(app.config, "").ollamaUrl else app.config.ollamaUrl}" + if (mode.machine.isEmpty()) "" else "  ·  ${mode.machine}")
                 VGap()
                 Panel("Models") {
-                    Picker(mode.models, picker, label = { if (mode.target.multi && it != CustomModel && it != NoModel) (if (it in mode.ticked) "[x] " else "[ ] ") + it else it }, rows = bodyRows(extra = 5), icon = { if (it == CustomModel || it == NoModel) "" else "◆" }, iconColor = { Palette.Accent }, meta = { (if (it == mode.target.get(app.config)) "current · " else "") + mode.details[it].orEmpty() }, metaColor = { val note = mode.details[it].orEmpty(); when { "too big" in note -> Palette.Red; "★" in note || it == app.config.model -> Palette.Green; else -> Palette.Muted } })
+                    Picker(mode.models, picker, label = { if (mode.target.multi && it != CustomModel && it != NoModel && it != DownloadEmbed) (if (it in mode.ticked) "[x] " else "[ ] ") + it else it }, rows = bodyRows(extra = 5), icon = { if (it == CustomModel || it == NoModel) "" else "◆" }, iconColor = { Palette.Accent }, meta = { (if (it == mode.target.get(app.config)) "current · " else "") + mode.details[it].orEmpty() }, metaColor = { val note = mode.details[it].orEmpty(); when { "too big" in note -> Palette.Red; "★" in note || it == app.config.model -> Palette.Green; else -> Palette.Muted } })
                 }
             }
             Editing.PickTheme -> {

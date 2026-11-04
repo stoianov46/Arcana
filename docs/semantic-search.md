@@ -4,6 +4,7 @@
 
 ## What the user gets
 
+- **Always offered, sets itself up on first use:** `semantic_search` is in the model's toolset whenever there is a vault, also before any embedding model exists (its description says `NOT SET UP YET`). The first time the model calls it without one, Arcana **asks the user once** (dialog "Download a model?": `nomic-embed-text`, about 270 MB, from the Ollama library), downloads it through Ollama's `POST /api/pull` (what `ollama pull` does over HTTP: no command line and no `ollama` binary needed, works for a remote Ollama too) with progress under the conversation (`Downloading nomic-embed-text 54% (150 of 274 MB)`; `Esc` cancels the turn and the download, Ollama keeps what it fetched), selects it in Settings → Vault, and the same call goes on: the index is built by that first search. If the user says no (or the download fails) the model gets `Error: …` and falls back to `search_notes`. There is no command to type. **Or choose it yourself:** Settings → Vault → *Semantic search model* lists, while no embedding model is installed, a first row `⇩ Download nomic-embed-text and use it (about 270 MB)`; choosing it downloads and selects it right away (no further question: choosing the row is the consent), with the progress in the Settings notice (`ChatSession.installEmbeddingModel`, the same code the tool uses).
 - **Setting:** Settings → Vault → *Semantic search model* (Enter lists installed models, embedding ones first; `None` = off).
 - **Command:** `/reindex` in Chat (also in the palette, `Ctrl+P`) builds or refreshes the index. While it runs, the conversation panel shows `◌ Indexing 120 notes… 40/120`; at the end a toast says `Semantic index ready: 120 notes, 842 passages (40 embedded, 0 dropped) in 31.2 s.`
 - **Tool for the model:** `semantic_search(query, limit?)`, a Read tool (no approval, allowed in Plan mode), offered only when the model is set **and installed**. The tool description tells the model to prefer it for questions of meaning and to keep `search_notes` / `grep_files` for exact words.
@@ -18,7 +19,8 @@
 | Tool | `Tools.kt`: `ToolBox(semantic = SemanticSearch?)`, `semanticTool()` (only added with a vault and a `SemanticSearch`) |
 | Wiring | `ChatSession.semanticIndexFor(config, vault)` (model set and in the server's installed list, via `ModelStatus.sameModel`; one cached index per vault and model), `toolboxFor` passes it, `ChatSession.reindex(done)` + `indexing` (progress text) |
 | UI | `Chat.kt`: `/reindex` (`SlashCommands`, `runCommand`, palette, key map), the progress line under the conversation (`chat.indexing`, counted in `statusRow`); `Settings.kt`: `EmbedModel` (`Editor.Model(embed = true)`), section *Search* of the Vault group |
-| Tests | `core/src/test/.../EmbeddingsTest.kt` (fake model, JDK `HttpServer` for `/api/embed`) |
+| Setup | `ChatSession.ensureSemanticModel` (called by `runTools` before the first `semantic_search` without a model: ask → `OllamaClient.pull(model)` → `app.update(embedModel)` → `refreshConnection`, then the toolbox is rebuilt), `semanticOn`; `SemanticSetup` (model, size, progress text) and `PullProgress` in core |
+| Tests | `core/src/test/.../EmbeddingsTest.kt` (fake model, JDK `HttpServer` for `/api/embed` and `/api/pull`, the tool offered and honest before setup) and `app/.../SemanticSetupTest.kt` (the model calls the tool with no embedding model: asked once, downloaded, selected, the same call answers; no = an error for the model and nothing downloaded) |
 
 ## Data flow
 

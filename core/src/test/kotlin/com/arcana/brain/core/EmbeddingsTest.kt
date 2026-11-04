@@ -3,6 +3,7 @@ package com.arcana.brain.core
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -212,16 +213,52 @@ class EmbeddingsTest {
     }
 
     @Test
-    fun withoutAnEmbeddingModelTheToolIsNotOffered() {
+    fun withoutAnEmbeddingModelTheToolIsStillOfferedAndSaysItIsNotSetUp() {
         val (v, _) = vault("a.md" to "# A\nx")
         val box = ToolBox(v, emptyList(), Files.createTempDirectory("bk"))
-        assertEquals(null, box.find("semantic_search"))
-        assertTrue("semantic_search" !in box.cheatSheet())
+        assertTrue(box.find("semantic_search") != null && "semantic_search" in box.cheatSheet(), "offered, so the model can use it and the app sets the model up on the first call")
         val answer = box.execute(call("semantic_search", "query" to "x"))
-        assertTrue(answer.startsWith("Error: there is no tool called semantic_search"), answer)
-        assertEquals("", AppConfig().embedModel, "off by default")
+        assertTrue(answer.startsWith("Error: semantic search is not set up"), answer)
+        assertEquals("", AppConfig().embedModel, "no model is chosen by default")
     }
 
     private fun call(name: String, vararg args: Pair<String, String>) =
         ToolCall(ToolFunction(name, JsonObject(args.associate { (k, v) -> k to (if (k == "limit") JsonPrimitive(v.toInt()) else JsonPrimitive(v)) })))
+
+    @Test
+    fun aModelDownloadStreamsItsProgressAndAnErrorLineThrows() {
+        assertEquals(PullProgress("pulling manifest"), OllamaProtocol.parsePull("""{"status":"pulling manifest"}"""))
+        val part = OllamaProtocol.parsePull("""{"status":"pulling 970aa74c0a90","digest":"sha256:970","total":274290560,"completed":137145280}""")
+        assertEquals(50, part.percent)
+        assertEquals(-1, OllamaProtocol.parsePull("""{"status":"verifying sha256 digest"}""").percent)
+        assertTrue(OllamaProtocol.parsePull("""{"status":"success"}""").done)
+        assertFailsWith<OllamaException> { OllamaProtocol.parsePull("""{"error":"pull model manifest: file does not exist"}""") }
+        assertEquals("Downloading nomic-embed-text 50% (137 of 274 MB)", SemanticSetup.progressText("nomic-embed-text", part))
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0)
+        var asked = ""
+        server.createContext("/api/pull") { e ->
+            asked = e.requestBody.readBytes().decodeToString()
+            val body = listOf("""{"status":"pulling manifest"}""", """{"status":"pulling aa","total":200,"completed":100}""", """{"status":"success"}""").joinToString("\n").toByteArray()
+            e.sendResponseHeaders(200, body.size.toLong()); e.responseBody.use { it.write(body) }
+        }
+        server.start()
+        try {
+            val client = OllamaClient { AppConfig(ollamaUrl = "http://127.0.0.1:${server.address.port}") }
+            val seen = runBlocking { client.pull("nomic-embed-text").toList() }
+            assertEquals(listOf("pulling manifest", "pulling aa", "success"), seen.map { it.status })
+            assertTrue("\"model\":\"nomic-embed-text\"" in asked && "\"stream\":true" in asked, asked)
+        } finally { server.stop(0) }
+    }
+
+    @Test
+    fun theToolIsAlwaysOfferedAndSaysItIsNotSetUpWhileNoEmbeddingModelExists() {
+        val (v, dir) = vault("a.md" to "x")
+        val off = ToolBox(v, emptyList(), dir.resolveSibling("b1"))
+        val spec = off.find("semantic_search")!!
+        assertTrue("NOT SET UP YET" in spec.description && "asks the user once" in spec.description, spec.description)
+        assertTrue(off.execute(ToolCall(ToolFunction("semantic_search", kotlinx.serialization.json.buildJsonObject { put("query", JsonPrimitive("databases")) }))).startsWith("Error: semantic search is not set up"))
+        val on = ToolBox(v, emptyList(), dir.resolveSibling("b2"), semantic = SemanticSearch(index(v, dir, Topics()))).find("semantic_search")!!
+        assertTrue("NOT SET UP" !in on.description)
+        assertTrue(ToolBox(null, emptyList(), dir.resolveSibling("b3")).find("semantic_search") == null, "no vault, no tool")
+    }
 }

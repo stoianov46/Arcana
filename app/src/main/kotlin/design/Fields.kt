@@ -14,7 +14,7 @@ import com.jakewharton.mosaic.ui.TextStyle
 
 /** Labelled input box; highlighted while it has keyboard focus. */
 @Composable
-fun LabeledField(label: String, focused: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+fun LabeledField(label: String, focused: Boolean, modifier: Modifier = Modifier, trailing: (@Composable () -> Unit)? = null, content: @Composable () -> Unit) {
     if (rememberDensity().inline) {
         InlineField(label.substringBefore("  ·"), focused, modifier, content = content)
         return
@@ -22,7 +22,8 @@ fun LabeledField(label: String, focused: Boolean, modifier: Modifier = Modifier,
     Stack(modifier) {
         FieldTitle(label, focused)
         Box(Modifier.fillMaxWidth().background(if (focused) Palette.Focus else Palette.SurfaceHigh).padding(horizontal = 1)) {
-            content()
+            // [trailing] sits at the right end of the field's first row; the text gets the room that is left (the caller wraps its text to that width)
+            if (trailing == null) content() else Row { Box(Modifier.weight(1f)) { content() }; trailing() }
         }
     }
 }
@@ -63,15 +64,15 @@ fun TextValue(field: TextFieldState, focused: Boolean, placeholder: String = "",
 
 /** A labelled text input: the common case of [LabeledField] with a [TextValue]; [maxRows] > 0 lets it wrap over several rows. */
 @Composable
-fun TextInput(label: String, field: TextFieldState, focused: Boolean = true, placeholder: String = "", maxRows: Int = 0, attachments: Attachments? = null) {
+fun TextInput(label: String, field: TextFieldState, focused: Boolean = true, placeholder: String = "", maxRows: Int = 0, attachments: Attachments? = null, trailing: (@Composable () -> Unit)? = null) {
     if (attachments == null) {
-        LabeledField(label, focused) { TextValue(field, focused, placeholder, maxRows) }
+        LabeledField(label, focused, trailing = trailing) { TextValue(field, focused, placeholder, maxRows) }
         return
     }
     // The attachment line belongs to the input: it sits right above it and goes with it.
     Stack {
         AttachmentLine(attachments)
-        LabeledField(label, focused) { TextValue(field, focused, placeholder, maxRows) }
+        LabeledField(label, focused, trailing = trailing) { TextValue(field, focused, placeholder, maxRows) }
     }
 }
 

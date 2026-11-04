@@ -91,6 +91,12 @@ data class AppConfig(
     val memoryPath: String = "",
     /** Context window to ask Ollama for (num_ctx); 0 leaves Ollama's own default. Also the size the Chat context meter counts against when set. */
     val contextTokens: Int = 0,
+    /**
+     * How long Ollama keeps the chat model in memory after a request (`keep_alive`): blank = not sent, so Ollama's own default applies (5 minutes: after a longer pause the model
+     * is loaded again and the whole conversation is read again, which for a long chat takes minutes); `30m`, `1h`; `-1` = until Ollama stops. Sent only with requests to the chat
+     * model (see [forModel]), because every request sets the timer again.
+     */
+    val keepAlive: String = "",
     /** A tool call the model wrote as text instead of making it: "auto" runs it as a real call, "ask" shows it first, "off" leaves it as text. */
     val textCalls: String = "auto",
     /** Where web_search looks: "duckduckgo" (no setup), "searxng" (a server the user runs, at [searchUrl]) or "brave" (needs [searchKey]). */
@@ -213,7 +219,22 @@ data class AppConfig(
     val copyAs: String = "markdown",
     val summaryPrompt: String = "Summarize the following note. Start with a one-sentence TL;DR, " +
         "then list the key points as bullets, then any action items.",
-)
+) {
+    /**
+     * This configuration for a request to [model]: [keepAlive] stays only when [model] is the chat model (every request starts the keep-alive timer again, so a helper that is
+     * the same model must send it too, and another model must not be pinned by it).
+     */
+    fun forModel(model: String): AppConfig = copy(model = model, keepAlive = if (model == this.model) keepAlive else "")
+
+    /** The `keep_alive` to send, as Ollama takes it (`-1` and `0` are numbers, a time like `30m` is text); null when blank or not a time. */
+    fun keepAliveValue(): kotlinx.serialization.json.JsonPrimitive? = keepAlive.trim().let { k ->
+        when {
+            k == "-1" || k == "0" -> kotlinx.serialization.json.JsonPrimitive(k.toInt())
+            Regex("""\d+[smh]""").matches(k) -> kotlinx.serialization.json.JsonPrimitive(k)
+            else -> null
+        }
+    }
+}
 
 class ConfigStore(val path: Path = defaultPath()) {
     private val json = Json {
