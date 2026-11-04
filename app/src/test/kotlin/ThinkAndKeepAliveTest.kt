@@ -117,4 +117,17 @@ class ThinkAndKeepAliveTest {
         assertEquals(listOf("/effort"), com.arcana.brain.app.screens.slashMatches(items, "/eff").map { it.name })
         assertEquals(listOf("/thinking"), com.arcana.brain.app.screens.slashMatches(items, "/thinki").map { it.name })
     }
+
+    @Test
+    fun theColourOfAChoiceRunsFromCalmToHotInTheModelsOwnList() {
+        val colour = { v: String, o: List<String>, d: String -> com.arcana.brain.app.screens.thinkColor(v, o, d) }
+        val qwen = listOf("default", "off", "low", "medium", "xhigh")
+        val gptOss = listOf("default", "low", "medium", "high")
+        assertEquals(colour("low", qwen, ""), colour("low", gptOss, ""), "the lowest level has the same colour in every model's list")
+        assertEquals(colour("xhigh", qwen, ""), colour("high", gptOss, ""), "so has the highest")
+        assertTrue(colour("low", qwen, "") != colour("medium", qwen, "") && colour("medium", qwen, "") != colour("xhigh", qwen, ""), "three levels, three colours")
+        assertEquals(colour("medium", qwen, ""), colour("default", qwen, "medium"), "auto has the colour of what the model does by default")
+        assertTrue(colour("default", qwen, "") != colour("low", qwen, ""), "an unknown default is quiet")
+        assertTrue(colour("off", qwen, "") != colour("low", qwen, "") && colour("on", listOf("default", "off", "on"), "") != colour("off", listOf("default", "off", "on"), ""))
+    }
 }

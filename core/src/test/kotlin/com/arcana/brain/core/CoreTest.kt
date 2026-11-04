@@ -1727,6 +1727,14 @@ class CoreTest {
         assertEquals(emptyMap(), OllamaProtocol.parseParameters("""{"capabilities":[]}"""))
         val ps = OllamaProtocol.parseLoaded("""{"models":[{"name":"qwen3.8:27b","size":30257852136,"size_vram":30257852136,"context_length":131072,"expires_at":"2026-11-04T19:53:13.417599+03:00"}]}""").single()
         assertEquals(java.time.OffsetDateTime.parse("2026-11-04T19:53:13.417599+03:00").toInstant().toEpochMilli(), ps.expiresAtMillis)
+        // the model is told which reasoning levels IT offers and how the user picks one
+        val note = Prompts.effortNote("qwen3.8:27b", listOf("false", "low", "medium", "xhigh"), "medium")
+        assertTrue("qwen3.8:27b offers: off, low, medium, xhigh (default: medium)" in note && "Ctrl+G" in note && "/effort" in note && "You cannot change it yourself" in note, note)
+        assertTrue("only on and off" in Prompts.effortNote("gemma4:26b", listOf("false", "true"), "true") && "offers: off, on (default: on)" in Prompts.effortNote("gemma4:26b", listOf("false", "true"), "true"))
+        assertEquals("", Prompts.effortNote("llama3.1:8b", emptyList(), ""), "a model without thinking is told nothing")
+        val cfg = AppConfig()
+        assertTrue("REASONING EFFORT" in Prompts.chatMessages(cfg, listOf(ChatMessage.user("hi")), null, emptyMap(), effortNote = note).first().content)
+        assertTrue("REASONING EFFORT" !in Prompts.chatMessages(cfg, listOf(ChatMessage.user("hi")), null, emptyMap()).first().content)
         assertEquals("400 MB", ModelDetails("x", 400_000_000, emptyList(), 0).summary())
         assertEquals("22.6 GB · MoE · tools · vision · thinking", ModelDetails("m", 22_600_000_000, listOf("tools", "vision", "thinking"), 262144, experts = 128).summary())
     }

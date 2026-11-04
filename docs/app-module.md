@@ -73,7 +73,7 @@ Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `
 | `Theme.kt` | `ThemeSpec`, `Themes.all/byId`, `Colors`, `Palette` (live theme accessors: `Palette.Text/Accent/Cta/Green/Red/Console*/UserBg…`), `Dimens` |
 | `ScrollColumn.kt` | `ScrollColumn` + `ScrollState`: a window of whole children with a scrollbar column and a `follow` cursor; ↑↓ PgUp/PgDn Home/End |
 | `Layout.kt` | `Stack` (column that shortens or hides what does not fit; `Modifier.flexible()` keeps room for later siblings), `VGap`, `HGap`, `LocalContentWidth/Height/UiScale`, `rememberDensity()` (`inline` mode at small sizes) |
-| `Rainbow.kt` | `RainbowText(text, animate, color)`: the logo's flowing rainbow, shared by the sidebar logo and the reasoning-effort control inside the message field |
+| `Rainbow.kt` | `RainbowText(text, animate, color)`: the sidebar logo's flowing rainbow (only the logo uses it; the reasoning-effort control is a static colour by level, `thinkColor` in `Chat.kt`) |
 | `Label.kt` | `Label` (single-style, clipped to its width; use instead of `Text`), `HBar`, `TailText`, `WrappedText` (wraps, scrolls with the caret, draws a scrollbar in its last column), `wrap`, `wrapRows` |
 | `Panel.kt` | `Panel(title, accent)`, `Card`, `ScreenHeader(title, subtitle)`, frame glyphs |
 | `Fields.kt` | `TextInput(label, field, focused, placeholder, maxRows, attachments)`, `LabeledField`, `InlineField`, `handleAttachmentKey` |

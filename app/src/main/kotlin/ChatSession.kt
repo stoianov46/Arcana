@@ -1567,7 +1567,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 val hits = if (config.chatUseVault && vault != null) vault.search(body, config.contextNotes, config.contextCharsPerNote) else null
                 pendingSources = hits?.map { it.note.path }.orEmpty()
                 pendingCut = hits?.filter { it.missing > 0 }?.map { it.note.path }.orEmpty()
-                return Prompts.chatMessages(config, history, hits, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, toolsNote = box?.describe().orEmpty(), canRequestTools = canRequest, memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "", goal = goal.orEmpty()).also { request -> promptEstimate = request.sumOf { it.content.length } / 4 }
+                return Prompts.chatMessages(config, history, hits, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, toolsNote = box?.describe().orEmpty(), canRequestTools = canRequest, memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "", goal = goal.orEmpty(), effortNote = if (runWorker == null) Prompts.effortNote(config.model, app.thinkingValues, app.thinkingDefault) else "").also { request -> promptEstimate = request.sumOf { it.content.length } / 4 }
             }
             refreshRequest = ::compose
             compose()

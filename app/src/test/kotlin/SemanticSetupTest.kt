@@ -84,11 +84,11 @@ class SemanticSetupTest {
             assertTrue(app.chat.approval!!.lines.any { "nomic-embed-text" in it && "270 MB" in it }, "the dialog names the model and its size")
             assertTrue("pull" !in f.calls, "nothing is downloaded before the answer")
             app.chat.answer(ChatSession.ApprovalChoice.Allow)
-            waitFor("the answer") { app.chat.messages.count { it.role == "assistant" && it.toolCalls.isEmpty() } >= 1 }
+            waitFor("the answer") { app.chat.messages.toList().count { it.role == "assistant" && it.toolCalls.isEmpty() } >= 1 }
             assertEquals("nomic-embed-text", app.config.embedModel, "the model is selected")
             assertTrue(app.chat.semanticOn())
             assertEquals(1, f.calls.count { it == "pull" })
-            val result = app.chat.messages.first { it.role == "tool" }.content
+            val result = app.chat.messages.toList().first { it.role == "tool" }.content
             assertTrue(!result.startsWith("Error") && "Note.md" in result, "the same call answered after the setup: $result")
             assertNull(app.chat.indexing)
         } finally { f.server.stop(0) }
@@ -104,9 +104,9 @@ class SemanticSetupTest {
             app.chat.send("find my notes about databases")
             waitFor("the question") { app.chat.approval != null }
             app.chat.answer(ChatSession.ApprovalChoice.Deny)
-            waitFor("the answer") { app.chat.messages.count { it.role == "assistant" && it.toolCalls.isEmpty() } >= 1 }
+            waitFor("the answer") { app.chat.messages.toList().count { it.role == "assistant" && it.toolCalls.isEmpty() } >= 1 }
             assertTrue("pull" !in f.calls && app.config.embedModel.isEmpty(), "no download, no setting")
-            val result = app.chat.messages.first { it.role == "tool" }.content
+            val result = app.chat.messages.toList().first { it.role == "tool" }.content
             assertTrue(result.startsWith("Error: the user declined") && "search_notes" in result, result)
         } finally { f.server.stop(0) }
     }

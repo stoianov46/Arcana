@@ -261,6 +261,28 @@ internal fun thinkEffect(value: String, options: List<String>, defaultWord: Stri
     }
 }
 
+/**
+ * The colour of a reasoning choice, from calm to hot, so the level can be read at a glance (static: no animation): off is blue (no reasoning, fast), the model's lowest level green, its
+ * middle levels orange, its highest red; `on` (a model with only on/off) is orange; `auto` takes the colour of what the model does by default, muted when that is not known.
+ * Where a level stands is judged in the model's OWN list, so `low · medium · xhigh` and `low · medium · high` both run green, orange, red.
+ */
+internal fun thinkColor(value: String, options: List<String>, defaultWord: String): com.jakewharton.mosaic.ui.Color {
+    val levels = options.filter { it != "default" && it != "off" && it != "on" }
+    return when (value) {
+        "off" -> Palette.Blue
+        "on" -> Palette.Orange
+        "default" -> if (defaultWord.isEmpty() || defaultWord == "default") Palette.Muted else thinkColor(defaultWord, options, "")
+        else -> {
+            val at = levels.indexOf(value)
+            if (at < 0) Palette.Muted
+            else {
+                val t = if (levels.size <= 1) 0.5 else at.toDouble() / (levels.size - 1)
+                if (t < 0.34) Palette.Green else if (t < 0.8) Palette.Orange else Palette.Red
+            }
+        }
+    }
+}
+
 /** `auto (medium)`: the model default with what it really is, so "auto" is never a mystery; just `auto` when Ollama does not say. */
 internal fun autoWord(defaultWord: String): String = if (defaultWord.isEmpty()) "auto" else "auto ($defaultWord)"
 
@@ -270,15 +292,15 @@ internal fun thinkLabel(value: String): String = when (value) { "default" -> "Mo
 internal fun thinkText(setting: String): String = if (setting == "default") "MODEL DEFAULT" else setting.uppercase()
 
 /** What the reasoning-effort control says and how it looks: [text] is `✦ think xhigh`, [width] the columns it takes with its key hint and a gap before it. */
-private class EffortView(val text: String, val color: com.jakewharton.mosaic.ui.Color, val rainbow: Boolean, val width: Int)
+private class EffortView(val text: String, val color: com.jakewharton.mosaic.ui.Color, val width: Int)
 
 /**
- * The reasoning-effort control at the right end of the message field's first row: `Ctrl+G ✦ think xhigh`. Off is quiet blue, the model default and the middle levels sit in the
- * accent colour, and **the model's highest level** (xhigh for qwen3.8, high for gpt-oss, on for a model that only has on/off) wears the logo's flowing rainbow, like Claude Code's
- * ultrathink; so does any level while the model is thinking right now. A level picked for the next message says so. The text always names what is sent, so the animation is
- * only decoration (Settings → Appearance → Logo animation turns it off). Null for a model that cannot think, or when the field is too narrow to share its row.
+ * The reasoning-effort control at the right end of the message field's first row: `Ctrl+G ✦ think xhigh`. Its colour says the level at a glance, calm to hot ([thinkColor]: off blue,
+ * lowest level green, middle orange, highest red), and it does not move. A level picked for the next message says so. Null for a model that cannot think, or when the field is too
+ * narrow to share its row.
  */
 private fun effortView(app: AppContext, thinkingNow: Boolean, fieldWidth: Int): EffortView? {
+    // [thinkingNow] only decides, like a running reply does, that the level in use is the one the message was sent with
     if (app.thinkingValues.isEmpty()) return null
     val plain = app.config.plainGlyphs
     val options = thinkOptions(app.thinkingValues)
@@ -286,21 +308,20 @@ private fun effortView(app: AppContext, thinkingNow: Boolean, fieldWidth: Int): 
     val inUse = if (next.isEmpty() && thinkingNow || next.isEmpty() && app.chat.gen.state == GenState.Running) app.chat.thinkNow() else ""
     val setting = next.ifEmpty { inUse.ifEmpty { app.config.thinking } }
     val effective = if (setting in options) setting else "default"
-    val top = options.lastOrNull()?.takeIf { it != "off" && it != "default" }
     val word = (if (effective == "default") autoWord(thinkDefaultWord(app.thinkingDefault)) else effective) + if (next.isNotEmpty()) " · next" else if (inUse.isNotEmpty()) " · this" else ""
     val text = "${if (effective == "off") (if (plain) "" else "◌ ") else (if (plain) "" else "✦ ")}think $word"
-    val color = when (effective) { "off" -> Palette.Blue; "default" -> Palette.Muted; else -> Palette.Accent }
+    val color = thinkColor(effective, options, thinkDefaultWord(app.thinkingDefault))
     val width = Shortcuts.label("Ctrl+G").length + 1 + text.length + 2
     // the typed text keeps at least this much of the row
     if (fieldWidth < width + 30) return null
-    return EffortView(text, color, app.config.animateLogo && (thinkingNow || (top != null && effective == top)), width)
+    return EffortView(text, color, width)
 }
 
 @Composable
 private fun EffortInline(view: EffortView) {
     Row {
         Label("  " + Shortcuts.label("Ctrl+G") + " ", color = Palette.Hint)
-        RainbowText(view.text, view.rainbow, view.color)
+        Label(view.text, color = view.color, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
     }
 }
 
@@ -310,12 +331,13 @@ internal fun thinkingSegment(app: AppContext, plain: Boolean): StatusSegment {
     val next = app.chat.thinkNext
     // while a reply runs, the level that message was sent with (a /think pick) is the one in use
     val inUse = if (next.isEmpty() && app.chat.gen.state == GenState.Running) app.chat.thinkNow() else ""
+    val options = thinkOptions(app.thinkingValues)
     val setting = next.ifEmpty { inUse.ifEmpty { app.config.thinking } }
     // a setting the model does not list is not sent: the model decides
     val effective = if (setting in thinkOptions(app.thinkingValues)) setting else "default"
     val word = (if (effective == "default") autoWord(thinkDefaultWord(app.thinkingDefault)) else effective) + if (next.isNotEmpty()) " · next message" else if (inUse.isNotEmpty()) " · this message" else ""
     val glyph = if (plain) "" else if (effective == "off") "◌ " else "✦ "
-    return statusSegment("", "${glyph}think $word", if (effective == "off") Palette.Blue else Palette.Accent, 8, bold = true)
+    return statusSegment("", "${glyph}think $word", thinkColor(effective, options, thinkDefaultWord(app.thinkingDefault)), 8, bold = true)
 }
 
 /**
@@ -1367,7 +1389,8 @@ fun ChatScreen(app: AppContext) {
                         label = { it.label },
                         rows = bodyRows(extra = 4),
                         icon = { if (it.value == chat.thinkNext) "●" else "»" },
-                        iconColor = { if (it.value == chat.thinkNext) Palette.Green else Palette.Accent },
+                        // each choice in its level's colour, calm to hot (the first row, the Settings value, in the colour of what that is)
+                        iconColor = { thinkColor(it.value.ifEmpty { app.config.thinking }.let { v -> if (v in thinkOptions(app.thinkingValues)) v else "default" }, thinkOptions(app.thinkingValues), thinkDefaultWord(app.thinkingDefault)) },
                         meta = { it.note },
                     )
                 }
