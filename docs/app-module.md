@@ -98,7 +98,7 @@ Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `
 
 | File | Provides |
 |---|---|
-| `Key.kt` | `sealed interface Key` (`Up/Down/Enter/Escape/Tab/Backspace…`, `Text(char)`, `PastedNewline` (Alt+Enter and pasted line breaks), plus app keys `Save` Ctrl+S, `Browse` Ctrl+O, `Palette` Ctrl+P, `Capture` Ctrl+N, `Skip` Ctrl+X, `Thinking` Ctrl+T (the thinking pane), `Effort` Ctrl+G (the reasoning-effort picker, same as `/think`)); helpers `char`, `isUp/isDown` |
+| `Key.kt` | `sealed interface Key` (`Up/Down/Enter/Escape/Tab/Backspace…`, `Text(char)`, `PastedNewline` (Alt+Enter and pasted line breaks), plus app keys `Save` Ctrl+S, `Browse` Ctrl+O, `Palette` Ctrl+P, `Capture` Ctrl+N, `Skip` Ctrl+X, `Thinking` Ctrl+T (the thinking pane), `Effort` Ctrl+G (the reasoning-effort picker, same as `/effort`)); helpers `char`, `isUp/isDown` |
 | `KeyMapping.kt` | Mosaic `KeyEvent` → `Key` (handles lock bits, Kitty-style modifiers) |
 | `KeyDispatcher.kt` | dispatch order overlay → screen → global; **paste repair** (keys <20 ms apart are text; a paste that lost its beginning or its middle is typed back whole from the clipboard); `Meta` sequences |
 | `MetaSequence.kt` | ESC-prefixed sequences (Alt+arrows, word jumps) |

@@ -73,6 +73,8 @@ internal class SlashItem(
     val kind: SlashKind = if (skill) SlashKind.Skill else if (tool) SlashKind.Read else SlashKind.Command,
     /** An example of how to type it with its text (`/revise focus on the typo`), shown under the highlighted entry; blank for a command that takes no text. */
     val usage: String = "",
+    /** Other names that find it in the menu and run it (`/think` for `/effort`: the old name keeps working). */
+    val aliases: List<String> = emptyList(),
 )
 
 /** What a request for each tool might look like when typed after its name (`/read_note Trip Planner`); blank = it needs nothing. */
@@ -111,7 +113,7 @@ internal val SlashCommands = listOf(
     SlashItem("/compact", "Summarize the older part of this chat to free the context window", false),
     SlashItem("/mode", "Tools mode: ask, auto, plan (cycles)", false),
     SlashItem("/autorun", "Run shell commands without asking (toggle)", false),
-    SlashItem("/think", "Reasoning effort for the next message: pick from what the model offers (off, on, low, medium, high, xhigh…)", false),
+    SlashItem("/effort", "Reasoning effort for the next message: pick from the levels this model offers (Ctrl+G)", false, usage = "/effort xhigh   or just /effort to pick from the list", aliases = listOf("/think")),
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false, usage = "e.g. /memory check   (finds repeated lines and dead note paths, asks before removing)"),
     SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
     SlashItem("/reindex", "Build or refresh the semantic search index of your vault (Settings → Vault → Semantic search model)", false),
@@ -120,7 +122,7 @@ internal val SlashCommands = listOf(
     SlashItem("/flow", "Flow: every message goes analyst, planner, worker, reviewer, controller (toggle)", false, usage = "e.g. /flow careful   or   /flow off   (without a name it switches)"),
     SlashItem("/goal", "Set a goal: Arcana keeps working until a checker says it is met", false, usage = "e.g. /goal all notes in Inbox are tagged   (/goal alone shows it, /goal clear removes it)"),
     SlashItem("/artifacts", "Files and notes the model wrote or changed in this chat", false),
-    SlashItem("/thinking", "Thinking pane: watch the model think under the conversation (toggle)", false),
+    SlashItem("/thinking", "Thoughts pane: watch the model's thoughts under the conversation (toggle; not the effort, see /effort)", false),
     SlashItem("/append", "Add the last answer to a note", false),
     SlashItem("/replace", "Replace a note with the last answer", false),
     SlashItem("/clear", "Erase this chat", false),
@@ -137,7 +139,7 @@ internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean
     "/mode" -> if (!config.toolsEnabled) "TOOLS OFF" to Palette.Dim else config.toolMode.uppercase() to when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }
     "/oracul" -> if (!config.oraculEnabled) "HELPERS OFF" to Palette.Dim else if (config.oraculModel.isBlank()) "NO MODEL" to Palette.Dim else (if (config.oraculAuto == "off") "MANUAL" else "AUTO ${config.oraculAuto.uppercase()}") to Palette.Green
     "/compact" -> if (config.autoCompactPercent > 0) "AUTO ${config.autoCompactPercent}%" to Palette.Green else "MANUAL" to Palette.Dim
-    "/think" -> thinkText(config.thinking) to if (config.thinking == "default") Palette.Dim else Palette.Accent
+    "/effort" -> (if (config.thinking == "default") autoWord(ThinkLevels.defaultWord).uppercase() else thinkText(config.thinking)) to if (config.thinking == "default") Palette.Dim else Palette.Accent
     "/autorun" -> if (!config.toolShell) "SHELL OFF" to Palette.Dim else if (config.toolAutoShell) "ON" to Palette.Red else "OFF" to Palette.Dim
     "/memory" -> if (config.memoryEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/skills" -> if (config.skillsEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
@@ -164,16 +166,16 @@ internal fun unknownCommand(word: String, items: List<SlashItem>): String {
 /** The entries that fit what is typed after the slash, grouped commands, skills, tools; in each group names that start with it first, then names that contain it. */
 internal fun slashMatches(items: List<SlashItem>, query: String): List<SlashItem> {
     val q = query.trim().lowercase().removePrefix("/")
-    val names = { item: SlashItem -> item.name.lowercase().removePrefix("/") }
+    val names = { item: SlashItem -> (listOf(item.name) + item.aliases).map { it.lowercase().removePrefix("/") } }
     // commands, then skills, then tools (so each kind sits together and is easy to tell apart); inside a kind the names that start with the text come first
-    return (items.filter { names(it).startsWith(q) } + items.filter { !names(it).startsWith(q) && q in names(it) }).sortedBy { it.kind.category.ordinal }
+    return (items.filter { n -> names(n).any { it.startsWith(q) } } + items.filter { n -> names(n).none { it.startsWith(q) } && names(n).any { q in it } }).sortedBy { it.kind.category.ordinal }
 }
 
 /** The Chat key map (`?`): every key and command by what it is for, the ones about the model first. */
 fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf(
     com.arcana.brain.app.navigation.KeySection("The model: thinking, tools, memory", listOf(
-        "/think" to "reasoning effort for the next message: pick from what the model offers",
-        "/thinking" to "thinking pane under the conversation",
+        "/effort" to "reasoning effort for the next message: pick from what the model offers (Ctrl+G; /effort xhigh sets it directly)",
+        "/thinking" to "thoughts pane under the conversation (Ctrl+T)",
         "/mode" to "tools: ask, auto, plan",
         "/tools" to "tools on or off",
         "/autorun" to "shell commands without asking",
@@ -796,8 +798,19 @@ fun ChatScreen(app: AppContext) {
         }
     }
 
+    /** `/effort xhigh`: the next message's level typed directly; it must be one the model lists (`auto` = the model default, `settings` = the Settings value). */
+    fun setEffortFromText(text: String) {
+        val options = thinkOptions(app.thinkingValues)
+        if (app.thinkingValues.isEmpty()) return toast("${app.config.model} does not offer a thinking switch (Ollama lists none), so nothing is sent.", error = true)
+        val word = text.trim().lowercase().let { if (it == "auto" || it == "model default") "default" else it }
+        if (word == "settings") { chat.thinkNext = ""; return toast("The next message uses the Settings value (think ${thinkLabel(app.config.thinking).lowercase()}).") }
+        if (word !in options) return toast("${app.config.model} offers: ${options.joinToString(", ") { if (it == "default") "auto" else it }}. Type /effort alone to pick from the list.", error = true)
+        chat.thinkNext = word
+        toast("Next message: think ${if (word == "default") "auto" else word}. After you send it, the Settings value is used again.")
+    }
+
     /**
-     * `/think`: a list of the reasoning choices **the current model offers** (read from Ollama's `/api/show` → `thinking.values`: `off`/`on` for most, `low · medium · high` for gpt-oss,
+     * `/effort` (and `/think`, the old name): a list of the reasoning choices **the current model offers** (read from Ollama's `/api/show` → `thinking.values`: `off`/`on` for most, `low · medium · high` for gpt-oss,
      * `low · medium · xhigh` for qwen3.8). Enter picks one for the next message only; `d` makes it the Settings value.
      */
     fun openThinkPicker() {
@@ -854,7 +867,7 @@ fun ChatScreen(app: AppContext) {
 
     fun runCommand(command: String, args: String = "") {
         // text after a command is only meaningful for these; anywhere else say so instead of guessing
-        if (args.isNotEmpty() && command !in setOf("/oracul", "/compare", "/revise", "/flow", "/goal", "/memory")) return toast("$command takes no text after it. Type just $command.", error = true)
+        if (args.isNotEmpty() && command !in setOf("/oracul", "/compare", "/revise", "/flow", "/goal", "/memory", "/effort", "/think")) return toast("$command takes no text after it. Type just $command.", error = true)
         when (command) {
             "/new" -> startNew()
             "/history" -> openHistory()
@@ -875,7 +888,7 @@ fun ChatScreen(app: AppContext) {
             "/goal" -> runGoal(args)
             "/mode" -> cycleMode()
             "/autorun" -> toggleAutoRun()
-            "/think" -> openThinkPicker()
+            "/effort", "/think" -> if (args.isBlank()) openThinkPicker() else setEffortFromText(args)
             "/compact" -> runCompact()
             "/oracul" -> runOracul(compare = false, only = args.ifEmpty { null })
             "/compare" -> runOracul(compare = true, only = args.ifEmpty { null })
@@ -929,6 +942,7 @@ fun ChatScreen(app: AppContext) {
             Command(if (app.config.skillsEnabled) "Skills: turn off" else "Skills: turn on (list them)", "Chat", "/skills") { toggleSkills() },
             Command("Semantic search: build or refresh the index of the vault", "Chat", "/reindex") { chat.reindex { text, error -> toast(text, error = error) } },
             Command("Thinking pane: size, then off (Ctrl+T)", "Chat", "Ctrl+T") { resizeThinkingPane() },
+            Command("Reasoning effort: choose for the next message (what the model offers)", "Chat", "Ctrl+G") { openThinkPicker() },
             Command(if (app.config.thinkingPane) "Thinking pane: turn off" else "Thinking pane: show the model's thoughts live", "Chat", "/thinking") { toggleThinkingPane() },
             Command("Tools mode: ${app.config.toolMode} → next (ask, auto, plan)", "Chat", "/mode", app.config.toolsEnabled) { cycleMode() },
             Command("Oracul: second opinion on the last answer", "Chat", "/oracul", lastAnswer != null) { runOracul(compare = false) },

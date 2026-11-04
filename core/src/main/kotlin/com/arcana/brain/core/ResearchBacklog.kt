@@ -11,20 +11,21 @@ import java.time.LocalDate
  * @property date `YYYY-MM-DD` the question was captured
  * @property done the box is ticked
  * @property link the `[[report]]` it was answered by, as written, or null
+ * @property id the line's stable marker (`^k3x9qz` at its end, an Obsidian block id): a report started from the line carries it as `backlog_id`, so the two stay linked when the question text is edited; null for a line written by hand
  */
-data class BacklogItem(val line: Int, val question: String, val date: String, val done: Boolean, val link: String?)
+data class BacklogItem(val line: Int, val question: String, val date: String, val done: Boolean, val link: String?, val id: String? = null)
 
 /**
  * The research backlog: the vault note `Research/Research Backlog.md`, a checklist of questions to research. A thought captured with a `? ` or `research: `
- * prefix is added here ([capturedQuestion], [add]); the Brain screen lists the open ones and starts the research; a finished report whose `question:` property
+ * prefix is added here ([capturedQuestion], [add]); the Brain screen lists the open ones and starts the research; a finished report whose `question:` (or `backlog:`) property
  * is the same text ticks its line by itself ([reconcile]). The note is plain Markdown the user can edit; only lines of the form
- * `- [ ] question (YYYY-MM-DD)` and `- [x] question (YYYY-MM-DD) -> [[report]]` are read.
+ * `- [ ] question (YYYY-MM-DD)` and `- [x] question (YYYY-MM-DD) -> [[report]]` are read (`→`, which a note editor may turn `->` into, counts as the arrow).
  */
 object ResearchBacklog {
     const val PATH = "Research/Research Backlog.md"
     const val TITLE = "Research Backlog"
     private const val FOOTER = "Back to [[Home]]"
-    private val LINE = Regex("""^- \[([ xX])] (.*?) \((\d{4}-\d{2}-\d{2})\)(?: -> (\[\[.+]]))?\s*$""")
+    private val LINE = Regex("""^- \[([ xX])] (.*?) \((\d{4}-\d{2}-\d{2})\)(?: (?:->|→) (\[\[.+]]))?(?: \^([A-Za-z0-9-]+))?\s*$""")
     private val PREFIX = Regex("""^(\?|research:)\s+""", RegexOption.IGNORE_CASE)
 
     private fun header() = "---\ntype: backlog\ntags: [index, research]\n---\n\n# $TITLE\n\n" +
@@ -38,6 +39,39 @@ object ResearchBacklog {
         return t.substring(m.range.last + 1).trim().takeIf { it.isNotEmpty() }
     }
 
+    /**
+     * A new marker for a line, readable and sorted by time: `q-` and the day and month of the line's date, then the hour and minute it is made (`q-0411-1548`, written `^q-0411-1548`
+     * at the end of the line, an Obsidian block id). A clash with a marker already in the note (same minute, or the same day a year ago) gets a letter: `q-0411-1548b`.
+     */
+    internal fun newId(date: LocalDate, taken: Set<String>, now: java.time.LocalTime = java.time.LocalTime.now()): String {
+        val base = "q-%02d%02d-%02d%02d".format(date.dayOfMonth, date.monthValue, now.hour, now.minute)
+        if (base !in taken) return base
+        return ('b'..'z').map { base + it }.firstOrNull { it !in taken } ?: (base + System.nanoTime() % 100000)
+    }
+
+    /** The markers in use in [lines]. */
+    private fun markers(lines: List<String>): Set<String> = lines.mapNotNull { LINE.find(it)?.groups?.get(5)?.value }.toSet()
+
+    /** The link to a marker, for a report's `backlog` property: `[[Research Backlog#^q-0411-1548]]` opens that very line in Obsidian and lists the report among its backlinks. */
+    fun linkTo(id: String): String = "[[$TITLE#^$id]]"
+
+    /**
+     * The marker of [item], written into its line first when it has none (a line typed by hand or captured before markers existed). The Brain screen calls it when it starts a research,
+     * so the report can carry it. Returns null when the line is gone.
+     */
+    fun ensureId(vault: Vault, item: BacklogItem): String? {
+        item.id?.let { return it }
+        val file = vault.root.resolve(PATH)
+        if (!Files.isRegularFile(file)) return null
+        val lines = Files.readAllLines(file).toMutableList()
+        fun matches(i: Int) = i in lines.indices && LINE.find(lines[i])?.let { normalize(it.groupValues[2]) == normalize(item.question) && it.groups[5] == null } == true
+        val at = if (matches(item.line)) item.line else lines.indices.firstOrNull { matches(it) } ?: return null
+        val id = newId(runCatching { LocalDate.parse(LINE.find(lines[at])!!.groupValues[3]) }.getOrDefault(LocalDate.now()), markers(lines))
+        lines[at] = lines[at].trimEnd() + " ^$id"
+        Files.writeString(file, lines.joinToString("\n", postfix = "\n"))
+        return id
+    }
+
     /** A question as it is compared: lower case, spaces collapsed, a trailing `?` or `.` dropped. */
     fun normalize(question: String): String = question.trim().lowercase().replace(Regex("\\s+"), " ").trimEnd('?', '.', ' ')
 
@@ -46,7 +80,7 @@ object ResearchBacklog {
         val file = vault.root.resolve(PATH)
         if (!Files.isRegularFile(file)) return emptyList()
         return Files.readAllLines(file).mapIndexedNotNull { i, l ->
-            LINE.find(l)?.let { m -> BacklogItem(i, m.groupValues[2], m.groupValues[3], m.groupValues[1] != " ", m.groups[4]?.value) }
+            LINE.find(l)?.let { m -> BacklogItem(i, m.groupValues[2], m.groupValues[3], m.groupValues[1] != " ", m.groups[4]?.value, m.groups[5]?.value) }
         }
     }
 
@@ -61,7 +95,7 @@ object ResearchBacklog {
         val q = question.trim().replace(Regex("\\s+"), " ")
         if (q.isEmpty()) return false
         val file = vault.root.resolve(PATH)
-        val line = "- [ ] $q ($date)"
+        val line = "- [ ] $q ($date) ^${newId(date, if (Files.exists(file)) markers(Files.readAllLines(file)) else emptySet())}"
         if (!Files.exists(file)) {
             Files.createDirectories(file.parent)
             Files.writeString(file, header() + line + "\n\n" + FOOTER + "\n")
@@ -88,7 +122,7 @@ object ResearchBacklog {
         val at = if (matches(item.line)) item.line else lines.indices.firstOrNull { matches(it) } ?: return false
         val m = LINE.find(lines[at])!!
         val clean = link?.trim()?.removePrefix("[[")?.removeSuffix("]]")?.takeIf { it.isNotEmpty() }
-        lines[at] = "- [x] ${m.groupValues[2]} (${m.groupValues[3]})" + (clean?.let { " -> [[$it]]" } ?: "")
+        lines[at] = "- [x] ${m.groupValues[2]} (${m.groupValues[3]})" + (clean?.let { " -> [[$it]]" } ?: "") + (m.groups[5]?.value?.let { " ^$it" } ?: "")
         Files.writeString(file, lines.joinToString("\n", postfix = "\n"))
         return true
     }
@@ -104,7 +138,10 @@ object ResearchBacklog {
         var ticked = 0
         // ticking changes no line index (a line stays a line), so the indexes of the other items stay valid
         for (item in open) {
-            val report = done.firstOrNull { normalize(it.question) == normalize(item.question) } ?: continue
+            // a report answers a line when its `question` says the same, or when Arcana recorded that it was started from this very line (`backlog`)
+            // by the marker first (it survives an edited question), then by what the report says it answers
+            val report = done.firstOrNull { item.id != null && it.backlogId == item.id }
+                ?: done.firstOrNull { normalize(it.question) == normalize(item.question) || (it.backlog.isNotBlank() && normalize(it.backlog) == normalize(item.question)) } ?: continue
             if (tick(vault, item, report.title)) ticked++
         }
         return ticked

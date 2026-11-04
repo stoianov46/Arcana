@@ -18,6 +18,23 @@ object ReportMeta {
      * Writes the missing keys into the report at [path] (vault-relative) and returns the keys it wrote. Does nothing, and returns an empty list, when the note
      * is not a `type: report` note, does not exist, or cannot be written. [tokens] of 0 or less is not written (nothing was recorded).
      */
+    /**
+     * Writes `backlog_id: <the line's marker>` and `backlog: "[[Research Backlog#^<marker>]]"` (a link to the line) into the report, or, for a line without a marker, `backlog: "<the line's text>"` at [path] when it is a `type: report` note without one: the link from a finished report to the research backlog line
+     * it answers, which does not depend on how the model worded the report's own `question`. Returns true when it wrote it. Best effort: never throws.
+     */
+    fun stampBacklog(vault: Vault, path: String, backlog: String, id: String? = null): Boolean = runCatching {
+        val text = backlog.trim().replace(Regex("\\s+"), " ")
+        if (text.isEmpty()) return@runCatching false
+        val (block, _) = Vault.splitFrontmatter(vault.read(path))
+        if (block.isEmpty()) return@runCatching false
+        val props = Vault.parseProperties(Vault.propertyText(block))
+        fun value(key: String) = props[key]?.firstOrNull()?.substringAfter(':', "")?.trim()?.trim('"', '\'').orEmpty()
+        if (value("type") != "report" || value("backlog").isNotEmpty()) return@runCatching false
+        // with a marker: the id and a link to the line (Obsidian shows the report among that line's backlinks); without: the line's text, which is what reconcile compares
+        val lines = if (id.isNullOrBlank()) "backlog: \"${text.replace("\"", "'")}\"" else "backlog_id: $id\nbacklog: \"${ResearchBacklog.linkTo(id)}\""
+        vault.setProperties(path, lines).isNotEmpty()
+    }.getOrDefault(false)
+
     fun stamp(vault: Vault, path: String, tokens: Long, workMillis: Long, model: String): List<String> = runCatching {
         val (block, _) = Vault.splitFrontmatter(vault.read(path))
         if (block.isEmpty()) return@runCatching emptyList()

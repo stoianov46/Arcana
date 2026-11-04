@@ -106,4 +106,15 @@ class ThinkAndKeepAliveTest {
         assertEquals(null, com.arcana.brain.core.Oracul.serverConfig(cfg, "other").keepAliveValue(), "another model is not pinned")
         assertEquals(null, com.arcana.brain.core.Oracul.serverConfig(cfg.copy(oraculUrl = "http://big:11434"), "qwen").keepAliveValue(), "another server is not told")
     }
+
+    @Test
+    fun effortFindsTheOldThinkNameAndIsNotMixedUpWithTheThoughtsPane() {
+        val items = listOf(
+            com.arcana.brain.app.screens.SlashItem("/effort", "effort", false, aliases = listOf("/think")),
+            com.arcana.brain.app.screens.SlashItem("/thinking", "pane", false),
+        )
+        assertEquals(setOf("/effort", "/thinking"), com.arcana.brain.app.screens.slashMatches(items, "/think").map { it.name }.toSet(), "the old name still finds /effort (next to the pane)")
+        assertEquals(listOf("/effort"), com.arcana.brain.app.screens.slashMatches(items, "/eff").map { it.name })
+        assertEquals(listOf("/thinking"), com.arcana.brain.app.screens.slashMatches(items, "/thinki").map { it.name })
+    }
 }

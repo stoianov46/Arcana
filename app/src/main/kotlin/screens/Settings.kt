@@ -217,7 +217,7 @@ private val declared: List<Setting> = listOf(
     choice(Group.Appearance, "Sidebar", "Full: screen names. Icons: only the number key and an icon, which leaves the content more width. Ctrl+B switches it from any screen.", listOf("full" to "Full", "icons" to "Icons"), { if (it.sidebarCollapsed) "icons" else "full" }, { c, v -> c.copy(sidebarCollapsed = v == "icons") }),
     Setting(
         Group.Ollama, "Thinking & effort",
-        "How much the model reasons before it answers (Ollama's think): more reasoning is better on hard tasks but slower and uses more of the context window. The choices are the ones this model lists in Ollama, so they change with the model. A value the model does not list is not sent. In Chat, Ctrl+G (/think) picks a level for the next message only.",
+        "How much the model reasons before it answers (Ollama's think): more reasoning is better on hard tasks but slower and uses more of the context window. The choices are the ones this model lists in Ollama, so they change with the model. A value the model does not list is not sent. In Chat, Ctrl+G (/effort) picks a level for the next message only.",
         value = { c -> (if (c.thinking == "default" && ThinkLevels.defaultWord.isNotEmpty()) "Model default (${ThinkLevels.defaultWord})" else thinkLabel(c.thinking)) + if (c.thinking in ThinkLevels.options) "" else "  · not offered by this model" },
         step = { c, dir ->
             // the model's own list; a value kept from another model is stepped from the model default

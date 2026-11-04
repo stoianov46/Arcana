@@ -41,6 +41,10 @@ data class ReportInfo(
     val workTime: String = "",
     val rating: Int? = null,
     val supersededBy: String = "",
+    /** The exact text of the research backlog line this report was started from (`backlog`, written by Arcana when a run started from the Brain screen creates it): what ticks that line, whatever the model wrote as the `question`. */
+    val backlog: String = "",
+    /** The marker of that line (`backlog_id`, see [BacklogItem.id]): the link that survives an edit of the question text. */
+    val backlogId: String = "",
 )
 
 /** Finds the reports in a vault and says which have aged. Pure reading: it never writes. */
@@ -97,6 +101,8 @@ object Reports {
             summary = value("summary"),
             skill = value("skill").removePrefix("[[").removeSuffix("]]").substringBefore('|').removeSuffix(".skill").trim(),
             question = value("question").ifEmpty { value("pair") },
+            backlog = value("backlog"),
+            backlogId = value("backlog_id"),
             ageDays = age,
             model = value("model"),
             tokens = value("tokens").toLongOrNull(),

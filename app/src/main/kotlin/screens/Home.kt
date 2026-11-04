@@ -102,6 +102,8 @@ fun HomeScreen(app: AppContext) {
     fun startResearch(item: BacklogItem) {
         val skill = if (app.config.skillsEnabled) vault.getOrNull()?.let { v -> Skills.discoverAll(v, app.skillsFolder()).firstOrNull { it.name.endsWith("research-report") } } else null
         app.chat.startNew()
+        app.chat.backlogQuestion = item.question
+        app.chat.backlogId = vault.getOrNull()?.let { v -> runCatching { ResearchBacklog.ensureId(v, item) }.getOrNull() }.orEmpty()
         skill?.let { app.chat.attachments.notes += it.path }
         app.chat.input.set(item.question)
         backlogOpen = false

@@ -160,13 +160,22 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         private set
 
     /**
-     * The reasoning level picked for the next message only (`/think`: a value of the model's own list, such as `xhigh`, `off` or `default`); blank = the Settings value. It
+     * The reasoning level picked for the next message only (`/effort`: a value of the model's own list, such as `xhigh`, `off` or `default`); blank = the Settings value. It
      * goes onto the message when it is sent ([ChatMessage.think]) and is cleared then.
      */
     var thinkNext by androidx.compose.runtime.mutableStateOf("")
 
     /** The level the message being answered was sent with (every round of its tool use too); blank = the Settings value. */
     fun thinkNow(): String = messages.lastOrNull { Oracul.isRealUser(it) }?.think.orEmpty()
+
+    /**
+     * The research backlog line this chat was started from (the Brain screen's `Enter` on a question): blank for any other chat. Every report this chat creates gets it as its `backlog`
+     * property, so the line is ticked when the report is done, however the model worded the report's own `question` (it writes "the question in one sentence").
+     */
+    var backlogQuestion by androidx.compose.runtime.mutableStateOf("")
+
+    /** The marker of that line (see [BacklogItem.id]), blank when it has none. */
+    var backlogId by androidx.compose.runtime.mutableStateOf("")
 
     /** Changes whenever [skillRun] makes progress, so the status bar redraws. */
     var skillTick by androidx.compose.runtime.mutableIntStateOf(0)
@@ -521,6 +530,13 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * (every model, since the run started), `work_time` and `model`, written by Arcana, never composed by the model. Only missing keys are written. Best effort:
      * a failure leaves the report as it is.
      */
+    /** The notes this chat created get the backlog line they answer (see [backlogQuestion]); for every finished reply, so it does not depend on the skill run ending cleanly. */
+    private fun stampBacklog() {
+        if (backlogQuestion.isBlank()) return
+        val vault = app.openVault().getOrNull() ?: return
+        for (a in artifacts.toList()) if (a.tool == "create_note" && a.action == "created") ReportMeta.stampBacklog(vault, a.path, backlogQuestion, backlogId.ifBlank { null })
+    }
+
     private fun stampReports() {
         val run = skillRun ?: return
         if (!run.finished || skillRunStart == 0L) return
@@ -1132,7 +1148,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }
         // an automatic opinion on the previous answer, still being written, is out of date now: the user has moved on (and it must not keep the Oracul pill lit through the new turn)
         autoConsult?.cancel()
-        // a level picked with /think counts for this message only, and only when the model lists it (the model may have been changed since)
+        // a level picked with /effort counts for this message only, and only when the model lists it (the model may have been changed since)
         val level = thinkNext.takeIf { it in com.arcana.brain.app.screens.thinkOptions(app.thinkingValues) }.orEmpty()
         thinkNext = ""
         add(ChatMessage.user(body, sent.pictures, sent.notes, sent.files).copy(think = level))
@@ -1578,6 +1594,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         pendingSources = emptyList()
         pendingCut = emptyList()
         gen.consume()
+        stampBacklog()
         stampReports()
         // the model ends its turn with open steps on its own todo list: back once, to finish them or close the list
         val open = todos.filter { !it.done }
@@ -1596,6 +1613,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** Starts an empty conversation. The old one stays saved and can be opened again from the history. */
     fun startNew() {
+        backlogQuestion = ""
+        backlogId = ""
         skillRun = null
         thinkNext = ""
         clearRoles()
@@ -1614,6 +1633,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         clearRoles()
         clearGoal()
         artifacts.clear()
+        backlogQuestion = ""
+        backlogId = ""
         skillRun = null // a run belongs to the conversation it started in (see docs/skills.md)
         skillTick++
         messages.clear(); wholeNotes.clear(); cutAccepted.clear()
