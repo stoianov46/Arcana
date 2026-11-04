@@ -691,4 +691,17 @@ class DesignTest {
         assertEquals(LibraryFilter.Orphans, defaultLibraryFilter(AppConfig(libraryTab = "ORPHANS")))
         assertEquals(LibraryFilter.All, defaultLibraryFilter(AppConfig(libraryTab = "nonsense")))
     }
+
+    @Test
+    fun aViewThatIsReadFromTheTopStartsOnItsFirstLinesOnceAndThenFollowsTheReader() {
+        val state = com.arcana.brain.app.design.OutputState()
+        state.maxOffset = 40 // the text is 40 lines longer than the window
+        assertEquals(0, state.offset, "a stream follows its end by default")
+        state.showTop()
+        state.applyTop()
+        assertEquals(40, state.offset, "the offset counts from the bottom: the maximum is the first line")
+        state.offset = 25 // the reader scrolled down
+        state.applyTop()
+        assertEquals(25, state.offset, "asked once: it does not pull the view back to the top every frame")
+    }
 }

@@ -41,7 +41,8 @@ fun UsageScreen(app: AppContext) {
     var period by remember { mutableStateOf(Period.Session) }
     var page by remember { mutableStateOf(Page.Overview) }
     var confirmClear by remember { mutableStateOf(false) }
-    val teamOutput = remember { OutputState() }
+    // the Orchestration page is a long text read from the top (the view follows the END of a text by default, like the chat does)
+    val teamOutput = remember { OutputState().also { it.showTop() } }
     val scroll = rememberScrollState()
     var notice by remember { mutableStateOf<Notice?>(null) }
 
@@ -58,10 +59,10 @@ fun UsageScreen(app: AppContext) {
                 confirmClear = false
                 true
             }
-            key == Key.Left -> { period = Period.entries[(period.ordinal - 1).mod(Period.entries.size)]; true }
-            key == Key.Right -> { period = Period.entries[(period.ordinal + 1).mod(Period.entries.size)]; true }
-            key == Key.Tab -> { page = Page.entries[(page.ordinal + 1).mod(Page.entries.size)]; scroll.reset(); true }
-            key == Key.BackTab -> { page = Page.entries[(page.ordinal - 1).mod(Page.entries.size)]; scroll.reset(); true }
+            key == Key.Left -> { period = Period.entries[(period.ordinal - 1).mod(Period.entries.size)]; teamOutput.showTop(); true }
+            key == Key.Right -> { period = Period.entries[(period.ordinal + 1).mod(Period.entries.size)]; teamOutput.showTop(); true }
+            key == Key.Tab -> { page = Page.entries[(page.ordinal + 1).mod(Page.entries.size)]; scroll.reset(); teamOutput.showTop(); true }
+            key == Key.BackTab -> { page = Page.entries[(page.ordinal - 1).mod(Page.entries.size)]; scroll.reset(); teamOutput.showTop(); true }
             page == Page.Team && teamOutput.handle(key, letters = false) -> true
             page != Page.Team && scroll.handle(key) -> true
             key.char == 'c' -> { confirmClear = true; true }

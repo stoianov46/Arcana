@@ -81,6 +81,14 @@ class OutputState {
         leaveSelect()
     }
 
+    /** Set by [showTop]: the next frame puts the window on the first lines, once the text is measured (the offset counts from the bottom, so it needs the text's length). */
+    private var startAtTop = false
+
+    /** A view that is read from the top (a report, a table), not followed at its end like a stream: call it when it opens or its text changes. */
+    fun showTop() { startAtTop = true; leaveSelect() }
+
+    internal fun applyTop() { if (startAtTop) { startAtTop = false; offset = maxOffset } }
+
     private fun leaveSelect() {
         selecting = false
         marked = emptySet()
@@ -248,6 +256,7 @@ fun ScrollView(lines: List<Line>, rows: Int, state: OutputState, modifier: Modif
     state.total = lines.size
     state.visible = visible
     state.ranges = entryRanges(lines)
+    state.applyTop()
     val offset = state.offset.coerceIn(0, state.maxOffset)
     val end = lines.size - offset
     val start = (end - visible).coerceAtLeast(0)
