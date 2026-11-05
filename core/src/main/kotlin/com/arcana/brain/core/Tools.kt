@@ -469,7 +469,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
             schema(
                 "path" to ("string" to "Path of the note inside the vault"),
                 "content" to ("string" to "The Markdown to add"),
-                "heading" to ("string" to "A heading to put above it (optional)"),
+                "heading" to ("string" to "A heading to put above it (optional; leave empty when content already starts with its own heading)"),
                 required = listOf("path", "content"),
             ),
             ToolRisk.Write, { it.str("path") },

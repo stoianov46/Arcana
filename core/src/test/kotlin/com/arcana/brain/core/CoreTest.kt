@@ -179,6 +179,22 @@ class CoreTest {
     }
 
     @Test
+    fun appendNeverDoublesTheHeading() {
+        val dir = Files.createTempDirectory("vault")
+        Files.writeString(dir.resolve("N.md"), "one\n")
+        val vault = Vault(dir)
+        vault.append("N.md", "## Top items", "## Top items\n\nA")      // argument and content both carry it
+        vault.append("N.md", "Chart", "## ## Chart\n\nB")              // doubled marker in the content
+        vault.append("N.md", "## Sources", "- link")                     // marks typed into the argument
+        vault.append("N.md", "  ", "plain")                              // blank heading = none
+        vault.append("N.md", "Method", "### Detail\n\nC")              // a different heading is kept
+        assertEquals(
+            "one\n\n## Top items\n\nA\n\n## Chart\n\nB\n\n## Sources\n\n- link\n\nplain\n\n## Method\n\n### Detail\n\nC\n",
+            vault.read("N.md"),
+        )
+    }
+
+    @Test
     fun noteTasksCarryTheNoteAndTheInstruction() {
         val config = AppConfig()
         val translate = Prompts.noteTask(config, NoteTask.Translate, "Plan", "Hello", input = "Ukrainian").last().content

@@ -281,13 +281,22 @@ class Vault(root: Path, private val memoryPath: String = "") {
         return file.relativeTo(root).toString().replace('\\', '/')
     }
 
-    /** Adds [body] to the end of [note], under a `## [heading]` line unless [heading] is null. */
+    /**
+     * Adds [body] to the end of [note], under a `## [heading]` line unless [heading] is null or blank.
+     * The heading is never doubled: `#` marks the caller typed into [heading] are dropped, a doubled marker at the start of
+     * [body] (`## ## X`) is collapsed, and when [body] already starts with a heading of the same text (any level) no extra
+     * one is written. Models often pass the heading both as the argument and as the first line of the content.
+     */
     fun append(note: String, heading: String?, body: String) {
         val file = resolve(note)
         val existing = Files.readString(file)
         val separator = if (existing.endsWith("\n")) "\n" else "\n\n"
-        val title = if (heading == null) "" else "## $heading\n\n"
-        Files.writeString(file, existing + separator + title + body.trim() + "\n")
+        val name = heading?.trim()?.trimStart('#')?.trim().orEmpty()
+        val text = body.trim().replace(Regex("^(#{1,6})([ \\t]+#{1,6})+(?=[ \\t])"), "$1")
+        val first = text.lineSequence().firstOrNull().orEmpty()
+        val bodyHeading = Regex("^#{1,6}[ \\t]+(.*)$").matchEntire(first.trim())?.groupValues?.get(1)?.trim()
+        val title = if (name.isEmpty() || bodyHeading.equals(name, ignoreCase = true)) "" else "## $name\n\n"
+        Files.writeString(file, existing + separator + title + text + "\n")
     }
 
     /**

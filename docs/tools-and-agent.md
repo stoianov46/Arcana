@@ -54,7 +54,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `grep_files` | Read | `pattern`, `path?`, `glob?` | regex (case-insensitive) inside text files: `file:line: text`, ≤60 hits; skips binary, PDFs, files over 2 MB |
 | `read_file` | Read | `path`, `start_line?`, `end_line?` | text, code, JSON, CSV…, PDF text layer; whole file cut at 20,000 chars; with a line range (≤400 lines) the lines come numbered with a pointer to the next range |
 | `create_note` | Write | `title`, `content`, `folder?` | `Vault.create` into `folder` or `outputFolder`; frontmatter with the configured model; a properties block at the top of `content` is **merged** with Arcana's (its keys win), never written as a second block |
-| `append_to_note` | Write | `path`, `content`, `heading?` | `Vault.append` |
+| `append_to_note` | Write | `path`, `content`, `heading?` | `Vault.append`; never doubles a heading: `#` marks in `heading` are dropped, `## ## X` in the content is collapsed, and a content that already starts with the same heading gets no second one |
 | `set_properties` | Write | `path`, `properties` | `Vault.setProperties`: one `key: value` per line (list values may continue on indented / `- item` lines); an existing key is replaced in place, a new one added, the rest and the text stay; a note without a block gets one; plan mode has no write tools, so none |
 | `add_tags` | Write | `path`, `tags` | `Vault.addTags` → `mergeFrontmatterTags`: the note's tags stay, the new ones are added to ONE `tags:` line (other `tag:` / `Tags:` lines are folded in); preview `+ #tag` per tag |
 | `list_tags` | Read | `limit?` (≤200) | `VaultIndex.build(vault).tagCounts`: `#tag  (n)` lines, most used first, so the model reuses tags |
