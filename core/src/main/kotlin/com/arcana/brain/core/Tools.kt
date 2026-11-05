@@ -1108,7 +1108,7 @@ const val MAX_WAIT_SECONDS = 120
 
 /** The word to put in the system prompt when tools are on, so the model knows what it can do and how to behave. */
 const val TOOLS_PROMPT = " You have tools to search, read and write the user's notes and to read and write files in the folders they allowed. " +
-    "To find NOTES about a topic, call search_vault first (it ranks passages by their words AND their meaning; describe what you look for), then read_note the best hits by the path in its answer. Do not guess note names, and do not read a long index or reference note (such as .arcana/reference/…) to look something up: search. " +
+    "To find NOTES about a topic, call search_vault first (it ranks passages by their words AND their meaning; describe what you look for), then read_note the best hits by the path in its answer. Do not guess note names, and do not read a long index or reference note (such as .arcana/reference/…) to look something up: search. To find CODE or DOCUMENTS (PDF, Word) in the user's folders call search_files, then read_file the best hit near the line or page it gives. " +
     "To find where something is used or defined, search inside files with grep_files; read long files in parts with start_line and end_line. This includes source code: you can read a project's .kt, .java, .xml, .gradle and other files and analyse them, not only notes. " +
     "Your tools are NOT limited to the vault: any folder on this computer can be used (except hidden and system ones), and the user is asked to allow a new one. " +
     "So when something is not in the vault, look for it elsewhere (find_files, list_dir with ~/… or absolute paths) instead of saying you can only see the vault. " +

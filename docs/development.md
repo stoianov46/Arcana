@@ -38,6 +38,7 @@ A test double for Ollama is a few lines (`/api/tags`, `/api/show`, `/api/ps`, a 
 
 | I want to… | Start in |
 |---|---|
+| plan something that does not exist yet | `proposals/` (an index and one file per proposal: problem, options, decision, phases; **not** `docs/`, which describes what exists; facts move to `docs/` when a phase ships) |
 | add a tool | [tools-and-agent.md](tools-and-agent.md) "How to add a tool"; `ToolBox` in `core/Tools.kt` |
 | add a setting | [conventions.md](conventions.md) recipe; `AppConfig`, `screens/Settings.kt` |
 | add a screen or a key | [conventions.md](conventions.md), [app-module.md](app-module.md) |
@@ -54,6 +55,10 @@ Layout rules that bite: a screen's top-level children go inside `Stack { }` (Mos
 3. **Docs in the same commit:** the matching `docs/*.md`, [roadmap.md](roadmap.md) status, the in-app Guide (`screens/Guide.kt`) and Changelog (`screens/Changelog.kt`, bump "Last updated"), `README.md` when the first-run or install story changes.
 4. **The Arcana vault notes** (`.arcana/reference/Arcana LLM Reference.md` = what the model may do, `Arcana Reference Documentation.md`, `Arcana Distribution and Setup.md`, all three in the hidden `.arcana/reference/` folder, `Skills/Skills Guide.md`) and the memory template (`Vault.MEMORY_TEMPLATE`, plus the user's `ARCANA.md`, whose first 8,000 characters are the only part the model reads).
 5. Audit instead of assuming: list the real tools (`ToolBox.specs` names plus the pseudo-tools `ask_user`, `request_access`, `request_mode`, `chat_stats`, `todo`) and grep every doc and note for each one.
+
+## Opt-in checks against a real Ollama
+
+Some tests need the real Ollama, a real embedding model and real data, so they are skipped in the normal run: `RealOllamaRetrievalCheck`, `RealPassagesCheck`, `RealProjectCheck` (core tests). Run one with `ARCANA_REAL_OLLAMA=1 ARCANA_REAL_VAULT=<folder> (or ARCANA_REAL_PROJECT=<folder>) ARCANA_CHECK_OUT=<file> ./gradlew :core:test --tests '*RealProjectCheck*'` and read the file (`core/build.gradle.kts` makes Gradle run it, because environment variables are not task inputs). They index a **copy** of the folder with a temporary index and never touch your config. Use them after a change to retrieval, and say in the proposal what they showed. Do not point them at folders with personal documents.
 
 ## Release checklist
 

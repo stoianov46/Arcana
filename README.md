@@ -9,6 +9,8 @@ app/build/install/arcana/bin/arcana        # or: make install, then "arcana"
 make dist                                  # app/build/distributions/arcana.zip: unzip anywhere (needs Java 17+) and run bin/arcana
 ```
 
+**Search:** the model finds your notes, code and documents (PDF, Word, HTML) by words and by meaning together; three settings in Settings → Search, see [docs/retrieval.md](docs/retrieval.md).
+
 **Plans:** what is not built yet (and why) is in [proposals/](proposals/README.md); `docs/` describes what exists.
 
 **Developing Arcana:** see [docs/development.md](docs/development.md) (JDK 21, isolated dev home, tests, definition of done); users: [docs/distribution.md](docs/distribution.md).

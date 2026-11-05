@@ -73,6 +73,9 @@ Read [skills.md](skills.md) first. Keep `Skills.kt` pure (no UI): the gate's rul
 `Skills.MAX_CHARS` (18,000, including its properties). A change here updates `docs/skills.md`, the Guide page "Skills", the Changelog, the vault notes
 `Skills/Skills Guide.md`, `.arcana/reference/Arcana LLM Reference.md`, `.arcana/reference/Arcana Reference Documentation.md`, and (when a model rule changes) `ARCANA.md` and `Vault.MEMORY_TEMPLATE`.
 
+### Ship a phase of a proposal
+Facts go to the matching `docs/*.md` (for retrieval: `docs/retrieval.md`), the Guide, the Changelog and the vault notes; `proposals/<n>-….md` keeps the *why* and gets the phase ticked (`shipped <date>`, status line), and `proposals/README.md` its status. A setting added for a proposal follows the settings recipe below, and a new **model-facing rule** also goes to `ARCANA.md` and `Vault.MEMORY_TEMPLATE` (for search: "search first, then read").
+
 ### Add a theme
 Add a `ThemeSpec` to `Themes.all` in `design/Theme.kt` with the required role colours; it appears in Settings and previews itself.
 

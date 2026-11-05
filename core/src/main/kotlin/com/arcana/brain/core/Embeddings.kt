@@ -333,7 +333,7 @@ class SemanticSearch(val index: EmbeddingIndex) {
 }
 
 
-/** The one-step setup of semantic search from the app (`/semantic`): which embedding model, how big, and how its download is told to the user. */
+/** The setup of semantic search from the app (the first meaning search without a model, or the download row in Settings → Search): which embedding model, how big, and how its download is told to the user. */
 object SemanticSetup {
     const val RECOMMENDED = "nomic-embed-text"
     const val APPROX_SIZE = "about 270 MB"
