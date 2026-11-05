@@ -39,6 +39,12 @@ data class ChatMessage(
     val sources: List<String> = emptyList(),
     /** For a reply: which of [sources] were shown to the model only in part (the note is longer than *Chars per note*). */
     val sourcesCut: List<String> = emptyList(),
+    /** For a reply: how the notes in [sources] were found (`keywords`, `meaning` or `keywords + meaning`, see [RetrievalMode]); blank when it is not known. */
+    val sourcesBy: String = "",
+    /** For a reply: one line per entry of [sources] saying how that note came to the answer (`read`: the model opened it; `context`: it was sent with the question; and how it was found: `keywords + meaning · words 3/3 · similarity 0.64`). Same length as [sources], or empty (an older chat). */
+    val sourcesInfo: List<String> = emptyList(),
+    /** For a reply: the tools the model used for it, as they are shown under the answer (`search_vault (keywords + meaning)`, `read_note ×2`). */
+    val toolsUsed: List<String> = emptyList(),
     /** For a message of yours: the text files attached to it (their text is sent with the message and kept in the chat). */
     val files: List<FileAttachment> = emptyList(),
     /** For a reply: the tools the model asked to use (its text, if any, is [content]). */
@@ -65,8 +71,8 @@ data class ChatMessage(
         fun system(content: String) = ChatMessage("system", content)
         fun user(content: String, images: List<ImageAttachment> = emptyList(), notes: List<String> = emptyList(), files: List<FileAttachment> = emptyList()) =
             ChatMessage("user", content, images.map { it.base64 }, images.map { it.name }, noteNames = notes, files = files)
-        fun assistant(content: String, stats: ReplyStats? = null, sources: List<String> = emptyList(), thinking: String = "", sourcesCut: List<String> = emptyList()) =
-            ChatMessage("assistant", content, stats = stats, sources = sources, sourcesCut = sourcesCut, thinking = thinking)
+        fun assistant(content: String, stats: ReplyStats? = null, sources: List<String> = emptyList(), thinking: String = "", sourcesCut: List<String> = emptyList(), sourcesBy: String = "", sourcesInfo: List<String> = emptyList(), toolsUsed: List<String> = emptyList()) =
+            ChatMessage("assistant", content, stats = stats, sources = sources, sourcesCut = sourcesCut, thinking = thinking, sourcesBy = sourcesBy, sourcesInfo = sourcesInfo, toolsUsed = toolsUsed)
         fun assistantCalls(content: String, calls: List<ToolCall>, stats: ReplyStats? = null, thinking: String = "") =
             ChatMessage("assistant", content, stats = stats, toolCalls = calls, thinking = thinking)
         fun toolResult(name: String, content: String) = ChatMessage("tool", content, toolName = name)

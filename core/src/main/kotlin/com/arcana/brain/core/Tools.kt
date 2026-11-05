@@ -108,7 +108,11 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
     private val searchBackend: String = "duckduckgo", private val searchUrl: String = "", private val searchKey: String = "",
     /** The vault folder that holds skills (see [Skills]); blank turns skills off. */ private val skillsFolder: String = "",
     /** The project the user works on (see [projectNote]): allowed like the vault, and what a relative path or a default folder means. */ private val project: Path? = null,
-    /** The semantic search of the vault ([SemanticSearch]); null = no embedding model is set up, and the `semantic_search` tool is not offered. */ private val semantic: SemanticSearch? = null) {
+    /** The semantic search of the vault ([SemanticSearch]); null = no embedding model is set up, and the `semantic_search` tool is not offered. */ private val semantic: SemanticSearch? = null,
+    /** How the vault search weighs and filters its results (Settings → Search); see [SearchTuning]. */ private val searchTuning: SearchTuning = SearchTuning(),
+    /** The search of the project's files (the working folder and the search folders): null = none, and the `search_files` tool is not offered. */ private val projectSearch: ProjectSearch? = null,
+    /** The notes of the vault are searched (Settings → Search → Search in has `vault`): without it `search_vault` is not offered. */ private val notesSearch: Boolean = true,
+    /** How a search is done when the model does not say (the user's Search by setting). */ private val searchMode: RetrievalMode = RetrievalMode.Both) {
     val access = FileAccess(listOfNotNull(vault?.root, project) + folders + listOfNotNull(Layout.globalSkills().takeIf { skillsFolder.isNotBlank() && java.nio.file.Files.isDirectory(it) })) // the user's own skills (see [Layout]) are readable too
 
     /** The skills found now: a toolbox is built for each message, so a skill added in Obsidian is there at once. */
@@ -116,7 +120,9 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
 
     val specs: List<ToolSpec> = buildList {
         if (vault != null) addAll(vaultTools(vault))
+        if (vault != null && notesSearch) add(searchVaultTool(vault))
         if (vault != null) add(semanticTool(semantic))
+        if (projectSearch != null) add(searchProjectTool(projectSearch))
         addAll(fileTools())
         add(askUserTool())
         add(timeTool())
@@ -360,7 +366,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
 
     private fun vaultTools(vault: Vault): List<ToolSpec> = listOf(
         ToolSpec(
-            "search_notes", "Search the user's notes for words. Finds notes that contain ANY of the words (3+ letters, common words are skipped; a short term like \"AI\" is searched as written) in the title or text and returns the best matches with an excerpt each. For an exact phrase or a regular expression use grep_files.",
+            "search_notes", "Search the user's notes for words. Finds notes that contain ANY of the words (3+ letters, common words are skipped; a short term like \"AI\" is searched as written) in the title or text and returns the best matches with an excerpt each. For an exact phrase or a regular expression use grep_files. Words only: search_vault (words AND meaning together) is usually the better first search.",
             schema("query" to ("string" to "Words to look for"), "limit" to ("integer" to "How many notes (default 5, at most 20)"), required = listOf("query")),
             ToolRisk.Read, { it.str("query") },
         ) { a ->
@@ -564,6 +570,33 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         val to = a.str("to").trim().takeIf { it.isNotEmpty() }?.let { parseMoment(it, zone) } ?: java.time.Instant.now()
         describeElapsed(from, to, zone)
     }
+
+    /** The search of the user's files in the chosen folders (code, configuration, text, documents), by words and meaning, with the line or page of each hit; see [ProjectSearch]. */
+    private fun searchProjectTool(search: ProjectSearch) = ToolSpec(
+        "search_files", "Search the user's FILES in the folders chosen for search (the working folder and the \"also search\" folders): CODE, configuration, text and DOCUMENTS (PDF, Word, HTML), by WORDS and by MEANING together, and get the best passages with the file path and where in it (a line for code, a page for a PDF). " +
+            "Use it to find where something is implemented or defined, how a part works, or which document talks about a topic; then read_file the best hit (start_line near the line given). For an exact regular expression use grep_files. " +
+            "mode: both, keywords (exact names, identifiers) or meaning (paraphrases; needs an embedding model); leave it out and the user's setting is used, normally both. The answer says which method really ran. Notes of the vault are searched with search_vault, not with this.",
+        schema(
+            "query" to ("string" to "What you are looking for, in a few words or a sentence"),
+            "limit" to ("integer" to "How many hits (default ${HybridSearch.DEFAULT_LIMIT}, at most ${HybridSearch.MAX_LIMIT})"),
+            "mode" to ("string" to "both, keywords or meaning (leave it out to use the user's setting)"),
+            required = listOf("query"),
+        ),
+        ToolRisk.Read, { it.str("query") },
+    ) { a -> search.answer(a.str("query"), a.int("limit") ?: HybridSearch.DEFAULT_LIMIT, RetrievalMode.of(a.str("mode"), searchMode)) }
+
+    /** The vault search that names its method: words, meaning, or both fused (the default and the best first choice); see [HybridSearch]. */
+    private fun searchVaultTool(vault: Vault) = ToolSpec(
+        "search_vault", "Search the user's notes by WORDS and by MEANING together (the best first search for almost any question about the notes): it finds passages that contain the words, and passages that say the same thing in other words, and ranks them together. " +
+            "Describe what you look for in a few words or a sentence. mode: both, keywords (exact words, names, identifiers only) or meaning (paraphrases only); leave it out and the user's setting is used, normally both. The answer says which method found each note and which really ran (meaning needs an embedding model; without one it is keywords only). Read a hit with read_note.",
+        schema(
+            "query" to ("string" to "What you are looking for"),
+            "limit" to ("integer" to "How many notes (default ${HybridSearch.DEFAULT_LIMIT}, at most ${HybridSearch.MAX_LIMIT})"),
+            "mode" to ("string" to "both, keywords or meaning (leave it out to use the user's setting)"),
+            required = listOf("query"),
+        ),
+        ToolRisk.Read, { it.str("query") },
+    ) { a -> HybridSearch(LexicalIndex.forVault(vault), semantic?.index, searchTuning).answer(a.str("query"), a.int("limit") ?: HybridSearch.DEFAULT_LIMIT, RetrievalMode.of(a.str("mode"), searchMode)) }
 
     private fun semanticTool(search: SemanticSearch?) = ToolSpec(
         "semantic_search", "Find the user's notes by MEANING, not by words: describe what you are looking for in a sentence and get the best matching notes with the matching heading, an excerpt and a score (0 to 1; above about 0.6 is a close match). " +
@@ -1075,6 +1108,7 @@ const val MAX_WAIT_SECONDS = 120
 
 /** The word to put in the system prompt when tools are on, so the model knows what it can do and how to behave. */
 const val TOOLS_PROMPT = " You have tools to search, read and write the user's notes and to read and write files in the folders they allowed. " +
+    "To find NOTES about a topic, call search_vault first (it ranks passages by their words AND their meaning; describe what you look for), then read_note the best hits by the path in its answer. Do not guess note names, and do not read a long index or reference note (such as .arcana/reference/…) to look something up: search. " +
     "To find where something is used or defined, search inside files with grep_files; read long files in parts with start_line and end_line. This includes source code: you can read a project's .kt, .java, .xml, .gradle and other files and analyse them, not only notes. " +
     "Your tools are NOT limited to the vault: any folder on this computer can be used (except hidden and system ones), and the user is asked to allow a new one. " +
     "So when something is not in the vault, look for it elsewhere (find_files, list_dir with ~/… or absolute paths) instead of saying you can only see the vault. " +

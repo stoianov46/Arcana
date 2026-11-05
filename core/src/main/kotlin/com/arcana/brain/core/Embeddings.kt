@@ -12,8 +12,8 @@ fun interface Embedder {
     fun embed(inputs: List<String>): List<FloatArray>
 }
 
-/** One passage of a note: [heading] is its path of headings (`Intro › Setup`, blank before the first heading), [text] what is under it. */
-data class Chunk(val path: String, val heading: String, val text: String) {
+/** One passage of a note or file: [heading] is its path of headings (`Intro › Setup`; in code the declaration it sits in), [text] what is under it, [line] the line it starts at in a code file (0 for a note). */
+data class Chunk(val path: String, val heading: String, val text: String, val line: Int = 0) {
     /** What is embedded: the note's title and heading path in front of the text, so a passage "knows" where it sits. */
     fun embedInput(): String {
         val title = path.substringAfterLast('/').removeSuffix(".md")
@@ -115,7 +115,10 @@ fun cosine(a: FloatArray, b: FloatArray): Float {
  * time changed and forgets deleted ones. Vectors are stored normalised, so a search is a dot product. Hidden folders (`.arcana`, `.trash`,
  * `.obsidian`) are not indexed ([Vault.notes] leaves them out).
  */
-class EmbeddingIndex(private val file: Path, private val vault: Vault, val model: String, private val embedder: Embedder, private val batch: Int = BATCH) {
+class EmbeddingIndex(private val file: Path, private val source: PassageSource, val model: String, private val embedder: Embedder, private val batch: Int = BATCH) {
+    /** The index of a vault's notes, as before. */
+    constructor(file: Path, vault: Vault, model: String, embedder: Embedder, batch: Int = BATCH) : this(file, VaultSource(vault), model, embedder, batch)
+
     private class Entry(val size: Long, val mtime: Long, val chunks: List<Chunk>, val vectors: List<FloatArray>)
 
     private var entries: MutableMap<String, Entry> = load()
@@ -124,17 +127,13 @@ class EmbeddingIndex(private val file: Path, private val vault: Vault, val model
     val chunkCount: Int @Synchronized get() = entries.values.sumOf { it.chunks.size }
     val isEmpty: Boolean @Synchronized get() = entries.isEmpty()
 
-    private fun stat(path: String): Pair<Long, Long>? = runCatching {
-        val p = vault.root.resolve(path)
-        Files.size(p) to Files.getLastModifiedTime(p).toMillis()
-    }.getOrNull()
-
-    /** Notes that are new or changed since they were embedded, and notes that were deleted: what [refresh] would do. */
+    /** Files that are new or changed since they were embedded, and files that were deleted: what [refresh] would do. */
     @Synchronized
-    fun pending(): Pair<List<String>, List<String>> {
-        val current = vault.notes().map { it.path }
-        val changed = current.filter { p -> val s = stat(p); val e = entries[p]; s != null && (e == null || e.size != s.first || e.mtime != s.second) }
-        return changed to (entries.keys - current.toSet()).toList()
+    fun pending(): Pair<List<String>, List<String>> = pendingOf(source.files())
+
+    private fun pendingOf(files: List<SourceFile>): Pair<List<String>, List<String>> {
+        val changed = files.filter { f -> val e = entries[f.path]; f.size >= 0 && (e == null || e.size != f.size || e.mtime != f.mtime) }.map { it.path }
+        return changed to (entries.keys - files.map { it.path }.toSet()).toList()
     }
 
     /** True when the vault differs from what was embedded (or nothing was embedded yet). */
@@ -147,7 +146,8 @@ class EmbeddingIndex(private val file: Path, private val vault: Vault, val model
     @Synchronized
     fun refresh(progress: (done: Int, total: Int) -> Unit = { _, _ -> }): RefreshResult {
         val started = System.currentTimeMillis()
-        val (changed, removed) = pending()
+        val files = source.files().associateBy { it.path }
+        val (changed, removed) = pendingOf(files.values.toList())
         removed.forEach { entries.remove(it) }
         progress(0, changed.size)
         // every passage of every changed note in one list, embedded in batches, so small notes share a request
@@ -156,9 +156,10 @@ class EmbeddingIndex(private val file: Path, private val vault: Vault, val model
         val sizes = LinkedHashMap<String, Int>()
         val stats = HashMap<String, Pair<Long, Long>>()
         for (p in changed) {
-            val text = runCatching { vault.read(p) }.getOrNull() ?: continue
-            val s = stat(p) ?: continue
-            val chunks = Chunker.chunks(p, text)
+            val text = source.read(p) ?: continue
+            val f = files[p] ?: continue
+            val s = f.size to f.mtime
+            val chunks = source.chunks(p, text)
             stats[p] = s
             sizes[p] = chunks.size
             chunks.forEach { items += Item(p, it) }
@@ -216,6 +217,22 @@ class EmbeddingIndex(private val file: Path, private val vault: Vault, val model
         return best.sortedByDescending { it.score }.take(k.coerceIn(1, 50))
     }
 
+    /** The best [k] passages for [query] (several may come from one note), best first, each with its cosine score: what the hybrid search fuses with the keyword ranking. */
+    @Synchronized
+    fun searchPassages(query: String, k: Int): List<Pair<Chunk, Float>> {
+        if (entries.isEmpty() || query.isBlank()) return emptyList()
+        val q = normalise(embedder.embed(listOf(query)).single())
+        val all = ArrayList<Pair<Chunk, Float>>()
+        for (e in entries.values) for (i in e.vectors.indices) {
+            val v = e.vectors[i]
+            if (v.size != q.size) continue
+            var d = 0f
+            for (j in v.indices) d += v[j] * q[j]
+            all += e.chunks[i] to d
+        }
+        return all.sortedByDescending { it.second }.take(k)
+    }
+
     private fun excerpt(text: String): String = text.replace(Regex("\\s+"), " ").trim().let { if (it.length > EXCERPT) it.take(EXCERPT).trimEnd() + "…" else it }
 
     private fun normalise(v: FloatArray): FloatArray {
@@ -241,7 +258,7 @@ class EmbeddingIndex(private val file: Path, private val vault: Vault, val model
                     val n = input.readInt()
                     val chunks = ArrayList<Chunk>(n); val vectors = ArrayList<FloatArray>(n)
                     repeat(n) {
-                        chunks += Chunk(path, input.readUTF(), input.readUTF())
+                        chunks += Chunk(path, input.readUTF(), input.readUTF(), input.readInt())
                         vectors += FloatArray(dim) { input.readFloat() }
                     }
                     out[path] = Entry(size, mtime, chunks, vectors)
@@ -262,7 +279,7 @@ class EmbeddingIndex(private val file: Path, private val vault: Vault, val model
             for ((path, e) in saved) {
                 out.writeUTF(path); out.writeLong(e.size); out.writeLong(e.mtime); out.writeInt(e.chunks.size)
                 for (i in e.chunks.indices) {
-                    out.writeUTF(e.chunks[i].heading.take(MAX_UTF)); out.writeUTF(e.chunks[i].text.take(MAX_UTF))
+                    out.writeUTF(e.chunks[i].heading.take(MAX_UTF)); out.writeUTF(e.chunks[i].text.take(MAX_UTF)); out.writeInt(e.chunks[i].line)
                     e.vectors[i].forEach { out.writeFloat(it) }
                 }
             }
@@ -273,7 +290,7 @@ class EmbeddingIndex(private val file: Path, private val vault: Vault, val model
     companion object {
         const val BATCH = 16
         private const val MAGIC = 0x41524358 // "ARCX"
-        private const val VERSION = 1
+        private const val VERSION = 2 // 2: a line per passage (code files); an older file is rebuilt
         private const val EXCERPT = 240
         private const val MAX_UTF = 8000
 
@@ -281,8 +298,11 @@ class EmbeddingIndex(private val file: Path, private val vault: Vault, val model
         fun defaultDir(): Path = ConfigStore.defaultPath().resolveSibling("embeddings")
 
         /** The index file of [vault] with [model]: a folder named by a hash of both, so another vault or another model never reads this one. */
-        fun fileFor(vault: Vault, model: String, base: Path = defaultDir()): Path {
-            val hash = MessageDigest.getInstance("SHA-256").digest("${vault.root}\n$model".toByteArray()).take(8).joinToString("") { "%02x".format(it) }
+        fun fileFor(vault: Vault, model: String, base: Path = defaultDir()): Path = fileFor(VaultSource(vault), model, base)
+
+        /** The index file of any [source] with [model] (a project folder has one of its own, apart from the vault's). */
+        fun fileFor(source: PassageSource, model: String, base: Path = defaultDir()): Path {
+            val hash = MessageDigest.getInstance("SHA-256").digest("${source.key}\n$model".toByteArray()).take(8).joinToString("") { "%02x".format(it) }
             return base.resolve(hash).resolve("index.bin")
         }
     }

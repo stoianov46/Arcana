@@ -52,6 +52,11 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `confirmCancel` | true | `Esc` on a running reply asks "Cancel this reply?" first (Settings → Console → *Confirm before cancelling*); false = `Esc` cancels at once |
 | `keepChats` / `chatsKept` | true / 50 | persist chats / how many to keep |
 | `chatUseVault` | false | answer from vault (also `/vault`) |
+| `searchBalance` / `searchGap` / `searchMinWords` / `searchPool` / `searchPassages` | 5 / 8 / 35 / 40 / 4 | the search settings (Settings → Search): the balance of words and meaning (0–10), the noise filter (meaning gap in hundredths, least share of words in percent), candidates per method, passages per note; see [retrieval.md](retrieval.md) |
+| `searchIn` | `vault; working` | WHERE things are searched, one list separated by `;`: `vault` (the notes), `working` (the Working folder), or folders of code and documents (`~` allowed; each must lie inside the allowed folders). Settings → Search → Search in (`SearchScope`) |
+| `searchMaxFileKb` | 300 | the biggest code or text file the file search reads, in KB (advanced) |
+| `searchBy` | `both` | HOW everything is searched (notes, code, documents; `/vault` answers and the model's search tools): `both` (words and meaning fused; words only while no embedding model is set up), `keywords`, `meaning` (see [retrieval.md](retrieval.md)); the model may ask for another mode in one search; the answer's Sources line names the method |
+| `searchAdvanced` | false | show the advanced search settings (balance, noise filter, candidates, passages, limits) |
 | `copyAs` | `markdown` | select-mode copy format: `markdown` / `plain` |
 | `inboxFolder` | `Inbox` | where unprocessed notes are |
 | `dailyFolder` / `dailyFormat` | `Thoughts` / `[thought-]YYYY-MM-DD` (file `Thoughts/thought-2026-11-02.md`); a saved config with an empty `dailyFolder` is moved to `Thoughts` when it is loaded; a saved config that still holds the old default `YYYY-MM-DD` is moved to the new one when it is loaded | daily note fallback when Obsidian has no setting |

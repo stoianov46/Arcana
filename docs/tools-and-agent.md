@@ -44,6 +44,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 
 | Name | Risk | Arguments | Notes |
 |---|---|---|---|
+| `search_vault` | Read | `query`, `mode?`, `limit?` | `HybridSearch`: words (BM25) and meaning fused, per passage; `mode` both / keywords / meaning; says which method ran; see [retrieval.md](retrieval.md) |
 | `search_notes` | Read | `query`, `limit?` | `Vault.search`, ≤20 results with excerpts. Finds notes with ANY word of the query (3+ letters, `stopWords` such as "the" skipped, case-insensitive, titles weigh more); a query left with no words ("the", "AI") is searched as the literal text (`literalFallback`, tool only: the automatic Ask-your-vault search keeps skipping them); an empty query is an error; a miss names the words searched, says the vault has N notes ("the search is not broken") and points to `grep_files` for exact text, so a model does not mistake a miss for a bug |
 | `semantic_search` | Read | `query`, `limit?` (≤10, default 5) | only offered when `AppConfig.embedModel` is set AND installed (`ChatSession.semanticIndexFor`; `ToolBox(semantic = …)`): finds notes by meaning through the local embedding index (`SemanticSearch.answer`): path, `§ heading`, excerpt and a 0-1 score, one hit per note; refreshes the index first when it is empty or the vault changed. A Read tool: no approval, allowed in Plan mode. Details: [semantic-search.md](semantic-search.md) |
 | `list_notes` | Read | `folder?` | vault-relative paths, ≤200 |

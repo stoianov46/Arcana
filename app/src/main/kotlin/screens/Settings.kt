@@ -36,16 +36,23 @@ import kotlinx.coroutines.launch
 private const val PRUNE_DAYS = 30
 
 private enum class Group(val title: String, val about: String = "") {
-    Ollama("Ollama"), Vault("Vault"), Library("Library"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Helpers("Helpers", "Models other than the chat model, and the master switch that turns them all off. The Oracul gives second opinions; the router sends images and code to their own models."), Opinions("Opinions", "When the Oracul speaks up by itself, the judge's verdict on it, and when it steps in because the chat model keeps failing; the loop guard against a model that repeats itself needs no helper model."), Flow("Flow", "Every message through analyst, planner, worker, reviewer and controller, each its own model; specialists as tools; /goal."), Skills("Skills", "The worker, planner and reviewer a skill run uses (its own properties win), with their own on/off switch."), Sounds("Sounds"), Storage("Storage"), Accessibility("Accessibility"), Tabs("Tabs"),
+    Ollama("Ollama"), Vault("Vault"), Search("Search", "Where the model searches and how: your NOTES, CODE and DOCUMENTS (PDF, Word, HTML), by words, by meaning, or both. Three rows are all you need: Search in (the places), Search by (words, meaning, both) and the Embedding model (what makes meaning work). Where the model may work stays in Settings → Tools."), Library("Library"), Appearance("Appearance"), Console("Console"), Tools("Tools"), Prompts("Prompts"), Helpers("Helpers", "Models other than the chat model, and the master switch that turns them all off. The Oracul gives second opinions; the router sends images and code to their own models."), Opinions("Opinions", "When the Oracul speaks up by itself, the judge's verdict on it, and when it steps in because the chat model keeps failing; the loop guard against a model that repeats itself needs no helper model."), Flow("Flow", "Every message through analyst, planner, worker, reviewer and controller, each its own model; specialists as tools; /goal."), Skills("Skills", "The worker, planner and reviewer a skill run uses (its own properties win), with their own on/off switch."), Sounds("Sounds"), Storage("Storage"), Accessibility("Accessibility"), Tabs("Tabs"),
 }
 
 /** How Enter edits a setting that is not simply stepped with ←/→. */
-private sealed interface Editor {
+internal sealed interface Editor {
     /** Types a value; [apply] throws IllegalArgumentException with a user-facing message on invalid input. */
     class Text(val apply: (AppConfig, String) -> AppConfig) : Editor
     /** Enter lists the installed models; [set] stores the choice in the setting this editor belongs to ([allowNone]: blank is a valid choice and means off). */
     class Model(val label: String, val get: (AppConfig) -> String, val set: (AppConfig, String) -> AppConfig, val allowNone: Boolean = false, val oracul: Boolean = false, val multi: Boolean = false, val embed: Boolean = false) : Editor
-    data object Folder : Editor
+    /** Enter opens the folder browser (Space chooses the folder); [set] stores the chosen path. */
+    class Folder(val title: String, val subtitle: String, val set: (AppConfig, String) -> AppConfig) : Editor
+
+    /**
+     * A list of places separated by `;`, edited without typing: [specials] are words with a meaning (`vault`, `working`) that are switched on and off, every other entry is a folder, added with the
+     * folder browser and removed again. [check] says what is wrong with a folder entry ("" when nothing). `e` edits the whole list as text for pasting paths.
+     */
+    class Folders(val title: String, val subtitle: String, val get: (AppConfig) -> String, val set: (AppConfig, String) -> AppConfig, val specials: List<Pair<String, String>> = emptyList(), val check: (AppConfig, String) -> String = { _, _ -> "" }) : Editor
     data object Theme : Editor
     /** Enter asks to clear the files of one [com.arcana.brain.core.Storage] area. */
     class Clear(val area: String) : Editor
@@ -59,7 +66,12 @@ private class Setting(
     /** ←/→ (and Enter, when there is no [editor]) step the value; null = not steppable. */
     val step: ((AppConfig, Int) -> AppConfig)? = null,
     val editor: Editor? = null,
-)
+    /** False hides the row (the advanced search settings, until they are switched on). */
+    val visible: (AppConfig) -> Boolean = { true },
+) {
+    /** The same setting, shown only while "Show advanced search settings" is on. */
+    fun advanced() = Setting(group, label, help, value, step, editor, visible = { it.searchAdvanced })
+}
 
 private fun choice(group: Group, label: String, help: String, options: List<Pair<String, String>>, get: (AppConfig) -> String, set: (AppConfig, String) -> AppConfig) =
     Setting(
@@ -145,7 +157,7 @@ private fun storageSetting(id: String): Setting {
 private val MainModel = Editor.Model("Model", { it.model }, { c, v -> c.copy(model = v) })
 
 /** The embedding model of the semantic search; its picker lists the installed embedding models first. */
-private val EmbedModel = Editor.Model("Semantic search model", { it.embedModel }, { c, v -> c.copy(embedModel = v) }, allowNone = true, embed = true)
+private val EmbedModel = Editor.Model("Embedding model (for meaning)", { it.embedModel }, { c, v -> c.copy(embedModel = v) }, allowNone = true, embed = true)
 
 private val OraculModel = Editor.Model("Oracul model", { it.oraculModel }, { c, v -> c.copy(oraculModel = v) }, allowNone = true, oracul = true)
 private val ExtraModels = Editor.Model("More Oracul models", { it.oraculExtra }, { c, v -> c.copy(oraculExtra = v.split(',').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")) }, allowNone = true, oracul = true, multi = true)
@@ -184,7 +196,7 @@ private val declared: List<Setting> = listOf(
 
     Setting(
         Group.Vault, "Vault path", "Your Obsidian vault folder. Enter opens a folder browser.",
-        value = { it.vaultPath.ifEmpty { "(not set)" } }, editor = Editor.Folder,
+        value = { it.vaultPath.ifEmpty { "(not set)" } }, editor = Editor.Folder("Vault path", "Your Obsidian vault folder") { c, v -> c.copy(vaultPath = v) },
     ),
     toggle(Group.Library, "Library as a tree", "The Library shows your notes as folders that fold and unfold (Enter or h / l). Off: one flat list with the full path of every note. You can also press t in the Library.", { it.libraryTree }, { c, v -> c.copy(libraryTree = v) }),
     text(Group.Vault, "Output folder", "What Arcana writes FOR you (AI notes, saved chats, session summaries) goes to this visible folder inside the vault. Reports and research from skills go to the folders their skills name (for example Reports/…). Arcana's own working files (skills, the memory file) are not content and live apart, hidden: see the next three rows. Empty = the vault root.", { it.outputFolder }, { c, v -> c.copy(outputFolder = v.trim('/')) }, allowEmpty = true),
@@ -196,13 +208,68 @@ private val declared: List<Setting> = listOf(
         Group.Vault, "Where YOUR files are (every vault)", "Next to the settings, in ~/.config/arcana/ (or where ARCANA_CONFIG points): config.json, chats, usage logs, backups and the trash, and, for every vault: skills/ (skills that apply everywhere; a skill of the same name in the vault wins) and ARCANA.md (your own memory file, read before the vault's). Settings → Storage lists and clears the logs and caches. This row only shows the place.",
         value = { tilde(storageRoot().toString()) + "/" },
     ),
-    stepper(Group.Vault, "Context notes", "How many notes Ask your vault sends to the model.", 1..20, 1, { it.contextNotes }, { c, n -> c.copy(contextNotes = n) }),
+    choice(
+        Group.Search, "Search by",
+        "HOW things are found, everywhere: in your notes (/vault answers and the model's search_vault) and in your code and documents (search_files). Both: words and meaning together, ranked together (the best); Words only: the exact words you typed (names, identifiers); Meaning only: what the text MEANS, even in other words. Meaning needs the Embedding model below: without one, Both and Meaning fall back to words, and the answer says so. The model may ask for another mode in a single search; this is what it uses when it does not.",
+        listOf("both" to "Both: words and meaning", "keywords" to "Words only", "meaning" to "Meaning only"), { it.searchBy }, { c, v -> c.copy(searchBy = v) },
+    ),
+    Setting(
+        Group.Search, "Search balance",
+        "When words and meaning are ranked together (Both), how much each counts. 0 = only the words decide, 5 = equal (the default), 10 = only the meaning decides. Lean to words for notes full of exact names, versions and identifiers; lean to meaning for questions you ask in your own words. ←/→ step by 1. It applies to /vault answers and to the search_vault tool.",
+        value = { balanceText(it.searchBalance) },
+        step = { c, dir -> c.copy(searchBalance = (c.searchBalance + dir).coerceIn(0, 10)) },
+        editor = Editor.Text { c, v -> val n = number(v, "Search balance"); require(n in 0..10) { "Search balance must be 0–10" }; c.copy(searchBalance = n) },
+    
+    ).advanced(),
+    stepper(
+        Group.Search, "Noise filter: words",
+        "A passage found by a few shared words is left out unless it has at least this share of YOUR words (or its meaning is close to the best match, see the next row). 35% = for a 7-word question a passage needs 3 of its words. 0 turns it off (everything found is kept). Higher is stricter; the best match always stays, and the answer says how many were left out. ←/→ step by 5.",
+        0..100, 5, { it.searchMinWords }, { c, n -> c.copy(searchMinWords = n) }, "%", "off",
+    
+    ).advanced(),
+    Setting(
+        Group.Search, "Noise filter: meaning",
+        "A passage with too few of your words is still kept when its vector similarity is within this distance of the best match's; one further away is left out. 0.08 suits nomic-embed-text, whose real matches sit around 0.6–0.7 and unrelated notes around 0.5 (every embedding model has its own scale: look at the `similarity` of the hits). 0 turns this rescue off (then only the words decide). Smaller is stricter. ←/→ step by 0.01. Needs meaning (an embedding model).",
+        value = { if (it.searchGap == 0) "off" else "%.2f".format(java.util.Locale.ROOT, it.searchGap / 100.0) },
+        step = { c, dir -> c.copy(searchGap = (c.searchGap + dir).coerceIn(0, 30)) },
+        editor = Editor.Text { c, v ->
+            val d = v.trim().toDoubleOrNull()
+            require(d != null && d in 0.0..0.30) { "Noise filter: meaning must be between 0 and 0.30" }
+            c.copy(searchGap = Math.round(d * 100).toInt())
+        },
+    
+    ).advanced(),
+    choice(
+        Group.Search, "Search candidates",
+        "How many passages each method (words, meaning) hands over to be ranked together. More candidates find more but cost a little more time (still milliseconds on a vault of hundreds of notes). 40 is a good default.",
+        listOf("20" to "20", "40" to "40", "80" to "80", "160" to "160"), { it.searchPool.toString() }, { c, v -> c.copy(searchPool = v.toInt()) },
+    
+    ).advanced(),
+    stepper(Group.Search, "Passages per note", "How many matching passages of ONE note a /vault answer sends to the model (the best ones, up to Chars per note). More gives the model more of a long note; fewer leaves room for more notes.", 1..6, 1, { it.searchPassages }, { c, n -> c.copy(searchPassages = n) }).advanced(),
+    Setting(
+        Group.Search, "Search in",
+        "WHERE things are searched, one list separated by ;  `vault` = your notes, `working` = the Working folder (Settings → Tools), anything else = a folder of code or documents (PDF, Word, HTML), for example `vault; working; ~/Dev Resources`. Remove an entry to stop searching it. A folder is searched only inside the allowed folders (Settings → Tools); pick a few, not all of ~ (your whole home). Enter opens the list: switch vault and working on and off, add folders with the folder browser.",
+        value = { it.searchIn.ifBlank { "(nothing is searched)" } },
+        editor = Editor.Folders(
+            "Search in", "Everything the model searches: switch places on and off, add folders of code or documents",
+            { it.searchIn }, { c, v -> c.copy(searchIn = v) },
+            specials = listOf("vault" to "your notes (the vault)", "working" to "the Working folder (Settings → Tools)"),
+            check = { c, raw ->
+                val dir = AppContext.expandHome(raw).toAbsolutePath().normalize()
+                val allowed = listOf(c.vaultPath, c.projectFolder).filter { it.isNotBlank() }.map { AppContext.expandHome(it).toAbsolutePath().normalize() } + c.toolFolders.split(';').map { it.trim() }.filter { it.isNotEmpty() }.map { AppContext.expandHome(it).toAbsolutePath().normalize() }
+                if (!Files.isDirectory(dir)) "⚠ no such folder (ignored)" else if (allowed.none { dir.startsWith(it) }) "⚠ not inside an allowed folder (ignored): Settings → Tools" else "searched"
+            },
+        ),
+    ),
+    toggle(Group.Search, "Show advanced search settings", "Shows the settings that fine-tune a search: balance of words and meaning, the noise filter, candidates, passages per note, how much is sent to the model, the biggest file. The defaults are good; leave this off unless results need tuning.", { it.searchAdvanced }, { c, v -> c.copy(searchAdvanced = v) }),
+    stepper(Group.Search, "Largest file searched", "The biggest CODE or text file (in KB) the file search reads; a bigger one (a generated file, a data dump) is left out. Documents (PDF, Word) have their own limit, 30 MB, and at most about 500 passages of text each. ←/→ step by 50.", 50..2000, 50, { it.searchMaxFileKb }, { c, n -> c.copy(searchMaxFileKb = n) }, " KB").advanced(),
+    stepper(Group.Search, "Context notes", "How many notes Ask your vault sends to the model.", 1..20, 1, { it.contextNotes }, { c, n -> c.copy(contextNotes = n) }).advanced(),
     text(Group.Vault, "Inbox folder", "Where new, unprocessed notes land. The Brain screen counts what is waiting there.", { it.inboxFolder }, { c, v -> c.copy(inboxFolder = v.trim('/')) }, allowEmpty = true),
     text(Group.Vault, "Daily notes folder", "Where capture (Ctrl+N) writes the thought files, with their Thoughts Index. Default Thoughts, a folder of its own so the vault root stays free. Used only when Obsidian's Daily notes plugin has no setting of its own for the vault. Empty = the vault root.", { it.dailyFolder }, { c, v -> c.copy(dailyFolder = v.trim('/')) }, allowEmpty = true),
     text(Group.Vault, "Daily note format", "The file name of a daily note, like Obsidian's: YYYY-MM-DD, DD.MM.YYYY…; text in [brackets] is kept as it is. The default `[thought-]YYYY-MM-DD` gives thought-2026-11-02.md, so thought files stay apart from other notes named by date. Used only without an Obsidian setting.", { it.dailyFormat }, { c, v -> c.copy(dailyFormat = v.trim()) }),
     stepper(Group.Vault, "Stale after", "A note counts as stale after this many days without a change. ←/→ step by 30.", 7..1000, 30, { it.staleDays }, { c, n -> c.copy(staleDays = n) }, " days"),
-    Setting(Group.Vault, "Semantic search model", "Finds notes by meaning (the model's semantic_search tool, and /reindex in Chat builds the index). You can leave it empty: the first time the model uses semantic_search, Arcana asks once to download nomic-embed-text through Ollama and selects it here. By hand it needs an embedding model installed in Ollama, for example: ollama pull nomic-embed-text (others: qwen3-embedding, mxbai-embed-large). Everything is computed by your Ollama server and the index is a file in ~/.config/arcana/embeddings; changing the model rebuilds it. None = off.", { it.embedModel.ifEmpty { "(none: off)" } }, editor = EmbedModel),
-    stepper(Group.Vault, "Chars per note", "How much of each note found by Answer from notes (/vault) is sent to the model. A longer note is cut: the model is told, and the answer lists which notes were only partly read. ←/→ step by 500.", 200..20_000, 500, { it.contextCharsPerNote }, { c, n -> c.copy(contextCharsPerNote = n) }),
+    Setting(Group.Search, "Embedding model (for meaning)", "Finds notes by meaning (the model's semantic_search tool, and /reindex in Chat builds the index). You can leave it empty: the first time the model uses semantic_search, Arcana asks once to download nomic-embed-text through Ollama and selects it here. By hand it needs an embedding model installed in Ollama, for example: ollama pull nomic-embed-text (others: qwen3-embedding, mxbai-embed-large). Everything is computed by your Ollama server and the index is a file in ~/.config/arcana/embeddings; changing the model rebuilds it. None = off.", { it.embedModel.ifEmpty { "(none: off)" } }, editor = EmbedModel),
+    stepper(Group.Search, "Chars per note", "How much of each note found by Answer from notes (/vault) is sent to the model. A longer note is cut: the model is told, and the answer lists which notes were only partly read. ←/→ step by 500.", 200..20_000, 500, { it.contextCharsPerNote }, { c, n -> c.copy(contextCharsPerNote = n) }).advanced(),
 
     Setting(
         Group.Appearance, "Colour theme", "Applies at once. ←/→ step through the themes, Enter opens the list with a preview.",
@@ -252,12 +319,17 @@ private val declared: List<Setting> = listOf(
     choice(Group.Console, "Copy as", "What select mode (s) puts on the clipboard. Markdown: as written. Plain text: markers removed.", listOf("markdown" to "Markdown", "plain" to "Plain text"), { it.copyAs }, { c, v -> c.copy(copyAs = v) }),
 
     toggle(Group.Tools, "Tools in Chat", "Lets the model search, read and write your notes, and read and write files in the folders below. Every change asks you first. Needs a model with tool support (Gemma 4 has it). Also /tools in Chat.", { it.toolsEnabled }, { c, v -> c.copy(toolsEnabled = v) }),
-    text(Group.Tools, "Working folder", "Optional: the one folder you are working in right now (a web project, a repository). Where it matters: relative paths and commands (run_command, git) start there instead of in your vault; the model is told about it; its own ARCANA.md / CLAUDE.md / AGENTS.md is passed on as instructions; the status bar shows ▣ and its name. It is allowed automatically, so you do not need to list it under Allowed folders. It grants nothing outside itself. Needs tools on. Empty = no working folder.", { it.projectFolder }, { c, v ->
+    text(Group.Tools, "Working folder", "Optional: the one folder you are working in right now (a web project, a repository). It is searched by the model as part of Settings → Search → Search in (`working`). Where it matters: relative paths and commands (run_command, git) start there instead of in your vault; the model is told about it; its own ARCANA.md / CLAUDE.md / AGENTS.md is passed on as instructions; the status bar shows ▣ and its name. It is allowed automatically, so you do not need to list it under Allowed folders. It grants nothing outside itself. Needs tools on. Empty = no working folder.", { it.projectFolder }, { c, v ->
         val path = v.trim()
         require(path.isEmpty() || java.nio.file.Files.isDirectory(AppContext.expandHome(path))) { "That folder does not exist" }
         c.copy(projectFolder = path)
     }, allowEmpty = true, emptyLabel = "(none)"),
-    text(Group.Tools, "Allowed folders", "Where the model may read and write besides your vault, separated by ;  For example ~/Projects;~/Documents, or ~ for your whole home folder (a home or hidden folder can only be allowed here, Chat never offers it on the spot). Every change, command and web access still asks you first; nothing outside the vault, these folders and the Working folder is ever touched.", { it.toolFolders }, { c, v -> c.copy(toolFolders = v.trim().trim(';')) }, allowEmpty = true),
+    Setting(
+        Group.Tools, "Allowed folders",
+        "Where the model may read and write besides your vault, separated by ;  For example ~/Projects;~/Documents, or ~ for your whole home folder (a home or hidden folder can only be allowed here, Chat never offers it on the spot). Every change, command and web access still asks you first; nothing outside the vault, these folders and the Working folder is ever touched. This is only PERMISSION: which of them are searched (by words and meaning) is chosen in Settings → Search → Search in. Enter opens the list: add folders with the folder browser, remove them again.",
+        value = { it.toolFolders.ifBlank { "(none)" } },
+        editor = Editor.Folders("Allowed folders", "Where the model may read and write besides the vault: add folders, remove them", { it.toolFolders }, { c, v -> c.copy(toolFolders = v.trim().trim(';')) }, check = { _, raw -> if (Files.isDirectory(AppContext.expandHome(raw))) "allowed" else "⚠ no such folder" }),
+    ),
     toggle(Group.Tools, "Shell commands", "Lets the model ask to run commands on this computer (build, test, git…). Every command still waits for your y / n, except harmless ones like git status; Plan mode never offers it. Commands run with your own rights and are NOT limited to the folders above, so read each one before you press y. Off by default.", { it.toolShell }, { c, v -> c.copy(toolShell = v) }),
     toggle(Group.Tools, "Run commands without asking", "On: shell commands run at once, without your y / n (the Chat status bar shows a red ▶ auto-run). Commands Arcana never runs (sudo, rm -rf /, formatting a disk…) are still refused. Needs Shell commands on. Use it for a trusted project and turn it off again.", { it.toolAutoShell }, { c, v -> c.copy(toolAutoShell = v) }),
     choice(Group.Tools, "Calls written as text", "Small models sometimes write a tool call as text (fetch_url(url=\"…\")) instead of making it, and then nothing happens. Auto runs such a call as a real one (it still asks first when it is a change, a command or a web address). Ask shows the call and waits for your y. Off leaves it as text.", listOf("auto" to "Auto", "ask" to "Ask", "off" to "Off"), { it.textCalls }, { c, v -> c.copy(textCalls = v) }),
@@ -353,8 +425,13 @@ private val sections: Map<Group, List<Pair<String, List<String>>>> = mapOf(
     ),
     Group.Vault to listOf(
         "Location" to listOf("Vault path", "Output folder", "Where Arcana's own files are (this vault)", "Where YOUR files are (every vault)"),
-        "Notes" to listOf("Context notes", "Chars per note", "Inbox folder", "Daily notes folder", "Daily note format", "Stale after"),
-        "Search" to listOf("Semantic search model"),
+        "Notes" to listOf("Inbox folder", "Daily notes folder", "Daily note format", "Stale after"),
+    ),
+    Group.Search to listOf(
+        "What is searched, and how" to listOf("Search in", "Search by", "Embedding model (for meaning)", "Show advanced search settings"),
+        "Advanced: files" to listOf("Largest file searched"),
+        "Advanced: ranking and noise" to listOf("Search balance", "Noise filter: words", "Noise filter: meaning", "Search candidates"),
+        "Advanced: what is sent to the model" to listOf("Passages per note", "Context notes", "Chars per note"),
     ),
     Group.Console to listOf(
         "Chat" to listOf("Answer from vault", "Render Markdown", "Confirm before cancelling", "Comparison view", "Copy as"),
@@ -390,12 +467,31 @@ private const val NoModel = "∅ None (off)"
 /** In the semantic search model list, when no embedding model is installed yet: choosing it downloads `nomic-embed-text` through Ollama and selects it. */
 private const val DownloadEmbed = "⇩ Download nomic-embed-text and use it (about 270 MB)"
 
+internal enum class PlaceKind { Special, Folder, Add }
+
+/** One row of the places list: [token] is what is stored (`vault`, or a folder), [on] whether it is in the list (a special can be off and still shown), [meta] what is said beside it (⚠ = a problem). */
+internal class PlaceRow(val token: String, val label: String, val kind: PlaceKind, val on: Boolean, val meta: String)
+
+/** The list with the special word [token] switched on or off (the specials keep their order and stay in front of the folders). */
+internal fun toggledPlaces(specials: List<String>, rows: List<PlaceRow>, token: String): String =
+    specials.filter { word -> if (word == token) rows.none { it.kind == PlaceKind.Special && it.token == word && it.on } else rows.any { it.kind == PlaceKind.Special && it.token == word && it.on } }
+        .plus(rows.filter { it.kind == PlaceKind.Folder }.map { it.token }).joinToString("; ")
+
+/** The rows of a [Editor.Folders] list: its special words (on or off), its folders, and "Add a folder". */
+internal fun placeRows(config: AppConfig, editor: Editor.Folders): List<PlaceRow> {
+    val tokens = editor.get(config).split(';').map { it.trim() }.filter { it.isNotEmpty() }
+    val specials = editor.specials.map { (word, about) -> PlaceRow(word, word, PlaceKind.Special, tokens.any { it.equals(word, ignoreCase = true) }, about) }
+    val folders = tokens.filter { t -> editor.specials.none { it.first.equals(t, ignoreCase = true) } }.map { t -> PlaceRow(t, t, PlaceKind.Folder, true, editor.check(config, t)) }
+    return specials + folders + PlaceRow("", "Add a folder…", PlaceKind.Add, true, "opens the folder browser")
+}
+
 /** What the screen is doing with the highlighted setting. */
 private sealed interface Editing {
     data class Typing(val setting: Setting, val editor: Editor.Text) : Editing
     data class PickModel(val target: Editor.Model, val models: List<String>, val details: Map<String, String> = emptyMap(), val ticked: androidx.compose.runtime.snapshots.SnapshotStateList<String> = androidx.compose.runtime.mutableStateListOf(), val machine: String = "") : Editing
     data object PickTheme : Editing
-    data class PickFolder(val browser: DirectoryPickerState) : Editing
+    data class PickFolder(val browser: DirectoryPickerState, val title: String, val subtitle: String) : Editing
+    data class EditList(val setting: Setting, val editor: Editor.Folders) : Editing
     data object ConfirmReset : Editing
     data class ConfirmClear(val areaId: String) : Editing
 }
@@ -425,10 +521,57 @@ private fun settingNote(app: AppContext, label: String): String = when (label) {
     "Keep model loaded" -> keepAliveNote(app)
     "Temperature" -> samplingNote(app)
     "Thinking & effort" -> thinkingNote(app)
+    "Noise filter: words", "Noise filter: meaning" -> noiseNote(app)
+    "Search in", "Largest file searched" -> projectNote(app)
     else -> ""
 }
 
+/** `5 · equal`, `2 · leans to words`, `0 · words only`: the balance of the fusion as a person reads it. */
+private fun balanceText(n: Int) = "$n · " + when { n == 0 -> "words only"; n == 10 -> "meaning only"; n == 5 -> "equal"; n < 5 -> "leans to words"; else -> "leans to meaning" }
+
 private fun gb(bytes: Long) = "%.1f GB".format(java.util.Locale.ROOT, bytes / 1e9)
+
+private val projectNoteCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, String>>()
+
+/**
+ * What the "Search in" list covers right now, entry by entry, so nothing needs guessing: `vault` with its number of notes, `working` with the folder (or that none is set), every other
+ * entry with its number of files, or why it is ignored (not found, or not inside an allowed folder). Counted at most once in ten seconds: it walks the folders.
+ */
+private fun projectNote(app: AppContext): String {
+    val config = app.config
+    val key = config.projectFolder + "|" + config.searchIn + "|" + config.searchMaxFileKb + "|" + config.toolFolders + "|" + config.vaultPath
+    projectNoteCache[key]?.let { (at, text) -> if (System.currentTimeMillis() - at < 10_000) return text }
+    val scope = com.arcana.brain.core.SearchScope.of(config.searchIn)
+    val home = System.getProperty("user.home")
+    val roots = app.chat.projectRoots(config)
+    fun tilde(p: java.nio.file.Path) = p.toString().replace(home, "~")
+    fun files(root: java.nio.file.Path): String {
+        val source = com.arcana.brain.core.FolderSource(root, config.searchMaxFileKb.coerceIn(10, 5000) * 1000L, vaultRoot = app.openVault().getOrNull()?.root?.toAbsolutePath()?.normalize())
+        val n = runCatching { source.files().size }.getOrDefault(0)
+        return "$n files${if (source.truncated) ", only the newest ${com.arcana.brain.core.FolderSource.MAX_FILES}" else ""}"
+    }
+    val lines = ArrayList<String>()
+    if (scope.notes) lines += "vault: " + (app.openVault().getOrNull()?.let { "${runCatching { it.notes().size }.getOrDefault(0)} notes" } ?: "no vault is set")
+    if (scope.working) lines += "working: " + (app.chat.projectFolder(config)?.let { tilde(it.toAbsolutePath().normalize()) + " (" + files(it.toAbsolutePath().normalize()) + ")" } ?: "no Working folder is set (Settings → Tools)")
+    scope.folders.forEach { raw ->
+        val dir = AppContext.expandHome(raw).toAbsolutePath().normalize()
+        lines += raw + ": " + when {
+            !java.nio.file.Files.isDirectory(dir) -> "ignored, no such folder"
+            dir !in roots -> "ignored, not inside an allowed folder (Settings → Tools → Allowed folders)"
+            else -> files(dir)
+        }
+    }
+    val text = if (lines.isEmpty()) "\nRight now nothing is searched." else "\nRight now:\n  " + lines.joinToString("\n  ") + (if (roots.isNotEmpty()) "\n/reindex embeds the folders (a folder with more than ${com.arcana.brain.core.ProjectSearch.FIRST_INDEX_LIMIT} passages is only embedded by /reindex)." else "")
+    projectNoteCache[key] = System.currentTimeMillis() to text
+    return text
+}
+
+private fun noiseNote(app: AppContext): String {
+    val c = app.config
+    val words = if (c.searchMinWords == 0) "no word filter" else "a passage needs at least ${c.searchMinWords}% of your words (3 of 7 words at 35%)"
+    val meaning = if (c.searchGap == 0) "no meaning rescue" else "or a similarity within ${"%.2f".format(java.util.Locale.ROOT, c.searchGap / 100.0)} of the best match"
+    return "\nRight now: $words, $meaning, otherwise it is left out (the best match always stays). The Sources line of a /vault answer and the search_vault result say how many were left out."
+}
 
 private fun keepAliveNote(app: AppContext): String {
     val config = app.config
@@ -492,7 +635,7 @@ fun SettingsScreen(app: AppContext) {
     var editing by remember { mutableStateOf<Editing?>(null) }
     var notice by remember { mutableStateOf<Notice?>(null) }
 
-    val inGroup = settings.filter { it.group == group }
+    val inGroup = settings.filter { it.group == group && it.visible(app.config) }
     val selected = inGroup.getOrNull(index.coerceIn(0, (inGroup.size - 1).coerceAtLeast(0)))
 
     fun changed(newConfig: AppConfig, what: String) {
@@ -514,15 +657,6 @@ fun SettingsScreen(app: AppContext) {
         }
     }
 
-    fun commitFolder(path: Path) {
-        if (!Files.isDirectory(path)) {
-            notice = Notice("Not a directory: $path", isError = true)
-            return
-        }
-        changed(app.config.copy(vaultPath = path.toString()), "Vault path")
-        editing = null
-    }
-
     fun startEdit(setting: Setting) {
         notice = null
         when (val editor = setting.editor) {
@@ -530,11 +664,15 @@ fun SettingsScreen(app: AppContext) {
                 field.set(setting.value(app.config).takeUnless { it.startsWith("(") } ?: "")
                 editing = Editing.Typing(setting, editor)
             }
-            Editor.Folder -> {
+            is Editor.Folder -> {
                 val start = app.config.vaultPath.takeIf { it.isNotBlank() }?.let { AppContext.expandHome(it) }?.takeIf { Files.isDirectory(it) }
                     ?: Path.of(System.getProperty("user.home"))
-                editing = Editing.PickFolder(DirectoryPickerState(start, onChoose = ::commitFolder, onCancel = { editing = null }))
+                editing = Editing.PickFolder(DirectoryPickerState(start, onChoose = { path ->
+                    if (!Files.isDirectory(path)) notice = Notice("Not a directory: $path", isError = true)
+                    else { changed(editor.set(app.config, path.toString()), editor.title); editing = null }
+                }, onCancel = { editing = null }), editor.title, editor.subtitle)
             }
+            is Editor.Folders -> { picker.reset(); editing = Editing.EditList(setting, editor) }
             Editor.Theme -> {
                 picker.reset()
                 picker.index = Themes.all.indexOfFirst { it.id == app.config.theme }.coerceAtLeast(0)
@@ -631,6 +769,7 @@ fun SettingsScreen(app: AppContext) {
             is Editing.PickModel -> picker.filtering
             Editing.PickTheme -> picker.filtering
             is Editing.PickFolder -> mode.browser.filtering
+            is Editing.EditList -> picker.filtering
             else -> false
         },
     )
@@ -643,6 +782,7 @@ fun SettingsScreen(app: AppContext) {
         is Editing.Typing -> Hints("Enter  save", "Ctrl+U  clear line", "Esc  cancel")
         is Editing.PickModel -> if (mode.target.multi) Hints("↑↓  move", "Space  tick", "Enter  save", "/  filter", "Esc  cancel") else Hints("↑↓  move", "Enter  choose", "/  filter", "Esc  cancel")
         Editing.PickTheme -> Hints("↑↓  preview", "Enter  choose", "/  filter", "Esc  cancel")
+        is Editing.EditList -> Hints("↑↓  move", "Enter / Space  switch on or off · remove · add", "x  remove a folder", "e  edit as text", "Esc  done")
         is Editing.PickFolder ->
             if (mode.browser.filtering) Hints("↑↓  move", "Enter  open", "Esc  clear filter") else Hints("Space  use folder", "Enter  open", "←  up", "/  filter", "Esc  cancel")
         Editing.ConfirmReset -> Hints("y  reset all", "any other key  keep")
@@ -702,6 +842,43 @@ fun SettingsScreen(app: AppContext) {
                 }
             }
             is Editing.PickFolder -> mode.browser.handle(key)
+            is Editing.EditList -> {
+                val rows = placeRows(app.config, mode.editor)
+                val row = picker.selected(rows) { it.label }
+                fun save(value: String) { changed(mode.editor.set(app.config, value), mode.editor.title) }
+                fun withoutEntry(token: String) = rows.filter { it.kind != PlaceKind.Add && it.on && it.token != token }.joinToString("; ") { it.token }
+                when {
+                    picker.handle(key, rows) { it.label } -> true
+                    key == Key.Escape -> { editing = null; true }
+                    !picker.filtering && key.char == 'e' -> {
+                        field.set(mode.editor.get(app.config))
+                        editing = Editing.Typing(mode.setting, Editor.Text { c, v -> mode.editor.set(c, v.split(';').map { it.trim() }.filter { it.isNotEmpty() }.joinToString("; ")) })
+                        true
+                    }
+                    row != null && (key == Key.Enter || (!picker.filtering && key.char == ' ')) -> {
+                        when (row.kind) {
+                            // a word with a meaning (vault, working): on becomes off and the other way round, in its place
+                            PlaceKind.Special -> save(toggledPlaces(mode.editor.specials.map { it.first }, rows, row.token))
+                            PlaceKind.Folder -> save(withoutEntry(row.token))
+                            PlaceKind.Add -> {
+                                val back = mode
+                                val start = rows.lastOrNull { it.kind == PlaceKind.Folder }?.let { AppContext.expandHome(it.token).toAbsolutePath().normalize().parent }?.takeIf { Files.isDirectory(it) } ?: Path.of(System.getProperty("user.home"))
+                                editing = Editing.PickFolder(DirectoryPickerState(start, onChoose = { path ->
+                                    val shown = path.toAbsolutePath().normalize().toString().let { p -> System.getProperty("user.home").let { h -> if (p == h) "~" else if (p.startsWith("$h/")) "~" + p.removePrefix(h) else p } }
+                                    val current = mode.editor.get(app.config).split(';').map { it.trim() }.filter { it.isNotEmpty() }
+                                    if (!Files.isDirectory(path)) notice = Notice("Not a directory: $path", isError = true)
+                                    else if (shown in current) notice = Notice("$shown is already in the list")
+                                    else { save((current + shown).joinToString("; ")); notice = Notice("Added $shown") }
+                                    editing = back
+                                }, onCancel = { editing = back }), mode.editor.title, "Pick a folder to add; Space adds it")
+                            }
+                        }
+                        true
+                    }
+                    row != null && row.kind == PlaceKind.Folder && !picker.filtering && (key == Key.Backspace || key == Key.Delete || key.char == 'x') -> { save(withoutEntry(row.token)); true }
+                    else -> false
+                }
+            }
             Editing.ConfirmReset -> {
                 if (key.char == 'y' || key.char == 'Y') {
                     // Everything goes back to the built-in defaults except where the vault is.
@@ -804,8 +981,22 @@ fun SettingsScreen(app: AppContext) {
                     ThemeSwatches(highlighted)
                 }
             }
+            is Editing.EditList -> {
+                val rows = placeRows(app.config, mode.editor)
+                ScreenHeader("Settings › ${mode.editor.title}", mode.editor.subtitle)
+                VGap()
+                Panel("Places") {
+                    Picker(
+                        rows, picker, label = { it.label }, rows = bodyRows(extra = 8),
+                        icon = { when (it.kind) { PlaceKind.Special -> if (it.on) "☑" else "☐"; PlaceKind.Folder -> "▤"; PlaceKind.Add -> "＋" } },
+                        iconColor = { if (it.meta.startsWith("⚠")) Palette.Orange else if (it.kind == PlaceKind.Special && !it.on) Palette.Muted else if (it.kind == PlaceKind.Add) Palette.Cta else Palette.Green },
+                        meta = { it.meta },
+                    )
+                    NoticeLine(notice)
+                }
+            }
             is Editing.PickFolder -> {
-                ScreenHeader("Settings › Vault path", "Your Obsidian vault folder")
+                ScreenHeader("Settings › ${mode.title}", mode.subtitle)
                 VGap()
                 Panel("Choose a folder") {
                     DirectoryPicker(mode.browser, rows = bodyRows(extra = 8))

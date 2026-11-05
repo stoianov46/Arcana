@@ -9,6 +9,8 @@ app/build/install/arcana/bin/arcana        # or: make install, then "arcana"
 make dist                                  # app/build/distributions/arcana.zip: unzip anywhere (needs Java 17+) and run bin/arcana
 ```
 
+**Plans:** what is not built yet (and why) is in [proposals/](proposals/README.md); `docs/` describes what exists.
+
 **Developing Arcana:** see [docs/development.md](docs/development.md) (JDK 21, isolated dev home, tests, definition of done); users: [docs/distribution.md](docs/distribution.md).
 
 **First start:** with no vault chosen yet Arcana opens a short setup: pick your Obsidian vault folder, then tick what to create in it (the memory file and a skills folder with a guide and the starter skills, both inside the hidden `.arcana/` folder so your vault shows only content; and the output folder). It only creates what is missing. The same can be done without a screen, for a script or a new machine: `arcana --init ~/Obsidian/Vault [--skip memory,skills,output]`; `arcana --migrate` moves an older vault's `Skills/` and `ARCANA.md` into `.arcana/`; `arcana --help` lists it. The setup can be run again any time from the command palette ("Set up the vault").

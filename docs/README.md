@@ -43,6 +43,7 @@ no marketing. Read this page, then open only the file you need.
 | [vault-hygiene.md](vault-hygiene.md) | the Brain screen's hygiene checks: each rule, the list, open-in-Library and chat-to-fix |
 | [research-backlog.md](research-backlog.md) | the research backlog: `? ` in Capture, `Research/Research Backlog.md`, the Brain list, auto-tick |
 | [report-lifecycle.md](report-lifecycle.md) | what happens to a report after it is written: tokens, work time and rating, refreshing a stale report, the reviewer pass |
+| [retrieval.md](retrieval.md) | how notes and project files are found: `keywords` / `meaning` / `both`, BM25 + vectors fused, the `search_vault` tool, `/vault` answers, the Sources line |
 | [semantic-search.md](semantic-search.md) | the embedding index, the `semantic_search` tool, `/reindex`, privacy and limits |
 
 ## Build and run

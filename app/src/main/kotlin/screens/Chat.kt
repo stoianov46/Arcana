@@ -25,6 +25,7 @@ import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.Compaction
 import com.arcana.brain.core.OraculSteps
+import com.arcana.brain.core.RetrievalMode
 import com.arcana.brain.app.navigation.LibraryFilter
 import com.arcana.brain.core.Artifacts
 import com.arcana.brain.core.Events
@@ -116,7 +117,7 @@ internal val SlashCommands = listOf(
     SlashItem("/effort", "Reasoning effort for the next message: pick from the levels this model offers (Ctrl+G)", false, usage = "/effort xhigh   or just /effort to pick from the list", aliases = listOf("/think")),
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false, usage = "e.g. /memory check   (finds repeated lines and dead note paths, asks before removing)"),
     SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
-    SlashItem("/reindex", "Build or refresh the semantic search index of your vault (Settings → Vault → Semantic search model)", false),
+    SlashItem("/reindex", "Build or refresh the semantic search index of your vault (Settings → Search → Embedding model (for meaning))", false),
     SlashItem("/helpers", "All helper models on or off: Oracul, judge, flow, specialists, router (toggle). Off = only the chat model works", false),
     SlashItem("/roles", "Skill roles on or off: the worker, planner and reviewer a skill uses (toggle)", false),
     SlashItem("/flow", "Flow: every message goes analyst, planner, worker, reviewer, controller (toggle)", false, usage = "e.g. /flow careful   or   /flow off   (without a name it switches)"),
@@ -462,6 +463,24 @@ internal fun hardwareWarnings(app: AppContext, plain: Boolean): List<Pair<String
 internal fun memoryCutText(total: Int, plain: Boolean): String =
     "${if (plain) "!" else "⚠"} memory ${UsageStats.compact(Vault.MEMORY_LIMIT.toLong())} of ${UsageStats.compact(total.toLong())}: end cut"
 
+/**
+ * How the vault is searched right now, next to `◉ vault` (for `/vault` answers) or, with `/vault` off and tools on, on its own (`⌕ model: …`: nothing is searched in advance; the model searches by itself with `search_vault`): `⌕ words+meaning`, `⌕ words` or `⌕ meaning`. It shows what will REALLY run: with Both (or Meaning) and no embedding model set up the
+ * words carry on alone, so it says `⌕ words (no model)` in orange, not what the setting asks for.
+ */
+internal fun searchModeSegment(app: AppContext, chat: ChatSession, plain: Boolean, toolOnly: Boolean = false): StatusSegment {
+    // the same setting (Settings → Search → Search by) decides for /vault answers and for the model's own searches
+    val mode = RetrievalMode.of(app.config.searchBy)
+    val tag = ""
+    val meaningOn = chat.semanticOn(app.config)
+    val glyph = (if (plain) "search " else "⌕ ") + (if (toolOnly) "model: " else "")
+    return when {
+        mode == RetrievalMode.Keywords -> statusSegment("", "${glyph}words$tag", Palette.Blue, 5, second = true)
+        !meaningOn -> statusSegment("", "${glyph}words (no model)$tag", Palette.Orange, 5, second = true)
+        mode == RetrievalMode.Meaning -> statusSegment("", "${glyph}meaning$tag", Palette.Purple, 5, second = true)
+        else -> statusSegment("", "${glyph}words+meaning$tag", Palette.Green, 5, second = true)
+    }
+}
+
 /** What the Chat status bar says: model, chat, context gauge, tokens, estimated price, session time and the tool state. */
 private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memoryChars: Int, width: Int): List<StatusSegment> {
     val config = app.config
@@ -475,7 +494,13 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
         add(statusSegment("temperature", "°${config.temperature}", Palette.Accent, 6))
         // the model's thinking: a core fact of how it answers (off is much faster); shown when the model can think
         if (app.thinkingValues.isNotEmpty()) add(thinkingSegment(app, plain))
-        if (config.chatUseVault) add(statusSegment("", "◉ vault", Palette.Cta, 6, bold = true, second = true))
+        if (config.chatUseVault) {
+            add(statusSegment("", "◉ vault", Palette.Cta, 6, bold = true, second = true))
+            add(searchModeSegment(app, chat, plain))
+        } else if (config.toolsEnabled && app.openVault().isSuccess) {
+            // /vault is off, but the model can still search the vault with search_vault (words and meaning by default): the indicator says which search that is
+            add(searchModeSegment(app, chat, plain, toolOnly = true))
+        }
         // the goal of this chat (/goal): shown so it is clear what the work is for
         chat.goal?.let { add(pillSegment("◎ goal: ${it.replace('\n', ' ').take(40)}${if (it.length > 40) "…" else ""}", Palette.Cta, 8)) }
         // what the tools wrote or changed in this chat (/artifacts lists it)
@@ -1690,10 +1715,12 @@ internal fun messageLines(app: AppContext, message: ChatMessage, entry: Int, wid
             message.toolCalls.forEachIndexed { i, call -> add(Line("${if (config.plainGlyphs) "[tool]" else "⚙"} ${call.name}  ${sanitizeForTerminal(callSummary(call))}".take(width), Palette.ConsoleTool, bold = true, entry = entry + blocks + i)) }
             // the notes the answer was built from, when the vault was searched
             if (message.sources.isNotEmpty()) {
-                wrap("Sources  " + message.sources.joinToString("  ") { "▤ ${sanitizeForTerminal(it.removeSuffix(".md"))}" }, width).forEach { add(Line(it, Palette.Accent)) }
+                addAll(sourceLines(message, config.plainGlyphs, width))
                 // notes longer than Chars per note were shown to the model only in part: the answer may miss what is further down
-                if (message.sourcesCut.isNotEmpty()) wrap("${if (config.plainGlyphs) "!" else "⚠"} Only the start was read of: " + message.sourcesCut.joinToString(", ") { sanitizeForTerminal(it.removeSuffix(".md")) } + " (Settings → Vault → Chars per note)", width).forEach { add(Line(it, Palette.Warn)) }
+                if (message.sourcesCut.isNotEmpty()) wrap("${if (config.plainGlyphs) "!" else "⚠"} Only the start was read of: " + message.sourcesCut.joinToString(", ") { sanitizeForTerminal(it.removeSuffix(".md")) } + " (Settings → Search → Chars per note)", width).forEach { add(Line(it, Palette.Warn)) }
             }
+            // the tools the model used for this answer, so it is plain which instruments were at work
+            if (message.toolsUsed.isNotEmpty()) add(Line("${if (config.plainGlyphs) "tools" else "⚙ tools"}: ${message.toolsUsed.joinToString(" · ")}".take(width), Palette.ConsoleTool))
             // the closing line of a finished reply: Done, time, tokens, speed
             message.stats?.let { add(replyFooter(it, config.plainGlyphs, step = message.toolCalls.isNotEmpty())) }
         }
@@ -1714,6 +1741,22 @@ internal fun thinkingLines(thinking: String, view: String, plain: Boolean, width
     val header = "$mark thinking · $words ${if (words == 1) "word" else "words"}"
     if (view != "full") return listOf(Line(header, Palette.ConsoleDim))
     return listOf(Line(header, Palette.ConsoleDim, bold = true)) + wrap(sanitizeForTerminal(text), (width - 2).coerceAtLeast(10)).map { Line("  $it", Palette.ConsoleDim) } + Line("")
+}
+
+/**
+ * The notes an answer is built from, one per line, so the list can be read: `Sources (3) · vault search: keywords + meaning`, then `▤ Title` with, in a dim run, how it came to the answer
+ * (`read` = the model opened it, `context` = it was sent with the question; and how it was found, with its evidence: `keywords + meaning · words 3/3 · similarity 0.64`).
+ */
+internal fun sourceLines(message: ChatMessage, plain: Boolean, width: Int): List<Line> = buildList {
+    val head = "Sources (${message.sources.size})" + (if (message.sourcesBy.isEmpty()) "" else "  ·  vault search: ${message.sourcesBy}")
+    add(Line(head.take(width), Palette.Accent, bold = true))
+    message.sources.forEachIndexed { i, path ->
+        val title = sanitizeForTerminal(path.removeSuffix(".md").substringAfterLast('/'))
+        val info = message.sourcesInfo.getOrNull(i).orEmpty()
+        val mark = if (plain) "-" else "▤"
+        val text = "  $mark $title" + if (info.isEmpty()) "" else "   $info"
+        add(Line(text.take(width), Palette.Accent, runs = listOf(Run("  $mark $title", Palette.Accent), Run(if (info.isEmpty()) "" else "   $info", Palette.Muted))))
+    }
 }
 
 /** A tool call of the Oracul, quiet and dim like a tool's own lines but in the Oracul's colour: `Ψ model  tool  what it was about`, then `↳ ✓ how it ended`. */

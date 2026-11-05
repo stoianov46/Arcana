@@ -24,6 +24,15 @@ import com.arcana.brain.core.MAX_CONSULTS
 import com.arcana.brain.core.Route
 import com.arcana.brain.core.Router
 import com.arcana.brain.core.OraculSteps
+import com.arcana.brain.core.FolderSource
+import com.arcana.brain.core.HybridSearch
+import com.arcana.brain.core.LexicalIndex
+import com.arcana.brain.core.RetrievalMode
+import com.arcana.brain.core.PassageSource
+import com.arcana.brain.core.ProjectSearch
+import com.arcana.brain.core.SearchHit
+import com.arcana.brain.core.SearchScope
+import com.arcana.brain.core.SearchTuning
 import com.arcana.brain.core.SemanticSetup
 import com.arcana.brain.core.SkillRoles
 import com.arcana.brain.core.StageKind
@@ -124,6 +133,28 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     val unsaved: Boolean get() = messages.size > savedMessages
 
     private var pendingSources: List<String> = emptyList()
+    private var pendingBy: String = ""
+    private var pendingInfo: Map<String, String> = emptyMap()
+
+    /** What this message's answer is built from besides the notes sent with the question: the tools the model used (`search_vault (keywords + meaning)`) and the notes it opened with `read_note`. Cleared by the next message. */
+    private val turnTools = ArrayList<String>()
+    private val turnReads = LinkedHashSet<String>()
+
+    /** Remembers a tool call for the line under the answer: which tool, which search method it really used, and which note it read. */
+    private fun noteToolUse(call: ToolCall, result: String) {
+        val failed = result.startsWith("Error:")
+        val method = when (call.name) {
+            "search_vault" -> Regex("by (keywords \\+ meaning|keywords|meaning)").find(result)?.groupValues?.get(1)
+            "semantic_search" -> "meaning"
+            "search_notes" -> "keywords"
+            else -> null
+        }
+        turnTools += call.name + (if (failed) " ✕" else method?.let { " ($it)" }.orEmpty())
+        if (call.name == "read_note" && !failed) {
+            val path = Regex("^\\(found at ([^)]+)\\)").find(result)?.groupValues?.get(1) ?: (call.arguments["path"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+            path?.trim()?.takeIf { it.isNotEmpty() }?.let { turnReads += it }
+        }
+    }
     private var pendingCut: List<String> = emptyList()
 
     /** Notes the user chose to send whole, and notes they accepted cut, for this chat (the history is re-read on every turn, so the choice must stay). */
@@ -689,6 +720,12 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             searchBackend = config.searchBackend, searchUrl = config.searchUrl, searchKey = config.searchKey,
             skillsFolder = if (config.skillsEnabled) app.skillsFolder(config) else "",
             semantic = semanticIndexFor(config, vault)?.let { SemanticSearch(it) },
+            searchTuning = SearchTuning.of(config),
+            notesSearch = notesSearched(config),
+            searchMode = RetrievalMode.of(config.searchBy),
+            projectSearch = projectRoots(config).takeIf { it.isNotEmpty() }?.let { roots ->
+                ProjectSearch(roots, { source -> projectIndexFor(config, source) }, SearchTuning.of(config), config.searchMaxFileKb.coerceIn(10, 5000) * 1000L, vaultRoot = vault?.root?.toAbsolutePath()?.normalize())
+            },
         )
     }
 
@@ -699,6 +736,35 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         private set
 
     private var semanticIndex: Triple<String, String, EmbeddingIndex>? = null
+
+    /**
+     * The folders `search_files` looks in: the working folder (Settings → Tools) and the folders of Settings → Search → Search in, each only when it exists and lies inside a folder the tools may
+     * use (the vault, the working folder or the allowed folders): the search must never reach a place the model could not read.
+     */
+    fun projectRoots(config: AppConfig): List<java.nio.file.Path> {
+        val scope = SearchScope.of(config.searchIn)
+        val allowed = listOfNotNull(app.openVault().getOrNull()?.root, projectFolder(config)) + config.toolFolders.split(';').map { it.trim() }.filter { it.isNotEmpty() }.map { AppContext.expandHome(it) }
+        val allowedNormal = allowed.map { it.toAbsolutePath().normalize() }
+        val listed = scope.folders.map { AppContext.expandHome(it).toAbsolutePath().normalize() }
+        return (listOfNotNull(projectFolder(config)?.toAbsolutePath()?.normalize().takeIf { scope.working }) + listed)
+            .filter { dir -> java.nio.file.Files.isDirectory(dir) && allowedNormal.any { dir.startsWith(it) } }
+            .distinct()
+    }
+
+    /** The notes of the vault are searched: `vault` is in Settings → Search → Search in. */
+    fun notesSearched(config: AppConfig): Boolean = SearchScope.of(config.searchIn).notes
+
+    private val projectIndexes = java.util.concurrent.ConcurrentHashMap<String, EmbeddingIndex>()
+
+    /** The meaning index of a project folder, or null when no embedding model is set up and installed (then only words are used). One per folder, model and size limit; its file is apart from the vault's. */
+    fun projectIndexFor(config: AppConfig, source: PassageSource): EmbeddingIndex? {
+        val model = config.embedModel.trim().ifEmpty { return null }
+        val installed = when (val c = app.connection) { is Connection.Online -> c.models; is Connection.ModelMissing -> c.models; else -> return null }
+        val name = installed.firstOrNull { ModelStatus.sameModel(it, model) } ?: return null
+        return projectIndexes.getOrPut(source.key + "\n" + name) {
+            EmbeddingIndex(EmbeddingIndex.fileFor(source, name), source, name, embedder = Embedder { texts -> app.client.embedBlocking(name, texts) })
+        }
+    }
 
     /** The semantic search is on: an embedding model is set and installed on the server (what [semanticIndexFor] needs besides a vault). */
     fun semanticOn(config: AppConfig = app.config): Boolean {
@@ -736,7 +802,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /**
      * Downloads [model] through Ollama's `/api/pull` when it is not installed (progress to [onProgress] and under the conversation), selects it as the semantic search model in the
      * settings and reads the server's model list again. Returns null when it is ready, else why not (Ollama cannot be reached, the download failed, the model is not there afterwards).
-     * It asks nothing: the callers are a dialog (the model called `semantic_search`) and the Settings row the user chose on purpose (Settings → Vault → Semantic search model).
+     * It asks nothing: the callers are a dialog (the model called `semantic_search`) and the Settings row the user chose on purpose (Settings → Search → Embedding model (for meaning)).
      */
     suspend fun installEmbeddingModel(model: String, onProgress: (String) -> Unit): String? {
         try {
@@ -785,7 +851,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     fun reindex(done: (String, Boolean) -> Unit) {
         if (indexing != null) return done("Already indexing.", true)
         val config = app.config
-        if (config.embedModel.isBlank()) return done("No embedding model is set: choose one in Settings → Vault → Semantic search model (for example: ollama pull nomic-embed-text).", true)
+        if (config.embedModel.isBlank()) return done("No embedding model is set: choose one in Settings → Search → Embedding model (for meaning) (for example: ollama pull nomic-embed-text).", true)
         val vault = app.openVault().getOrNull() ?: return done("Open a vault first (Settings → Vault).", true)
         val index = semanticIndexFor(config, vault)
             ?: return done("${config.embedModel} is not installed on the Ollama server, or Ollama cannot be reached. Run: ollama pull ${config.embedModel}", true)
@@ -793,7 +859,15 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         app.scope.launch(Dispatchers.IO) {
             try {
                 val r = index.refresh { d, t -> indexing = if (t == 0) "Indexing: nothing to do…" else "Indexing $t notes… $d/$t" }
-                done("Semantic index ready: ${r.notes} notes, ${r.chunks} passages (${r.embeddedNotes} embedded, ${r.removedNotes} dropped) in ${"%.1f".format(java.util.Locale.ROOT, r.millis / 1000.0)} s.", false)
+                // the project folders too (a folder of code is only embedded by a search when it is small): each has its own index
+                val projects = projectRoots(config).mapNotNull { root ->
+                    val source = FolderSource(root, config.searchMaxFileKb.coerceIn(10, 5000) * 1000L, vaultRoot = vault.root.toAbsolutePath().normalize())
+                    projectIndexFor(config, source)?.let { idx ->
+                        val pr = idx.refresh { d, t -> indexing = if (t == 0) "Indexing ${root.fileName}: nothing to do…" else "Indexing ${root.fileName}… $d/$t files" }
+                        "${root.fileName}: ${pr.notes} files, ${pr.chunks} passages"
+                    }
+                }
+                done("Semantic index ready: ${r.notes} notes, ${r.chunks} passages (${r.embeddedNotes} embedded, ${r.removedNotes} dropped) in ${"%.1f".format(java.util.Locale.ROOT, r.millis / 1000.0)} s." + projects.joinToString("") { "; $it" }, false)
             } catch (e: Exception) {
                 done("Indexing stopped: ${e.message}. What was finished is kept; run /reindex to go on.", true)
             } finally {
@@ -811,7 +885,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         var loopStep = LoopGuard.Step.None
         for (call in calls) {
             // the first semantic_search without an embedding model: set it up now (the user is asked once), then the call goes on with a toolbox that has the index
-            if (call.name == "semantic_search" && toolbox != null && !semanticOn()) {
+            if ((call.name == "semantic_search" || (call.name == "search_vault" && (call.arguments["mode"] as? kotlinx.serialization.json.JsonPrimitive)?.content.equals("meaning", ignoreCase = true))) && toolbox != null && !semanticOn()) {
                 val problem = ensureSemanticModel()
                 if (problem != null) {
                     val message = ChatMessage.toolResult(call.name, "Error: $problem")
@@ -946,6 +1020,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val message = ChatMessage.toolResult(call.name, result)
             add(message)
             added += message
+            noteToolUse(call, result)
             if (call.name == "remember") when {
                 result.startsWith("Already remembered") -> app.recordEvent(Events.MEMORY, "duplicate")
                 result.startsWith("Error:") && "dead path" in result -> app.recordEvent(Events.MEMORY, "refused")
@@ -1521,6 +1596,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         clearRoles()
         stuckAdvised = 0
         turnCalls.clear()
+        turnTools.clear()
+        turnReads.clear()
         loopCalls.reset()
         // ...and a skill chip on it starts a run of that skill (its required steps are then watched)
         history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }?.let { entry ->
@@ -1564,14 +1641,33 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 val history = Compaction.forModel(messages.toList())
                 val config = app.config
                 val vault = app.openVault().getOrNull()
-                val hits = if (config.chatUseVault && vault != null) vault.search(body, config.contextNotes, config.contextCharsPerNote) else null
+                val found = if (config.chatUseVault && vault != null && notesSearched(config)) vaultHits(vault, body, config) else null
+                val hits = found?.hits
+                pendingBy = found?.let { it.label + if (it.leftOut > 0) " · ${it.leftOut} weak left out" else "" }.orEmpty()
+                pendingInfo = found?.info.orEmpty()
                 pendingSources = hits?.map { it.note.path }.orEmpty()
-                pendingCut = hits?.filter { it.missing > 0 }?.map { it.note.path }.orEmpty()
+                pendingCut = if (found?.passages == true) emptyList() else hits?.filter { it.missing > 0 }?.map { it.note.path }.orEmpty()
                 return Prompts.chatMessages(config, history, hits, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, toolsNote = box?.describe().orEmpty(), canRequestTools = canRequest, memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "", goal = goal.orEmpty(), effortNote = if (runWorker == null) Prompts.effortNote(config.model, app.thinkingValues, app.thinkingDefault) else "").also { request -> promptEstimate = request.sumOf { it.content.length } / 4 }
             }
             refreshRequest = ::compose
             compose()
         }
+    }
+
+    /**
+     * The notes for a `/vault` answer, found by the method the setting *Search by* names (`both` by default: words and meaning fused; words only while no embedding model is set up),
+     * with the name of the method that really ran, shown on the answer's Sources line, and whether the excerpts are the matching passages (true) or the start of the note (the old search, a last
+     * resort when nothing is found by words): only the latter can be "only the start was read".
+     */
+    private class VaultContext(val hits: List<SearchHit>, val label: String, val passages: Boolean, val info: Map<String, String>, val leftOut: Int = 0)
+
+    private fun vaultHits(vault: Vault, query: String, config: AppConfig): VaultContext {
+        val mode = RetrievalMode.of(config.searchBy)
+        val hybrid = HybridSearch(LexicalIndex.forVault(vault), semanticIndexFor(config, vault), SearchTuning.of(config))
+        val (hits, r) = hybrid.hits(vault, query, config.contextNotes, config.contextCharsPerNote, mode)
+        if (hits.isNotEmpty() || mode == RetrievalMode.Meaning) return VaultContext(hits, r.label, true, r.found.associate { it.path to (it.via + if (it.evidence.isEmpty()) "" else " · " + it.evidence) }, r.leftOut)
+        val old = vault.search(query, config.contextNotes, config.contextCharsPerNote)
+        return VaultContext(old, "keywords", false, old.associate { it.note.path to "keywords" })
     }
 
     /** The text of every note attached to [window], read from the vault now (so a note that changed is seen as it is). */
@@ -1585,13 +1681,24 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     private fun finishReply(text: String, stats: ReplyStats?) {
-        add(ChatMessage.assistant(text, stats, pendingSources, gen.takeThinking(), pendingCut))
+        // what the answer is built from: the notes the model opened itself and the notes sent with the question, each with how it got there, and the tools it used
+        val reads = turnReads.toList()
+        val context = pendingSources
+        val all = (reads + context).distinct()
+        val info = all.map { p ->
+            val how = if (p in reads && p in context) "read · context" else if (p in reads) "read" else "context"
+            listOfNotNull(how, pendingInfo[p]?.takeIf { p in context }).joinToString(" · ")
+        }
+        val tools = turnTools.groupingBy { it }.eachCount().map { (name, n) -> if (n > 1) "$name ×$n" else name }
+        add(ChatMessage.assistant(text, stats, all, gen.takeThinking(), pendingCut, if (context.isEmpty()) "" else pendingBy, info, tools))
         maybeConsult()
         // a goal: once the reviewers are done, a checker says whether it is met; if not, the work goes on
         if (goal != null) app.scope.launch { autoConsult?.join(); runCatching { checkGoal() } }
         // the model is loaded now: ask Ollama which window it really got
         app.scope.launch { app.refreshLoadedContext() }
         pendingSources = emptyList()
+        pendingBy = ""
+        pendingInfo = emptyMap()
         pendingCut = emptyList()
         gen.consume()
         stampBacklog()

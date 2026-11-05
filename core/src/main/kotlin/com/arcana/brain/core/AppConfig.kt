@@ -18,6 +18,30 @@ data class AppConfig(
     val temperature: Double = 0.7,
     val timeoutSeconds: Int = 300,
     val contextNotes: Int = 5,
+    /**
+     * HOW everything is searched (notes, code, documents; `/vault` answers and the model's search tools alike): "both" (words and meaning together; words only while no embedding model is
+     * set up), "keywords" or "meaning". See [RetrievalMode].
+     */
+    val searchBy: String = "both",
+    /**
+     * WHERE things are searched, one list separated by `;` (Settings → Search → Search in): `vault` = the notes of the vault, `working` = the Working folder (Settings → Tools), anything else a
+     * folder of code or documents (`~` is the home folder; it must lie inside the allowed folders, Settings → Tools). Remove an entry to stop searching it. See [SearchScope].
+     */
+    val searchIn: String = "vault; working",
+    /** Show the advanced search settings (balance, noise filter, candidates, passages, limits) in Settings → Search. */
+    val searchAdvanced: Boolean = false,
+    /** How much weight meaning has against words when the two are fused, 0 to 10 (0 = words only decide, 5 = equal, 10 = meaning only decides): see [SearchTuning]. */
+    val searchBalance: Int = 5,
+    /** Noise filter, meaning side: a passage with too few of the query's words is left out when its vector similarity is more than this many hundredths below the best hit's (8 = 0.08; 0 = never left out for this). */
+    val searchGap: Int = 8,
+    /** Noise filter, words side: the least share of the query's words (percent) a passage must contain to stay when its similarity is not near the best (0 = no filter). */
+    val searchMinWords: Int = 35,
+    /** How many candidate passages each method (words, meaning) hands to the fusion. */
+    val searchPool: Int = 40,
+    /** How many passages of one note are sent to the model in a `/vault` answer. */
+    val searchPassages: Int = 4,
+    /** The biggest file (in KB) `search_files` reads; a bigger one is left out. */
+    val searchMaxFileKb: Int = 300,
     val contextCharsPerNote: Int = 4000,
     val systemPrompt: String = "You are Arcana, a concise assistant that helps the user work with their Obsidian notes. " +
         "Answer in the language of the user's request. Use Markdown.",
