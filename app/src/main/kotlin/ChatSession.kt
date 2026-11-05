@@ -524,7 +524,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val kind = Flow.consultKind(arg("stage")) ?: return "Error: stage must be analyst, planner or reviewer."
         val brief = arg("brief").ifEmpty { return "Error: give a brief: everything the specialist needs." }
         if (consults >= MAX_CONSULTS) return "Error: you have already consulted $MAX_CONSULTS times in this message; carry on with what you have."
-        val model = Flow.careful(app.config).model(kind).ifEmpty { return "Error: no model is set for the ${kind.label.lowercase()} (Settings → Helpers); work without it." }
+        val model = Flow.consultModel(app.config, kind).ifEmpty { return "Error: no model is set for the ${kind.label.lowercase()} and no Oracul model to fall back on (Settings → Helpers → Model, or the ${Flow.consultSource(app.config, kind).takeIf { it != "the Oracul model" } ?: "stage"} setting); work without it." }
         if (consulting != null) return "Error: another model is working right now; try again in a moment."
         if (missingOnOracul(model)) return "Error: the model $model is not installed; work without the ${kind.label.lowercase()}."
         consults++

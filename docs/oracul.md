@@ -186,7 +186,7 @@ or the worker) and writes a `brief`; the stage's model (`Flow.careful(config).mo
 instructions (`Oracul.consultRequest`) and **sees only the brief** (plus the usual earlier-chat header), and its text comes back as the tool's result: `Planner (model) says: …`. So the model
 decides when, and most messages call nobody. Limits: `MAX_CONSULTS` = 3 per message of the user (`consults`, reset by a message), one specialist at a time, no recursion. A stage without a
 model, a model that is not installed or a wrong stage name is an `Error:` result the model can read and work around. Usage goes to `Analyst`, `Planner` or `Oracul`; nothing is added to the chat
-besides the tool call and its result. It is independent of *Flow*: both can be on (the flow then still runs its fixed sequence, and the model may consult inside the worker's turn).
+besides the tool call and its result. **Which model answers is shown, not guessed:** `Flow.consultModel` / `Flow.consultSource` give the model and where it comes from; the chat line reads `consult  reviewer → qwen3.8:27b (the Oracul model)`, and the blank Settings rows say what a consult will use (*Flow analyst*: `(the Oracul model: name)`; *Skill planner* / *Skill reviewer*: `(no review in skills; consult asks the Oracul model: name)` while *Specialists as tools* is on). It works with Flow and Skill roles off, because it reads the same model settings. It is independent of *Flow*: both can be on (the flow then still runs its fixed sequence, and the model may consult inside the worker's turn).
 
 ## Router
 

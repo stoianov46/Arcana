@@ -2249,6 +2249,11 @@ class CoreTest {
         assertTrue(Oracul.isControl(message) && Oracul.isOpinion(message) && !Oracul.isReview(message) && Oracul.body(message).startsWith("Verdict: redo"))
         assertEquals(4, Flow.of(AppConfig(flow = "careful", oraculModel = "o"))!!.stages.count { it.model == "o" }, "analyst, planner, reviewer and controller default to the Oracul model")
         assertEquals(5, Flow.of(AppConfig(flow = "careful", flowRedos = 99))!!.redos, "the redo limit is capped")
+        val consultConfig = AppConfig(oraculModel = "o", rolePlanner = "p")
+        assertEquals("p", Flow.consultModel(consultConfig, StageKind.Planner), "consult works with Flow off")
+        assertEquals("Skill planner", Flow.consultSource(consultConfig, StageKind.Planner))
+        assertEquals("o", Flow.consultModel(consultConfig, StageKind.Reviewer), "an unset stage falls back to the Oracul model")
+        assertEquals("the Oracul model", Flow.consultSource(consultConfig, StageKind.Reviewer))
     }
 
     @Test

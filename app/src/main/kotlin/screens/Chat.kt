@@ -1712,7 +1712,7 @@ internal fun messageLines(app: AppContext, message: ChatMessage, entry: Int, wid
             addAll(thinkingLines(message.thinking, config.thinkingView, config.plainGlyphs, width))
             addAll(renderMarkdown(parseMarkdown(message.content), width, entry = { entry + it }, rich = config.renderMarkdown, plainGlyphs = config.plainGlyphs))
             // the tools it asked for, one line and one select entry each
-            message.toolCalls.forEachIndexed { i, call -> add(Line("${if (config.plainGlyphs) "[tool]" else "⚙"} ${call.name}  ${sanitizeForTerminal(callSummary(call))}".take(width), Palette.ConsoleTool, bold = true, entry = entry + blocks + i)) }
+            message.toolCalls.forEachIndexed { i, call -> add(Line("${if (config.plainGlyphs) "[tool]" else "⚙"} ${call.name}  ${sanitizeForTerminal(callSummary(call, config))}".take(width), Palette.ConsoleTool, bold = true, entry = entry + blocks + i)) }
             // the notes the answer was built from, when the vault was searched
             if (message.sources.isNotEmpty()) {
                 addAll(sourceLines(message, config.plainGlyphs, width))
@@ -1823,8 +1823,14 @@ internal fun entriesOf(m: ChatMessage): List<String> = when (m.role) {
 }
 
 /** The one thing a tool call is about, for its line in the chat: its path, query or title. */
-private fun callSummary(call: ToolCall): String {
+private fun callSummary(call: ToolCall, config: AppConfig? = null): String {
     val args = call.arguments
+    if (call.name == com.arcana.brain.core.CONSULT && config != null) {
+        val stage = (args["stage"] as? JsonPrimitive)?.contentOrNull.orEmpty().trim().lowercase()
+        val kind = com.arcana.brain.core.Flow.consultKind(stage) ?: return stage
+        val model = com.arcana.brain.core.Flow.consultModel(config, kind)
+        return if (model.isEmpty()) "$stage → no model set" else "$stage → $model (${com.arcana.brain.core.Flow.consultSource(config, kind)})"
+    }
     if (call.name == com.arcana.brain.core.TODO) {
         val list = com.arcana.brain.core.Todos.parse((args["items"] as? JsonPrimitive)?.contentOrNull.orEmpty())
         return if (list.isEmpty()) "clear the list" else "${list.size} items, ${com.arcana.brain.core.Todos.doneCount(list)} done"
