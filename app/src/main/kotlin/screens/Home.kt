@@ -176,13 +176,13 @@ fun HomeScreen(app: AppContext) {
         val path = app.brain.index?.notes?.firstOrNull { it.title.equals(title, ignoreCase = true) }?.path
         if (path != null) { backlogOpen = false; navigator.openLibrary(LibraryFilter.All, path) }
     }
-    val backlogRows = backlog.map { BrainRow.Item("?", Palette.Cta, it.question, it.date, open = {}) }
+    val backlogRows = backlog.map { BrainRow.Item("⌕", Palette.Orange, it.question, it.date, open = {}) }
     // the same items as rows of the dashboard itself: Enter and x work on them where they stand
     val questionRows = workItems.filter { it.kind == WorkKind.Question && it.state() in listOf(WorkState.Open, WorkState.InProgress) }
         .map { workRow(it, open = { askQuestion(it) }, actions = mapOf('x' to { toggle(it) }, 't' to { retype(it) })) }
     val todoRows = workItems.filter { it.kind == WorkKind.Todo && it.state() in listOf(WorkState.Open, WorkState.InProgress) }
         .map { workRow(it, open = { toggle(it) }, actions = mapOf('x' to { toggle(it) }, 't' to { retype(it) })) }
-    val researchRows = backlog.map { q -> BrainRow.Item("?", Palette.Cta, q.question, q.date, open = { startResearch(q) }, actions = mapOf('x' to { markDone(q) })) }
+    val researchRows = backlog.map { q -> BrainRow.Item("⌕", Palette.Orange, q.question, q.date, open = { startResearch(q) }, actions = mapOf('x' to { markDone(q) })) }
 
     LaunchedEffect(index, weeks, hygiene, workItems, app.usage.size) {
         val v = vault.getOrNull()
@@ -198,7 +198,7 @@ fun HomeScreen(app: AppContext) {
     // the overview's list: what holds the brain back (each row goes to the fix), what to do next from the work, and where to go
     val nextUp = workItems.filter { it.state() == WorkState.Open && it.kind != WorkKind.Research && it.kind != WorkKind.Thought }.sortedBy { it.capturedAt }.take(3)
         .map { workRow(it, open = { if (it.kind == WorkKind.Question) askQuestion(it) else toggle(it) }, actions = mapOf('x' to { toggle(it) }, 't' to { retype(it) })) } +
-        backlog.take(2).map { q -> BrainRow.Item("?", Palette.Cta, q.question, q.date, open = { startResearch(q) }, actions = mapOf('x' to { markDone(q) })) }
+        backlog.take(2).map { q -> BrainRow.Item("⌕", Palette.Orange, q.question, q.date, open = { startResearch(q) }, actions = mapOf('x' to { markDone(q) })) }
     val overviewRows: List<BrainRow> = buildList {
         add(BrainRow.Heading("BOTTLENECKS · where to improve"))
         snapshot?.bottlenecks?.take(6)?.forEach { b -> add(bottleneckRow(b) { runBottleneck(b.action) }) } ?: add(BrainRow.Item("·", Palette.Dim, "Reading the vault…", "", dim = true, open = {}))
@@ -208,7 +208,7 @@ fun HomeScreen(app: AppContext) {
         fun listRow(icon: String, color: Color, kind: WorkKind, open: Int, total: Int) = BrainRow.Item(icon, color, kind.title, "$open open · ${total - open} done", open = { openBacklog(kind) })
         add(listRow("○", Palette.Cta, WorkKind.Todo, itemsOf(WorkKind.Todo).count { it.state() == WorkState.Open || it.state() == WorkState.InProgress }, itemsOf(WorkKind.Todo).size))
         add(listRow("?", Palette.Cta, WorkKind.Question, itemsOf(WorkKind.Question).count { it.state() == WorkState.Open || it.state() == WorkState.InProgress }, itemsOf(WorkKind.Question).size))
-        add(listRow("?", Palette.Orange, WorkKind.Research, backlog.size, allBacklog.size))
+        add(listRow("⌕", Palette.Orange, WorkKind.Research, backlog.size, allBacklog.size))
         add(BrainRow.Item("✎", Palette.Accent, "Thoughts", "${thoughts.size} captured recently", open = { openBacklog(WorkKind.Thought) }))
         add(BrainRow.Item("☑", Palette.Green, "Research Backlog note", "${allBacklog.count { it.done }}/${allBacklog.size} ticked · open the file", open = { navigator.openLibrary(LibraryFilter.All, ResearchBacklog.PATH) }))
         add(BrainRow.Heading("GO TO"))
