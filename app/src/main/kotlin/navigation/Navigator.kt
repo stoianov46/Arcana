@@ -29,7 +29,6 @@ enum class Screen(val title: String, val icon: String, val group: ScreenGroup = 
     Chat("Chat", "»"),
     Library("Library", "▤"),
     Compose("AI notes", "✦"),
-    Session("Session", "◷", inSidebar = false),
     Usage("Usage", "▥", ScreenGroup.Account),
     Settings("Settings", "✱", ScreenGroup.Account),
     Guide("Guide", "¶", ScreenGroup.Account),
@@ -140,7 +139,6 @@ class Navigator {
     var leaveGuard: ((Screen) -> Boolean)? = null
 
     /** What the Session screen should do as it opens: set by the palette, read once. */
-    var sessionIntent by mutableStateOf<String?>(null)
 
     /** What the Library should show when it opens: set by [openLibrary], read (and cleared) by the Library; null = the view of Settings → Library → Opens on. */
     var libraryFilter by mutableStateOf<LibraryFilter?>(null)

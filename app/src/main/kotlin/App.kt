@@ -14,7 +14,6 @@ import com.arcana.brain.app.screens.GuideScreen
 import com.arcana.brain.app.screens.HomeScreen
 import com.arcana.brain.app.screens.LibraryScreen
 import com.arcana.brain.app.screens.NoteComposerScreen
-import com.arcana.brain.app.screens.SessionScreen
 import com.arcana.brain.app.screens.SettingsScreen
 import com.arcana.brain.app.screens.SetupScreen
 import com.arcana.brain.app.screens.UsageScreen
@@ -62,19 +61,15 @@ private fun ArcanaApp(onQuit: () -> Unit) {
     LaunchedEffect(app.config.vaultPath, app.brain.revision) { app.brain.refresh() }
 
     Shell(app, navigator, onQuit = onQuit) { screen ->
-        // A new session rebuilds every screen from scratch (their local state, drafts, filters).
-        androidx.compose.runtime.key(app.revision) {
         if (app.setupOpen) SetupScreen(app) else when (screen) {
             Screen.Home -> HomeScreen(app)
             Screen.Chat -> ChatScreen(app)
             Screen.Library -> LibraryScreen(app)
-            Screen.Session -> SessionScreen(app)
             Screen.Compose -> NoteComposerScreen(app)
             Screen.Usage -> UsageScreen(app)
             Screen.Settings -> SettingsScreen(app)
             Screen.Guide -> GuideScreen(app)
             Screen.Changelog -> ChangelogScreen(app)
-        }
         }
     }
 }

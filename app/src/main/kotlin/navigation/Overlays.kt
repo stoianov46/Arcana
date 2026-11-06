@@ -6,6 +6,7 @@ import com.arcana.brain.app.design.*
 import com.arcana.brain.app.input.Key
 import com.arcana.brain.app.screens.AttachBrowser
 import com.jakewharton.mosaic.modifier.Modifier
+import com.jakewharton.mosaic.ui.Row
 import java.time.LocalDate
 
 /** The commands the palette offers: those of the current screen first, then the ones that work everywhere. */
@@ -31,9 +32,6 @@ fun paletteCommands(app: AppContext, navigator: Navigator, onQuit: () -> Unit): 
     add(Command("Quit Arcana", "Arcana", "Ctrl+C ×2") {
         onQuit()
     })
-    add(Command("Session: save a summary note…", "Session") { navigator.sessionIntent = "summary"; navigator.navigate(Screen.Session) })
-    add(Command("Session: save the log", "Session") { navigator.sessionIntent = "log"; navigator.navigate(Screen.Session) })
-    add(Command("Session: start a new one…", "Session") { navigator.sessionIntent = "new"; navigator.navigate(Screen.Session) })
 }
 
 /**
@@ -143,7 +141,7 @@ fun CaptureOverlay(app: AppContext, navigator: Navigator) {
                 Hint(if (folder.isEmpty()) "Enter adds it to today's daily note, “$target”, with the time. Tab saves it to a folder of your vault instead."
                 else "Enter saves it as a new note in “$folder/”, named after its first line. Tab chooses another folder, or the daily note.")
                 Hint("Ctrl+O attaches a file: it is copied into the vault and embedded. Esc cancels.")
-                Hint("Start with “todo: ”, “question: ” or “research: ” (or “? ”) and the thought is also a todo, a question or a research item (Brain, key b). No prefix: a plain thought.")
+                Hint("Kind: a plain thought stays a note; Question, Research and Todo also become an item of that kind (Brain, key b). You can also type “todo: ”, “question: ” or “research: ” (or “? ”) yourself.")
             }
         }
     }

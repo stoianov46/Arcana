@@ -36,7 +36,6 @@ import com.jakewharton.mosaic.ui.Color
 import com.jakewharton.mosaic.ui.TextStyle
 import com.arcana.brain.core.ImageFiles
 import com.arcana.brain.core.TextFiles
-import com.arcana.brain.core.SessionKind
 import com.arcana.brain.core.StoredChat
 import com.arcana.brain.core.ToolCall
 import com.arcana.brain.core.AppConfig
@@ -716,7 +715,6 @@ fun ChatScreen(app: AppContext) {
         }
         result.onSuccess { path ->
             chat.savedMessages = chat.messages.size
-            app.session.log(SessionKind.Saved, "Chat saved as a note", path)
             app.brain.changed()
             toast("Saved as $path")
             saving = null
@@ -736,7 +734,6 @@ fun ChatScreen(app: AppContext) {
             }
         }
         result.onSuccess {
-            app.session.log(if (target == Target.Append) SessionKind.Appended else SessionKind.Replaced, "Chat answer → ${path.removeSuffix(".md")}", path)
             app.brain.changed()
             toast(it)
             // the chat is in the vault now, so leaving it does not ask again
@@ -1032,7 +1029,6 @@ fun ChatScreen(app: AppContext) {
             input.clear()
             if (skill == null) return toast("That skill is no longer in ${app.skillsFolder()}/.", error = true)
             if (skill.path !in chat.attachments.notes) chat.attachments.notes += skill.path
-            app.session.log(SessionKind.Attached, "Skill ${skill.name}", skill.path)
             toast(if (app.config.toolsEnabled) "Skill ${skill.name} attached. Type what you want and press Enter (Backspace on an empty field removes it)."
                 else "Skill ${skill.name} attached, but tools are off, so it cannot act. Turn them on with /tools.", error = !app.config.toolsEnabled)
         } else if (item.tool) input.set("Use the ${item.name} tool to ")
@@ -1237,7 +1233,6 @@ fun ChatScreen(app: AppContext) {
                             true
                         } else if (mode == ChatMode.PickNote) {
                             if (picked.path !in chat.attachments.notes) chat.attachments.notes += picked.path
-                            app.session.log(SessionKind.Attached, "Note ${picked.path.removeSuffix(".md")}", picked.path)
                             mode = ChatMode.Chat
                             true
                         } else if (target == Target.Replace) {

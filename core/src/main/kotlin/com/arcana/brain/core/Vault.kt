@@ -630,22 +630,6 @@ object Prompts {
         return listOf(ChatMessage.system(system)) + converted
     }
 
-    /**
-     * Asks the model to write up a session: what was done, what was decided or learned, and what is still open. It gets the
-     * activity log and, for each chat of the session, its title and a trimmed transcript ([chats]).
-     */
-    fun sessionSummary(config: AppConfig, activity: String, chats: List<Pair<String, String>>): List<ChatMessage> {
-        val transcripts = if (chats.isEmpty()) "" else chats.joinToString("\n\n") { (title, text) -> "### Chat: $title\n${text.take(6000)}" }
-        return listOf(
-            ChatMessage.system(config.systemPrompt),
-            ChatMessage.user(
-                "Write notes on the working session below, for my Obsidian vault. Use these headings: **What I did**, **What I learned or decided**, " +
-                    "**Open questions**, **Next steps**. Be concrete and brief (bullet points), and keep my language. Mention notes as [[Note title]]. " +
-                    "Return Markdown only.\n\n## Activity log\n$activity" + if (transcripts.isEmpty()) "" else "\n\n## Chats\n$transcripts",
-            ),
-        )
-    }
-
     fun compose(config: AppConfig, request: String): List<ChatMessage> = listOf(
         ChatMessage.system(config.systemPrompt + " Write the note body in Markdown, without frontmatter."),
         ChatMessage.user(request),

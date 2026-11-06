@@ -373,44 +373,6 @@ class CoreTest {
     }
 
     @Test
-    fun sessionsAreStoredReportedAndSummarised() {
-        val store = SessionStore(Files.createTempDirectory("sessions").resolve("sessions"))
-        assertTrue(store.list().isEmpty())
-        val zone = java.time.ZoneId.of("UTC")
-        val t0 = java.time.LocalDateTime.of(2026, 10, 25, 14, 0).atZone(zone).toInstant().toEpochMilli()
-        val session = StoredSession(
-            "s1", t0, ended = t0 + 4_320_000,
-            events = listOf(
-                SessionEvent(t0 + 60_000, SessionKind.Asked, "What is RAG?"),
-                SessionEvent(t0 + 120_000, SessionKind.Task, "Improve Trip.md", "Trip.md"),
-                SessionEvent(t0 + 180_000, SessionKind.Replaced, "Trip.md", "Trip.md"),
-                SessionEvent(t0 + 240_000, SessionKind.Created, "Summary", "Arcana/Summary.md"),
-                SessionEvent(t0 + 300_000, SessionKind.Attached, "photo.png"),
-            ),
-        )
-        store.save(session)
-        store.save(session.copy(id = "s0", started = t0 - 1000, events = emptyList()))
-        assertEquals(listOf("s1", "s0"), store.list().map { it.id })
-        assertEquals(session, store.list().first())
-        val stats = SessionReport.stats(session.events)
-        assertEquals(SessionStats(1, 1, 1, 1, 0, 1, 0), stats)
-        assertEquals("1 question · 1 AI task · 1 note created · 1 note changed · 1 attachment", stats.describe())
-        assertEquals("no activity yet", SessionStats(0, 0, 0, 0, 0, 0).describe())
-        assertEquals("3 thoughts captured", SessionStats(0, 0, 0, 0, 0, 0, 3).describe())
-        assertEquals(5, stats.total)
-        assertEquals("1h 12m", SessionReport.duration(session.durationMillis))
-        assertEquals("14:01", SessionReport.clock(t0 + 60_000, zone))
-        val note = SessionReport.note(session, "- learned things", zone)
-        assertTrue("## Summary" in note && "- learned things" in note && "[[Arcana/Summary]]" in note && "**Replaced**: Trip.md [[Trip]]" in note)
-        assertTrue("## Summary" !in SessionReport.note(session, "", zone), "a plain log has no summary section")
-        assertEquals("Session 2026-10-25 14-00", SessionReport.title(session, zone))
-        val prompt = Prompts.sessionSummary(AppConfig(), "- log", listOf("Trip" to "You: hi")).last().content
-        assertTrue("What I did" in prompt && "- log" in prompt && "### Chat: Trip" in prompt)
-        store.prune(1)
-        assertEquals(listOf("s1"), store.list().map { it.id })
-    }
-
-    @Test
     fun aNoteWithADotInItsNameIsLinkedButAPictureIsNot() {
         val dir = Files.createTempDirectory("brain-dots")
         fun note(path: String, text: String) { val f = dir.resolve(path); Files.createDirectories(f.parent); Files.writeString(f, text) }
@@ -793,8 +755,8 @@ class CoreTest {
         Files.writeString(config.resolve("usage.jsonl"), "{}\n")
         Files.createDirectories(vault.resolve(".trash")); Files.writeString(vault.resolve(".trash/gone.md"), "old")
         val areas = Storage.areas(config, vault)
-        assertEquals(listOf("backups", "trash", "vault-trash", "chats", "sessions", "usage", "tool-usage", "events"), areas.map { it.id })
-        assertEquals(listOf("backups", "trash", "chats", "sessions", "usage", "tool-usage", "events"), Storage.areas(config).map { it.id }, "no vault, no vault trash")
+        assertEquals(listOf("backups", "trash", "vault-trash", "chats", "usage", "tool-usage", "events"), areas.map { it.id })
+        assertEquals(listOf("backups", "trash", "chats", "usage", "tool-usage", "events"), Storage.areas(config).map { it.id }, "no vault, no vault trash")
         fun area(id: String) = areas.first { it.id == id }
         assertEquals(StorageUse(2, 2049), Storage.use(area("backups")))
         assertEquals(StorageUse(1, 3), Storage.use(area("usage")))

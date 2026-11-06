@@ -224,7 +224,7 @@ private val declared: List<Setting> = listOf(
         value = { it.vaultPath.ifEmpty { "(not set)" } }, editor = Editor.Folder("Vault path", "Your Obsidian vault folder") { c, v -> c.copy(vaultPath = v) },
     ),
     toggle(Group.Library, "Library as a tree", "The Library shows your notes as folders that fold and unfold (Enter or h / l). Off: one flat list with the full path of every note. You can also press t in the Library.", { it.libraryTree }, { c, v -> c.copy(libraryTree = v) }),
-    text(Group.Vault, "Output folder", "What Arcana writes FOR you (AI notes, saved chats, session summaries) goes to this visible folder inside the vault. Reports and research from skills go to the folders their skills name (for example Reports/…). Arcana's own working files (skills, the memory file) are not content and live apart, hidden: see the next three rows. Empty = the vault root.", { it.outputFolder }, { c, v -> c.copy(outputFolder = v.trim('/')) }, allowEmpty = true),
+    text(Group.Vault, "Output folder", "What Arcana writes FOR you (AI notes, saved chats) goes to this visible folder inside the vault. Reports and research from skills go to the folders their skills name (for example Reports/…). Arcana's own working files (skills, the memory file) are not content and live apart, hidden: see the next three rows. Empty = the vault root.", { it.outputFolder }, { c, v -> c.copy(outputFolder = v.trim('/')) }, allowEmpty = true),
     Setting(
         Group.Vault, "Where Arcana's own files are (this vault)", "Arcana's working files for THIS vault live in the hidden folder .arcana/ inside it (Obsidian, the note search and the graph do not show it): skills in .arcana/skills/ and the memory file .arcana/ARCANA.md. An older vault that still has Skills/ or a root ARCANA.md keeps using them until you run arcana --migrate in a terminal (it moves them, never overwrites). Show hidden files in Finder with Cmd+Shift+. This row only shows the place; change it with the Skills folder and Memory file path settings.",
         value = { c -> vaultRoot(c)?.let { tilde(it.resolve(com.arcana.brain.core.Layout.INTERNAL).toString()) + "/" } ?: "(no vault yet)" },
@@ -440,7 +440,6 @@ private val declared: List<Setting> = listOf(
     storageSetting(com.arcana.brain.core.Storage.TRASH),
     storageSetting(com.arcana.brain.core.Storage.VAULT_TRASH),
     storageSetting(com.arcana.brain.core.Storage.CHATS),
-    storageSetting(com.arcana.brain.core.Storage.SESSIONS),
     storageSetting(com.arcana.brain.core.Storage.USAGE),
     storageSetting(com.arcana.brain.core.Storage.TOOL_USAGE),
     choice(Group.Accessibility, "Interface scale", "A terminal sets its own font size, so this is the layout density: Spacious keeps the roomy screens for longer, Compact packs more in. Change your terminal's font size for bigger text.", listOf("compact" to "Compact", "normal" to "Normal", "spacious" to "Spacious"), { it.uiScale }, { c, v -> c.copy(uiScale = v) }),

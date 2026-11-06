@@ -5,7 +5,6 @@ import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.Compaction
 import com.arcana.brain.core.ConfigStore
-import com.arcana.brain.core.SessionStore
 import com.arcana.brain.core.ToolUseStore
 import com.arcana.brain.core.UsageStore
 import com.sun.net.httpserver.HttpServer
@@ -27,7 +26,7 @@ class CompactTest {
         val dir = Files.createTempDirectory("arcana-compact")
         val config = ConfigStore(dir.resolve("config.json"))
         config.save(AppConfig(ollamaUrl = "http://127.0.0.1:${server.address.port}", model = "m", keepChats = false))
-        return AppContext(config, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), SessionStore(dir.resolve("sessions")), com.arcana.brain.core.EventStore(dir.resolve("events.jsonl"))).also {
+        return AppContext(config, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), com.arcana.brain.core.EventStore(dir.resolve("events.jsonl"))).also {
             it.scope = CoroutineScope(Dispatchers.Default)
         }
     }

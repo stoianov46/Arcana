@@ -26,7 +26,6 @@ import com.arcana.brain.core.BrainHealth
 import com.arcana.brain.core.HygieneKind
 import com.arcana.brain.core.HygieneReport
 import com.arcana.brain.core.ResearchBacklog
-import com.arcana.brain.core.SessionReport
 import com.arcana.brain.core.Skills
 import com.arcana.brain.core.UsageStats
 import com.arcana.brain.core.BottleneckAction
@@ -272,7 +271,6 @@ fun HomeScreen(app: AppContext) {
         add(BrainRow.Item("✎", Palette.Accent, "Capture a thought", "Ctrl+N from anywhere", open = { navigator.openCapture() }))
         add(BrainRow.Item("»", Palette.Accent, if (app.chat.messages.isNotEmpty()) "Continue chat: ${app.chat.title}" else "Ask your brain", "Chat", open = { navigator.navigate(Screen.Chat) }))
         add(BrainRow.Item("▤", Palette.Muted, "Library", "all your notes", open = { navigator.openLibrary(LibraryFilter.All) }))
-        add(BrainRow.Item("◷", Palette.Muted, "Session", app.session.let { if (it.needsSaving) "${it.unsavedCount} unsaved · save a summary note" else "nothing unsaved" }, dim = !app.session.needsSaving, open = { navigator.navigate(Screen.Session) }))
         add(BrainRow.Item("✦", Palette.Muted, "Write or improve a note with AI", "AI notes", open = { navigator.navigate(Screen.Compose) }))
     }
     val rows = if (tab == BrainTab.Overview) BrainRows(overviewRows, emptyList()) else if (tab == BrainTab.Activity) BrainRows(emptyList(), emptyList()) else buildRows(app, navigator, health, vault.isSuccess, tab = tab, recents = if (wide) 12 else 5, topTags = if (wide) 8 else 0, hygiene = hygiene, openHygiene = ::openHygiene, questions = questionRows, research = researchRows, todos = todoRows, openWork = { openBacklog() }, openCapture = { navigator.openCapture() })
@@ -503,30 +501,6 @@ private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, ha
             add(BrainRow.Heading("TOP TAGS"))
             tags.forEach { (name, count) -> add(BrainRow.Item("#", Palette.Blue, name, "$count note${if (count == 1) "" else "s"}", open = { navigator.openLibrary(LibraryFilter.Tags, tag = name) })) }
         }
-    }
-    val back = buildList {
-        add(BrainRow.Heading("WORK"))
-        val chat = app.chat
-        if (chat.messages.isNotEmpty()) {
-            add(BrainRow.Item("»", Palette.Accent, "Continue chat: ${chat.title}", "${chat.messages.size} messages", open = { navigator.navigate(Screen.Chat) }))
-        } else {
-            add(BrainRow.Item("»", Palette.Accent, "Ask your brain", "chat with Gemma about your notes", open = { navigator.navigate(Screen.Chat) }))
-        }
-        add(BrainRow.Item("✦", Palette.Accent, "Write or improve a note with AI", "AI notes", open = { navigator.navigate(Screen.Compose) }))
-        val session = app.session
-        add(
-            BrainRow.Item(
-                "◷", Palette.Muted, "This session",
-                "${SessionReport.duration(System.currentTimeMillis() - session.started)} · ${SessionReport.stats(session.activity).describe()}" + if (session.needsSaving) " · not saved" else "",
-                open = { navigator.navigate(Screen.Session) },
-            ),
-        )
-        session.previous?.takeIf { it.savedAs != null }?.let { last ->
-            add(BrainRow.Item("◷", Palette.Dim, "Last session", "${relativeTime(last.started)} · ${SessionReport.stats(last.events).describe()}", dim = true, open = { navigator.openLibrary(LibraryFilter.All, last.savedAs) }))
-        }
-        val recent = app.brain.index?.touchedSince(30)?.take(recents).orEmpty()
-        if (recent.isNotEmpty()) add(BrainRow.Heading("RECENT NOTES"))
-        recent.forEach { n -> add(BrainRow.Item("▤", Palette.Muted, n.title, relativeTime(n.modified), open = { navigator.openLibrary(LibraryFilter.All, n.path) })) }
     }
     // each page keeps its own sections: the work page the capture row and the work, the health page the attention list, the hygiene and the tags
     val keep = when (tab) {

@@ -24,7 +24,6 @@ import com.arcana.brain.core.UsageStats
 import com.arcana.brain.app.navigation.LocalNavigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.NoteInfo
-import com.arcana.brain.core.SessionKind
 import com.arcana.brain.core.Vault
 import com.arcana.brain.core.VaultIndex
 import com.jakewharton.mosaic.layout.fillMaxWidth
@@ -198,7 +197,6 @@ fun LibraryScreen(app: AppContext) {
         runCatching { v.write(note.path, editField.text) }
             .onSuccess {
                 editOriginal = editField.text
-                app.session.log(SessionKind.Replaced, "${note.title} (edited by hand)", note.path)
                 app.brain.changed()
                 navigator.libraryNote = note.path
                 navigator.showToast("Saved ${note.path}")
@@ -218,7 +216,6 @@ fun LibraryScreen(app: AppContext) {
         if (name == note.title) { mode = LibraryMode.List; return }
         runCatching { v.rename(note.path, name) }
             .onSuccess { result ->
-                app.session.log(SessionKind.Renamed, "${note.path} → ${result.path}" + if (result.linksUpdated > 0) " (${result.linksUpdated} links in ${result.notesChanged} notes updated)" else "", result.path)
                 app.brain.changed()
                 mode = LibraryMode.List
                 navigator.libraryNote = result.path
@@ -231,7 +228,6 @@ fun LibraryScreen(app: AppContext) {
         val v = vault.getOrNull() ?: return
         runCatching { v.trash(note.path) }
             .onSuccess { moved ->
-                app.session.log(SessionKind.Deleted, "${note.title} (moved to $moved)", note.path)
                 app.brain.changed()
                 navigator.showToast("Moved ${note.path} to the trash")
             }

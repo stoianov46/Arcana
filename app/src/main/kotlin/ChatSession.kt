@@ -43,7 +43,6 @@ import com.arcana.brain.core.ImageAttachment
 import com.arcana.brain.core.ReportMeta
 import com.arcana.brain.core.Prompts
 import com.arcana.brain.core.ReplyStats
-import com.arcana.brain.core.SessionKind
 import com.arcana.brain.core.ConfigStore
 import com.arcana.brain.core.StoredChat
 import com.arcana.brain.core.ToolBox
@@ -1056,7 +1055,6 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 if (repeatable(spec) && !FAILURE_LOOK.containsMatchIn(result.take(300))) turnCalls[callKey] = System.currentTimeMillis() to result.take(160).replace('\n', ' ')
             }
             if (allowed && spec != null && !result.startsWith("Error:")) {
-                app.session.log(SessionKind.Tool, "${call.name} ${spec.summary(call.arguments)}")
                 Artifacts.of(call.name, { (call.arguments[it] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty() }, result, System.currentTimeMillis())?.let { artifacts += it; app.recordEvent(Events.ARTIFACT, it.action) }
                 if (spec.risk != ToolRisk.Read) app.brain.changed()
             }
@@ -1093,7 +1091,6 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val message = ChatMessage.user(text)
             add(message)
             added += message
-            app.session.log(SessionKind.Asked, text)
         }
         return added
     }
@@ -1197,7 +1194,6 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             "stop" -> return 0
             // more steps at once, a few times; each call inside them keeps its own approval (a change, a command and a web address ask as usual)
             "auto" -> if (used < app.config.toolSteps * (1 + STEP_LIMIT_AUTO_ROUNDS)) {
-                app.session.log(SessionKind.Tool, "step limit: ${app.config.toolSteps} more steps (automatic, $used used)")
                 return app.config.toolSteps
             }
         }
@@ -1272,7 +1268,6 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val level = thinkNext.takeIf { it in com.arcana.brain.app.screens.thinkOptions(app.thinkingValues) }.orEmpty()
         thinkNext = ""
         add(ChatMessage.user(body, sent.pictures, sent.notes, sent.files).copy(think = level))
-        app.session.log(SessionKind.Asked, body)
         // a job that clearly needs file tools, with tools off: offer them now instead of letting the model say it cannot
         if (!app.config.toolsEnabled && app.tools != false && !toolsDeclined && looksLikeToolTask(body)) {
             app.scope.launch {
@@ -1366,7 +1361,6 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         // the reader sees every call in the chat (what it was about, how it ended); no model is sent it: see OraculSteps
         add(OraculSteps.message(model, call.name, spec.summary(call.arguments), when { !allowed -> OraculSteps.DENIED; Oracul.isFailureText(result) -> OraculSteps.ERROR; else -> OraculSteps.OK }, result))
         if (allowed && !result.startsWith("Error:")) {
-            app.session.log(SessionKind.Tool, "Oracul: ${call.name} ${spec.summary(call.arguments)}")
             if (spec.risk != ToolRisk.Read) app.brain.changed()
         }
         return result

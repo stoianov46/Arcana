@@ -24,7 +24,6 @@ object Storage {
     const val BACKUPS = "backups"
     const val TRASH = "trash"
     const val CHATS = "chats"
-    const val SESSIONS = "sessions"
     const val USAGE = "usage"
     const val TOOL_USAGE = "tool-usage"
     const val EVENTS = "events"
@@ -36,7 +35,6 @@ object Storage {
         add(StorageArea(TRASH, "Trash (outside the vault)", "files the model deleted that were not in the vault", root.resolve("trash"), prunable = true))
         if (vaultRoot != null) add(StorageArea(VAULT_TRASH, "Vault trash (.trash)", "notes and files the model deleted from the vault (Obsidian's own .trash)", vaultRoot.resolve(".trash"), prunable = true))
         add(StorageArea(CHATS, "Chat history", "every saved chat", root.resolve("chats")))
-        add(StorageArea(SESSIONS, "Saved sessions", "the activity logs of past sessions", root.resolve("sessions")))
         add(StorageArea(USAGE, "Usage history", "tokens and timing of every request (the Usage screen)", root.resolve("usage.jsonl")))
         add(StorageArea(TOOL_USAGE, "Tool usage history", "every tool call (the Usage screen's Tools page)", root.resolve("tool-usage.jsonl")))
         add(StorageArea(EVENTS, "Event history", "redos, verdicts, routed messages, goals (the Usage screen's Team page)", root.resolve("events.jsonl")))

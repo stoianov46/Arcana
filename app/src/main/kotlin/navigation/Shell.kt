@@ -91,7 +91,7 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
     }
 
     // Quitting for real also closes the session file.
-    val quit = { app.session.finish(); onQuit() }
+    val quit = onQuit
     // The overlays (key map, command palette, capture) take every key while one is open.
     val latestCommands by rememberUpdatedState(paletteCommands(app, navigator, quit))
     val dispatcher = remember {
@@ -163,7 +163,6 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
     }
     val badge: (Screen) -> Pair<String, Color>? = { screen ->
         when (screen) {
-            Screen.Session -> if (app.session.needsSaving) "${app.session.unsavedCount}" to Palette.Warn else null
             // a dialog the model is waiting on (an approval, a question) must be seen from every screen: the reply cannot go on without an answer
             Screen.Chat -> when {
                 waitingFor != null -> waitingFor to (if (pulse) Palette.Orange else Palette.Warn)

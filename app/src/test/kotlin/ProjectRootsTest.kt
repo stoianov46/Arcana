@@ -4,7 +4,6 @@ import com.arcana.brain.core.AppConfig
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.ConfigStore
 import com.arcana.brain.core.EventStore
-import com.arcana.brain.core.SessionStore
 import com.arcana.brain.core.ToolUseStore
 import com.arcana.brain.core.UsageStore
 import java.nio.file.Files
@@ -16,7 +15,7 @@ class ProjectRootsTest {
     private fun app(config: AppConfig): AppContext {
         val dir = Files.createTempDirectory("arcana-roots")
         val store = ConfigStore(dir.resolve("config.json")).also { it.save(config) }
-        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), SessionStore(dir.resolve("sessions")), EventStore(dir.resolve("events.jsonl")))
+        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), EventStore(dir.resolve("events.jsonl")))
     }
 
     @Test
