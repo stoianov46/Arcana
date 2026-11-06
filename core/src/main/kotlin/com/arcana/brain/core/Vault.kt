@@ -202,7 +202,8 @@ class Vault(root: Path, private val memoryPath: String = "") {
         return null
     }
 
-    fun create(folder: String, title: String, body: String, model: String): Note {
+    /** [origin]: the run that writes the note, stamped as `origin` and `chat` in its properties (see [Origin]); null for a note made by hand or by the user's own save. */
+    fun create(folder: String, title: String, body: String, model: String, origin: Origin? = null): Note {
         val dir = if (folder.isBlank()) root else resolve(folder.trim('/'))
         Files.createDirectories(dir)
         val base = sanitizeTitle(title)
@@ -211,7 +212,7 @@ class Vault(root: Path, private val memoryPath: String = "") {
         while (Files.exists(file)) file = dir.resolve("$base $n.md").also { n++ }
         val created = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
         // Arcana's own properties; a properties block at the top of [body] is merged in (its keys win), never written as a second block
-        val properties = parseProperties("created: $created\ngenerator: arcana\nmodel: $model\ntags: [arcana]")
+        val properties = parseProperties("created: $created\ngenerator: arcana\nmodel: $model\ntags: [arcana]" + (origin?.let { "\norigin: ${it.run}\nchat: ${it.chat}" } ?: ""))
         val (given, text) = splitFrontmatter(body)
         if (given.isNotEmpty()) properties.putAll(parseProperties(propertyText(given)))
         Files.writeString(file, renderProperties(properties) + text.trim() + "\n")

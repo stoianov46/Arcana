@@ -66,6 +66,8 @@ import com.arcana.brain.core.TodoItem
 import com.arcana.brain.core.Todos
 import com.arcana.brain.core.Compaction
 import com.arcana.brain.core.Oracul
+import com.arcana.brain.core.Origin
+import com.arcana.brain.core.Provenance
 import com.arcana.brain.core.OllamaClient
 import com.arcana.brain.core.UsageStats
 import com.arcana.brain.core.CHAT_STATS_DEFINITION
@@ -703,6 +705,22 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     fun projectFolder(config: AppConfig): java.nio.file.Path? =
         config.projectFolder.trim().takeIf { it.isNotEmpty() }?.let { AppContext.expandHome(it) }?.takeIf { java.nio.file.Files.isDirectory(it) }
 
+    /** The run now going on, or the last one: one request of the user and everything done to answer it. Every note its tools write is recorded against it. */
+    var run: Origin? = null
+        private set
+
+    private var provenance: Pair<java.nio.file.Path, Provenance>? = null
+
+    /** The record of runs of [vault], kept for as long as the vault is the same (its de-duplication lives in the instance). */
+    private fun provenanceFor(vault: Vault): Provenance =
+        provenance?.takeIf { it.first == vault.root }?.second ?: Provenance(vault).also { provenance = vault.root to it }
+
+    private fun beginRun(request: String) {
+        val origin = Origin.newRun(id)
+        run = origin
+        app.openVault().getOrNull()?.let { provenanceFor(it).started(origin, request, app.config.model) }
+    }
+
     /** The tools for the current settings, or null when tools are off. */
     fun toolboxFor(config: AppConfig): ToolBox? {
         if (!config.toolsEnabled) return null
@@ -723,6 +741,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             searchTuning = SearchTuning.of(config),
             notesSearch = notesSearched(config),
             searchMode = RetrievalMode.of(config.searchBy),
+            origin = run, provenance = vault?.let { provenanceFor(it) },
             projectSearch = projectRoots(config).takeIf { it.isNotEmpty() }?.let { roots ->
                 ProjectSearch(roots, { source -> projectIndexFor(config, source) }, SearchTuning.of(config), config.searchMaxFileKb.coerceIn(10, 5000) * 1000L, vaultRoot = vault?.root?.toAbsolutePath()?.normalize())
             },
@@ -1585,13 +1604,15 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     private fun ask(body: String) {
         val history = messages.toList()
+        // a new request is a new run (what it writes is recorded against it: Provenance); a cut-off run that this message only continues keeps its run
+        val newChip = history.lastOrNull { it.role == "user" }?.noteNames?.any { Skills.isEntry(it) } == true
+        if (run == null || !(skillRun != null && runInterrupted(history) && !newChip)) beginRun(body)
         val modelCanUseTools = app.tools != false
         val box = if (!modelCanUseTools) null else toolboxFor(app.config)
         toolbox = box
         // a new message of the user ends any earlier run (the gate must not drag an unrelated question back into an unfinished skill)...
         // ...unless the run was cut off (the server did not answer, a failed reply: no final answer followed its last step) and this message has no skill chip of its own:
         // then it is the same job going on ("continue"), and its progress and its gate stay
-        val newChip = history.lastOrNull { it.role == "user" }?.noteNames?.any { Skills.isEntry(it) } == true
         if (skillRun != null && !(runInterrupted(history) && !newChip)) { skillRun = null; skillTick++ }
         clearRoles()
         stuckAdvised = 0
@@ -1722,6 +1743,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     fun startNew() {
         backlogQuestion = ""
         backlogId = ""
+        run = null
         skillRun = null
         thinkNext = ""
         clearRoles()
@@ -1742,6 +1764,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         artifacts.clear()
         backlogQuestion = ""
         backlogId = ""
+        run = null
         skillRun = null // a run belongs to the conversation it started in (see docs/skills.md)
         skillTick++
         messages.clear(); wholeNotes.clear(); cutAccepted.clear()
