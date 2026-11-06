@@ -147,9 +147,11 @@ fun HomeScreen(app: AppContext) {
     fun retype(item: WorkItem) = actOn(item) { svc, i -> svc.retype(i.id, if (i.kind == WorkKind.Question) WorkKind.Todo else WorkKind.Question) }
     fun toggleDone() { chosenWork?.let(::toggle) }
     fun retypeNext() { chosenWork?.let(::retype) }
+    // Enter on a question or a todo: a fresh chat for it, linked to the item (its runs and the notes they write belong to it); Enter starts typing, Enter again sends
     fun askQuestion(item: WorkItem) {
         app.chat.startNew()
-        app.chat.input.set(item.text)
+        app.chat.workItemId = item.id
+        app.chat.input.set(if (item.kind == WorkKind.Todo) "Do this task: ${item.text}" else item.text)
         backlogOpen = false
         navigator.navigate(Screen.Chat)
     }
@@ -159,6 +161,7 @@ fun HomeScreen(app: AppContext) {
         app.chat.startNew()
         app.chat.backlogQuestion = item.question
         app.chat.backlogId = vault.getOrNull()?.let { v -> runCatching { ResearchBacklog.ensureId(v, item) }.getOrNull() }.orEmpty()
+        app.chat.workItemId = app.chat.backlogId
         skill?.let { app.chat.attachments.notes += it.path }
         app.chat.input.set(item.question)
         backlogOpen = false
@@ -181,7 +184,7 @@ fun HomeScreen(app: AppContext) {
     val questionRows = workItems.filter { it.kind == WorkKind.Question && it.state() in listOf(WorkState.Open, WorkState.InProgress) }
         .map { workRow(it, open = { askQuestion(it) }, actions = mapOf('x' to { toggle(it) }, 't' to { retype(it) })) }
     val todoRows = workItems.filter { it.kind == WorkKind.Todo && it.state() in listOf(WorkState.Open, WorkState.InProgress) }
-        .map { workRow(it, open = { toggle(it) }, actions = mapOf('x' to { toggle(it) }, 't' to { retype(it) })) }
+        .map { workRow(it, open = { askQuestion(it) }, actions = mapOf('x' to { toggle(it) }, 't' to { retype(it) })) }
     val researchRows = backlog.map { q -> BrainRow.Item("⌕", Palette.Orange, q.question, q.date, open = { startResearch(q) }, actions = mapOf('x' to { markDone(q) })) }
 
     LaunchedEffect(index, weeks, hygiene, workItems, app.usage.size) {
@@ -197,7 +200,7 @@ fun HomeScreen(app: AppContext) {
     }
     // the overview's list: what holds the brain back (each row goes to the fix), what to do next from the work, and where to go
     val nextUp = workItems.filter { it.state() == WorkState.Open && it.kind != WorkKind.Research && it.kind != WorkKind.Thought }.sortedBy { it.capturedAt }.take(3)
-        .map { workRow(it, open = { if (it.kind == WorkKind.Question) askQuestion(it) else toggle(it) }, actions = mapOf('x' to { toggle(it) }, 't' to { retype(it) })) } +
+        .map { workRow(it, open = { askQuestion(it) }, actions = mapOf('x' to { toggle(it) }, 't' to { retype(it) })) } +
         backlog.take(2).map { q -> BrainRow.Item("⌕", Palette.Orange, q.question, q.date, open = { startResearch(q) }, actions = mapOf('x' to { markDone(q) })) }
     val overviewRows: List<BrainRow> = buildList {
         add(BrainRow.Heading("BOTTLENECKS · where to improve"))
@@ -223,7 +226,7 @@ fun HomeScreen(app: AppContext) {
     val items = rows.nowItems + rows.backItems
     val current = selected.coerceIn(0, (items.size - 1).coerceAtLeast(0))
 
-    if (backlogOpen) Hints("↑↓  choose", "Tab  next kind", "Enter  " + when (workKind) { WorkKind.Research -> "start it / open its report"; WorkKind.Question -> "ask it in a chat"; WorkKind.Thought -> "open the note"; else -> "done / not done" }, *(if (workKind == WorkKind.Thought) emptyArray() else arrayOf("x  " + (if (workKind == WorkKind.Research) "mark done" else "done / not done"))), *(if (workKind == WorkKind.Question || workKind == WorkKind.Todo) arrayOf("t  question ⇄ todo") else emptyArray()), "Esc  back")
+    if (backlogOpen) Hints("↑↓  choose", "Tab  next kind", "Enter  " + when (workKind) { WorkKind.Research -> "start it / open its report"; WorkKind.Thought -> "open the note"; else -> "start it in a chat" }, *(if (workKind == WorkKind.Thought) emptyArray() else arrayOf("x  " + (if (workKind == WorkKind.Research) "mark done" else "done / not done"))), *(if (workKind == WorkKind.Question || workKind == WorkKind.Todo) arrayOf("t  question ⇄ todo") else emptyArray()), "Esc  back")
     else if (hygieneOpen) Hints("↑↓  choose", "Enter  open the note", "c  chat to fix it", "Esc  back")
     else Hints("↑↓  choose", "Tab  next page", "w  weeks", "Enter  open", "x  done", "t  question ⇄ todo", "h  vault hygiene", "b  all work", "r  re-read the vault")
     Commands(listOf(Command("Re-read the vault", "Brain", "r") { app.brain.changed() }, Command("Vault hygiene: names, properties, reports, islands", "Brain", "h") { openHygiene(null) }, Command("Research backlog: questions captured with “? ”", "Brain", "b") { openBacklog() }))
@@ -243,7 +246,7 @@ fun HomeScreen(app: AppContext) {
             key == Key.Down || key.char == 'j' -> { backlogSel = (backlogSel + 1).coerceAtMost((listSize - 1).coerceAtLeast(0)); true }
             key == Key.Tab || key == Key.Right -> { switchKind(1); true }
             key == Key.Left || key == Key.BackTab -> { switchKind(-1); true }
-            key == Key.Enter -> { when (workKind) { WorkKind.Research -> chosenQuestion?.let(::openResearchLine); WorkKind.Question -> chosenWork?.let(::askQuestion); WorkKind.Thought -> chosenThought?.let { backlogOpen = false; navigator.openLibrary(LibraryFilter.All, it.path) }; else -> toggleDone() }; true }
+            key == Key.Enter -> { when (workKind) { WorkKind.Research -> chosenQuestion?.let(::openResearchLine); WorkKind.Thought -> chosenThought?.let { backlogOpen = false; navigator.openLibrary(LibraryFilter.All, it.path) }; else -> chosenWork?.let(::askQuestion) }; true }
             key.char == 'x' || key.char == ' ' -> { if (workKind == WorkKind.Research) chosenQuestion?.takeIf { !it.done }?.let(::markDone) else if (workKind != WorkKind.Thought) toggleDone(); true }
             key.char == 't' -> { if (workKind == WorkKind.Question || workKind == WorkKind.Todo) retypeNext(); true }
             else -> true
@@ -306,7 +309,7 @@ fun HomeScreen(app: AppContext) {
                     workKind == WorkKind.Thought && thoughts.isEmpty() -> Label("No thoughts yet. Capture one with Ctrl+N.", color = Palette.Dim)
                     workKind == WorkKind.Thought -> RowList(thoughts.map { t -> BrainRow.Item("✎", Palette.Accent, t.text, "${t.date} ${t.time}", open = {}) }, backlogSel.coerceIn(0, (thoughts.size - 1).coerceAtLeast(0)), height - 2)
                     kindItems.isEmpty() -> Label("Nothing here. Capture one with Ctrl+N and start it with “$prefix”.", color = Palette.Dim)
-                    else -> RowList(kindItems.map { i -> workRow(i, open = { toggle(i) }) }, backlogSel.coerceIn(0, (kindItems.size - 1).coerceAtLeast(0)), height - 2)
+                    else -> RowList(kindItems.map { i -> workRow(i, open = { askQuestion(i) }) }, backlogSel.coerceIn(0, (kindItems.size - 1).coerceAtLeast(0)), height - 2)
                 }
             }
             hygieneOpen -> Panel("Vault hygiene · ${hygiene?.total ?: 0} issues" + (hygieneKind?.let { " · ${it.label}" } ?: ""), Modifier.height(height)) {

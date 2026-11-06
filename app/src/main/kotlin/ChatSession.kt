@@ -210,6 +210,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** The marker of that line (see [BacklogItem.id]), blank when it has none. */
     var backlogId by androidx.compose.runtime.mutableStateOf("")
 
+    /** The work item this chat was started for (Brain: Enter on a question, a todo or a research line); blank for any other chat. Its runs and the notes they create are linked to the item. */
+    var workItemId by androidx.compose.runtime.mutableStateOf("")
+
     /** Changes whenever [skillRun] makes progress, so the status bar redraws. */
     var skillTick by androidx.compose.runtime.mutableIntStateOf(0)
         private set
@@ -564,7 +567,23 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * a failure leaves the report as it is.
      */
     /** The notes this chat created get the backlog line they answer (see [backlogQuestion]); for every finished reply, so it does not depend on the skill run ending cleanly. */
+    /** The notes this chat created are linked to its work item: a report for research, an answer for a question, a draft for the rest. */
+    private fun linkWorkItem() {
+        if (workItemId.isBlank()) return
+        val vault = app.openVault().getOrNull() ?: return
+        runCatching {
+            val store = com.arcana.brain.core.WorkStore(vault)
+            val service = com.arcana.brain.core.WorkService(store)
+            val kind = service.item(workItemId)?.kind ?: return
+            val role = when (kind) { com.arcana.brain.core.WorkKind.Research -> com.arcana.brain.core.WorkRole.Report; com.arcana.brain.core.WorkKind.Question -> com.arcana.brain.core.WorkRole.Answer; else -> com.arcana.brain.core.WorkRole.Draft }
+            var linked = false
+            for (a in artifacts.toList()) if (a.tool == "create_note" && a.action == "created") { service.linkNote(workItemId, a.path.substringAfterLast('/').removeSuffix(".md"), role); linked = true }
+            if (linked) { com.arcana.brain.core.WorkNotes.sync(vault, store); app.brain.changed() }
+        }
+    }
+
     private fun stampBacklog() {
+        linkWorkItem()
         if (backlogQuestion.isBlank()) return
         val vault = app.openVault().getOrNull() ?: return
         for (a in artifacts.toList()) if (a.tool == "create_note" && a.action == "created") ReportMeta.stampBacklog(vault, a.path, backlogQuestion, backlogId.ifBlank { null })
@@ -718,7 +737,14 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private fun beginRun(request: String) {
         val origin = Origin.newRun(id)
         run = origin
-        app.openVault().getOrNull()?.let { provenanceFor(it).started(origin, request, app.config.model) }
+        app.openVault().getOrNull()?.let { v ->
+            provenanceFor(v).started(origin, request, app.config.model)
+            // a chat started for a work item: this run is work on it (the item is in progress from now on)
+            if (workItemId.isNotBlank()) {
+                runCatching { val store = com.arcana.brain.core.WorkStore(v); com.arcana.brain.core.WorkService(store).linkRun(workItemId, origin.run); com.arcana.brain.core.WorkNotes.sync(v, store) }
+                app.brain.changed()
+            }
+        }
     }
 
     /** The tools for the current settings, or null when tools are off. */
@@ -1743,6 +1769,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     fun startNew() {
         backlogQuestion = ""
         backlogId = ""
+        workItemId = ""
         run = null
         skillRun = null
         thinkNext = ""
@@ -1764,6 +1791,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         artifacts.clear()
         backlogQuestion = ""
         backlogId = ""
+        workItemId = ""
         run = null
         skillRun = null // a run belongs to the conversation it started in (see docs/skills.md)
         skillTick++

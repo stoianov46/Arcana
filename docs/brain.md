@@ -5,7 +5,7 @@ The Brain screen is the dashboard of the vault: four pages, switched with `Tab` 
 | Page | Left | Right |
 |---|---|---|
 | **Overview** | *Pulse* (notes changed per week and tokens per week as sparklines, the busiest day, the trend against the usual pace), *Health* (linked, tagged, reports done, work done as bars), *Pipeline* (open, in progress and done per kind), *Where your notes live* (top folders), *Hubs* (the most linked-to notes) | the selectable list: **Bottlenecks** (ranked, `Enter` goes to the fix), **Next up** (the oldest open questions, todos and research), **Go to** |
-| **Work** | the capture row and every open item of Questions, Research and Todos (`Enter` acts, `x` done, `t` question ⇄ todo) | *Pipeline* and *Health* |
+| **Work** | the capture row and every open item of Questions, Research and Todos (`Enter` starts it in a chat linked to the item, `x` done / not done, `t` question ⇄ todo) | *Pipeline* and *Health* |
 | **Health** | *Needs attention*, *Vault hygiene* and *Top tags* (selectable) | *Health*, *Where your notes live* (8), *Hubs* |
 | **Activity** | a calendar of notes changed per day (a row per weekday, a column per week, `·░▒▓█`), then *Pulse* | notes changed and tokens per week, as bars |
 
