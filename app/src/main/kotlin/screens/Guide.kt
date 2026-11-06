@@ -73,6 +73,8 @@ Settings are saved at once to `~/.config/arcana/config.json`.
         "Brain", "The Brain screen: your control panel",
         """
 # The Brain screen
+
+Brain has four pages, switched with `Tab`: **Overview** (the pulse of the last weeks as small charts, the health bars, where the work stands, where your notes live, and a ranked list of what holds your brain back: `Enter` on a line goes to the fix), **Work** (every open question, research and todo), **Health** (what needs attention and the vault hygiene) and **Activity** (a calendar of the days you changed notes, and per week bars of notes and tokens). `w` changes how many weeks the charts look back over: 8, 4 or 12.
 The first screen shows how your vault is doing and what to do next.
 
 ## Vital signs
@@ -88,7 +90,7 @@ A short list of things worth fixing. Each one opens the **Library** on exactly t
 
 The **Vault hygiene** section checks the habits that keep the vault navigable (a `type` on every note, plain and unique names, nothing loose in the root, reports finished and fresh, no islands) and shows a count per kind. `h` opens the full list: `Enter` opens the note in the Library, `c` starts a chat with the note attached and the fix ready to send.
 
-The **Research backlog** lists the questions you captured with `? ` (press `b`): `Enter` starts the research in a new chat, `x` marks one done, and a finished report with the same `question:` ticks it automatically.
+Start a thought with **`todo: `**, **`question: `** or **`research: `** (or `? `) and it is also a todo, a question or a research item; no prefix: a plain thought. The **Brain dashboard** shows them in three sections, **Questions**, **Research** and **Todos**, each with what is still open (select a row: `Enter` acts on it, `x` marks it done, `t` turns a question into a todo and back); `b` opens the same items in one list, one kind at a time: `Tab` switches between Questions, Research and Todos. On research, `Enter` starts the research in a new chat and `x` marks one done; on a question `Enter` opens a chat with it; on a todo `Enter` or `x` marks it done or not done, and `t` turns a question into a todo and back. Todos and questions are also written to `Tasks/Todos.md` and `Questions/Questions.md` in your vault (generated: change them in Brain, not in the note). Research: and a finished report with the same `question:` ticks it automatically.
 
 When everything is in order it says so.
 

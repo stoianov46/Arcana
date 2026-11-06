@@ -1,6 +1,6 @@
 # 0002 Work items and provenance
 
-Status: **phase 1 shipped** · written 2026-11-06 · decisions by the project owner on the same day.
+Status: **phases 1 and 2 shipped, kinds and commands built (core), screens next** · written 2026-11-06 · decisions by the project owner on the same day.
 
 ## Problem
 
@@ -88,7 +88,7 @@ The model sees no ids and has no tool for this. The Oracul and other helpers get
 Each one is releasable on its own.
 
 1. **Identity and log.** *(shipped 2026-11-06: `Work.kt`, `WorkStore.kt`, `WorkMigration.kt`; facts in `docs/research-backlog.md`; the fold sorts captures first so a skewed clock cannot drop an event; a backlog marker is kept as the item id when a line has one, otherwise an id is made from the text and date and the marker is recorded as an alias.)** `WorkItem`, the event model, the fold, `WorkStore` over JSONL, and a **migration** that reads the existing backlog note (every line, with or without a marker) into events. The note keeps being written exactly as today (still parsed by the old code) so nothing changes for the user. *Test:* the fold is the same after replaying the log twice or in another order; a golden test migrates a copy of the real note; a crash in the middle of an append loses at most the last event.
-2. **Provenance.** `Run` records and the `origin` stamp applied at the vault write path for every created or appended note. *Test:* every writing tool, the Oracul and skills produce a stamped note; an unstamped legacy note is simply "unknown origin".
+2. **Provenance.** *(shipped 2026-11-06 for the notes the tools of a chat run write: `Provenance.kt`, `ToolBox`, `Vault.create`, `ChatSession.beginRun`; facts in `docs/research-backlog.md`. Not yet: notes from the Inbox, AI notes and the chat save, and a run for work that has no chat.)** `Run` records and the `origin` stamp applied at the vault write path for every created or appended note. *Test:* every writing tool, the Oracul and skills produce a stamped note; an unstamped legacy note is simply "unknown origin".
 3. **Link and tick by the app.** `RunLinked` / `ArtifactLinked` from Brain-started chats (replaces `backlogQuestion` / `stampBacklog`), and *answered* derived from a linked done report. *Test:* the AirportGap case end to end (free chat → note → link → answered), and a chat that is cancelled or fails leaves the item open.
 4. **Suggestions and Undo.** The meaning + words match of an unlinked run to open items, the confirm key, `Reopened`. *Test:* a labelled set of real run/item pairs, with a threshold that prefers "no suggestion" to a wrong one.
 5. **The note as a view.** Generate the Markdown from the log and add the ingester; remove the regex parser as the source of truth. *Test:* round trip (log → note → ingest → same log), hand edits, a line it cannot read stays.
@@ -107,6 +107,22 @@ Each one is releasable on its own.
 3. **An item may have several answered reports.** Each run with a different skill links its own report; the item is answered when any linked report is done, and a later run never reopens the first.
 4. **A skill opts in to the kinds it works on** with a `handles:` property (`handles: [question]`); Arcana never guesses from `inputs`. A skill without it works as before and does not appear in the item picker.
 5. **Capture and organisation of the other kinds follow the vault and the TUI, not a typing rule alone** (details under Open questions). The `todo:` prefix is accepted for Ctrl+N capture; a thought with no prefix stays a thought.
+
+## Kinds (decided with the owner, 2026-11-06)
+
+Four kinds, defined in code (`WorkKind`), each shown in its own list in Brain:
+
+| Kind | What it is | Answered when |
+|---|---|---|
+| **Thought** | the default: a plain note, no skill | never (nothing to answer) |
+| **Question** | wants an answer, usually in chat; the answer is kept as a short **answer note** (role `answer`) so the work can continue later | a linked answer note is done, or closed by hand |
+| **Research** | wants a full report from a skill (dev research, a comparison…) | a linked report has `status: done` |
+| **Todo** | a task | closed by hand |
+
+- **Changing your mind is one event** (`Retyped`): research to question, todo to thought… The item keeps its id, runs and notes, moves to the other list, and the skills offered change with the kind. The log is therefore **one file** (`.arcana/work/items.jsonl`), not one per kind; the first version's `question.jsonl` is moved into it, as research.
+- The existing backlog lines are **research** items.
+- Questions may be continued: a later run adds another answer note to the same item, and the first stays.
+- **In the vault:** the kinds that live in the log first (todo, question) get a generated note each (`Tasks/Todos.md`, `Questions/Questions.md`); research keeps `Research/Research Backlog.md` as its truth until phase 5. Thoughts keep today's daily and thought notes for now.
 
 ## Kinds and skills
 
