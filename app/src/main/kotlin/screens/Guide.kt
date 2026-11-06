@@ -101,7 +101,7 @@ When everything is in order it says so.
 On a wide window there are two columns: **Now** (capture, what needs attention, your top tags) and **Jump back in**. `←` `→` switch columns, `↑` `↓` choose, `Enter` opens, `r` reads the vault again (it also refreshes by itself after changes).
 
 ## The sidebar tells you things
-A badge shows what is waiting: the **Inbox** count, the number of unsaved events in the **Session**, and `…` on **Chat** while a reply is being written. On a narrow window (under 90 columns) the sidebar folds to icons by itself; the badge becomes a dot.
+A badge shows what is waiting: `…` on **Chat** while a reply is being written. The Inbox and the Session are no longer tabs: the Brain Overview lists them under *Go to* (with how many notes wait and how many events are unsaved), and `Ctrl+P` has commands for both. On a narrow window (under 90 columns) the sidebar folds to icons by itself; the badge becomes a dot.
 """.trim(),
     ),
     GuidePage(
@@ -135,7 +135,7 @@ Beside the list (or on `Enter` in a narrow window) you see the selected note: it
 New notes pile up in your **inbox folder** (Settings → Vault → Inbox folder). The Inbox screen turns them into filed, tagged, linked notes, one at a time.
 
 ## How it works
-1. Open **Inbox** (or press `Enter` on the inbox item on the Brain screen). `p` starts with the first note, `Enter` on a note starts there.
+1. Open the **Inbox**: Brain → Overview → *Go to* → Inbox, `p` in the Library's Inbox view, or `Ctrl+P` → "Process the inbox with AI". `p` starts with the first note, `Enter` on a note starts there.
 2. Gemma reads the note, and proposes a **title**, a **folder** (one that already exists), **tags** (preferably ones you already use), **links** to related notes (only notes that exist) and a one-line **summary**. While you review one note, the next is already being read.
 3. The proposal is a small form: `Tab` or `↑` `↓` move between fields and you can edit anything. If other notes link to this one by name, the title is locked so those links keep working.
 4. `Enter` **applies** it, `Ctrl+X` **skips** the note, `Esc` goes back to the list.
@@ -338,6 +338,8 @@ Leaving with a draft that was not applied asks before it is thrown away.
 Each time Arcana opens, a **session** starts and records what you do: questions, AI tasks, captured thoughts, notes created, changed or trashed. It is written to disk as it happens, so nothing is lost if the terminal closes.
 
 ## The Session screen
+
+It is not a tab: open it from Brain → Overview → *Go to* → Session, or with `Ctrl+P` ("Session: …").
 A timeline of the activity, with counts and the tokens used. From here:
 - `s` **Save summary note**: Gemma writes notes on the session (what you did, what you learned or decided, open questions, next steps) from the activity and the chat. Review it, then `n` saves it as a note.
 - `l` **Save log only**: the activity as a plain list, no AI.

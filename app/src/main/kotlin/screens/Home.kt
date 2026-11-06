@@ -215,6 +215,8 @@ fun HomeScreen(app: AppContext) {
         add(BrainRow.Item("✎", Palette.Accent, "Capture a thought", "Ctrl+N from anywhere", open = { navigator.openCapture() }))
         add(BrainRow.Item("»", Palette.Accent, if (app.chat.messages.isNotEmpty()) "Continue chat: ${app.chat.title}" else "Ask your brain", "Chat", open = { navigator.navigate(Screen.Chat) }))
         add(BrainRow.Item("▤", Palette.Muted, "Library", "all your notes", open = { navigator.openLibrary(LibraryFilter.All) }))
+        add(BrainRow.Item("▣", Palette.OrangeSoft, "Inbox", (health?.inbox ?: 0).let { if (it > 0) "$it waiting · let AI file them" else "nothing waiting" }, dim = (health?.inbox ?: 0) == 0, open = { navigator.navigate(Screen.Inbox) }))
+        add(BrainRow.Item("◷", Palette.Muted, "Session", app.session.let { if (it.needsSaving) "${it.unsavedCount} unsaved · save a summary note" else "nothing unsaved" }, dim = !app.session.needsSaving, open = { navigator.navigate(Screen.Session) }))
         add(BrainRow.Item("✦", Palette.Muted, "Write or improve a note with AI", "AI notes", open = { navigator.navigate(Screen.Compose) }))
     }
     val rows = if (tab == BrainTab.Overview) BrainRows(overviewRows, emptyList()) else if (tab == BrainTab.Activity) BrainRows(emptyList(), emptyList()) else buildRows(app, navigator, health, vault.isSuccess, tab = tab, recents = if (wide) 12 else 5, topTags = if (wide) 8 else 0, hygiene = hygiene, openHygiene = ::openHygiene, questions = questionRows, research = researchRows, todos = todoRows, openWork = { openBacklog() }, openCapture = { navigator.openCapture() })

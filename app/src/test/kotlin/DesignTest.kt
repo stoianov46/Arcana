@@ -268,13 +268,16 @@ class DesignTest {
 
     @Test
     fun savedTabOrderIsAppliedWithinSectionsAndRepairsItself() {
-        assertEquals(Screen.entries.toList(), Screen.ordered(emptyList()))
+        val tabs = Screen.entries.filter { it.inSidebar }
+        assertEquals(tabs, Screen.ordered(emptyList()))
+        assertEquals(false, Screen.Inbox.inSidebar); assertEquals(false, Screen.Session.inSidebar)
+        assertEquals(tabs, Screen.ordered(listOf("Session", "Inbox")), "a saved order that names the screens that are no longer tabs is repaired")
         val moved = Screen.ordered(listOf("Chat", "Home", "Settings", "Usage"))
         assertEquals(listOf(Screen.Chat, Screen.Home), moved.take(2))
         assertEquals(listOf(Screen.Settings, Screen.Usage, Screen.Guide, Screen.Changelog), moved.filter { it.group == Screen.Settings.group }, "the Account section keeps its own order")
-        assertEquals(Screen.entries.toSet(), moved.toSet(), "screens the list leaves out are slotted back in")
+        assertEquals(tabs.toSet(), moved.toSet(), "screens the list leaves out are slotted back in")
         // a name from another version, or a repeated one, is ignored
-        assertEquals(Screen.entries.size, Screen.ordered(listOf("Gone", "Chat", "Chat")).size)
+        assertEquals(tabs.size, Screen.ordered(listOf("Gone", "Chat", "Chat")).size)
         // a section never splits, even from a hand-edited file: sections follow the order of their first tab
         val crossed = Screen.ordered(listOf("Settings", "Home", "Usage"))
         assertEquals(listOf(Screen.Settings, Screen.Usage, Screen.Guide, Screen.Changelog), crossed.take(4))

@@ -23,7 +23,7 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 ## `navigation/`
 
 - `Navigator.kt`
-  - `Screen` enum (Home, Chat, Library, Inbox, Compose, Session, Usage, Settings, Guide, Changelog) with `title`, `icon`, `group`
+  - `Screen` enum (Home, Chat, Library, Inbox, Compose, Session, Usage, Settings, Guide, Changelog) with `title`, `icon`, `group` and `inSidebar` (Inbox and Session are `false`: no tab and no number key, reached from Brain's Overview, the Library's Inbox view and the command palette)
     (`ScreenGroup.Workspace`="BRAIN", `Account`="SYSTEM"); `ScreenOrder` applies the user's `tabOrder`; `SHORTCUT_KEYS="1234567890"`.
   - `Navigator` holds: `current`, `navigate(screen, force)`, `leaveGuard` (a screen may veto leaving), overlays
     (`helpOpen`, `paletteOpen`, `captureOpen`, `palette`, `captureField`), `toast`/`showToast`, `quitPending`,

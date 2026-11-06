@@ -20,13 +20,17 @@ enum class LibraryFilter(val title: String) {
     All("All"), Recent("Recent"), Reports("Reports"), Inbox("Inbox"), Orphans("No links"), Untagged("No tags"), Broken("Broken links"), Stale("Stale"), Tags("Tags"),
 }
 
-enum class Screen(val title: String, val icon: String, val group: ScreenGroup = ScreenGroup.Workspace) {
+/**
+ * [inSidebar] false: a screen that is not a tab. It has no number key and is not in the sidebar, and is reached from where its work starts (the Brain
+ * screen, the Library's Inbox view, the command palette).
+ */
+enum class Screen(val title: String, val icon: String, val group: ScreenGroup = ScreenGroup.Workspace, val inSidebar: Boolean = true) {
     Home("Brain", "◉"),
     Chat("Chat", "»"),
     Library("Library", "▤"),
-    Inbox("Inbox", "▣"),
+    Inbox("Inbox", "▣", inSidebar = false),
     Compose("AI notes", "✦"),
-    Session("Session", "◷"),
+    Session("Session", "◷", inSidebar = false),
     Usage("Usage", "▥", ScreenGroup.Account),
     Settings("Settings", "✱", ScreenGroup.Account),
     Guide("Guide", "¶", ScreenGroup.Account),
@@ -47,7 +51,7 @@ enum class Screen(val title: String, val icon: String, val group: ScreenGroup = 
          */
         fun ordered(names: List<String>): List<Screen> {
             val chosen = names.mapNotNull { name -> entries.firstOrNull { it.name == name } }.distinct()
-            val full = chosen + entries.filter { it !in chosen }
+            val full = (chosen + entries.filter { it !in chosen }).filter { it.inSidebar }
             val sections = full.map { it.group }.distinct()
             return sections.flatMap { section -> full.filter { it.group == section } }
         }
@@ -56,7 +60,7 @@ enum class Screen(val title: String, val icon: String, val group: ScreenGroup = 
 
 /** The order the sidebar is in right now; observed by everything that draws it or reads a shortcut key. */
 object ScreenOrder {
-    var order by mutableStateOf(Screen.entries.toList())
+    var order by mutableStateOf(Screen.entries.filter { it.inSidebar })
         private set
 
     fun use(names: List<String>) {
