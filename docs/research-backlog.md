@@ -82,6 +82,10 @@ Only lines of the form `- [ ] question (YYYY-MM-DD)` and `- [x] question (YYYY-M
 - A report skill that does not write `question:` never ticks its item; tick it by hand with `x`.
 - Starting from the list does not remember which item started the research; the tick comes from the report's `question:` (or `x`).
 
+### Which skill runs an item
+
+`Enter` on an item opens a picker of the skills that may run its kind (`Skill.handles`, from `handles: [research, question]` in the skill's properties, opt-in), plus a plain chat, with the skill that would run preselected. The choice for an item is `WorkSkills.resolve`: the skill **pinned to the item** (`SkillPinned`, key `p` in the picker, `u` removes it), else the **default of its kind** (Settings → Skills → *Default skill: research / questions / todos*, or `d` in the picker; `none` is a plain chat), else **automatic** (research: the first skill that handles research, else the first `…research-report`; every other kind: a plain chat). A pin or default that names a skill that is gone falls through to the next level. When no skill opted in for the kind the picker is skipped and the item starts with the resolved choice. The chosen skill's entry note is attached to the chat, as `/name` would. Tests: `WorkSkillsTest`.
+
 ### Starting an item (chat linked to the work item)
 
 `Enter` on a question, a todo or a research line starts a fresh chat with `ChatSession.workItemId` set to the item (a research line passes its backlog marker, which the log knows as an alias). `beginRun` links each run of that chat to the item (`RunLinked`, so it is *in progress* from the first message) and rewrites the generated note; when a finished reply has created notes, `linkWorkItem` links each as a `report` (research), an `answer` (question) or a `draft` (todo). The item is *answered* only when a linked report or answer is done, or when you close it with `x`. The chat's state is cleared by a new chat.

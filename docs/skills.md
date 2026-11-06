@@ -55,6 +55,7 @@ Skills as a folder of Markdown instructions with reference files and scripts, re
 | `version` | no | shown in `use_skill` output and `/skills` |
 | `output` | no | vault folder for the skill's results; `use_skill` tells the model (`Results go to (outside the skill): …`) |
 | `requires` | no | the required steps (section 5); quoted list items |
+| `handles` | no | the kinds of work item this skill may run: `handles: [research, question]` (`research`, `question`, `todo`, `thought`). Only a skill that says so is offered in the picker that opens when you start an item from Brain (`WorkSkills.offered`); without it a skill is run with `/name` or by attaching it, as before |
 | `usage` | no | what the user types after `/name`, shown under the skill in the Chat menu (`/name <pair> [horizon]`); without it the `inputs:` list is shown as `<a> <b>` |
 | `type`, `tags`, `needs`, … | no | for people and Obsidian; Arcana ignores them |
 
