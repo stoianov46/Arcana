@@ -4,6 +4,10 @@ Questions occur while you do something else. A thought captured with a `? ` or `
 
 Code: `core/.../ResearchBacklog.kt` (everything pure, tested in `ResearchBacklogTest`), the capture hook in `AppContext.capture`, the Brain section and list in `screens/Home.kt`, the hint line in `navigation/Overlays.kt` (`CaptureOverlay`). Test of the hook: `app/src/test/kotlin/ResearchBacklogCaptureTest.kt`.
 
+## The work log (mirror, phase 1 of proposals/0002)
+
+Every time the Brain screen reads the backlog it also brings a second record in line with the note: `.arcana/work/question.jsonl` in the vault, an append-only log of events (`Captured`, `Edited`, `Aliased`, `ArtifactLinked`, `Closed`, `Reopened`, one JSON object per line, each with its own id). `WorkMigration.sync` writes it from the note and never writes to the note; every event id is made from what it describes, so running it again writes nothing. What an item is (text, state, linked reports) is the fold of its events (`WorkItems.fold`, `WorkItem.state`); it is the same however the events are read, read twice or merged from two machines. Nothing reads the log for behaviour yet: the note is still what you see and what `ResearchBacklog` edits. A line is the same item when it has the same marker, or the same text and date; a marker given later is recorded as an alias, so it is not a second item. `WorkMigration.discrepancies` says where log and note disagree (an item gone from the note, a tick the log has not seen). Code: `core/.../Work.kt` (model and fold), `WorkStore.kt` (`WorkLog` port, `JsonlWorkLog`, `WorkStore`), `WorkMigration.kt`; tests: `WorkTest`.
+
 ## The note
 
 `Research/Research Backlog.md`, created on the first question (the folder is created too). Plain Markdown the user may edit:

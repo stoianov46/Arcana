@@ -7,6 +7,7 @@ One file per proposal, numbered in the order they were written: `NNNN-short-name
 | # | Proposal | Status | Summary |
 |---|---|---|---|
 | [0001](0001-retrieval-and-rag.md) | Retrieval and RAG | phases 1, 3 and 4 shipped | One retrieval layer for notes, project code, documents, chats and saved web pages: keywords + meaning fused, explicit modes, measured quality |
+| [0002](0002-work-items-and-provenance.md) | Work items and provenance | phase 1 shipped | Backlog questions, tasks and thoughts as items with an immutable id and an event log (state is derived); every note a run writes carries where it came from; the app links and suggests (never the model); the Markdown note becomes a generated view. |
 
 ## Status values
 

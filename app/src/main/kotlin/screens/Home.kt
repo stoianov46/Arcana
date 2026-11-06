@@ -92,7 +92,7 @@ fun HomeScreen(app: AppContext) {
     var backlog by rememberKept(app, "brain.backlog@$where") { mutableStateOf<List<BacklogItem>>(emptyList()) }
     LaunchedEffect(index) {
         val v = vault.getOrNull()
-        if (index != null && v != null) backlog = withContext(Dispatchers.IO) { runCatching { ResearchBacklog.reconcile(v); ResearchBacklog.open(v) }.getOrDefault(emptyList()) }
+        if (index != null && v != null) backlog = withContext(Dispatchers.IO) { runCatching { ResearchBacklog.reconcile(v); runCatching { com.arcana.brain.core.WorkMigration.sync(v, com.arcana.brain.core.WorkStore(v)) }; ResearchBacklog.open(v) }.getOrDefault(emptyList()) }
     }
     var backlogOpen by rememberKept(app, "brain.backlogOpen@$where") { mutableStateOf(false) }
     var backlogSel by rememberKept(app, "brain.backlogSel@$where") { mutableIntStateOf(0) }
