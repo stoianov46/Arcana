@@ -112,7 +112,12 @@ fun HomeScreen(app: AppContext) {
     var backlog by rememberKept(app, "brain.backlog@$where") { mutableStateOf<List<BacklogItem>>(emptyList()) }
     LaunchedEffect(index) {
         val v = vault.getOrNull()
-        if (index != null && v != null) { backlog = withContext(Dispatchers.IO) { runCatching { ResearchBacklog.reconcile(v); runCatching { val store = com.arcana.brain.core.WorkStore(v); com.arcana.brain.core.WorkMigration.sync(v, store); WorkNotes.sync(v, store) }; ResearchBacklog.open(v) }.getOrDefault(emptyList()) }; reloadWork()
+        if (index != null && v != null) {
+            // the generated work notes are written here; when that created or changed a note the vault is read again, so the index (links, orphans, broken links) includes it
+            var wrote = false
+            backlog = withContext(Dispatchers.IO) { runCatching { ResearchBacklog.reconcile(v); runCatching { val store = com.arcana.brain.core.WorkStore(v); com.arcana.brain.core.WorkMigration.sync(v, store); if (WorkNotes.sync(v, store).isNotEmpty()) wrote = true }; ResearchBacklog.open(v) }.getOrDefault(emptyList()) }
+            if (wrote) app.brain.changed()
+            reloadWork()
             withContext(Dispatchers.IO) {
                 allBacklog = runCatching { ResearchBacklog.items(v) }.getOrDefault(emptyList())
                 thoughts = runCatching { Thoughts.recent(v, app.dailyNotes(v)) }.getOrDefault(emptyList())
