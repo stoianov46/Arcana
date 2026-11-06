@@ -293,6 +293,15 @@ class Colors(val spec: ThemeSpec) {
      * [TabOn] (cyan) is for the page tabs of a screen, [TabOnAccent] (violet) for the sidebar and a second row of tabs.
      */
     val TabOn = hex(mix(cyanRgb, backgroundRgb, 0.45))
+
+    /**
+     * The colours of the charts: three hues (cyan, violet, amber) all mixed into the background by the same amount, so they read as one set instead of three unrelated
+     * colours, and bright enough for a thin line, which needs more than a block does. [ChartTrack] is the empty part of a bar: quiet, but visible.
+     */
+    val ChartA = hex(mix(cyanRgb, backgroundRgb, 0.82))
+    val ChartB = hex(mix(purpleRgb, backgroundRgb, 0.82))
+    val ChartC = hex(mix(orangeRgb, backgroundRgb, 0.82))
+    val ChartTrack = hex(mix(mutedRgb, backgroundRgb, 0.62))
     val TabOnAccent = hex(mix(purpleRgb, backgroundRgb, 0.45))
     val GreenBg = hex(opt("greenBg") { mix(greenRgb, surfaceRgb, 0.15) })
     val Red = hex(redRgb)
@@ -380,6 +389,10 @@ object Palette {
     val CyanSoft get() = colors.CyanSoft
     val AccentSoft get() = colors.AccentSoft
     val TabOn get() = colors.TabOn
+    val ChartA get() = colors.ChartA
+    val ChartB get() = colors.ChartB
+    val ChartC get() = colors.ChartC
+    val ChartTrack get() = colors.ChartTrack
     val TabOnAccent get() = colors.TabOnAccent
     val GreenBg get() = colors.GreenBg
     val Red get() = colors.Red

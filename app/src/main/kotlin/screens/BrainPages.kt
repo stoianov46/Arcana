@@ -57,7 +57,7 @@ internal fun BrainTabBar(tab: BrainTab, weeks: Int) {
 @Composable
 private fun inner(): Int = (LocalContentWidth.current - 4).coerceAtLeast(24)
 
-private fun levelColor(percent: Int): Color = when { percent >= 85 -> Palette.CyanSoft; percent >= 60 -> Palette.AccentSoft; else -> Palette.OrangeSoft }
+private fun levelColor(percent: Int): Color = when { percent >= 85 -> Palette.ChartA; percent >= 60 -> Palette.ChartB; else -> Palette.ChartC }
 
 @Composable
 private fun Section(title: String) = Label(title, color = Palette.Muted, textStyle = TextStyle.Bold)
@@ -78,20 +78,20 @@ private fun PercentBar(label: String, percent: Int, detail: String = "") {
         Label(label.padEnd(10), color = Palette.Muted)
         val (filled, empty) = Chart.barParts(percent, 100, width, Chart.BarStyle.Line)
         Label(filled, color = levelColor(percent))
-        Label(empty, color = Palette.Dim)
+        Label(empty, color = Palette.ChartTrack)
         Label(" ${percent.toString().padStart(3)}%", color = Palette.Text)
         if (detail.isNotEmpty()) Label("  $detail", color = Palette.Dim)
     }
 }
 
 @Composable
-private fun CountBar(label: String, value: Int, max: Int, detail: String = "", color: Color = Palette.CyanSoft, valueText: String = value.toString(), style: Chart.BarStyle = Chart.BarStyle.Half, cap: Int = 28) {
+private fun CountBar(label: String, value: Int, max: Int, detail: String = "", color: Color = Palette.ChartA, valueText: String = value.toString(), style: Chart.BarStyle = Chart.BarStyle.Half, cap: Int = 28) {
     val width = (inner() - 16 - 5 - 14 - 2).coerceIn(6, cap)
     Row {
         Label(label.take(15).padEnd(16), color = Palette.Muted)
         val (filled, empty) = Chart.barParts(value, max, width, style)
         Label(filled, color = color)
-        Label(empty, color = Palette.Dim)
+        Label(empty, color = Palette.ChartTrack)
         Label(" ${valueText.padStart(4)}", color = Palette.Text)
         if (detail.isNotEmpty()) Label("  $detail", color = Palette.Dim)
     }
@@ -110,8 +110,8 @@ private fun dayText(d: com.arcana.brain.core.DayPoint): String = "${d.day.dayOfW
 @Composable
 internal fun PulseBlock(s: BrainSnapshot) {
     Section("PULSE · last ${s.weeks} weeks")
-    Metric("notes changed", Chart.spark(s.weekly.map { it.changed.toLong() }), "${s.weekly.lastOrNull()?.changed ?: 0} this week", Palette.AccentSoft)
-    Metric("tokens used", Chart.spark(s.tokensByWeek), com.arcana.brain.core.UsageStats.compact(s.tokensByWeek.lastOrNull() ?: 0L) + " this week", Palette.CyanSoft)
+    Metric("notes changed", Chart.spark(s.weekly.map { it.changed.toLong() }), "${s.weekly.lastOrNull()?.changed ?: 0} this week", Palette.ChartB)
+    Metric("tokens used", Chart.spark(s.tokensByWeek), com.arcana.brain.core.UsageStats.compact(s.tokensByWeek.lastOrNull() ?: 0L) + " this week", Palette.ChartA)
     Label("${s.changedInWindow} notes changed" + (s.busiestDay?.let { " · busiest ${dayText(it)}" } ?: "") + (trendText(s.activityTrend).takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""), color = Palette.Dim)
 }
 
@@ -133,12 +133,12 @@ internal fun PipelineBlock(pipeline: List<KindPipeline>) {
     pipeline.forEach { p ->
         Row {
             Label(p.kind.title.padEnd(10), color = Palette.Muted)
-            Label("○${p.open} ", color = Palette.CyanSoft)
-            Label("◐${p.inProgress} ", color = Palette.OrangeSoft)
-            Label("●${p.done}  ", color = Palette.CyanSoft)
+            Label("○${p.open} ", color = Palette.ChartA)
+            Label("◐${p.inProgress} ", color = Palette.ChartC)
+            Label("●${p.done}  ", color = Palette.ChartA)
             val (filled, empty) = Chart.barParts(p.donePercent, 100, 10, Chart.BarStyle.Slim)
             Label(filled, color = levelColor(p.donePercent))
-            Label(empty, color = Palette.Dim)
+            Label(empty, color = Palette.ChartTrack)
             Label(" ${p.donePercent}%", color = Palette.Text)
             p.oldestOpenDays?.let { Label("  oldest ${it}d", color = if (it >= 7) Palette.Orange else Palette.Dim) }
         }
@@ -157,7 +157,7 @@ internal fun HubsBlock(s: BrainSnapshot) {
     if (s.hubs.isEmpty()) return
     Section("HUBS · most linked to")
     val max = s.hubs.maxOf { it.second }
-    s.hubs.take(3).forEach { (path, n) -> CountBar(path.substringAfterLast('/').removeSuffix(".md"), n, max, color = Palette.AccentSoft, style = Chart.BarStyle.Dots, cap = 12) }
+    s.hubs.take(3).forEach { (path, n) -> CountBar(path.substringAfterLast('/').removeSuffix(".md"), n, max, color = Palette.ChartB, style = Chart.BarStyle.Dots, cap = 12) }
 }
 
 /** The days of the window as a calendar: a row per weekday, a column per week, darker is busier. */
@@ -165,7 +165,7 @@ internal fun HubsBlock(s: BrainSnapshot) {
 internal fun HeatBlock(s: BrainSnapshot) {
     Section("ACTIVITY · notes changed per day")
     val grid = Chart.heatLevels(s.days, s.weeks)
-    val ramp = listOf(Palette.Dim, Palette.Muted, Palette.CyanSoft, Palette.AccentSoft, Palette.Accent)
+    val ramp = listOf(Palette.Dim, Palette.Muted, Palette.ChartA, Palette.ChartB, Palette.Accent)
     grid.forEachIndexed { row, cells ->
         Row {
             Label(Chart.WEEKDAYS[row] + " ", color = Palette.Dim)
@@ -180,7 +180,7 @@ internal fun HeatBlock(s: BrainSnapshot) {
 internal fun WeeklyBlock(s: BrainSnapshot) {
     Section("PER WEEK")
     val max = s.weekly.maxOfOrNull { it.changed } ?: 0
-    s.weekly.takeLast(8).forEach { w -> CountBar("week of ${w.weekStart.dayOfMonth} ${w.weekStart.month.getDisplayName(DayStyle.SHORT, Locale.ENGLISH)}", w.changed, max, color = Palette.AccentSoft, style = Chart.BarStyle.Braille) }
+    s.weekly.takeLast(8).forEach { w -> CountBar("week of ${w.weekStart.dayOfMonth} ${w.weekStart.month.getDisplayName(DayStyle.SHORT, Locale.ENGLISH)}", w.changed, max, color = Palette.ChartB, style = Chart.BarStyle.Braille) }
 }
 
 @Composable
@@ -189,16 +189,16 @@ internal fun TokensBlock(s: BrainSnapshot) {
     val max = s.tokensByWeek.maxOrNull() ?: 0L
     s.tokensByWeek.takeLast(8).forEachIndexed { i, t ->
         val w = s.weekly.getOrNull(s.weekly.size - s.tokensByWeek.takeLast(8).size + i)
-        CountBar(w?.let { "week of ${it.weekStart.dayOfMonth} ${it.weekStart.month.getDisplayName(DayStyle.SHORT, Locale.ENGLISH)}" } ?: "week", if (max <= 0) 0 else (t * 1000 / max).toInt(), 1000, color = Palette.CyanSoft, valueText = com.arcana.brain.core.UsageStats.compact(t), style = Chart.BarStyle.Braille)
+        CountBar(w?.let { "week of ${it.weekStart.dayOfMonth} ${it.weekStart.month.getDisplayName(DayStyle.SHORT, Locale.ENGLISH)}" } ?: "week", if (max <= 0) 0 else (t * 1000 / max).toInt(), 1000, color = Palette.ChartA, valueText = com.arcana.brain.core.UsageStats.compact(t), style = Chart.BarStyle.Braille)
     }
 }
 
 /** What a bottleneck looks like as a row of the dashboard: red when it is pressing, orange when it matters, a tick when it is fine. */
 internal fun bottleneckRow(b: Bottleneck, open: () -> Unit): BrainRow.Item {
     val (icon, color) = when {
-        b.good -> "✓" to Palette.CyanSoft
-        b.score >= 70 -> "▲" to Palette.OrangeSoft
-        b.score >= 40 -> "▲" to Palette.AccentSoft
+        b.good -> "✓" to Palette.ChartA
+        b.score >= 70 -> "▲" to Palette.ChartC
+        b.score >= 40 -> "▲" to Palette.ChartB
         else -> "△" to Palette.Muted
     }
     return BrainRow.Item(icon, color, b.title, b.detail, dim = b.good, open = open)
