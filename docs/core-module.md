@@ -12,7 +12,7 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `Layout.kt` | `Layout`: where Arcana's own files live (`.arcana/skills`, `.arcana/ARCANA.md`, the global `~/.config/arcana/skills` and `ARCANA.md`), `skillsFolder`/`defaultMemory` (automatic choice), `migrate` (`arcana --migrate`) |
 | `Vault.kt` | `Vault` (incl. `rename` with link rewriting, `memoryFile`/`memory`/`ensureMemory`/`remember` (no duplicates, no dead note paths), `auditMemory`/`cleanMemory` (`MemoryLines.kt`: `similar`, `noteRefs`, `MemoryAudit`) for the memory file (`ARCANA.md` or `AppConfig.memoryPath`), `MEMORY_TEMPLATE`), `Note`, `SearchHit`, `NoteTask`, `Prompts` (every prompt template), `VaultException` |
 | `VaultIndex.kt` | `VaultIndex`, `NoteInfo`, `BrainHealth`, `DailyNotes`, `Vault.capture` |
-| `Inbox.kt` | `InboxProcessing` (prompt + parse), `InboxPlan`, `mergeFrontmatterTags`, `Vault.processInboxNote` |
+| `Frontmatter.kt` | `mergeFrontmatterTags` (the tags of a note's frontmatter, merged) |
 | `ChatStore.kt` | `ChatStore`, `StoredChat` (persistent chats as JSON files) |
 | `Session.kt` | `SessionKind`, `SessionEvent`, `StoredSession`, `SessionStore`, `SessionStats`, `SessionReport` |
 | `Usage.kt` | `UsageRecord`, `UsageStore` (JSONL), `UsageTotals`, `UsageStats` (totals, `by`, `perDay`, `perHour`, `speedPerDay`, `insights`, `estimatedCost`, `since`, `compact`), `UsageInsights` |
@@ -23,7 +23,7 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `Sources.kt` | `PassageSource` (what is searched: files with size and time, their text, their passages), `VaultSource`, `FolderSource` (code, config, text and documents of a folder; skips hidden, build, big, binary), `CodeChunker` (passages with a line and a declaration), `ProjectSearch` (the `search_files` tool's search over folders, one meaning index per folder, path:line / page) |
 | `Documents.kt` | `Documents`: the text of a PDF (page by page), `.docx` and HTML for the file search (best effort, no OCR) |
 | `Skills.kt` | `Skill`, `Skills.discover` (one folder per skill, entry note `<name>.skill.md`, `output:` folder for results, problems), `catalog`, `load`, `loadEntry`, `isEntry`, `chipLabel`, `find`, `summary`, `parseRequirements`/`requirementsOf`; `Requirement` and `SkillRun` (the completion gate's progress) |
-| `VaultIndex.kt` tags | `VaultIndex.frontmatterTags` reads tags however they are written (`tags: [a, b]`, `a, b`, `a b`, `#a #b`, a `- a` list; `tags:`, `tag:` or `Tags:`; several keys all count); `cleanTag` and `isTagKey` are shared with `mergeFrontmatterTags` (Inbox.kt) and `Vault.addTags` |
+| `VaultIndex.kt` tags | `VaultIndex.frontmatterTags` reads tags however they are written (`tags: [a, b]`, `a, b`, `a b`, `#a #b`, a `- a` list; `tags:`, `tag:` or `Tags:`; several keys all count); `cleanTag` and `isTagKey` are shared with `mergeFrontmatterTags` (Frontmatter.kt) and `Vault.addTags` |
 | `ToolCuts.kt` | `ToolCuts.marker(result)`: the line in which a tool says it left something out, shown in the chat as `✂ …` |
 | `Todos.kt` | `TODO`, `TODO_DEFINITION`, `Todos` (`parse`, `describe`, `last`, `render`): the model's own task list, the `todo` pseudo-tool; the list is derived from the latest `todo` call in the chat (`ChatSession.todos`), nothing is stored apart from the messages |
 | `ChatStats.kt` | `CHAT_STATS`, `CHAT_STATS_DEFINITION`, `ChatStats.describe(...)`: the text the `chat_stats` pseudo-tool returns |
@@ -101,16 +101,9 @@ question with vault excerpts when `hits != null`, keeps tool output older than t
 `VaultIndex.build(vault)` (companion) scans every note once: word count, frontmatter + inline `#tags`, `[[wikilinks]]` resolved to
 paths (unresolved kept separately; a name is tried as a note first, so `[[Qwen3.8 27B vs …]]` with dots is a note, and only a missing name that ends in a dot and 1-5 letters or digits, like `shot.png`, counts as a picture or file and is ignored). **Code blocks and inline code are ignored** for links and tags. Derived: `backlinks`,
 `orphans`, `untagged`, `stale(days)`, `inFolder`, `tagCounts`, `related(path)` (shared tags/links), `touchedSince(days)`,
-`health(inboxFolder, staleDays) -> BrainHealth` (counts + `connectedPercent`/`taggedPercent`).
+`health(staleDays) -> BrainHealth` (counts + `connectedPercent`/`taggedPercent`).
 `DailyNotes.detect(vault, folder, format)` reads `.obsidian/daily-notes.json` (`folder`, `format` in moment.js tokens) else
 falls back to the settings; `pathFor(date)`. `Vault.capture(text, daily, now)` appends `- HH:mm text` (creates the note if needed).
-
-## `Inbox.kt`
-
-`InboxProcessing.prompt(...)` asks for JSON with `title, summary, tags, links, folder`, given tags in use, existing note titles and
-folders. `parse(reply, ...)` tolerates messy replies (extracts the JSON object), **drops links to notes that do not exist and
-unknown/unsafe folders**, returns `InboxPlan?`. `Vault.processInboxNote(path, plan, keepName)`: backup original to `.trash`,
-merge tags into frontmatter (`mergeFrontmatterTags`), add a summary callout and a `## Related` list of `[[links]]`, rename/move.
 
 ## Stores (all JSON/JSONL under the config directory)
 

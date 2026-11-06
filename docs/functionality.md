@@ -10,7 +10,6 @@ macOS claim them).
 | 1 | **Brain** (`Home`) | dashboard: vault stats, what needs attention, recent notes, top tags |
 | 2 | **Chat** | hub for talking to the model; attachments, vault answers, tools, questions |
 | 3 | **Library** | browse every note, rename, chat about a note |
-| 4 | **Inbox** | AI-assisted filing of unprocessed notes |
 | 5 | **AI notes** (`Compose`) | write or transform notes with AI, refine, apply |
 | 6 | **Session** | what happened this run; save a summary note or log; new session |
 | 7 | **Usage** | dashboard of tokens, speed, estimated price, habits |
@@ -20,14 +19,14 @@ macOS claim them).
 
 Global keys: `Ctrl+P` command palette · `Ctrl+N` quick capture · `?` key map for the screen · `Ctrl+B` fold the sidebar ·
 `Ctrl+C` ×2 quit · `0`-`9` screens (when not typing). Navigation can be a left sidebar, right sidebar or top bar (Settings → Appearance →
-Navigation). The sidebar shows badges (inbox count, unsaved session, `…` on Chat for a running reply, `!` when the model waits for an
+Navigation). The sidebar shows badges (unsaved session, `…` on Chat for a running reply, `!` when the model waits for an
 answer) and folds to icons under 90 columns.
 
 ## Brain (Home)
 
-Two columns when ≥100 wide. Left: *Capture* hint, *Needs attention* (inbox waiting, notes with no links, no tags, broken
+Two columns when ≥100 wide. Left: *Capture* hint, *Needs attention* (notes with no links, no tags, broken
 links), *Top tags*. Right: *Jump back in* (Ask your brain, AI notes, this session), *Recent notes*. Data comes from
-`BrainState.index` / `VaultIndex.health(inbox, staleDays)`. Enter opens the highlighted item (Library filter, Chat, a note).
+`BrainState.index` / `VaultIndex.health(staleDays)`. Enter opens the highlighted item (Library filter, Chat, a note).
 
 ## Chat (hub)
 
@@ -88,19 +87,11 @@ Full explanation: [skills.md](skills.md). What the user sees and does:
 
 ## Library
 
-Views (←/→): All, Recent, Inbox, No links, No tags, Broken links, Stale, Tags. From the sidebar the Library opens on the view of **Settings → Library → Opens on** (`libraryTab`, default All; a link from the Brain screen still opens its own view once: `Navigator.libraryFilter` is read and cleared, it used to stay and make the Library open on the last linked view, for example Tags). **Settings → Library** also sets *List width* (`libraryListPercent`, 20-60 %, default 30), *Sort by* (`librarySort`: newest first or title A-Z, for the lists ordered by date), *Preview pane* (`libraryPreview`) and *Tab counts* (`libraryCounts`). The list is a **tree of folders** by default (`AppConfig.libraryTree`, `t` toggles, Settings → Library → *Library as a tree*): `libraryRows(notes, expanded)` (`screens/LibraryTree.kt`) puts subfolders first (A to Z, case-insensitive) then the notes in the view's own order; a folder row shows `▸`/`▾` and how many notes are below it; only folders in `AppContext.libraryExpanded` list their children (the set survives leaving the screen, not a restart). `Enter`/`Space` fold or unfold (`Enter` on a note reads it), `l` unfolds or steps in, `h` folds or jumps to the parent folder, `+`/`-` unfold/fold all. While a filter is typed the matches are listed flat with their paths (`Esc` brings the tree back); the tag list is not a tree. The Brain screen's "open this note" unfolds the note's ancestors (`ancestorsOf`) and selects it; a highlighted folder shows its path, note and subfolder counts in the preview pane. Left list + right preview (frontmatter, links, backlinks,
+Views (←/→): All, Recent, No links, No tags, Broken links, Stale, Tags. From the sidebar the Library opens on the view of **Settings → Library → Opens on** (`libraryTab`, default All; a link from the Brain screen still opens its own view once: `Navigator.libraryFilter` is read and cleared, it used to stay and make the Library open on the last linked view, for example Tags). **Settings → Library** also sets *List width* (`libraryListPercent`, 20-60 %, default 30), *Sort by* (`librarySort`: newest first or title A-Z, for the lists ordered by date), *Preview pane* (`libraryPreview`) and *Tab counts* (`libraryCounts`). The list is a **tree of folders** by default (`AppConfig.libraryTree`, `t` toggles, Settings → Library → *Library as a tree*): `libraryRows(notes, expanded)` (`screens/LibraryTree.kt`) puts subfolders first (A to Z, case-insensitive) then the notes in the view's own order; a folder row shows `▸`/`▾` and how many notes are below it; only folders in `AppContext.libraryExpanded` list their children (the set survives leaving the screen, not a restart). `Enter`/`Space` fold or unfold (`Enter` on a note reads it), `l` unfolds or steps in, `h` folds or jumps to the parent folder, `+`/`-` unfold/fold all. While a filter is typed the matches are listed flat with their paths (`Esc` brings the tree back); the tag list is not a tree. The Brain screen's "open this note" unfolds the note's ancestors (`ancestorsOf`) and selects it; a highlighted folder shows its path, note and subfolder counts in the preview pane. Left list + right preview (frontmatter, links, backlinks,
 related notes). Keys: `Enter` read, `a` AI on this note (opens AI notes with the note preset), `c` **chat about it** (a new chat with the
 note attached; a saved chat note carries its whole transcript), `e` **edit** (`LibraryMode.Edit`: the whole file in a multi-line `TextFieldState`, Enter = new line, Ctrl+S = `Vault.write`, Esc leaves and asks `ConfirmDiscard` when changed; saving is refused when the file differs from what was opened; logged as `replaced`), `r` **rename** (a field with the current name; the note stays in its
 folder and the `[[links]]`/`![[embeds]]` to it in other notes are rewritten like Obsidian does, outside code; `Vault.rename`), `o` open in
-Obsidian, `d` trash (moves to `.trash`, asks first), `/` filter, `p` process the inbox (Inbox view); the Tags view browses notes per tag.
-
-## Inbox
-
-Lists notes in `inboxFolder`. "Process with AI" asks the model for a JSON plan per note (`InboxProcessing`): title, tags, a one-line
-summary, links to existing notes, destination folder. `Enter` reviews a note, `p` processes all; in the review `Tab` moves between editable
-fields, `Enter` applies, `Ctrl+X` skips. The plan is validated against the vault (links must exist, folder must exist or be a sensible new
-one), previewed, then applied with `Vault.processInboxNote`, which first backs the original up to `.trash`, merges tags into frontmatter,
-adds a summary callout and a `## Related` section, then renames/moves.
+Obsidian, `d` trash (moves to `.trash`, asks first), `/` filter ; the Tags view browses notes per tag.
 
 ## AI notes (Compose)
 
@@ -211,7 +202,7 @@ Tabs (groups) and rows:
   Timeout, Price for prompt/reply tokens (only for the estimated price).
 - **Notes are found by name:** `ToolBox.notePath` (used by `read_note`, `set_properties`, `add_tags`, append) strips `[[ ]]`/`|alias`, turns an absolute path inside the vault into a relative one, and when the exact path is missing uses the single note with the same name (case and leading emoji ignored) anywhere in the vault; several matches throw with their paths; `read_note` prefixes `(found at <path>)` when it resolved one.
 - **Cut notes are never silent:** a note found by `/vault` that is longer than *Chars per note* reaches the model as an excerpt ending in `… (cut: only N of M characters of this note are shown; read the whole note with read_note…)` (`Prompts.hitText`, `SearchHit.missing`), and the answer's sources line is followed by an orange `⚠ Only the start was read of: …` (`ChatMessage.sourcesCut`). A note attached with `@` that is longer than 60,000 characters (`ChatSession.MAX_NOTE_CHARS`) asks first: *send the first 60k* / *send the whole note (may not fit the context window)* / *cancel* (the text you typed comes back); the choice holds for the rest of that chat (`wholeNotes`, `cutAccepted`), and a note sent cut ends with the same marker.
-- **Vault**: Vault path (folder browser), Output folder, *Where Arcana's own files are (this vault)* and *Where YOUR files are (every vault)* (read-only rows showing `.arcana/` and `~/.config/arcana/`), Context notes, Inbox folder, Daily notes folder/format, Stale after, Chars per note.
+- **Vault**: Vault path (folder browser), Output folder, *Where Arcana's own files are (this vault)* and *Where YOUR files are (every vault)* (read-only rows showing `.arcana/` and `~/.config/arcana/`), Context notes, Daily notes folder/format, Stale after, Chars per note.
 - **Appearance**: Colour theme, Navigation (left/right/top), Sidebar (full/icons), Logo animation.
 - **What the model is sent of a long chat:** the whole chat by default (*Chat history* = 0, `Prompts.window`); the older part is summarized when the window fills (*Auto-compact*, `autoCompactPercent`, 80 %), never silently dropped. A number in *Chat history* cuts the history to that many of the latest messages (tool calls and their results count) and never less than the whole current turn: the window starts at the user's last message when that is further back, so a long tool run cannot push the request out of view. The Oracul, judge, planner, analyst and controller get the earlier chat too (`Oracul.background`, see `oracul.md`): Settings → Helpers → *Chat context: messages* (0 = all, newest first, at most 30,000 characters in total; a number caps it) and *characters each* (default 3,000).
 - **Storage** (`core/Storage.kt`): Arcana's own files with their size (`Backups`, `Trash (outside the vault)`, the vault's `.trash`, `Chat history`, `Saved sessions`, `Usage history`, `Tool usage history`); Enter on a row asks, then clears it (`AppContext.clearStorage`). Backups and the two trash folders can be pruned by age (`y` = older than 30 days, `a` = everything); the others are all or nothing. Settings, notes and the memory file are never listed.

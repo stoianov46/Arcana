@@ -17,7 +17,7 @@ The Brain screen is the dashboard of the vault: four pages, switched with `Tab` 
 
 - **Window:** whole weeks from a Monday, up to today; a week is the sum of its days. "Changed" is the modification time of a note, so a note edited ten times counts once, on its last day.
 - **Trend:** the last two weeks against the average of the weeks before (needs 4 weeks; below 50% it becomes a bottleneck).
-- **Bottlenecks** (`BrainStats.bottlenecks`), each with a score from 1 to 100 and an action: inbox notes waiting, reports not finished, research never started, open questions, open todos, items in progress without a finished answer, notes with broken links, islands, untagged notes, stale notes, four hygiene kinds (stale reports, no type, loose in the root, duplicate names) and a drop in activity. The score grows with the count and, for work, with the age of the oldest open item. When nothing applies the list says so (`Nothing is holding the brain back`).
+- **Bottlenecks** (`BrainStats.bottlenecks`), each with a score from 1 to 100 and an action: reports not finished, research never started, open questions, open todos, items in progress without a finished answer, notes with broken links, islands, untagged notes, stale notes, four hygiene kinds (stale reports, no type, loose in the root, duplicate names) and a drop in activity. The score grows with the count and, for work, with the age of the oldest open item. When nothing applies the list says so (`Nothing is holding the brain back`).
 - **Charts** (`Chart`): a sparkline is one character per value scaled to the largest (a zero is a dot); a bar is `█` filled and `░` empty and shows at least one cell for any value above zero; the calendar's five levels are `·░▒▓█`.
 
 ## Colours

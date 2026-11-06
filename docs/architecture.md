@@ -25,7 +25,7 @@ Arcana (Gradle multi-project)
  navigation/   Shell (layout, sidebar/top bar, footer, global keys)  Navigator (screens, overlays, guards, toasts)
         │                                │
         ▼                                ▼
- screens/      Home Chat Library Inbox Compose Session Usage Settings Guide Changelog     overlays: help, palette, capture
+ screens/      Home Chat Library Compose Session Usage Settings Guide Changelog     overlays: help, palette, capture
         │  use                           │ publish Hints / Commands / FocusMode to Navigator
         ▼
  design/       Theme(Palette) Panel Label Stack Picker FilePicker ScrollView Markdown Attachments TextInput StatusBar …
@@ -33,7 +33,7 @@ Arcana (Gradle multi-project)
  state holders (app/): AppContext ─ ChatSession ─ Generation ─ AppSession ─ BrainState
         │
         ▼
- core/         OllamaClient  Vault  VaultIndex  ChatStore  SessionStore  UsageStore  ConfigStore  Inbox  ToolBox (Shell, Web), Skills
+ core/         OllamaClient  Vault  VaultIndex  ChatStore  SessionStore  UsageStore  ConfigStore  ToolBox (Shell, Web), Skills
         │
         ▼
  Ollama HTTP (localhost:11434)      vault folder (Markdown files)      ~/.config/arcana/*
@@ -96,7 +96,7 @@ Skills hook into this path in three places (details in [skills.md](skills.md)): 
 `Generation` asks the **gate** (`skillRun?.nudge()`) and, if a required step is missing, continues the loop with a hidden STOP message instead of finishing.
 
 The generation lives in `ChatSession`, **not** in the Chat screen, so leaving the screen does not cancel it.
-Other screens (`Compose`, `Inbox`, `Session`) use `rememberGeneration(app, feature)` which cancels on leaving.
+Other screens (`Compose`, `Session`) use `rememberGeneration(app, feature)` which cancels on leaving.
 
 ## Concurrency model
 

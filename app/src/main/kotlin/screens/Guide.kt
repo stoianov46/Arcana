@@ -61,7 +61,6 @@ Everything is in **Settings**. Pages are tabs (a long tab such as Tools or Conso
 ## Vault
 - **Vault path**: `Enter` opens a folder browser. Folders with an `.obsidian` directory are marked as vaults.
 - **Output folder**: where new notes are saved, inside the vault.
-- **Inbox folder**: where unprocessed notes land. The Brain screen counts what waits there.
 - **Daily notes folder** and **format**: used by capture. If your vault uses Obsidian's Daily notes plugin, Arcana reads *its* settings and these are only fallbacks.
 - **Stale after**: how many days without a change make a note "stale".
 - **Context notes** and **Chars per note**: how much of your vault Chat sends when it answers from the vault. A longer note is cut, the model is told, and the answer says `⚠ Only the start was read of: …`. A note you attach with `@` that is over 60,000 characters asks first: send the first part, send it whole (it may not fit the context window), or cancel.
@@ -82,7 +81,6 @@ One line: notes, words, links, tags, the share of notes that are **linked** to s
 
 ## Needs attention
 A short list of things worth fixing. Each one opens the **Library** on exactly those notes:
-- **Inbox**: notes waiting in your inbox folder; `Enter` opens the Inbox screen, where AI proposes how to file each one.
 - **Not linked to anything**: islands that nothing points to and that point to nothing.
 - **No tags**.
 - **Broken links**: `[[links]]` to notes that do not exist.
@@ -101,7 +99,7 @@ When everything is in order it says so.
 On a wide window there are two columns: **Now** (capture, what needs attention, your top tags) and **Jump back in**. `←` `→` switch columns, `↑` `↓` choose, `Enter` opens, `r` reads the vault again (it also refreshes by itself after changes).
 
 ## The sidebar tells you things
-A badge shows what is waiting: `…` on **Chat** while a reply is being written. The Inbox and the Session are no longer tabs: the Brain Overview lists them under *Go to* (with how many notes wait and how many events are unsaved), and `Ctrl+P` has commands for both. On a narrow window (under 90 columns) the sidebar folds to icons by itself; the badge becomes a dot.
+A badge shows what is waiting: `…` on **Chat** while a reply is being written. The Session is not a tab: the Brain Overview lists it under *Go to* (with how many events are unsaved), and `Ctrl+P` has commands for it. On a narrow window (under 90 columns) the sidebar folds to icons by itself; the badge becomes a dot.
 """.trim(),
     ),
     GuidePage(
@@ -114,7 +112,7 @@ Every note in the vault, with the web of links around it.
 Notes are shown as **folders that fold and unfold**, like in a file manager: folders first (with how many notes are inside), then the notes of that level, each level indented. `Enter` (or `Space`) folds and unfolds the folder under the cursor; `l` unfolds it (and steps into it when it is already open); `h` folds it, or, on a note or a folded folder, jumps to the folder above. `+` unfolds every folder and `-` folds them all. `t` switches to a **flat list** with the full path of every note (and back); Settings → Vault → *Library as a tree* sets the default. `.` adds the notes of **hidden folders** (such as `.arcana/` with your skills and memory) to the *All* view and hides them again; they are never counted or searched, and cannot be renamed or trashed here. Typing a filter (`/`) lists the matches flat with their paths; `Esc` brings the tree back. The tree remembers which folders were open while Arcana runs, and a note you jump to from the Brain screen opens its folders by itself. Every view (Recent, Stale…) is a tree of just its notes, each folder in the view's own order.
 
 ## Views
-The Library remembers where you were while you visit other tabs (view, unfolded folders, selected note, scroll). `←` `→` switch the view: **All**, **Recent**, **Inbox**, **No links**, **No tags**, **Broken links**, **Stale**, **Tags** (pick a tag to see its notes) and **Reports**. The **Reports** view lists the reports your research skills wrote, marks unfinished and stale ones (`landscape` and `compare` after 90 days, others after a year), `s` runs a report's skill again with its question, and `f` refreshes a stale one: its skill writes a new report that replaces it (the old one is kept as *superseded*). Each report shows your rating and what it cost in tokens. The numbers on the tabs are live counts. `/` filters the list; typing several words finds notes containing all of them.
+The Library remembers where you were while you visit other tabs (view, unfolded folders, selected note, scroll). `←` `→` switch the view: **All**, **Recent**, **No links**, **No tags**, **Broken links**, **Stale**, **Tags** (pick a tag to see its notes) and **Reports**. The **Reports** view lists the reports your research skills wrote, marks unfinished and stale ones (`landscape` and `compare` after 90 days, others after a year), `s` runs a report's skill again with its question, and `f` refreshes a stale one: its skill writes a new report that replaces it (the old one is kept as *superseded*). Each report shows your rating and what it cost in tokens. The numbers on the tabs are live counts. `/` filters the list; typing several words finds notes containing all of them.
 
 ## The preview
 Beside the list (or on `Enter` in a narrow window) you see the selected note: its path, word count and when it changed, its tags, what it **links to**, what is **linked from** it, **related** notes (sharing tags or neighbours), any **broken links**, and then the text. `↑` `↓` and `Space` scroll it.
@@ -126,26 +124,6 @@ Beside the list (or on `Enter` in a narrow window) you see the selected note: it
 - `c` **Chat about it**: starts a new chat with the note attached, so you can keep working on it by talking. A saved chat note works too: it carries the whole conversation, so the model picks up where it stopped.
 - `o` **Open in Obsidian**: jumps to the note in Obsidian itself.
 - `d` moves the note to the vault's `.trash` folder, after you confirm.
-""".trim(),
-    ),
-    GuidePage(
-        "Inbox", "Process the inbox with AI",
-        """
-# Process the inbox with AI
-New notes pile up in your **inbox folder** (Settings → Vault → Inbox folder). The Inbox screen turns them into filed, tagged, linked notes, one at a time.
-
-## How it works
-1. Open the **Inbox**: Brain → Overview → *Go to* → Inbox, `p` in the Library's Inbox view, or `Ctrl+P` → "Process the inbox with AI". `p` starts with the first note, `Enter` on a note starts there.
-2. Gemma reads the note, and proposes a **title**, a **folder** (one that already exists), **tags** (preferably ones you already use), **links** to related notes (only notes that exist) and a one-line **summary**. While you review one note, the next is already being read.
-3. The proposal is a small form: `Tab` or `↑` `↓` move between fields and you can edit anything. If other notes link to this one by name, the title is locked so those links keep working.
-4. `Enter` **applies** it, `Ctrl+X` **skips** the note, `Esc` goes back to the list.
-
-## What applying does
-- Tags are merged into the note's frontmatter, the summary becomes a callout at the top, links are added under a **Related** heading, and the note is renamed and moved to the folder.
-- Your note's own text is never changed.
-- The version before is always copied into the vault's `.trash` folder, so nothing is lost.
-
-Each filed note is recorded in the session, so the session summary shows what you processed.
 """.trim(),
     ),
     GuidePage(
@@ -216,7 +194,7 @@ Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use
 - **Routing by content:** in Settings → Helpers you can name a model for messages with an image and one for messages with code. Arcana then picks the model by simple rules (no model decides) and says `Routed to …`; leave them blank to always use the chat model.
 - **What the model wrote:** the status bar shows `✦ 3 changed` once a tool has written or changed files or notes in this chat; `/artifacts` (or `Esc` then `f`) lists them (what happened to which path) and `1`-`9` opens a note in the Library. It starts empty in every new chat.
 - **Memory check:** `/memory check` lists lines in your memory file that repeat each other and lines that name a note that is not there; `y` removes the repeats (dead paths you fix yourself). The `remember` tool no longer adds the same fact twice and refuses a note path that does not exist.
-- **Goal:** `/goal every note in Inbox is tagged` sets a goal and starts the work. After each reply a checker says whether it is met; while it is not, Arcana keeps working by itself (up to 5 turns, Settings → Flow → Goal turns). `/goal` shows it, `/goal clear` drops it. A message of yours resets the count.
+- **Goal:** `/goal every note in Research is tagged` sets a goal and starts the work. After each reply a checker says whether it is met; while it is not, Arcana keeps working by itself (up to 5 turns, Settings → Flow → Goal turns). `/goal` shows it, `/goal clear` drops it. A message of yours resets the count.
 - **After a verdict:** when the judge agrees with an opinion, Arcana asks what to do: revise the answer now, leave it, revise automatically from now on, or type your own note for the revision (Settings → Opinions → When the judge agrees). **System messages:** what Arcana sends the model in your name (the open-todos reminder, a redo, an unmet goal, `/revise`) shows as a dim `⚙ System` block, not as *You* (Settings → Console → System messages). **Pictures by path:** a picture path in your message (pasted or dropped into the terminal) is attached as the picture itself. **Memory:** the bottom bar shows `ram` as a two-tone bar (█ the models, ▒ everything else in use, ░ free) with about how many tokens of context fit next to the model. `● loaded GPU` / `○ not loaded` says whether the model is in memory and that it sits on the GPU (`● loaded 90% GPU` in orange when part of it spilled onto the slow CPU); it is not how busy the GPU is, `cpu` is live load. The Chat has no header line: its title and message count are on the conversation's frame. **Open todos:** if the model stops while its todo list still has open steps, it is sent back once to finish them or close the list (Settings → Tools → Finish open todos).
 - **Judge verdict:** with a Judge model set, each automatic second opinion is followed by the judge saying AGREE, PARTLY or DISAGREE and why (Settings → Opinions → Judge verdict on opinions).
 - **Flow:** `/flow` switches the careful flow on or off (`/flow careful`, `/flow off`): every message of 60+ characters goes through an analyst, a planner, the worker, a reviewer and a controller, each its own model (Settings → Flow). The reply line says which stage is working. It is slow, so it is off until you switch it on.

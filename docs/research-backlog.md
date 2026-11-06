@@ -19,7 +19,7 @@ Every request you send is a **run** (`ChatSession.beginRun`: a new `Origin` of `
 - a note made with `create_note` gets `origin: run-…` and `chat: <chat id>` in its own properties (`Vault.create(origin)`; a key the model wrote itself in the note's properties wins), so the origin survives a rename or move;
 - `.arcana/work/runs.jsonl` in the vault records each run (`Started`: chat, the first 200 characters of the request, the chat model) and each note it touched (`NoteTouched`: created, appended or properties, with the path), append-only (`JsonlEventLog`, the same engine as the work log). `Provenance.notesOf(run)` and `Provenance.runOf(note)` answer both directions, so a run can be linked to a question afterwards and take the notes it already wrote along (phase 3).
 
-A note made by hand, by the Inbox, by AI notes or by a save from the chat screen has no origin yet (unknown); only the tools of a chat run stamp. Recording is best effort and never fails a request. Code: `core/.../Provenance.kt`, `ToolBox`, `Vault.create`, `ChatSession`; tests: `ProvenanceTest`.
+A note made by hand, by AI notes or by a save from the chat screen has no origin yet (unknown); only the tools of a chat run stamp. Recording is best effort and never fails a request. Code: `core/.../Provenance.kt`, `ToolBox`, `Vault.create`, `ChatSession`; tests: `ProvenanceTest`.
 
 ## The note
 

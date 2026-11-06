@@ -6,7 +6,7 @@ Arcana is a research system: its skills (`create-dev-research-report`, `create-l
 
 ## Where it is and what it shows
 
-Library → `←` `→` to the **Reports** tab (third: All, Recent, **Reports**, Inbox, …). The tab shows the count. The list panel is titled
+Library → `←` `→` to the **Reports** tab (third: All, Recent, **Reports**, No links, …). The tab shows the count. The list panel is titled
 `Reports · N · M incomplete · K stale` (the last two only when above 0). One row per report, newest date first:
 
 ```

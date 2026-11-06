@@ -23,7 +23,7 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 ## `navigation/`
 
 - `Navigator.kt`
-  - `Screen` enum (Home, Chat, Library, Inbox, Compose, Session, Usage, Settings, Guide, Changelog) with `title`, `icon`, `group` and `inSidebar` (Inbox and Session are `false`: no tab and no number key, reached from Brain's Overview, the Library's Inbox view and the command palette)
+  - `Screen` enum (Home, Chat, Library, Compose, Session, Usage, Settings, Guide, Changelog) with `title`, `icon`, `group` and `inSidebar` (Inbox and Session are `false`: no tab and no number key, reached from Brain's Overview, the Library's Inbox view and the command palette)
     (`ScreenGroup.Workspace`="BRAIN", `Account`="SYSTEM"); `ScreenOrder` applies the user's `tabOrder`; `SHORTCUT_KEYS="1234567890"`.
   - `Navigator` holds: `current`, `navigate(screen, force)`, `leaveGuard` (a screen may veto leaving), overlays
     (`helpOpen`, `paletteOpen`, `captureOpen`, `palette`, `captureField`), `toast`/`showToast`, `quitPending`,
@@ -45,7 +45,6 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 | `Chat.kt` | Chat | `ChatMode` (Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave (only with Keep chats off), ConfirmClear); `messageLines` renders messages incl. tool steps; approval and question panels (buttons inside); the `/` menu (`SlashItem` with its `usage` line, `slashMatches`, `slashState`, `splitSlash`, `unknownCommand`, `toolUsage`); typed commands take text (`runCommand(command, args)`); the Oracul blocks (`opinionLines`) and their split view (`sideBySide`, `columnCount`); `chatStatus` (the worker and the Oracul as one `modelsSegment`, the working model first), the comparison title (`comparisonTitleRuns`, `partColor`) + `contextUsage`; select mode via `OutputState` |
 | `LibraryTree.kt` | the Library's tree: `LibraryRow` (`Folder`/`Note` with depth), `libraryRows(notes, expanded)`, `ancestorsOf`, `allFolders` (pure, unit-tested) |
 | `Library.kt` | Library | tree or flat list (`AppConfig.libraryTree`, `AppContext.libraryExpanded`), `LibraryMode` (List, Reading, ConfirmDelete, Rename, Edit, ConfirmDiscard); `e` edits the whole file by hand (`Vault.write`); filters from `LibraryFilter`; preview pane; trash; rename; chat about a note; open in Obsidian; `.` shows notes of hidden folders in All (`Vault.hiddenNotes()`, not in the index, so no count/search/Brain sees them; rename/trash refused) |
-| `Inbox.kt` | Inbox | `InboxMode`; `Analysis` (Ready/Failed); uses `InboxProcessing`; editable plan fields |
 | `Compose.kt` | AI notes (`NoteComposerScreen`) | `Task` enum, `Mode` (Start, PickSource, Input, Follow, Title, AppendPick, ConfirmReplace, ConfirmDiscard, Result); conversation + `drafts` stack for undo; attachments |
 | `Session.kt` | Session | `SessionMode` (Overview, Summary, ConfirmNew); exit flow |
 | `Chat.kt` thinking pane | `ThinkingPane` (the panel at the `thinkingPanePlacement` side of the conversation; `thinkingPaneLayout` decides place and size, a strip's rows are counted in the conversation's `outputRows`, a side column splits the width in a `Row`), `wrapWords`, `toggleThinkingPane` (`/thinking`); data from `Generation.liveThinking` |

@@ -18,12 +18,11 @@ make dist                                  # app/build/distributions/arcana.zip:
 **First start:** with no vault chosen yet Arcana opens a short setup: pick your Obsidian vault folder, then tick what to create in it (the memory file and a skills folder with a guide and the starter skills, both inside the hidden `.arcana/` folder so your vault shows only content; and the output folder). It only creates what is missing. The same can be done without a screen, for a script or a new machine: `arcana --init ~/Obsidian/Vault [--skip memory,skills,output]`; `arcana --migrate` moves an older vault's `Skills/` and `ARCANA.md` into `.arcana/`; `arcana --help` lists it. The setup can be run again any time from the command palette ("Set up the vault").
 
 The loop it is built around: **capture** a thought from anywhere (`Ctrl+N` → today's thought file in `Thoughts/`, or a note in a vault folder you choose with `Tab`) → **see** how the vault is doing
-(Brain: notes, links, tags, inbox, islands, broken links, stale notes) → **think** (Chat: attach notes with `@`, pictures, PDFs and text files with `Ctrl+O` (also in AI notes and Capture),
+(Brain: notes, links, tags, islands, broken links, stale notes) → **think** (Chat: attach notes with `@`, pictures, PDFs and text files with `Ctrl+O` (also in AI notes and Capture),
 or answer from the vault with `/vault`; turn on `/tools` and it can search and read your notes and files, ask you questions, and (always after you confirm) change, move or delete them, run commands and read web pages; **skills**: runbooks in your vault (`Skills/<name>/…`) that it follows step by step, picked from the `/` menu; type `/` for the menu of commands, skills and tools, coloured by what each can do) → **shape** (AI notes: summarize, improve, translate, connect…) → **keep** (each session can be
 saved into the vault as a note of what you did and learned; from the Session screen, whenever you like).
 
-Screens: Brain, Chat, Library (browse by inbox / no links / no tags / broken links / stale / tags, with links, backlinks and preview),
-Inbox (AI proposes a title, folder, tags and links for each new note; you review and apply, the original is always kept),
+Screens: Brain, Chat, Library (browse by no links / no tags / broken links / stale / tags, with links, backlinks and preview),
 AI notes, Session, Usage (a dashboard of tokens, speed, estimated price and habits), Settings, Guide, Changelog. `Ctrl+P` opens a command palette with every action.
 The vault note `ARCANA.md` holds your standing instructions for the assistant; Arcana creates it the first time and adds it to every chat.
 Settings are stored in `~/.config/arcana/config.json` (override with `ARCANA_CONFIG`; `ARCANA_VAULT` sets the default vault path);

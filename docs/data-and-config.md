@@ -12,7 +12,7 @@
 | Tool trash | `~/.config/arcana/trash/` | files deleted by `delete_path` outside the vault (inside the vault: `<vault>/.trash`) | `ToolBox` |
 | Memory file | `<vault>/.arcana/ARCANA.md` by default (an existing `<vault>/ARCANA.md` is still used), or `AppConfig.memoryPath` (inside the vault, `~/…` or absolute: `Vault.memoryFile()`); the user's own `~/.config/arcana/ARCANA.md` comes before it in every chat (see "Where Arcana's own files live") | Markdown, first 8,000 characters go to every chat | `Vault.memory/remember` |
 | Your notes | the vault folder (`vaultPath`) | Markdown | `Vault` |
-| Vault trash | `<vault>/.trash/` | Obsidian-compatible trash | `Vault.trash/replace`, inbox backups |
+| Vault trash | `<vault>/.trash/` | Obsidian-compatible trash | `Vault.trash/replace` |
 | Attachments | `<vault>/<outputFolder>/attachments/` | copied pictures/files | `Vault.copyAttachment` |
 
 The config directory is derived from `ConfigStore.defaultPath().parent`; tests and diagnostics redirect everything by setting
@@ -58,7 +58,6 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `searchBy` | `both` | HOW everything is searched (notes, code, documents; `/vault` answers and the model's search tools): `both` (words and meaning fused; words only while no embedding model is set up), `keywords`, `meaning` (see [retrieval.md](retrieval.md)); the model may ask for another mode in one search; the answer's Sources line names the method |
 | `searchAdvanced` | false | show the advanced search settings (balance, noise filter, candidates, passages, limits) |
 | `copyAs` | `markdown` | select-mode copy format: `markdown` / `plain` |
-| `inboxFolder` | `Inbox` | where unprocessed notes are |
 | `dailyFolder` / `dailyFormat` | `Thoughts` / `[thought-]YYYY-MM-DD` (file `Thoughts/thought-2026-11-02.md`); a saved config with an empty `dailyFolder` is moved to `Thoughts` when it is loaded; a saved config that still holds the old default `YYYY-MM-DD` is moved to the new one when it is loaded | daily note fallback when Obsidian has no setting |
 | `staleDays` | 90 | stale threshold |
 | `lastPickerDir` | `""` | last folder of the file browser |
@@ -121,7 +120,7 @@ Adding a field: give it a default (old config files must still load), add a Sett
   `mergeFrontmatterTags` preserve existing frontmatter.
 - Renaming a note (Library `r`, `Vault.rename`) rewrites the links to it in other notes; the memory file is `.arcana/ARCANA.md` (or an older `ARCANA.md` at the vault root).
 - Daily notes: path from `.obsidian/daily-notes.json` (`folder`, `format`) else settings. Capture appends `- HH:mm text`, or with `captureFolder` set (the last folder chosen with Tab in the capture dialog; blank = daily note) writes a new note `<folder>/<first line>.md` with a `created` property.
-- Deletion is never permanent: `Vault.trash` → `.trash/`; the `delete_path` tool moves to `.trash/` (vault) or `<config>/trash`. Replacements/inbox processing back up originals into `.trash/`.
+- Deletion is never permanent: `Vault.trash` → `.trash/`; the `delete_path` tool moves to `.trash/` (vault) or `<config>/trash`. Replacements back up originals into `.trash/`.
 - Session summary notes and saved chats are normal notes created in `outputFolder`.
 - **Where Arcana's own files live (`core/Layout.kt`; Settings → Vault has read-only rows that show the places, and *Skills folder* / *Memory file path* show the file in use: `skillsWhere`, `memoryWhere`).** Its working files are kept apart from the notes it produces (reports, research, AI notes, which stay visible in the vault in `outputFolder`, `Reports/…`, `Research/…`). *In the vault* the hidden folder `.arcana/`: `.arcana/skills/` and `.arcana/ARCANA.md` (hidden folders are skipped by Obsidian, by the note search and by `Vault.listNotes`, but every tool that opens a path reads them). *For the user*, in the settings folder `~/.config/arcana/`: `skills/` (every vault; a vault skill of the same name wins, `Skills.discoverAll`; a global skill is addressed by its absolute path and the toolbox may read that folder) and `ARCANA.md` (read first, then the vault's). Nothing moves by itself: a vault with `Skills/` or a root `ARCANA.md` keeps them until `arcana --migrate` (`Layout.migrate`) moves them (a target that exists is never overwritten; `[[links]]` to moved notes are not rewritten); a new vault gets `.arcana/`. Reference notes for the model (for example the LLM reference) live in `.arcana/reference/`, but Arcana does not create or read them itself (the memory file tells the model their path). **Links:** Obsidian does not resolve a `[[link]]` to a note inside the hidden folder, so a visible note (a report, research) must not wikilink to a skill or a reference note in `.arcana/`: write its name as plain text or in backticks; a skill that writes reports must not put such a link into them (`gt_forecast.py` writes `coingecko-forecast` as text). Links between notes inside `.arcana/`, and to visible notes, are fine.
 - Skills: `<skillsFolder>/<name>/<name>.skill.md` (+ `reference/`, `scripts/`); properties Arcana reads: `name`, `description`, `version`, `output`, `requires` (quoted list items); everything else is for people. A skill's results live outside it (`output:`, e.g. `Reports/<name>/`). `create_note` merges a `---` properties block at the top of its content with Arcana's own; `set_properties` changes properties in place. See [skills.md](skills.md).
@@ -132,4 +131,4 @@ Adding a field: give it a default (old config files must still load), add a Sett
   [core-module.md](core-module.md) (images omitted on disk; `files`, `toolCalls`, `toolName` kept).
 - `StoredSession { id, started, ended?, savedAs?, events: [ { time, kind, text, path? } ] }`; `kind` ∈ `SessionKind`
   (`asked, task, created, appended, replaced, renamed, deleted, saved, captured, processed, attached, tool, session`).
-- `UsageRecord { time, feature, model, promptTokens, completionTokens, millis }`; `feature` ∈ `Chat`, `Generate` (AI notes), `Inbox`, `Session`
+- `UsageRecord { time, feature, model, promptTokens, completionTokens, millis }`; `feature` ∈ `Chat`, `Generate` (AI notes), `Session`
