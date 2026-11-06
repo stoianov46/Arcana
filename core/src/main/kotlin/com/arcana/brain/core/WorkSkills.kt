@@ -29,6 +29,13 @@ object WorkSkills {
     /** The skills that may run an item of [kind]: the ones that say so with `handles`, in the order they were found. */
     fun offered(skills: List<Skill>, kind: WorkKind): List<Skill> = skills.filter { kind in it.handles }
 
+    /**
+     * What the picker lists for [kind]: the skills that opted in with `handles`, or, while no skill has opted in for that kind, all of them (the second value is true then),
+     * so the picker is never an empty dead end on a vault whose skills have not been given `handles:` yet.
+     */
+    fun pickable(skills: List<Skill>, kind: WorkKind): Pair<List<Skill>, Boolean> =
+        offered(skills, kind).let { if (it.isNotEmpty() || skills.isEmpty()) it to false else skills to true }
+
     /** The skill an item will run with ([skill] null = a plain chat) and where that choice comes from, in words. */
     data class Choice(val skill: Skill?, val source: String)
 

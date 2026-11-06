@@ -186,7 +186,7 @@ fun HomeScreen(app: AppContext) {
     }
     // the skills the picker offers: those that opt in for the kind, and the one that would run anyway (an automatic or an old default is shown even when it did not opt in)
     fun pickOptions(target: PickTarget, skills: List<Skill>): List<Skill?> {
-        val offered = WorkSkills.offered(skills, target.kind)
+        val offered = WorkSkills.pickable(skills, target.kind).first
         val chosen = WorkSkills.resolve(target.kind, target.pinned, skills, app.config).skill
         return (listOfNotNull(chosen).filter { it !in offered } + offered + listOf<Skill?>(null))
     }
@@ -194,7 +194,7 @@ fun HomeScreen(app: AppContext) {
     fun requestRun(target: PickTarget) {
         val skills = if (app.config.skillsEnabled) vault.getOrNull()?.let { v -> runCatching { Skills.discoverAll(v, app.skillsFolder()) }.getOrDefault(emptyList()) }.orEmpty() else emptyList()
         val chosen = WorkSkills.resolve(target.kind, target.pinned, skills, app.config).skill
-        if (WorkSkills.offered(skills, target.kind).isEmpty()) { beginChat(target, chosen); return }
+        if (skills.isEmpty()) { beginChat(target, chosen); return }
         pickSkills = skills
         pickSel = pickOptions(target, skills).indexOf(chosen).coerceAtLeast(0)
         pickFor = target
@@ -376,6 +376,7 @@ fun HomeScreen(app: AppContext) {
                 val default = WorkSkills.defaultFor(app.config, t.kind)
                 Panel("Run “${t.text.take(48)}” with…", Modifier.height(height)) {
                     Label("Runs with: ${will.skill?.name ?: "a plain chat"} (${will.source})", color = Palette.Muted)
+                    if (WorkSkills.pickable(pickSkills, t.kind).second) Hint("No skill says handles: [${t.kind.id}] in its properties yet, so every skill is listed. Add that line to the ones that fit to offer only those.")
                     VGap()
                     RowList(options.map { s ->
                         val name = s?.name ?: WorkSkills.NONE

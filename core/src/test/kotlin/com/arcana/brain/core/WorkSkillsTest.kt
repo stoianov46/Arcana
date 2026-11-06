@@ -73,4 +73,16 @@ class WorkSkillsTest {
         assertEquals("", WorkSkills.defaultFor(cfg, WorkKind.Question))
         assertEquals(cfg, WorkSkills.withDefault(cfg, WorkKind.Thought, "x"), "a thought has no skill")
     }
+
+    @Test
+    fun theListIsEverySkillWhileNoneHasOptedInAndOnlyTheOptedInOnesAfter() {
+        val (all1, fallback1) = WorkSkills.pickable(listOf(plainSkill, legacy), WorkKind.Research)
+        assertEquals(listOf(plainSkill, legacy), all1)
+        assertEquals(true, fallback1)
+        val (some, fallback2) = WorkSkills.pickable(all, WorkKind.Research)
+        assertEquals(listOf(dev, compare), some)
+        assertEquals(false, fallback2)
+        assertEquals(Pair(emptyList<Skill>(), false), WorkSkills.pickable(emptyList(), WorkKind.Todo), "no skills at all: nothing to pick")
+        assertEquals(true, WorkSkills.pickable(all, WorkKind.Todo).second, "a kind nobody opted in for lists everything")
+    }
 }
