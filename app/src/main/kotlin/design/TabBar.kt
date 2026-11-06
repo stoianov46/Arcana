@@ -5,6 +5,12 @@ import com.jakewharton.mosaic.ui.Color
 import com.jakewharton.mosaic.ui.Row
 import com.jakewharton.mosaic.ui.TextStyle
 
+/** One tab: the selected one is a soft tint with bold text ([Palette.TabOn], or [Palette.TabOnAccent] with [accent]), the others are quiet. Every row of tabs uses this. */
+@Composable
+fun TabLabel(title: String, on: Boolean, accent: Boolean = false) {
+    Label(" $title ", color = if (on) Palette.Text else Palette.Muted, background = if (on) (if (accent) Palette.TabOnAccent else Palette.TabOn) else Color.Unspecified, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
+}
+
 /** A row of tabs with the current one lit. With too little room the window follows the current tab, `‹` `›` marking more. */
 @Composable
 fun TabBar(tabs: List<String>, current: Int) {
@@ -25,7 +31,7 @@ fun TabBar(tabs: List<String>, current: Int) {
         if (from > 0) Label("‹ ", color = Palette.Muted)
         for (i in from..to) {
             val on = i == current
-            Label(" ${tabs[i]} ", color = if (on) Palette.Ink else Palette.Muted, background = if (on) Palette.Cta else Color.Unspecified, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
+            TabLabel(tabs[i], on)
             Label(" ")
         }
         if (to < tabs.lastIndex) Label("›", color = Palette.Muted)

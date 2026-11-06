@@ -287,6 +287,13 @@ class Colors(val spec: ThemeSpec) {
     val OrangeSoft = hex(mix(orangeRgb, backgroundRgb, 0.55))
     val CyanSoft = hex(mix(cyanRgb, backgroundRgb, 0.55))
     val AccentSoft = hex(mix(purpleRgb, backgroundRgb, 0.55))
+
+    /**
+     * The selected tab: a soft tint of the colour over the background, with the normal text colour in bold, so a tab says where you are without a bright block.
+     * [TabOn] (cyan) is for the page tabs of a screen, [TabOnAccent] (violet) for the sidebar and a second row of tabs.
+     */
+    val TabOn = hex(mix(cyanRgb, backgroundRgb, 0.32))
+    val TabOnAccent = hex(mix(purpleRgb, backgroundRgb, 0.32))
     val GreenBg = hex(opt("greenBg") { mix(greenRgb, surfaceRgb, 0.15) })
     val Red = hex(redRgb)
     val RedBg = hex(opt("redBg") { mix(redRgb, surfaceRgb, 0.17) })
@@ -372,6 +379,8 @@ object Palette {
     val OrangeSoft get() = colors.OrangeSoft
     val CyanSoft get() = colors.CyanSoft
     val AccentSoft get() = colors.AccentSoft
+    val TabOn get() = colors.TabOn
+    val TabOnAccent get() = colors.TabOnAccent
     val GreenBg get() = colors.GreenBg
     val Red get() = colors.Red
     val RedBg get() = colors.RedBg

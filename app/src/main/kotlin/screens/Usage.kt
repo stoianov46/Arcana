@@ -136,14 +136,14 @@ private fun TabBar(period: Period, page: Page) {
     Row {
         Period.entries.forEach { p ->
             val on = p == period
-            Label(" ${p.title} ", color = if (on) Palette.Ink else Palette.Muted, background = if (on) Palette.Cta else Color.Unspecified, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
+            TabLabel(p.title, on)
             Label(" ")
         }
         if (LocalContentWidth.current >= 100) {
             Label("│ ", color = Palette.Dim)
             Page.entries.forEach { p ->
                 val on = p == page
-                Label(" ${p.title} ", color = if (on) Palette.Ink else Palette.Muted, background = if (on) Palette.Accent else Color.Unspecified, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
+                TabLabel(p.title, on, accent = true)
             }
         }
     }

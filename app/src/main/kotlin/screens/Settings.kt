@@ -1081,7 +1081,7 @@ private fun GroupBar(current: Group) {
             Row {
                 row.forEach { g ->
                     val on = g == current
-                    Label(" ${g.title} ", color = if (on) Palette.Ink else Palette.Muted, background = if (on) Palette.Cta else Color.Unspecified, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
+                    TabLabel(g.title, on)
                     Label(" ")
                 }
             }

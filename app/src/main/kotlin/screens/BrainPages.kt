@@ -5,6 +5,7 @@ import com.arcana.brain.app.AppContext
 import com.arcana.brain.app.design.Chart
 import com.arcana.brain.app.design.Label
 import com.arcana.brain.app.design.LocalContentWidth
+import com.arcana.brain.app.design.TabLabel
 import com.arcana.brain.app.design.Palette
 import com.arcana.brain.core.BrainHealth
 import com.arcana.brain.core.BrainSnapshot
@@ -44,7 +45,7 @@ internal fun BrainTabBar(tab: BrainTab, weeks: Int) {
     Row {
         BrainTab.entries.forEach { t ->
             val on = t == tab
-            Label(" ${t.title} ", color = if (on) Palette.Ink else Palette.Muted, background = if (on) Palette.Cta else Color.Unspecified, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
+            TabLabel(t.title, on)
             Label(" ")
         }
         Label("│ ", color = Palette.Dim)
