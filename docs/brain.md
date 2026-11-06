@@ -20,6 +20,10 @@ The Brain screen is the dashboard of the vault: four pages, switched with `Tab` 
 - **Bottlenecks** (`BrainStats.bottlenecks`), each with a score from 1 to 100 and an action: inbox notes waiting, reports not finished, research never started, open questions, open todos, items in progress without a finished answer, notes with broken links, islands, untagged notes, stale notes, four hygiene kinds (stale reports, no type, loose in the root, duplicate names) and a drop in activity. The score grows with the count and, for work, with the age of the oldest open item. When nothing applies the list says so (`Nothing is holding the brain back`).
 - **Charts** (`Chart`): a sparkline is one character per value scaled to the largest (a zero is a dot); a bar is `█` filled and `░` empty and shows at least one cell for any value above zero; the calendar's five levels are `·░▒▓█`.
 
+## Colours
+
+The Brain screen uses no red and no green, so nothing in it shouts: good is a soft cyan, middling a soft violet, behind a soft amber (`Palette.CyanSoft`, `AccentSoft`, `OrangeSoft`: the theme's colour mixed into its background), and the empty part of a bar is the dim colour. The calendar runs from dim through cyan and violet.
+
 ## Limits
 
 On a window narrower than 100 columns the Overview and the other pages show their list only (the charts need two columns). Nothing here changes any file: the pages only read.

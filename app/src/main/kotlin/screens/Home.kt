@@ -210,7 +210,7 @@ fun HomeScreen(app: AppContext) {
         add(listRow("?", Palette.Cta, WorkKind.Question, itemsOf(WorkKind.Question).count { it.state() == WorkState.Open || it.state() == WorkState.InProgress }, itemsOf(WorkKind.Question).size))
         add(listRow("⌕", Palette.Orange, WorkKind.Research, backlog.size, allBacklog.size))
         add(BrainRow.Item("✎", Palette.Accent, "Thoughts", "${thoughts.size} captured recently", open = { openBacklog(WorkKind.Thought) }))
-        add(BrainRow.Item("☑", Palette.Green, "Research Backlog note", "${allBacklog.count { it.done }}/${allBacklog.size} ticked · open the file", open = { navigator.openLibrary(LibraryFilter.All, ResearchBacklog.PATH) }))
+        add(BrainRow.Item("☑", Palette.CyanSoft, "Research Backlog note", "${allBacklog.count { it.done }}/${allBacklog.size} ticked · open the file", open = { navigator.openLibrary(LibraryFilter.All, ResearchBacklog.PATH) }))
         add(BrainRow.Heading("GO TO"))
         add(BrainRow.Item("✎", Palette.Accent, "Capture a thought", "Ctrl+N from anywhere", open = { navigator.openCapture() }))
         add(BrainRow.Item("»", Palette.Accent, if (app.chat.messages.isNotEmpty()) "Continue chat: ${app.chat.title}" else "Ask your brain", "Chat", open = { navigator.navigate(Screen.Chat) }))
@@ -299,8 +299,8 @@ fun HomeScreen(app: AppContext) {
             backlogOpen -> Panel("Lists · " + workKinds.joinToString("   ") { k -> (if (k == workKind) "‹ ${k.title} ${countOf(k)} ›" else "${k.title} ${countOf(k)}") }, Modifier.height(height)) {
                 val prefix = when (workKind) { WorkKind.Question -> "question: "; WorkKind.Todo -> "todo: "; WorkKind.Thought -> ""; else -> "? " }
                 when {
-                    workKind == WorkKind.Research && researchAll.isEmpty() -> Label("✓ No research yet. Capture one with Ctrl+N and start it with “? ” or “research: ”.", color = Palette.Green)
-                    workKind == WorkKind.Research -> RowList(researchAll.map { q -> BrainRow.Item(if (q.done) "☑" else "☐", if (q.done) Palette.Green else Palette.Cta, q.question, q.date + (q.link?.let { " · $it" } ?: ""), dim = q.done, open = {}) }, backlogSel.coerceIn(0, (researchAll.size - 1).coerceAtLeast(0)), height - 2)
+                    workKind == WorkKind.Research && researchAll.isEmpty() -> Label("✓ No research yet. Capture one with Ctrl+N and start it with “? ” or “research: ”.", color = Palette.CyanSoft)
+                    workKind == WorkKind.Research -> RowList(researchAll.map { q -> BrainRow.Item(if (q.done) "☑" else "☐", if (q.done) Palette.CyanSoft else Palette.Cta, q.question, q.date + (q.link?.let { " · $it" } ?: ""), dim = q.done, open = {}) }, backlogSel.coerceIn(0, (researchAll.size - 1).coerceAtLeast(0)), height - 2)
                     workKind == WorkKind.Thought && thoughts.isEmpty() -> Label("No thoughts yet. Capture one with Ctrl+N.", color = Palette.Dim)
                     workKind == WorkKind.Thought -> RowList(thoughts.map { t -> BrainRow.Item("✎", Palette.Accent, t.text, "${t.date} ${t.time}", open = {}) }, backlogSel.coerceIn(0, (thoughts.size - 1).coerceAtLeast(0)), height - 2)
                     kindItems.isEmpty() -> Label("Nothing here. Capture one with Ctrl+N and start it with “$prefix”.", color = Palette.Dim)
@@ -310,7 +310,7 @@ fun HomeScreen(app: AppContext) {
             hygieneOpen -> Panel("Vault hygiene · ${hygiene?.total ?: 0} issues" + (hygieneKind?.let { " · ${it.label}" } ?: ""), Modifier.height(height)) {
                 when {
                     hygiene == null -> Spinner("Checking the vault…")
-                    listRows.isEmpty() -> Label("✓ Nothing to fix here.", color = Palette.Green)
+                    listRows.isEmpty() -> Label("✓ Nothing to fix here.", color = Palette.CyanSoft)
                     else -> RowList(listRows, hygieneSel.coerceIn(0, (listed.size - 1).coerceAtLeast(0)), height - 2)
                 }
             }
@@ -378,10 +378,10 @@ private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, ha
             }
             attention("⊘", h.orphans, "notes are not linked to anything", LibraryFilter.Orphans, Palette.Orange)
             attention("#", h.untagged, "notes have no tags", LibraryFilter.Untagged, Palette.Blue)
-            attention("✕", h.brokenNotes, "notes contain broken links (${h.brokenLinks} in all)", LibraryFilter.Broken, Palette.Red)
+            attention("✕", h.brokenNotes, "notes contain broken links (${h.brokenLinks} in all)", LibraryFilter.Broken, Palette.OrangeSoft)
             attention("◷", h.stale, "notes untouched for ${app.config.staleDays}+ days", LibraryFilter.Stale, Palette.Muted)
             if (h.inbox + h.orphans + h.untagged + h.brokenNotes + h.stale == 0) {
-                add(BrainRow.Item("✓", Palette.Green, "Everything is in order", "no inbox, no islands, no broken links", dim = true, open = { navigator.openLibrary(LibraryFilter.All) }))
+                add(BrainRow.Item("✓", Palette.CyanSoft, "Everything is in order", "no inbox, no islands, no broken links", dim = true, open = { navigator.openLibrary(LibraryFilter.All) }))
             }
         }
         // the work: questions, research and todos, each its own section with what is still to do (Enter acts on a row, x marks it done, t turns a question into a todo and back; b opens them all)
@@ -397,12 +397,12 @@ private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, ha
         // the habits that keep the vault navigable (names, properties, reports, islands): one line per kind, examples for the two worst
         if (hygiene != null) {
             add(BrainRow.Heading("VAULT HYGIENE"))
-            if (hygiene.total == 0) add(BrainRow.Item("✓", Palette.Green, "Vault hygiene is clean", "names, properties, reports and links all follow the rules", dim = true, open = {}))
+            if (hygiene.total == 0) add(BrainRow.Item("✓", Palette.CyanSoft, "Vault hygiene is clean", "names, properties, reports and links all follow the rules", dim = true, open = {}))
             else {
                 HygieneKind.entries.forEach { k ->
                     val n = hygiene.count(k)
-                    if (n == 0) add(BrainRow.Item("✓", Palette.Green, k.counted(0), "", dim = true, open = {}))
-                    else add(BrainRow.Item(k.icon, if (k == HygieneKind.ReportNotDone) Palette.Red else Palette.Orange, k.counted(n), "Enter or h: see them", open = { openHygiene(k) }))
+                    if (n == 0) add(BrainRow.Item("✓", Palette.CyanSoft, k.counted(0), "", dim = true, open = {}))
+                    else add(BrainRow.Item(k.icon, if (k == HygieneKind.ReportNotDone) Palette.OrangeSoft else Palette.Orange, k.counted(n), "Enter or h: see them", open = { openHygiene(k) }))
                 }
                 hygiene.worst.take(2).forEach { k ->
                     hygiene.byKind.getValue(k).take(3).forEach { i -> add(BrainRow.Item("▤", Palette.Muted, i.title, i.message, open = { navigator.openLibrary(LibraryFilter.All, i.path) })) }
@@ -480,7 +480,7 @@ private fun workRow(item: WorkItem, open: () -> Unit = {}, actions: Map<Char, ()
     val (icon, color) = when (state) {
         WorkState.Open -> "○" to Palette.Cta
         WorkState.InProgress -> "◐" to Palette.Orange
-        WorkState.Answered -> "●" to Palette.Green
+        WorkState.Answered -> "●" to Palette.CyanSoft
         WorkState.Abandoned -> "✕" to Palette.Dim
     }
     val label = when (state) { WorkState.Open -> "open"; WorkState.InProgress -> "in progress"; WorkState.Answered -> "done"; WorkState.Abandoned -> "given up" }
