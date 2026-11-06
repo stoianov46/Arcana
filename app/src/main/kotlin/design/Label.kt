@@ -30,7 +30,7 @@ private fun com.jakewharton.mosaic.layout.DrawScope.drawSelected(row: Int, line:
     if (cols == null) return
     val a = cols.first.coerceIn(0, line.length)
     val b = (cols.last + 1).coerceIn(a, line.length)
-    if (b > a) drawText(row, a, line.substring(a, b), Palette.Background, Palette.Text)
+    if (b > a) drawText(row, a, line.substring(a, b), Palette.Ink, Palette.Text)
 }
 
 /**

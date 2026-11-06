@@ -25,7 +25,7 @@ fun TabBar(tabs: List<String>, current: Int) {
         if (from > 0) Label("‹ ", color = Palette.Muted)
         for (i in from..to) {
             val on = i == current
-            Label(" ${tabs[i]} ", color = if (on) Palette.Background else Palette.Muted, background = if (on) Palette.Cta else Color.Unspecified, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
+            Label(" ${tabs[i]} ", color = if (on) Palette.Ink else Palette.Muted, background = if (on) Palette.Cta else Color.Unspecified, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
             Label(" ")
         }
         if (to < tabs.lastIndex) Label("›", color = Palette.Muted)

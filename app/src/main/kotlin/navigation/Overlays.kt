@@ -19,7 +19,7 @@ fun paletteCommands(app: AppContext, navigator: Navigator, onQuit: () -> Unit): 
         add(Command("Library: ${f.title}", "Brain") { navigator.openLibrary(f) })
     }
     Screen.sidebar.forEach { s -> add(Command("Go to ${s.title}", "Go to", s.shortcut.toString()) { navigator.navigate(s) }) }
-    Themes.all.forEach { t ->
+    Themes.themeList.forEach { t ->
         add(Command("Theme: ${t.name}", "Appearance", if (t.id == app.config.theme) "current" else "") { app.update(app.config.copy(theme = t.id)) })
     }
     listOf("left" to "left sidebar", "right" to "right sidebar", "top" to "top bar").forEach { (id, name) ->

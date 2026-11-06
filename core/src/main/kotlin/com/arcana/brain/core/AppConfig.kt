@@ -209,7 +209,7 @@ data class AppConfig(
     val toolAutoShell: Boolean = false,
     /** What tools may do: "ask" (changes wait for approval), "auto" (changes run at once, backed up) or "plan" (read-only, the model writes a plan). */
     val toolMode: String = "ask",
-    /** How many rounds of tool use one question may take before the model must answer. */
+    /** How many rounds of tool use one question may take before the model must answer (0 = unlimited). */
     val toolSteps: Int = 8,
     /** A pane under the Chat conversation that shows what a reasoning model is thinking while it streams (and the last thoughts when it is idle). Off by default. */
     val thinkingPane: Boolean = false,
@@ -248,6 +248,9 @@ data class AppConfig(
      * This configuration for a request to [model]: [keepAlive] stays only when [model] is the chat model (every request starts the keep-alive timer again, so a helper that is
      * the same model must send it too, and another model must not be pinned by it).
      */
+    /** [toolSteps] as a limit: 0 means unlimited (the model is never stopped for using too many rounds; the loop guards still work). */
+    val toolStepLimit: Int get() = if (toolSteps <= 0) Int.MAX_VALUE else toolSteps
+
     fun forModel(model: String): AppConfig = copy(model = model, keepAlive = if (model == this.model) keepAlive else "")
 
     /** The `keep_alive` to send, as Ollama takes it (`-1` and `0` are numbers, a time like `30m` is text); null when blank or not a time. */

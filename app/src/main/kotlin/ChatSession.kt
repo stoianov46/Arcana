@@ -1273,7 +1273,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private suspend fun oraculAgent(model: String, box: ToolBox, request: List<ChatMessage>): Pair<String, List<String>> {
         val client = clientFor(model)
         val definitions = box.definitions()
-        val limit = app.config.toolSteps.coerceIn(1, 10)
+        val limit = if (app.config.toolSteps <= 0) 10 else app.config.toolSteps.coerceIn(1, 10)
         val used = ArrayList<String>()
         var messages = request
         for (step in 0..limit) {
@@ -1609,7 +1609,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             box == null -> if (canRequest) JsonArray(listOf(REQUEST_ACCESS_DEFINITION, ASK_USER_DEFINITION)) else null
             else -> definitionsFor(box)
         }
-        gen.start(tools = offered, maxSteps = Skills.stepsFor(history, app.config.toolSteps)) {
+        gen.start(tools = offered, maxSteps = Skills.stepsFor(history, app.config.toolStepLimit)) {
             // a skill that names its models: the chip's roles apply from the first round
             val chipEntry = history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }
             // a selected flow, or the role table for every message, runs for plain messages too (a short message is neither analysed nor planned)

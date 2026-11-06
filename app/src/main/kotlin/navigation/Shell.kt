@@ -273,7 +273,7 @@ private fun TopBar(navigator: Navigator, columns: Int, busy: Boolean, badge: (Sc
             val text = if (fits || on) full(i, s) else " ${SHORTCUT_KEYS.getOrElse(i) { ' ' }} ${s.icon}${if (b != null) "•" else ""} "
             Label(
                 text,
-                color = if (on) Palette.Background else if (b != null && !fits) b.second else Palette.Muted,
+                color = if (on) Palette.Ink else if (b != null && !fits) b.second else Palette.Muted,
                 background = if (on) Palette.Accent else Palette.Surface,
                 textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified,
             )
@@ -309,13 +309,13 @@ private fun Sidebar(navigator: Navigator, width: Int, collapsed: Boolean, rows: 
                         fill = true,
                     )
                     if (b != null) {
-                        if (collapsed) Label("●", color = b.second) else Label(" ${b.first} ", color = Palette.Background, background = b.second, textStyle = TextStyle.Bold)
+                        if (collapsed) Label("●", color = b.second) else Label(" ${b.first} ", color = Palette.Ink, background = b.second, textStyle = TextStyle.Bold)
                     }
                 }
             }
             if (roomy) VGap()
             Row(Modifier.fillMaxWidth()) {
-                Label(if (collapsed) "^B" else " ${Shortcuts.label("Ctrl+B")} ", color = Palette.Background, background = Palette.Cta, textStyle = TextStyle.Bold)
+                Label(if (collapsed) "^B" else " ${Shortcuts.label("Ctrl+B")} ", color = Palette.Ink, background = Palette.Cta, textStyle = TextStyle.Bold)
                 if (!collapsed) Label(" ‹ Fold", Modifier.weight(1f), color = Palette.Text, background = Palette.SurfaceHigh, fill = true)
             }
         }
@@ -559,7 +559,7 @@ private fun KeyRow(key: String, text: String, keyWidth: Int, accent: Color = Pal
         Label(text, color = Palette.Muted)
     } else {
         Row {
-            Label(" ${key.padEnd(keyWidth)} ", color = Palette.Background, background = accent, textStyle = TextStyle.Bold)
+            Label(" ${key.padEnd(keyWidth)} ", color = Palette.Ink, background = accent, textStyle = TextStyle.Bold)
             Label(" $text", color = Palette.Text)
         }
     }

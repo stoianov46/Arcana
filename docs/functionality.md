@@ -222,7 +222,7 @@ Tabs (groups) and rows:
 - **Prompts**: Memory file path, Memory file, System prompt, Summary prompt. **Helpers**: Helper models (the master switch), Oracul model, More Oracul models (a tick list), Judge model, Oracul server, Oracul may use tools, Route: images to, Route: code to, Chat context: messages / characters each. **Opinions**: Automatic second opinion, Judge verdict on opinions, Judge automatically, Stuck: failed calls, Stuck: failing turns, Loop guard: repeated text (`loopRepeats`), Loop guard: repeated calls (`loopCalls`; these two stay active when helper models are off). **Flow**: Flow, Flow analyst, Flow controller, Flow check command, Flow redos, Specialists as tools, Goal turns. **Skills**: Skill roles (the switch), Roles apply to, Skill planner, Skill worker, Skill reviewer. 
 - **Accessibility**: Interface scale, Screen-reader output. **Tabs**: order of the screens.
 
-Values apply immediately and persist to `config.json`. Themes: Dark, Light, Soft Dark, Soft Light, Darcula, Solarized Dark/Light, Nord.
+Values apply immediately and persist to `config.json`. Themes: Dark, Light, Soft Dark, Soft Light, Darcula, Solarized Dark/Light, Nord, Brasil (green and yellow), Liberty (blue and yellow) and Ghost (transparent: `ThemeSpec.transparent` paints no background, card or list entry, so the terminal's own background shows; neon borders; for a dark terminal). Without truecolor (`COLORTERM`) every colour is snapped to the nearest 256-colour cube level (`ColorSupport`, `fit` in `Theme.kt`).
 
 ## Guide
 

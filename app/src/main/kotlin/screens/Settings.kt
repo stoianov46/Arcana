@@ -19,6 +19,7 @@ import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.ModelFit.Role as FitRole
 import com.arcana.brain.core.AppConfig
 import com.arcana.brain.core.Flow
+import com.arcana.brain.core.StageKind
 import com.arcana.brain.core.Oracul
 import com.arcana.brain.core.STEP_LIMIT_AUTO_ROUNDS
 import com.arcana.brain.core.Skills
@@ -169,6 +170,22 @@ private fun oraculFallback(c: AppConfig): String = Oracul.model(c).let { if (it.
 private fun consultNote(c: AppConfig): String =
     if (!c.flowTools || !c.oraculEnabled) "" else Oracul.model(c).let { if (it.isEmpty()) "; consult: none, Oracul model not set" else "; consult asks the Oracul model: $it" }
 
+/**
+ * What the Specialists as tools row shows: off, or on with the model each specialist would really ask (own setting, else
+ * the Oracul model), or why it would do nothing, so "On" is never a promise that is not kept.
+ */
+private fun specialistsSummary(c: AppConfig): String {
+    if (!c.flowTools) return "Off"
+    if (!c.oraculEnabled) return "On, but does nothing: Helper models are off"
+    if (!c.toolsEnabled) return "On, but does nothing: Tools in Chat is off"
+    val parts = listOf(StageKind.Analyst to "analyst", StageKind.Planner to "planner", StageKind.Reviewer to "reviewer").map { (kind, name) ->
+        val model = Flow.consultModel(c, kind)
+        val via = if (Flow.consultSource(c, kind) == "the Oracul model") " (Oracul)" else ""
+        if (model.isEmpty()) "$name: none" else "$name: $model$via"
+    }
+    return if (parts.all { it.endsWith(": none") }) "On, but no model is set (Settings → Helpers → Oracul model)" else "On · " + parts.joinToString(" · ")
+}
+
 private val AnalystRole = Editor.Model("Flow analyst", { it.flowAnalyst }, { c, v -> c.copy(flowAnalyst = v) }, allowNone = true, oracul = true)
 private val ControllerRole = Editor.Model("Flow controller", { it.flowController }, { c, v -> c.copy(flowController = v) }, allowNone = true, oracul = true)
 private val RouteVisionRole = Editor.Model("Route: images to", { it.routeVision }, { c, v -> c.copy(routeVision = v) }, allowNone = true)
@@ -283,8 +300,8 @@ private val declared: List<Setting> = listOf(
         Group.Appearance, "Colour theme", "Applies at once. ←/→ step through the themes, Enter opens the list with a preview.",
         value = { Themes.byId(it.theme).name },
         step = { c, dir ->
-            val i = Themes.all.indexOfFirst { it.id == c.theme }.coerceAtLeast(0)
-            c.copy(theme = Themes.all[(i + dir).mod(Themes.all.size)].id)
+            val i = Themes.themeList.indexOfFirst { it.id == c.theme }.coerceAtLeast(0)
+            c.copy(theme = Themes.themeList[(i + dir).mod(Themes.themeList.size)].id)
         },
         editor = Editor.Theme,
     ),
@@ -353,7 +370,7 @@ private val declared: List<Setting> = listOf(
     choice(Group.Tools, "Old tool output", "What the model is sent of tool results from EARLIER questions in a chat. Whole (default): nothing is cut, so it never reads again what it could no longer see and never answers from half a file; the context gauge shows the cost, and /compact or the automatic compaction makes room. Shorten: each old result is cut to 1,200 characters (the model is told it was cut and can call the tool again), for small context windows. The results of the current question are never cut by this.", listOf("whole" to "Whole", "shorten" to "Shorten"), { it.oldToolOutput }, { c, v -> c.copy(oldToolOutput = v) }),
     stepper(Group.Tools, "Remember repeated reads", "When the model asks for the exact same read, search or web page again in one question, and nothing has changed since, Arcana answers \"you already made this call, the result is above\" instead of running it (and asking you) again. This is how many SECONDS that memory lasts; after that the call runs again, so a note you edited meanwhile is read fresh. 0 = off, every call runs. A change, a command, http_request, a wait, your next message and any failed result (an error, HTTP 429) clear or skip it; wait and the clock tools always run. Nothing is kept between questions.", 0..300, 15, { it.repeatMemorySeconds }, { c, n -> c.copy(repeatMemorySeconds = n) }, " s"),
     choice(Group.Tools, "At the step limit", "What happens when a question has used its steps and the model still wants tools. Ask: a dialog offers more steps. Auto: more steps are given at once, up to ${STEP_LIMIT_AUTO_ROUNDS} times (then it asks); warning: a long run can take a lot of time and tokens, and in Mode Auto its changes run without asking. Changes, commands and web addresses keep their own approval (see Mode and the web settings). Stop: the model answers with what it has.", listOf("ask" to "Ask", "auto" to "Auto", "stop" to "Stop"), { it.stepLimit }, { c, v -> c.copy(stepLimit = v) }),
-    stepper(Group.Tools, "Steps per question", "How many rounds of tool use one question may take before the model has to answer. A round may read several files; raise this for big reviews.", 1..60, 1, { it.toolSteps }, { c, n -> c.copy(toolSteps = n) }),
+    stepper(Group.Tools, "Steps per question", "How many rounds of tool use one question may take before the model has to answer. A round may read several files; raise this for big reviews. Unlimited (step down from 1, or type 0): the model is never stopped for using many rounds, for long tasks; warning: a long run can take a lot of time and tokens, and in Mode Auto its changes run without asking. The loop guards (Opinions) still stop a model that repeats itself, Esc stops the run, and changes, commands and web addresses keep their own approval.", 0..60, 1, { it.toolSteps }, { c, n -> c.copy(toolSteps = n) }, zero = "Unlimited"),
 
     stepper(Group.Ollama, "Price: prompt tokens", "Only for the estimated price in the status bars: what a million prompt tokens would cost on a paid service, in US dollars. Local models cost nothing; this shows what the same work would cost elsewhere.", 0..200, 1, { it.estPriceIn }, { c, n -> c.copy(estPriceIn = n) }, " $/M"),
     stepper(Group.Ollama, "Price: reply tokens", "The same for a million reply tokens (they usually cost more).", 0..400, 1, { it.estPriceOut }, { c, n -> c.copy(estPriceOut = n) }, " $/M"),
@@ -396,7 +413,11 @@ private val declared: List<Setting> = listOf(
     Setting(Group.Flow, "Flow controller", "The model that checks the finished answer against your request and the reviewer's notes and says done or redo (needs Flow: Careful). On redo the worker is sent back with what to fix. Blank: the Oracul model.", { it.flowController.ifEmpty { "(the Oracul model)" } }, editor = ControllerRole),
     Setting(Group.Flow, "Flow check command", "A shell command the flow runs in the project folder after each answer, as an objective check (for example ./gradlew test). Exit code 0: passed, and the controller is told. Anything else: the output goes back to the worker as a redo, without asking a model. It runs WITHOUT asking, so it needs Settings → Tools → shell commands and auto-run to be on; commands Arcana never runs (sudo, rm -r /, …) are refused. Blank: no command.", { it.flowCheckCommand.ifEmpty { "(none)" } }, editor = Editor.Text { c, v -> c.copy(flowCheckCommand = v.trim()) }),
     stepper(Group.Flow, "Flow redos", "How many times the controller may send the worker back for one message (0 = it only gives its verdict, never a redo). Each redo runs the worker, the reviewer and the controller again, so it is slow. ←/→ step by 1.", 0..Flow.MAX_REDOS, 1, { it.flowRedos }, { c, n -> c.copy(flowRedos = n) }),
-    toggle(Group.Flow, "Specialists as tools", "On: the chat model itself may call the analyst, the planner or the reviewer (the models of Flow analyst, Skill planner, Skill reviewer, else the Oracul model: the Flow and Skill rows show which one is used; this works with Flow and Skill roles off) as a tool called consult, when it finds a task hard or unclear: it writes a brief, the specialist answers, and it carries on. At most 3 times per message, only with tools on. Unlike Flow, the chat model decides when; most messages call nobody.", { it.flowTools }, { c, v -> c.copy(flowTools = v) }),
+    Setting(
+        Group.Flow, "Specialists as tools", "On: the chat model itself may call the analyst, the planner or the reviewer (the models of Flow analyst, Skill planner, Skill reviewer, else the Oracul model: the Flow and Skill rows show which one is used; this works with Flow and Skill roles off) as a tool called consult, when it finds a task hard or unclear: it writes a brief, the specialist answers, and it carries on. At most 3 times per message, only with tools on. Unlike Flow, the chat model decides when; most messages call nobody.",
+        value = { specialistsSummary(it) },
+        step = { c, _ -> c.copy(flowTools = !c.flowTools) },
+    ),
     stepper(Group.Flow, "Goal turns", "How many times /goal may continue the work by itself for one goal before it stops (a message of yours resets the count). Each turn runs the worker and the goal check. ←/→ step by 1.", 1..20, 1, { it.goalTurns }, { c, n -> c.copy(goalTurns = n) }),
     toggle(Group.Skills, "Skill roles", "On: a skill run uses the worker, planner and reviewer the skill names (its worker:, planner:, reviewer: properties) or the role table below. Off: a skill is run by the chat model alone. Independent of Helper models, so you can test one model plus skill roles. /roles in Chat does the same.", { it.skillRolesEnabled }, { c, v -> c.copy(skillRolesEnabled = v) }),
     choice(Group.Skills, "Roles apply to", "Skills only: the planner, worker and reviewer below run for a message that carries a skill. Every message: they run as a pipeline for all chat (a plan first, for messages of 60 characters or more; the worker answers; the reviewer checks). Slower, but each model does what it is best at. A skill's own properties still win.", listOf("skills" to "Skills only", "all" to "Every message"), { it.rolesScope }, { c, v -> c.copy(rolesScope = v) }),
@@ -978,8 +999,8 @@ fun SettingsScreen(app: AppContext) {
                 }
             }
             Editing.PickTheme -> {
-                val names = Themes.all.map { it.name }
-                val highlighted = picker.selected(names) { it }?.let { n -> Themes.all.first { it.name == n } } ?: Themes.byId(app.config.theme)
+                val names = Themes.themeList.map { it.name }
+                val highlighted = picker.selected(names) { it }?.let { name -> Themes.themeList.first { it.name == name } } ?: Themes.byId(app.config.theme)
                 ScreenHeader("Settings › Colour theme", "Chosen: ${Themes.byId(app.config.theme).name}")
                 VGap()
                 Panel("Themes") {
@@ -1059,7 +1080,7 @@ private fun GroupBar(current: Group) {
             Row {
                 row.forEach { g ->
                     val on = g == current
-                    Label(" ${g.title} ", color = if (on) Palette.Background else Palette.Muted, background = if (on) Palette.Cta else Color.Unspecified, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
+                    Label(" ${g.title} ", color = if (on) Palette.Ink else Palette.Muted, background = if (on) Palette.Cta else Color.Unspecified, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
                     Label(" ")
                 }
             }

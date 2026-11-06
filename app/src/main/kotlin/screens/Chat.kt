@@ -386,7 +386,7 @@ internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConf
         val judging = asking == Oracul.judge(config) && asking != Oracul.model(config)
         val pill = " ${if (plain) "${if (judging) "judge" else "oracul"} $asking" else "${if (judging) "⚖" else Oracul.GLYPH} $asking…"} "
         val waiting = " $workerLabel ${if (plain) "waits" else "waiting"}"
-        val parts = mutableListOf(StatusPart(pill, Palette.Background, bold = true, background = Palette.Orange))
+        val parts = mutableListOf(StatusPart(pill, Palette.Ink, bold = true, background = Palette.Orange))
         parts += StatusPart(waiting, Palette.Muted)
         return StatusSegment(parts, 10)
     }
@@ -1552,10 +1552,10 @@ fun ChatScreen(app: AppContext) {
                             Label(" " + fit(item.hint, (LocalContentWidth.current - 30 - 12 - SlashCategory.WIDTH - 3).coerceAtLeast(10)), color = if (selected) Palette.Text else Palette.Muted, background = bg)
                             // what the entry IS, in its own column so the kinds line up: COMMAND, SKILL or TOOL
                             val category = item.kind.category
-                            Label(category.badge, color = Palette.Background, background = category.color, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
+                            Label(category.badge, color = Palette.Ink, background = category.color, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
                             // then, for a command that is a setting, whether it is on right now; for a tool, what it can do (READ, WRITE, SHELL, WEB…)
-                            if (state != null) Label(" ${state.first} ", color = Palette.Background, background = state.second, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
-                            else if (item.tool) item.kind.badge?.let { badge -> Label(" $badge ", color = Palette.Background, background = item.kind.color, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold) }
+                            if (state != null) Label(" ${state.first} ", color = Palette.Ink, background = state.second, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
+                            else if (item.tool) item.kind.badge?.let { badge -> Label(" $badge ", color = Palette.Ink, background = item.kind.color, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold) }
                         }
                         // how to type it, under the highlighted entry and lined up with the descriptions
                         if (selected && slashUsage.isNotEmpty()) Row {
@@ -1956,7 +1956,7 @@ internal fun sideBySide(comparison: Oracul.Comparison, entry: Int, config: AppCo
     val columns = columnCount(comparison.answers.size, width)
     val gutter = 3
     val cw = (width - gutter * (columns - 1)) / columns
-    fun pill(text: String, color: Color) = Run(" $text ", Palette.Background, color, TextStyle.Bold)
+    fun pill(text: String, color: Color) = Run(" $text ", Palette.Ink, color, TextStyle.Bold)
     comparison.answers.chunked(columns).forEach { rowOfParts ->
         val cells = rowOfParts.map { part ->
             val index = comparison.answers.indexOf(part)
