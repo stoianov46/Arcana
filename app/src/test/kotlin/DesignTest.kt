@@ -719,7 +719,7 @@ class ChartTest {
 
     @kotlin.test.Test
     fun barFillsInProportionAndNeverHidesASmallValue() {
-        val bar = com.arcana.brain.app.design.Chart::bar
+        val bar = { v: Int, m: Int, w: Int -> com.arcana.brain.app.design.Chart.bar(v, m, w) }
         kotlin.test.assertEquals("█████░░░░░", bar(50, 100, 10))
         kotlin.test.assertEquals("██████████", bar(100, 100, 10))
         kotlin.test.assertEquals("█░░░░░░░░░", bar(1, 100, 10), "above zero shows at least one cell")
@@ -765,5 +765,34 @@ class CaptureKindTest {
         kotlin.test.assertEquals("todo: already", text("todo: already", todo))
         kotlin.test.assertEquals("question: typed wins", text("question: typed wins", todo), "a prefix typed by hand beats the kind chosen")
         kotlin.test.assertEquals("", text("", todo))
+    }
+}
+
+private typealias Style = com.arcana.brain.app.design.Chart.BarStyle
+
+class BarStyleTest {
+    private val chart = com.arcana.brain.app.design.Chart
+
+    @kotlin.test.Test
+    fun everyStyleFillsInProportionAndShowsAtLeastOneCellForAnyValue() {
+        for (style in Style.entries) {
+            val bar = chart.bar(40, 100, 10, style)
+            kotlin.test.assertEquals(10, bar.length, "$style keeps its width")
+            kotlin.test.assertEquals(4, bar.count { it == style.on }, "$style fills 4 of 10")
+            kotlin.test.assertEquals(6, bar.count { it == style.off })
+            kotlin.test.assertEquals(1, chart.bar(1, 1000, 10, style).count { it == style.on }, "$style: a small value still shows")
+            kotlin.test.assertEquals(0, chart.bar(0, 100, 10, style).count { it == style.on }, "$style: zero shows nothing")
+        }
+    }
+
+    @kotlin.test.Test
+    fun theStylesHaveTheGlyphsEachChartWasGiven() {
+        kotlin.test.assertEquals("━━━━──", chart.bar(4, 6, 6, Style.Line))
+        kotlin.test.assertEquals("▰▰▱▱", chart.bar(2, 4, 4, Style.Slim))
+        kotlin.test.assertEquals("▄▄▁▁", chart.bar(2, 4, 4, Style.Half))
+        kotlin.test.assertEquals("●○○○", chart.bar(1, 4, 4, Style.Dots))
+        kotlin.test.assertEquals("⣿⣿⣿⣀", chart.bar(3, 4, 4, Style.Braille))
+        kotlin.test.assertEquals("██░░", chart.bar(2, 4, 4), "the default stays the solid block")
+        kotlin.test.assertEquals(7, chart.filledCells(38, 100, 20), "38% of 20 cells is 7")
     }
 }
