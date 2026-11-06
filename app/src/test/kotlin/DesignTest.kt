@@ -741,3 +741,12 @@ class ChartTest {
         kotlin.test.assertEquals(null, grid[3][1], "days after today are blank")
     }
 }
+
+class ChartPartsTest {
+    @kotlin.test.Test
+    fun aBarSplitsIntoItsFilledAndEmptyCells() {
+        kotlin.test.assertEquals("████" to "░░░░░░", com.arcana.brain.app.design.Chart.barParts(40, 100, 10))
+        kotlin.test.assertEquals("" to "░░░", com.arcana.brain.app.design.Chart.barParts(0, 100, 3))
+        kotlin.test.assertEquals("███" to "", com.arcana.brain.app.design.Chart.barParts(100, 100, 3))
+    }
+}

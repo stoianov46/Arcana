@@ -56,7 +56,7 @@ internal fun BrainTabBar(tab: BrainTab, weeks: Int) {
 @Composable
 private fun inner(): Int = (LocalContentWidth.current - 4).coerceAtLeast(24)
 
-private fun levelColor(percent: Int): Color = when { percent >= 85 -> Palette.Green; percent >= 60 -> Palette.Orange; else -> Palette.Red }
+private fun levelColor(percent: Int): Color = when { percent >= 85 -> Palette.GreenSoft; percent >= 60 -> Palette.OrangeSoft; else -> Palette.RedSoft }
 
 @Composable
 private fun Section(title: String) = Label(title, color = Palette.Muted, textStyle = TextStyle.Bold)
@@ -75,18 +75,22 @@ private fun PercentBar(label: String, percent: Int, detail: String = "") {
     val width = (inner() - 11 - 5 - detail.length - 2).coerceIn(6, 40)
     Row {
         Label(label.padEnd(10), color = Palette.Muted)
-        Label(Chart.bar(percent, 100, width), color = levelColor(percent))
+        val (filled, empty) = Chart.barParts(percent, 100, width)
+        Label(filled, color = levelColor(percent))
+        Label(empty, color = Palette.Dim)
         Label(" ${percent.toString().padStart(3)}%", color = Palette.Text)
         if (detail.isNotEmpty()) Label("  $detail", color = Palette.Dim)
     }
 }
 
 @Composable
-private fun CountBar(label: String, value: Int, max: Int, detail: String = "", color: Color = Palette.Cta, valueText: String = value.toString()) {
+private fun CountBar(label: String, value: Int, max: Int, detail: String = "", color: Color = Palette.CyanSoft, valueText: String = value.toString()) {
     val width = (inner() - 16 - 5 - detail.length - 2).coerceIn(6, 40)
     Row {
         Label(label.take(15).padEnd(16), color = Palette.Muted)
-        Label(Chart.bar(value, max, width), color = color)
+        val (filled, empty) = Chart.barParts(value, max, width)
+        Label(filled, color = color)
+        Label(empty, color = Palette.Dim)
         Label(" ${valueText.padStart(4)}", color = Palette.Text)
         if (detail.isNotEmpty()) Label("  $detail", color = Palette.Dim)
     }
@@ -105,8 +109,8 @@ private fun dayText(d: com.arcana.brain.core.DayPoint): String = "${d.day.dayOfW
 @Composable
 internal fun PulseBlock(s: BrainSnapshot) {
     Section("PULSE · last ${s.weeks} weeks")
-    Metric("notes changed", Chart.spark(s.weekly.map { it.changed.toLong() }), "${s.weekly.lastOrNull()?.changed ?: 0} this week", Palette.Green)
-    Metric("tokens used", Chart.spark(s.tokensByWeek), com.arcana.brain.core.UsageStats.compact(s.tokensByWeek.lastOrNull() ?: 0L) + " this week", Palette.Cta)
+    Metric("notes changed", Chart.spark(s.weekly.map { it.changed.toLong() }), "${s.weekly.lastOrNull()?.changed ?: 0} this week", Palette.GreenSoft)
+    Metric("tokens used", Chart.spark(s.tokensByWeek), com.arcana.brain.core.UsageStats.compact(s.tokensByWeek.lastOrNull() ?: 0L) + " this week", Palette.CyanSoft)
     Label("${s.changedInWindow} notes changed" + (s.busiestDay?.let { " · busiest ${dayText(it)}" } ?: "") + (trendText(s.activityTrend).takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""), color = Palette.Dim)
 }
 
@@ -128,10 +132,12 @@ internal fun PipelineBlock(pipeline: List<KindPipeline>) {
     pipeline.forEach { p ->
         Row {
             Label(p.kind.title.padEnd(10), color = Palette.Muted)
-            Label("○${p.open} ", color = Palette.Cta)
-            Label("◐${p.inProgress} ", color = Palette.Orange)
-            Label("●${p.done}  ", color = Palette.Green)
-            Label(Chart.bar(p.donePercent, 100, 10), color = levelColor(p.donePercent))
+            Label("○${p.open} ", color = Palette.CyanSoft)
+            Label("◐${p.inProgress} ", color = Palette.OrangeSoft)
+            Label("●${p.done}  ", color = Palette.GreenSoft)
+            val (filled, empty) = Chart.barParts(p.donePercent, 100, 10)
+            Label(filled, color = levelColor(p.donePercent))
+            Label(empty, color = Palette.Dim)
             Label(" ${p.donePercent}%", color = Palette.Text)
             p.oldestOpenDays?.let { Label("  oldest ${it}d", color = if (it >= 7) Palette.Orange else Palette.Dim) }
         }
@@ -150,7 +156,7 @@ internal fun HubsBlock(s: BrainSnapshot) {
     if (s.hubs.isEmpty()) return
     Section("HUBS · most linked to")
     val max = s.hubs.maxOf { it.second }
-    s.hubs.take(3).forEach { (path, n) -> CountBar(path.substringAfterLast('/').removeSuffix(".md"), n, max, color = Palette.Accent) }
+    s.hubs.take(3).forEach { (path, n) -> CountBar(path.substringAfterLast('/').removeSuffix(".md"), n, max, color = Palette.AccentSoft) }
 }
 
 /** The days of the window as a calendar: a row per weekday, a column per week, darker is busier. */
@@ -158,7 +164,7 @@ internal fun HubsBlock(s: BrainSnapshot) {
 internal fun HeatBlock(s: BrainSnapshot) {
     Section("ACTIVITY · notes changed per day")
     val grid = Chart.heatLevels(s.days, s.weeks)
-    val ramp = listOf(Palette.Dim, Palette.Muted, Palette.Cta, Palette.Green, Palette.Accent)
+    val ramp = listOf(Palette.Dim, Palette.Muted, Palette.CyanSoft, Palette.GreenSoft, Palette.AccentSoft)
     grid.forEachIndexed { row, cells ->
         Row {
             Label(Chart.WEEKDAYS[row] + " ", color = Palette.Dim)
@@ -173,7 +179,7 @@ internal fun HeatBlock(s: BrainSnapshot) {
 internal fun WeeklyBlock(s: BrainSnapshot) {
     Section("PER WEEK")
     val max = s.weekly.maxOfOrNull { it.changed } ?: 0
-    s.weekly.takeLast(8).forEach { w -> CountBar("week of ${w.weekStart.dayOfMonth} ${w.weekStart.month.getDisplayName(DayStyle.SHORT, Locale.ENGLISH)}", w.changed, max, color = Palette.Green) }
+    s.weekly.takeLast(8).forEach { w -> CountBar("week of ${w.weekStart.dayOfMonth} ${w.weekStart.month.getDisplayName(DayStyle.SHORT, Locale.ENGLISH)}", w.changed, max, color = Palette.GreenSoft) }
 }
 
 @Composable
@@ -182,7 +188,7 @@ internal fun TokensBlock(s: BrainSnapshot) {
     val max = s.tokensByWeek.maxOrNull() ?: 0L
     s.tokensByWeek.takeLast(8).forEachIndexed { i, t ->
         val w = s.weekly.getOrNull(s.weekly.size - s.tokensByWeek.takeLast(8).size + i)
-        CountBar(w?.let { "week of ${it.weekStart.dayOfMonth} ${it.weekStart.month.getDisplayName(DayStyle.SHORT, Locale.ENGLISH)}" } ?: "week", if (max <= 0) 0 else (t * 1000 / max).toInt(), 1000, color = Palette.Cta, valueText = com.arcana.brain.core.UsageStats.compact(t))
+        CountBar(w?.let { "week of ${it.weekStart.dayOfMonth} ${it.weekStart.month.getDisplayName(DayStyle.SHORT, Locale.ENGLISH)}" } ?: "week", if (max <= 0) 0 else (t * 1000 / max).toInt(), 1000, color = Palette.CyanSoft, valueText = com.arcana.brain.core.UsageStats.compact(t))
     }
 }
 

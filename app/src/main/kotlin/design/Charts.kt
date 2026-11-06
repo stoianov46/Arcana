@@ -24,6 +24,13 @@ object Chart {
         return "█".repeat(filled) + "░".repeat(width - filled)
     }
 
+    /** [bar] as its two parts, the filled cells and the empty ones, so a screen can colour them apart (the empty part quietly). */
+    fun barParts(value: Int, max: Int, width: Int): Pair<String, String> {
+        val bar = bar(value, max, width)
+        val filled = bar.count { it == '█' }
+        return bar.take(filled) to bar.drop(filled)
+    }
+
     /** The intensity of a day, 0 (nothing) to 4 (the busiest), for [count] against [max]. */
     fun heatLevel(count: Int, max: Int): Int = if (count <= 0 || max <= 0) 0 else (((count * 4 + max - 1) / max)).coerceIn(1, 4)
 

@@ -280,6 +280,13 @@ class Colors(val spec: ThemeSpec) {
     val Muted = hex(mutedRgb)
     val Dim = hex(c.getValue("dim"))
     val Green = hex(greenRgb)
+
+    /** Calmer versions of the status colours for large areas such as chart bars: the colour mixed into the background, so a bar never glares. */
+    val GreenSoft = hex(mix(greenRgb, backgroundRgb, 0.55))
+    val RedSoft = hex(mix(redRgb, backgroundRgb, 0.55))
+    val OrangeSoft = hex(mix(orangeRgb, backgroundRgb, 0.55))
+    val CyanSoft = hex(mix(cyanRgb, backgroundRgb, 0.55))
+    val AccentSoft = hex(mix(purpleRgb, backgroundRgb, 0.55))
     val GreenBg = hex(opt("greenBg") { mix(greenRgb, surfaceRgb, 0.15) })
     val Red = hex(redRgb)
     val RedBg = hex(opt("redBg") { mix(redRgb, surfaceRgb, 0.17) })
@@ -360,6 +367,11 @@ object Palette {
     val Muted get() = colors.Muted
     val Dim get() = colors.Dim
     val Green get() = colors.Green
+    val GreenSoft get() = colors.GreenSoft
+    val RedSoft get() = colors.RedSoft
+    val OrangeSoft get() = colors.OrangeSoft
+    val CyanSoft get() = colors.CyanSoft
+    val AccentSoft get() = colors.AccentSoft
     val GreenBg get() = colors.GreenBg
     val Red get() = colors.Red
     val RedBg get() = colors.RedBg
