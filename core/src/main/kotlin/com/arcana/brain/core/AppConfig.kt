@@ -211,6 +211,12 @@ data class AppConfig(
     val toolMode: String = "ask",
     /** How many rounds of tool use one question may take before the model must answer (0 = unlimited). */
     val toolSteps: Int = 8,
+    /** The skill a research item runs with unless the item pins another: a skill name, `none` (a plain chat) or blank (automatic: the first skill that handles research). */
+    val workSkillResearch: String = "",
+    /** The same for questions (blank = a plain chat). */
+    val workSkillQuestion: String = "",
+    /** The same for todos (blank = a plain chat). */
+    val workSkillTodo: String = "",
     /** A pane under the Chat conversation that shows what a reasoning model is thinking while it streams (and the last thoughts when it is idle). Off by default. */
     val thinkingPane: Boolean = false,
     /** Where the thinking pane sits around the conversation: "bottom", "top", "left" or "right". */
