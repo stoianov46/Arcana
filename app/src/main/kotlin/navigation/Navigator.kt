@@ -91,6 +91,9 @@ class Navigator {
     var captureOpen by mutableStateOf(false)
     val palette = PickerState()
     val captureField = TextFieldState(multiline = false)
+
+    /** What the thought being captured will be: a plain thought (the default), or a question, research or todo that also becomes an item of that kind. */
+    var captureKind by mutableStateOf(com.arcana.brain.core.WorkKind.Thought)
     val overlayOpen: Boolean get() = helpOpen || paletteOpen || captureOpen
 
     /** Actions the current screen adds to the palette (published with [Commands]). */
@@ -112,6 +115,7 @@ class Navigator {
     }
 
     fun openCapture() {
+        captureKind = com.arcana.brain.core.WorkKind.Thought
         helpOpen = false
         paletteOpen = false
         captureOpen = true

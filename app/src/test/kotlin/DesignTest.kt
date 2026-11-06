@@ -752,3 +752,18 @@ class ChartPartsTest {
         kotlin.test.assertEquals("███" to "", com.arcana.brain.app.design.Chart.barParts(100, 100, 3))
     }
 }
+
+class CaptureKindTest {
+    private fun text(s: String, kind: com.arcana.brain.core.WorkKind) = com.arcana.brain.app.navigation.captureText(s, kind)
+    private val todo = com.arcana.brain.core.WorkKind.Todo
+    @kotlin.test.Test
+    fun theChosenKindPutsItsPrefixInFrontAndATypedPrefixIsNeverDoubled() {
+        kotlin.test.assertEquals("todo: buy a domain", text("buy a domain", todo))
+        kotlin.test.assertEquals("question: why", text("why", com.arcana.brain.core.WorkKind.Question))
+        kotlin.test.assertEquals("research: outbox pattern", text("outbox pattern", com.arcana.brain.core.WorkKind.Research))
+        kotlin.test.assertEquals("an idea", text("an idea", com.arcana.brain.core.WorkKind.Thought), "a plain thought is saved as typed")
+        kotlin.test.assertEquals("todo: already", text("todo: already", todo))
+        kotlin.test.assertEquals("question: typed wins", text("question: typed wins", todo), "a prefix typed by hand beats the kind chosen")
+        kotlin.test.assertEquals("", text("", todo))
+    }
+}
