@@ -705,3 +705,39 @@ class DesignTest {
         assertEquals(25, state.offset, "asked once: it does not pull the view back to the top every frame")
     }
 }
+
+class ChartTest {
+    @kotlin.test.Test
+    fun sparkScalesToTheLargestAndMarksQuietWeeksWithADot() {
+        kotlin.test.assertEquals("·▁▄█", com.arcana.brain.app.design.Chart.spark(listOf(0, 1, 4, 8)))
+        kotlin.test.assertEquals("···", com.arcana.brain.app.design.Chart.spark(listOf(0, 0, 0)))
+        kotlin.test.assertEquals("", com.arcana.brain.app.design.Chart.spark(emptyList()))
+        kotlin.test.assertEquals("▁█", com.arcana.brain.app.design.Chart.spark(listOf(1, 1000)), "a small value is still a bar")
+    }
+
+    @kotlin.test.Test
+    fun barFillsInProportionAndNeverHidesASmallValue() {
+        val bar = com.arcana.brain.app.design.Chart::bar
+        kotlin.test.assertEquals("█████░░░░░", bar(50, 100, 10))
+        kotlin.test.assertEquals("██████████", bar(100, 100, 10))
+        kotlin.test.assertEquals("█░░░░░░░░░", bar(1, 100, 10), "above zero shows at least one cell")
+        kotlin.test.assertEquals("░░░░░░░░░░", bar(0, 100, 10))
+        kotlin.test.assertEquals("░░░░", bar(5, 0, 4))
+        kotlin.test.assertEquals("", bar(5, 10, 0))
+    }
+
+    @kotlin.test.Test
+    fun heatLevelsRunFromNothingToTheBusiestAndTheCalendarHasSevenRows() {
+        val chart = com.arcana.brain.app.design.Chart
+        kotlin.test.assertEquals(listOf(0, 1, 2, 4, 4), listOf(0, 1, 5, 8, 10).map { chart.heatLevel(it, 10) })
+        kotlin.test.assertEquals('·', chart.heatGlyph(0))
+        kotlin.test.assertEquals('█', chart.heatGlyph(4))
+        val monday = java.time.LocalDate.of(2026, 11, 2)
+        val days = (0 until 9).map { com.arcana.brain.core.DayPoint(monday.plusDays(it.toLong()), if (it == 0) 5 else 0) }
+        val grid = chart.heatLevels(days, 2)
+        kotlin.test.assertEquals(7, grid.size)
+        kotlin.test.assertEquals(4, grid[0][0], "the busiest day is the top level")
+        kotlin.test.assertEquals(0, grid[1][0])
+        kotlin.test.assertEquals(null, grid[3][1], "days after today are blank")
+    }
+}

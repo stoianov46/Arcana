@@ -29,7 +29,17 @@ import com.arcana.brain.core.ResearchBacklog
 import com.arcana.brain.core.SessionReport
 import com.arcana.brain.core.Skills
 import com.arcana.brain.core.UsageStats
+import com.arcana.brain.core.BottleneckAction
+import com.arcana.brain.core.BrainSnapshot
+import com.arcana.brain.core.ThoughtLine
+import com.arcana.brain.core.Thoughts
 import com.arcana.brain.core.VaultHygiene
+import com.arcana.brain.core.WorkItem
+import com.arcana.brain.core.WorkKind
+import com.arcana.brain.core.WorkNotes
+import com.arcana.brain.core.WorkService
+import com.arcana.brain.core.WorkState
+import com.arcana.brain.core.WorkStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.jakewharton.mosaic.layout.background
@@ -44,9 +54,9 @@ import java.nio.file.Files
 import java.time.LocalDate
 
 /** One row of the dashboard: a section heading, or something you can open. */
-private sealed interface BrainRow {
+internal sealed interface BrainRow {
     data class Heading(val text: String) : BrainRow
-    class Item(val icon: String, val color: Color, val title: String, val detail: String, val dim: Boolean = false, val open: () -> Unit) : BrainRow
+    class Item(val icon: String, val color: Color, val title: String, val detail: String, val dim: Boolean = false, val open: () -> Unit, val actions: Map<Char, () -> Unit> = emptyMap()) : BrainRow
 }
 
 /** The dashboard in two parts: what to do now (capture, what needs attention) and where to jump back in. */
@@ -72,6 +82,10 @@ fun HomeScreen(app: AppContext) {
         val v = vault.getOrNull()
         if (index != null && v != null) hygiene = withContext(Dispatchers.IO) { runCatching { VaultHygiene.check(v, index = index) }.getOrNull() }
     }
+    // the page on show and the weeks the charts look back over; the numbers behind the pages are computed off the UI thread when the vault, the hygiene check, the work or the usage changed
+    var tab by rememberKept(app, "brain.tab@$where") { mutableStateOf(BrainTab.Overview) }
+    var weeks by rememberKept(app, "brain.weeks@$where") { mutableIntStateOf(BRAIN_WINDOWS.first()) }
+    var snapshot by rememberKept(app, "brain.snapshot@$where") { mutableStateOf<BrainSnapshot?>(null) }
     var hygieneOpen by rememberKept(app, "brain.hygieneOpen@$where") { mutableStateOf(false) }
     var hygieneKind by rememberKept(app, "brain.hygieneKind@$where") { mutableStateOf<HygieneKind?>(null) }
     var hygieneSel by rememberKept(app, "brain.hygieneSel@$where") { mutableIntStateOf(0) }
@@ -89,15 +103,51 @@ fun HomeScreen(app: AppContext) {
     val chosenIssue = listed.getOrNull(hygieneSel.coerceIn(0, (listed.size - 1).coerceAtLeast(0)))
 
     // the research backlog (Research/Research Backlog.md): read, and ticked by the reports that answer its questions, off the UI thread whenever the vault was read again
+    // the work list: questions, research (the backlog note) and todos, one kind at a time (proposals/0002)
+    var workKind by rememberKept(app, "brain.workKind@$where") { mutableStateOf(WorkKind.Research) }
+    var workItems by rememberKept(app, "brain.workItems@$where") { mutableStateOf<List<WorkItem>>(emptyList()) }
+    fun reloadWork() { workItems = vault.getOrNull()?.let { v -> runCatching { WorkService(WorkStore(v)).items() }.getOrDefault(emptyList()) } ?: emptyList() }
+    var allBacklog by rememberKept(app, "brain.allBacklog@$where") { mutableStateOf<List<BacklogItem>>(emptyList()) }
+    var thoughts by rememberKept(app, "brain.thoughts@$where") { mutableStateOf<List<ThoughtLine>>(emptyList()) }
     var backlog by rememberKept(app, "brain.backlog@$where") { mutableStateOf<List<BacklogItem>>(emptyList()) }
     LaunchedEffect(index) {
         val v = vault.getOrNull()
-        if (index != null && v != null) backlog = withContext(Dispatchers.IO) { runCatching { ResearchBacklog.reconcile(v); runCatching { com.arcana.brain.core.WorkMigration.sync(v, com.arcana.brain.core.WorkStore(v)) }; ResearchBacklog.open(v) }.getOrDefault(emptyList()) }
+        if (index != null && v != null) { backlog = withContext(Dispatchers.IO) { runCatching { ResearchBacklog.reconcile(v); runCatching { val store = com.arcana.brain.core.WorkStore(v); com.arcana.brain.core.WorkMigration.sync(v, store); WorkNotes.sync(v, store) }; ResearchBacklog.open(v) }.getOrDefault(emptyList()) }; reloadWork()
+            withContext(Dispatchers.IO) {
+                allBacklog = runCatching { ResearchBacklog.items(v) }.getOrDefault(emptyList())
+                thoughts = runCatching { Thoughts.recent(v, app.dailyNotes(v)) }.getOrDefault(emptyList())
+            }
+        }
     }
     var backlogOpen by rememberKept(app, "brain.backlogOpen@$where") { mutableStateOf(false) }
     var backlogSel by rememberKept(app, "brain.backlogSel@$where") { mutableIntStateOf(0) }
-    fun openBacklog() { backlogSel = 0; backlogOpen = true }
-    val chosenQuestion = backlog.getOrNull(backlogSel.coerceIn(0, (backlog.size - 1).coerceAtLeast(0)))
+    fun openBacklog(kind: WorkKind? = null) { kind?.let { workKind = it }; backlogSel = 0; reloadWork(); backlogOpen = true }
+    val workKinds = listOf(WorkKind.Question, WorkKind.Research, WorkKind.Todo, WorkKind.Thought)
+    // open first, then in progress, done and given up, each by the day it was captured; the research lines are the backlog note's own, ticked ones last
+    val kindItems = workItems.filter { it.kind == workKind }.sortedWith(compareBy({ it.state().ordinal }, { it.capturedAt }))
+    val researchAll = allBacklog.sortedWith(compareBy({ it.done }, { it.line }))
+    fun countOf(kind: WorkKind) = if (kind == WorkKind.Research) backlog.size else if (kind == WorkKind.Thought) thoughts.size else workItems.count { it.kind == kind && it.state() != WorkState.Answered && it.state() != WorkState.Abandoned }
+    val listSize = when (workKind) { WorkKind.Research -> researchAll.size; WorkKind.Thought -> thoughts.size; else -> kindItems.size }
+    fun switchKind(by: Int) { workKind = workKinds[(workKinds.indexOf(workKind) + by).mod(workKinds.size)]; backlogSel = 0 }
+    val chosenQuestion = researchAll.getOrNull(backlogSel.coerceIn(0, (researchAll.size - 1).coerceAtLeast(0)))
+    val chosenThought = thoughts.getOrNull(backlogSel.coerceIn(0, (thoughts.size - 1).coerceAtLeast(0)))
+    val chosenWork = kindItems.getOrNull(backlogSel.coerceIn(0, (kindItems.size - 1).coerceAtLeast(0)))
+    // a command on the chosen item of the log: the event is written, the note of the kind is written again, the list is read again
+    fun actOn(item: WorkItem, act: (WorkService, WorkItem) -> Unit) {
+        val v = vault.getOrNull() ?: return
+        runCatching { val store = WorkStore(v); act(WorkService(store), item); WorkNotes.sync(v, store) }
+        reloadWork()
+    }
+    fun toggle(item: WorkItem) = actOn(item) { svc, i -> if (i.closing == null) svc.close(i.id) else svc.reopen(i.id) }
+    fun retype(item: WorkItem) = actOn(item) { svc, i -> svc.retype(i.id, if (i.kind == WorkKind.Question) WorkKind.Todo else WorkKind.Question) }
+    fun toggleDone() { chosenWork?.let(::toggle) }
+    fun retypeNext() { chosenWork?.let(::retype) }
+    fun askQuestion(item: WorkItem) {
+        app.chat.startNew()
+        app.chat.input.set(item.text)
+        backlogOpen = false
+        navigator.navigate(Screen.Chat)
+    }
     // a fresh chat with the research skill attached (the first one named ...research-report) and the question waiting in the field: Enter starts typing, Enter again sends
     fun startResearch(item: BacklogItem) {
         val skill = if (app.config.skillsEnabled) vault.getOrNull()?.let { v -> Skills.discoverAll(v, app.skillsFolder()).firstOrNull { it.name.endsWith("research-report") } } else null
@@ -111,28 +161,84 @@ fun HomeScreen(app: AppContext) {
     }
     fun markDone(item: BacklogItem) {
         val v = vault.getOrNull() ?: return
-        runCatching { ResearchBacklog.tick(v, item); backlog = ResearchBacklog.open(v) }
+        runCatching { ResearchBacklog.tick(v, item); backlog = ResearchBacklog.open(v); allBacklog = ResearchBacklog.items(v) }
         backlogSel = backlogSel.coerceIn(0, (backlog.size - 1).coerceAtLeast(0))
     }
+    // a ticked research line opens its report; an open one starts the research
+    fun openResearchLine(item: BacklogItem) {
+        if (!item.done) { startResearch(item); return }
+        val title = item.link?.removePrefix("[[")?.removeSuffix("]]")?.substringBefore('|')?.trim().orEmpty()
+        val path = app.brain.index?.notes?.firstOrNull { it.title.equals(title, ignoreCase = true) }?.path
+        if (path != null) { backlogOpen = false; navigator.openLibrary(LibraryFilter.All, path) }
+    }
     val backlogRows = backlog.map { BrainRow.Item("?", Palette.Cta, it.question, it.date, open = {}) }
+    // the same items as rows of the dashboard itself: Enter and x work on them where they stand
+    val questionRows = workItems.filter { it.kind == WorkKind.Question && it.state() in listOf(WorkState.Open, WorkState.InProgress) }
+        .map { workRow(it, open = { askQuestion(it) }, actions = mapOf('x' to { toggle(it) }, 't' to { retype(it) })) }
+    val todoRows = workItems.filter { it.kind == WorkKind.Todo && it.state() in listOf(WorkState.Open, WorkState.InProgress) }
+        .map { workRow(it, open = { toggle(it) }, actions = mapOf('x' to { toggle(it) }, 't' to { retype(it) })) }
+    val researchRows = backlog.map { q -> BrainRow.Item("?", Palette.Cta, q.question, q.date, open = { startResearch(q) }, actions = mapOf('x' to { markDone(q) })) }
 
-    val rows = buildRows(app, navigator, health, vault.isSuccess, recents = if (wide) 12 else 5, topTags = if (wide) 8 else 0, hygiene = hygiene, openHygiene = ::openHygiene, backlog = backlog, openBacklog = ::openBacklog)
+    LaunchedEffect(index, weeks, hygiene, workItems, app.usage.size) {
+        val v = vault.getOrNull()
+        if (index != null && v != null && health != null) snapshot = withContext(Dispatchers.IO) { runCatching { computeSnapshot(app, v, index, health, hygiene, weeks) }.getOrNull() }
+    }
+    fun runBottleneck(a: BottleneckAction) = when (a) {
+        is BottleneckAction.Hygiene -> openHygiene(a.kind)
+        is BottleneckAction.Library -> navigator.openLibrary(when (a.filter) { "broken" -> LibraryFilter.Broken; "orphans" -> LibraryFilter.Orphans; "untagged" -> LibraryFilter.Untagged; "stale" -> LibraryFilter.Stale; else -> LibraryFilter.All })
+        BottleneckAction.Work -> openBacklog()
+        BottleneckAction.Inbox -> navigator.navigate(Screen.Inbox)
+        BottleneckAction.None -> Unit
+    }
+    // the overview's list: what holds the brain back (each row goes to the fix), what to do next from the work, and where to go
+    val nextUp = workItems.filter { it.state() == WorkState.Open && it.kind != WorkKind.Research && it.kind != WorkKind.Thought }.sortedBy { it.capturedAt }.take(3)
+        .map { workRow(it, open = { if (it.kind == WorkKind.Question) askQuestion(it) else toggle(it) }, actions = mapOf('x' to { toggle(it) }, 't' to { retype(it) })) } +
+        backlog.take(2).map { q -> BrainRow.Item("?", Palette.Cta, q.question, q.date, open = { startResearch(q) }, actions = mapOf('x' to { markDone(q) })) }
+    val overviewRows: List<BrainRow> = buildList {
+        add(BrainRow.Heading("BOTTLENECKS · where to improve"))
+        snapshot?.bottlenecks?.take(6)?.forEach { b -> add(bottleneckRow(b) { runBottleneck(b.action) }) } ?: add(BrainRow.Item("·", Palette.Dim, "Reading the vault…", "", dim = true, open = {}))
+        if (nextUp.isNotEmpty()) { add(BrainRow.Heading("NEXT UP")); addAll(nextUp) }
+        add(BrainRow.Heading("LISTS · open them, tick and read"))
+        val itemsOf = { k: WorkKind -> workItems.filter { it.kind == k } }
+        fun listRow(icon: String, color: Color, kind: WorkKind, open: Int, total: Int) = BrainRow.Item(icon, color, kind.title, "$open open · ${total - open} done", open = { openBacklog(kind) })
+        add(listRow("○", Palette.Cta, WorkKind.Todo, itemsOf(WorkKind.Todo).count { it.state() == WorkState.Open || it.state() == WorkState.InProgress }, itemsOf(WorkKind.Todo).size))
+        add(listRow("?", Palette.Cta, WorkKind.Question, itemsOf(WorkKind.Question).count { it.state() == WorkState.Open || it.state() == WorkState.InProgress }, itemsOf(WorkKind.Question).size))
+        add(listRow("?", Palette.Orange, WorkKind.Research, backlog.size, allBacklog.size))
+        add(BrainRow.Item("✎", Palette.Accent, "Thoughts", "${thoughts.size} captured recently", open = { openBacklog(WorkKind.Thought) }))
+        add(BrainRow.Item("☑", Palette.Green, "Research Backlog note", "${allBacklog.count { it.done }}/${allBacklog.size} ticked · open the file", open = { navigator.openLibrary(LibraryFilter.All, ResearchBacklog.PATH) }))
+        add(BrainRow.Heading("GO TO"))
+        add(BrainRow.Item("✎", Palette.Accent, "Capture a thought", "Ctrl+N from anywhere", open = { navigator.openCapture() }))
+        add(BrainRow.Item("»", Palette.Accent, if (app.chat.messages.isNotEmpty()) "Continue chat: ${app.chat.title}" else "Ask your brain", "Chat", open = { navigator.navigate(Screen.Chat) }))
+        add(BrainRow.Item("▤", Palette.Muted, "Library", "all your notes", open = { navigator.openLibrary(LibraryFilter.All) }))
+        add(BrainRow.Item("✦", Palette.Muted, "Write or improve a note with AI", "AI notes", open = { navigator.navigate(Screen.Compose) }))
+    }
+    val rows = if (tab == BrainTab.Overview) BrainRows(overviewRows, emptyList()) else if (tab == BrainTab.Activity) BrainRows(emptyList(), emptyList()) else buildRows(app, navigator, health, vault.isSuccess, tab = tab, recents = if (wide) 12 else 5, topTags = if (wide) 8 else 0, hygiene = hygiene, openHygiene = ::openHygiene, questions = questionRows, research = researchRows, todos = todoRows, openWork = { openBacklog() }, openCapture = { navigator.openCapture() })
     val items = rows.nowItems + rows.backItems
     val current = selected.coerceIn(0, (items.size - 1).coerceAtLeast(0))
 
-    if (backlogOpen) Hints("↑↓  choose", "Enter  start the research", "x  mark done", "Esc  back")
+    if (backlogOpen) Hints("↑↓  choose", "Tab  next kind", "Enter  " + when (workKind) { WorkKind.Research -> "start it / open its report"; WorkKind.Question -> "ask it in a chat"; WorkKind.Thought -> "open the note"; else -> "done / not done" }, *(if (workKind == WorkKind.Thought) emptyArray() else arrayOf("x  " + (if (workKind == WorkKind.Research) "mark done" else "done / not done"))), *(if (workKind == WorkKind.Question || workKind == WorkKind.Todo) arrayOf("t  question ⇄ todo") else emptyArray()), "Esc  back")
     else if (hygieneOpen) Hints("↑↓  choose", "Enter  open the note", "c  chat to fix it", "Esc  back")
-    else Hints("↑↓  choose", "←→  column", "Enter  open", "h  vault hygiene", "b  research backlog", "r  re-read the vault")
+    else Hints("↑↓  choose", "Tab  next page", "w  weeks", "Enter  open", "x  done", "t  question ⇄ todo", "h  vault hygiene", "b  all work", "r  re-read the vault")
     Commands(listOf(Command("Re-read the vault", "Brain", "r") { app.brain.changed() }, Command("Vault hygiene: names, properties, reports, islands", "Brain", "h") { openHygiene(null) }, Command("Research backlog: questions captured with “? ”", "Brain", "b") { openBacklog() }))
+
+    // x and t act on the work row that is selected on the dashboard
+    fun rowAction(c: Char?): Boolean {
+        val action = c?.let { items.getOrNull(current)?.actions?.get(it) } ?: return false
+        action()
+        return true
+    }
 
     KeyHandler { key ->
         // the research backlog list has the keys while it is open; `b` opens it from the dashboard (not while the hygiene list is open)
         if (backlogOpen) return@KeyHandler when {
             key == Key.Escape -> { backlogOpen = false; true }
             key == Key.Up || key.char == 'k' -> { backlogSel = (backlogSel - 1).coerceAtLeast(0); true }
-            key == Key.Down || key.char == 'j' -> { backlogSel = (backlogSel + 1).coerceAtMost((backlog.size - 1).coerceAtLeast(0)); true }
-            key == Key.Enter -> { chosenQuestion?.let(::startResearch); true }
-            key.char == 'x' -> { chosenQuestion?.let(::markDone); true }
+            key == Key.Down || key.char == 'j' -> { backlogSel = (backlogSel + 1).coerceAtMost((listSize - 1).coerceAtLeast(0)); true }
+            key == Key.Tab || key == Key.Right -> { switchKind(1); true }
+            key == Key.Left || key == Key.BackTab -> { switchKind(-1); true }
+            key == Key.Enter -> { when (workKind) { WorkKind.Research -> chosenQuestion?.let(::openResearchLine); WorkKind.Question -> chosenWork?.let(::askQuestion); WorkKind.Thought -> chosenThought?.let { backlogOpen = false; navigator.openLibrary(LibraryFilter.All, it.path) }; else -> toggleDone() }; true }
+            key.char == 'x' || key.char == ' ' -> { if (workKind == WorkKind.Research) chosenQuestion?.takeIf { !it.done }?.let(::markDone) else if (workKind != WorkKind.Thought) toggleDone(); true }
+            key.char == 't' -> { if (workKind == WorkKind.Question || workKind == WorkKind.Todo) retypeNext(); true }
             else -> true
         }
         if (!hygieneOpen && key.char == 'b') { openBacklog(); return@KeyHandler true }
@@ -153,6 +259,10 @@ fun HomeScreen(app: AppContext) {
             }
             else -> true
         } else when {
+            rowAction(key.char) -> true
+            key == Key.Tab -> { tab = BrainTab.entries[(tab.ordinal + 1).mod(BrainTab.entries.size)]; selected = 0; true }
+            key == Key.BackTab -> { tab = BrainTab.entries[(tab.ordinal - 1).mod(BrainTab.entries.size)]; selected = 0; true }
+            key.char == 'w' -> { weeks = BRAIN_WINDOWS[(BRAIN_WINDOWS.indexOf(weeks) + 1).mod(BRAIN_WINDOWS.size)]; true }
             key.char == 'h' -> { openHygiene(null); true }
             key == Key.Up || key.char == 'k' -> { selected = (current - 1).coerceAtLeast(0); true }
             key == Key.Down || key.char == 'j' -> { selected = (current + 1).coerceAtMost((items.size - 1).coerceAtLeast(0)); true }
@@ -169,20 +279,28 @@ fun HomeScreen(app: AppContext) {
         ScreenHeader("Brain", vault.getOrNull()?.let { "${it.root.fileName} · research control panel of your second brain" } ?: "Research control panel of your second brain")
         VGap()
         Vitals(health, reading = app.brain.reading)
+        BrainTabBar(tab, weeks)
         val offline = app.connection is Connection.Offline
         if (offline) Warning("Ollama is not running, so AI features are off. Start it, or check the URL in Settings.")
         VGap()
         // header 3 + vitals 1 + gap 1 (+ the warning): the panels get every other row
-        val height = outputRows(fixed = 3 + 1 + 1 + (if (offline) 1 else 0))
+        val height = outputRows(fixed = 3 + 1 + 1 + 1 + (if (offline) 1 else 0))
         when {
             vault.isFailure -> Panel("Today") {
                 Warning(vault.exceptionOrNull()?.message ?: "No vault.")
                 Cta("Press ${Screen.Settings.shortcut} to choose your vault folder.")
             }
             index == null -> Panel("Today") { Spinner("Reading your vault…") }
-            backlogOpen -> Panel("Research backlog · ${backlog.size} open", Modifier.height(height)) {
-                if (backlog.isEmpty()) Label("✓ No open questions. Capture one with Ctrl+N and start it with “? ”.", color = Palette.Green)
-                else RowList(backlogRows, backlogSel.coerceIn(0, (backlog.size - 1).coerceAtLeast(0)), height - 2)
+            backlogOpen -> Panel("Lists · " + workKinds.joinToString("   ") { k -> (if (k == workKind) "‹ ${k.title} ${countOf(k)} ›" else "${k.title} ${countOf(k)}") }, Modifier.height(height)) {
+                val prefix = when (workKind) { WorkKind.Question -> "question: "; WorkKind.Todo -> "todo: "; WorkKind.Thought -> ""; else -> "? " }
+                when {
+                    workKind == WorkKind.Research && researchAll.isEmpty() -> Label("✓ No research yet. Capture one with Ctrl+N and start it with “? ” or “research: ”.", color = Palette.Green)
+                    workKind == WorkKind.Research -> RowList(researchAll.map { q -> BrainRow.Item(if (q.done) "☑" else "☐", if (q.done) Palette.Green else Palette.Cta, q.question, q.date + (q.link?.let { " · $it" } ?: ""), dim = q.done, open = {}) }, backlogSel.coerceIn(0, (researchAll.size - 1).coerceAtLeast(0)), height - 2)
+                    workKind == WorkKind.Thought && thoughts.isEmpty() -> Label("No thoughts yet. Capture one with Ctrl+N.", color = Palette.Dim)
+                    workKind == WorkKind.Thought -> RowList(thoughts.map { t -> BrainRow.Item("✎", Palette.Accent, t.text, "${t.date} ${t.time}", open = {}) }, backlogSel.coerceIn(0, (thoughts.size - 1).coerceAtLeast(0)), height - 2)
+                    kindItems.isEmpty() -> Label("Nothing here. Capture one with Ctrl+N and start it with “$prefix”.", color = Palette.Dim)
+                    else -> RowList(kindItems.map { i -> workRow(i, open = { toggle(i) }) }, backlogSel.coerceIn(0, (kindItems.size - 1).coerceAtLeast(0)), height - 2)
+                }
             }
             hygieneOpen -> Panel("Vault hygiene · ${hygiene?.total ?: 0} issues" + (hygieneKind?.let { " · ${it.label}" } ?: ""), Modifier.height(height)) {
                 when {
@@ -193,16 +311,29 @@ fun HomeScreen(app: AppContext) {
             }
             wide -> {
                 val half = ((LocalContentWidth.current - 1) / 2).coerceAtLeast(30)
+                val snap = snapshot
                 Row(Modifier.fillMaxWidth()) {
                     Box(Modifier.weight(0.5f)) {
                         CompositionLocalProvider(LocalContentWidth provides half) {
-                            Panel("Now", Modifier.height(height)) { RowList(rows.now, current, height - 2) }
+                            when (tab) {
+                                BrainTab.Overview -> Panel("Do and start", Modifier.height(height)) { RowList(rows.now, current, height - 2) }
+                                BrainTab.Work -> Panel("Work", Modifier.height(height)) { RowList(rows.now, current, height - 2) }
+                                BrainTab.Health -> Panel("Needs attention", Modifier.height(height)) { RowList(rows.now, current, height - 2) }
+                                BrainTab.Activity -> Panel("Activity", Modifier.height(height)) { if (snap == null) Spinner("Reading the vault…") else { HeatBlock(snap); VGap(); PulseBlock(snap) } }
+                            }
                         }
                     }
                     HGap()
                     Box(Modifier.weight(0.5f)) {
                         CompositionLocalProvider(LocalContentWidth provides half) {
-                            Panel("Jump back in", Modifier.height(height)) { RowList(rows.back, current - rows.nowItems.size, height - 2) }
+                            when (tab) {
+                                BrainTab.Overview -> Panel("Pulse", Modifier.height(height)) {
+                                    if (snap == null) Spinner("Reading the vault…") else { PulseBlock(snap); VGap(); HealthBlock(snap); VGap(); PipelineBlock(snap.pipeline); VGap(); FoldersBlock(snap); VGap(); HubsBlock(snap) }
+                                }
+                                BrainTab.Work -> Panel("Pipeline", Modifier.height(height)) { if (snap == null) Spinner("Reading the vault…") else { PipelineBlock(snap.pipeline); VGap(); HealthBlock(snap) } }
+                                BrainTab.Health -> Panel("Health", Modifier.height(height)) { if (snap == null) Spinner("Reading the vault…") else { HealthBlock(snap); VGap(); FoldersBlock(snap, 8); VGap(); HubsBlock(snap) } }
+                                BrainTab.Activity -> Panel("Per week", Modifier.height(height)) { if (snap == null) Spinner("Reading the vault…") else { WeeklyBlock(snap); VGap(); TokensBlock(snap) } }
+                            }
                         }
                     }
                 }
@@ -224,7 +355,7 @@ private fun Vitals(h: BrainHealth?, reading: Boolean) {
     Label(line, color = Palette.Text)
 }
 
-private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, hasVault: Boolean, recents: Int, topTags: Int, hygiene: HygieneReport? = null, openHygiene: (HygieneKind?) -> Unit = {}, backlog: List<BacklogItem> = emptyList(), openBacklog: () -> Unit = {}): BrainRows {
+private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, hasVault: Boolean, tab: BrainTab, recents: Int, topTags: Int, hygiene: HygieneReport? = null, openHygiene: (HygieneKind?) -> Unit = {}, questions: List<BrainRow.Item> = emptyList(), research: List<BrainRow.Item> = emptyList(), todos: List<BrainRow.Item> = emptyList(), openWork: () -> Unit = {}, openCapture: () -> Unit = {}): BrainRows {
     if (!hasVault) return BrainRows(emptyList(), emptyList())
     val now = buildList {
         val daily = app.openVault().getOrNull()?.let { v -> app.dailyNotes(v).pathFor(LocalDate.now()).let { it to Files.exists(v.root.resolve(it)) } }
@@ -248,6 +379,16 @@ private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, ha
                 add(BrainRow.Item("✓", Palette.Green, "Everything is in order", "no inbox, no islands, no broken links", dim = true, open = { navigator.openLibrary(LibraryFilter.All) }))
             }
         }
+        // the work: questions, research and todos, each its own section with what is still to do (Enter acts on a row, x marks it done, t turns a question into a todo and back; b opens them all)
+        fun section(heading: String, rows: List<BrainRow.Item>, prefix: String) {
+            add(BrainRow.Heading("$heading · ${rows.size} open"))
+            if (rows.isEmpty()) add(BrainRow.Item("·", Palette.Dim, "Nothing open", "Ctrl+N, then “$prefix…”", dim = true, open = openCapture))
+            else rows.take(if (tab == BrainTab.Work) 100 else 5).forEach { add(it) }
+            if (tab != BrainTab.Work && rows.size > 5) add(BrainRow.Item("…", Palette.Dim, "${rows.size - 5} more", "Enter or b: see all", dim = true, open = openWork))
+        }
+        section("QUESTIONS", questions, "question: ")
+        section("RESEARCH", research, "research: ")
+        section("TODOS", todos, "todo: ")
         // the habits that keep the vault navigable (names, properties, reports, islands): one line per kind, examples for the two worst
         if (hygiene != null) {
             add(BrainRow.Heading("VAULT HYGIENE"))
@@ -262,13 +403,6 @@ private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, ha
                     hygiene.byKind.getValue(k).take(3).forEach { i -> add(BrainRow.Item("▤", Palette.Muted, i.title, i.message, open = { navigator.openLibrary(LibraryFilter.All, i.path) })) }
                 }
             }
-        }
-        // the questions waiting to be researched (captured with `? `): how many, the first three; Enter or b opens the list that starts the research
-        add(BrainRow.Heading("RESEARCH BACKLOG"))
-        if (backlog.isEmpty()) add(BrainRow.Item("?", Palette.Dim, "No open research questions", "Ctrl+N, then “? your question”", dim = true, open = openBacklog))
-        else {
-            add(BrainRow.Item("?", Palette.Cta, "${backlog.size} open ${if (backlog.size == 1) "question" else "questions"}", "Enter or b: see them, start one", open = openBacklog))
-            backlog.take(3).forEach { q -> add(BrainRow.Item("·", Palette.Muted, q.question, q.date, open = openBacklog)) }
         }
         // the topics the vault is about: each opens the Library on that tag
         val tags = app.brain.index?.tagCounts?.take(topTags).orEmpty()
@@ -301,12 +435,20 @@ private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, ha
         if (recent.isNotEmpty()) add(BrainRow.Heading("RECENT NOTES"))
         recent.forEach { n -> add(BrainRow.Item("▤", Palette.Muted, n.title, relativeTime(n.modified), open = { navigator.openLibrary(LibraryFilter.All, n.path) })) }
     }
-    return BrainRows(now, back)
+    // each page keeps its own sections: the work page the capture row and the work, the health page the attention list, the hygiene and the tags
+    val keep = when (tab) {
+        BrainTab.Work -> listOf("CAPTURE", "QUESTIONS", "RESEARCH", "TODOS")
+        BrainTab.Health -> listOf("NEEDS ATTENTION", "VAULT HYGIENE", "TOP TAGS")
+        else -> emptyList()
+    }
+    var inKept = false
+    val shown = now.filter { r -> if (r is BrainRow.Heading) { inKept = keep.any { r.text.startsWith(it) }; inKept } else inKept }
+    return BrainRows(shown, emptyList())
 }
 
 /** The rows in a window that follows the chosen one; headings are shown but cannot be chosen. [selected] is -1 when the chosen row is elsewhere. */
 @Composable
-private fun RowList(rows: List<BrainRow>, selected: Int, capacity: Int) {
+internal fun RowList(rows: List<BrainRow>, selected: Int, capacity: Int) {
     var itemIndex = -1
     val numbered = rows.map { r -> if (r is BrainRow.Item) { itemIndex++; r to itemIndex } else r to -1 }
     val flat = numbered.indexOfFirst { it.second == selected }.coerceAtLeast(0)
@@ -325,4 +467,18 @@ private fun RowList(rows: List<BrainRow>, selected: Int, capacity: Int) {
             }
         }
     }
+}
+
+/** One item of the log as a row of the work list: its state as the icon, its text, and how far it has got. */
+private fun workRow(item: WorkItem, open: () -> Unit = {}, actions: Map<Char, () -> Unit> = emptyMap()): BrainRow.Item {
+    val state = item.state()
+    val (icon, color) = when (state) {
+        WorkState.Open -> "○" to Palette.Cta
+        WorkState.InProgress -> "◐" to Palette.Orange
+        WorkState.Answered -> "●" to Palette.Green
+        WorkState.Abandoned -> "✕" to Palette.Dim
+    }
+    val label = when (state) { WorkState.Open -> "open"; WorkState.InProgress -> "in progress"; WorkState.Answered -> "done"; WorkState.Abandoned -> "given up" }
+    val notes = item.artifacts.size.takeIf { it > 0 }?.let { " · $it note${if (it == 1) "" else "s"}" }.orEmpty()
+    return BrainRow.Item(icon, color, item.text, "$label · ${item.date}$notes" + if (item.skill.isBlank()) "" else " · ${item.skill}", dim = state == WorkState.Abandoned, open = open, actions = actions)
 }
