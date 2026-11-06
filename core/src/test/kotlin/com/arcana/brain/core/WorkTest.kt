@@ -5,6 +5,7 @@ import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class WorkTest {
@@ -148,7 +149,7 @@ class WorkTest {
         val store = WorkStore(vault)
         val first = WorkMigration.sync(vault, store, now = 1_000)
         assertTrue(first > 0)
-        val items = store.log(WorkKind.Question).items()
+        val items = store.items()
         // the line with a free-text tail after its date is not a backlog line (the reader never saw it either): six lines, five read
         assertEquals(listOf("test capture", "is logging a fix for the cache problem", "Investigate Android CLI usage", "add a splash screen", "research web browser tool"), items.map { it.text })
         assertEquals(listOf("q-0411-2336", "q-0511-0005", "q-0611-1650"), items.map { it.id }.filter { it.startsWith("q-") })
@@ -174,7 +175,7 @@ class WorkTest {
 
         assertTrue(WorkMigration.discrepancies(vault, store).any { it.startsWith("ticked in the note") })
         assertTrue(WorkMigration.sync(vault, store, now = 2_000) > 0)
-        val ticked = store.log(WorkKind.Question).items().first { it.id == "q-0511-0005" }
+        val ticked = store.items().first { it.id == "q-0511-0005" }
         assertEquals(WorkState.Answered, ticked.state())
         assertEquals("Splash Screen Report", ticked.artifacts.single().note)
 
@@ -182,7 +183,7 @@ class WorkTest {
         val file = vault.root.resolve(ResearchBacklog.PATH)
         Files.writeString(file, Files.readString(file).replace("- [x] add a splash screen", "- [ ] add a splash screen"))
         WorkMigration.sync(vault, store, now = 3_000)
-        val unticked = store.log(WorkKind.Question).items().first { it.id == "q-0511-0005" }
+        val unticked = store.items().first { it.id == "q-0511-0005" }
         assertEquals(null, unticked.closing)
         assertEquals(WorkState.InProgress, unticked.state(), "reopened, but the report it was linked to stays linked (and is not known to be done)")
         assertEquals(0, WorkMigration.sync(vault, store, now = 4_000))
@@ -193,12 +194,12 @@ class WorkTest {
         val vault = vaultWith(note)
         val store = WorkStore(vault)
         WorkMigration.sync(vault, store, now = 1_000)
-        val before = store.log(WorkKind.Question).items().size
+        val before = store.items().size
         val first = ResearchBacklog.items(vault).first { it.question == "test capture" }
         val marker = ResearchBacklog.ensureId(vault, first)!!
 
         WorkMigration.sync(vault, store, now = 2_000)
-        val items = store.log(WorkKind.Question).items()
+        val items = store.items()
         assertEquals(before, items.size, "no second item")
         val same = items.first { it.text == "test capture" }
         assertTrue(same.isKnownAs(marker))
@@ -214,11 +215,11 @@ class WorkTest {
         val file = vault.root.resolve(ResearchBacklog.PATH)
         Files.writeString(file, Files.readString(file).replace("add a splash screen", "add a splash screen with the loaded tools"))
         WorkMigration.sync(vault, store, now = 2_000)
-        assertEquals("add a splash screen with the loaded tools", store.log(WorkKind.Question).items().first { it.id == "q-0511-0005" }.text)
+        assertEquals("add a splash screen with the loaded tools", store.items().first { it.id == "q-0511-0005" }.text)
 
         Files.writeString(file, Files.readString(file).lines().filterNot { "web browser tool" in it }.joinToString("\n"))
         WorkMigration.sync(vault, store, now = 3_000)
-        assertTrue(store.log(WorkKind.Question).items().any { it.id == "q-0611-1650" }, "the log keeps what the note lost")
+        assertTrue(store.items().any { it.id == "q-0611-1650" }, "the log keeps what the note lost")
         assertEquals(listOf("gone from the note: research web browser tool"), WorkMigration.discrepancies(vault, store))
     }
 
@@ -228,5 +229,146 @@ class WorkTest {
         val vault = Vault(dir)
         assertEquals(0, WorkMigration.sync(vault, WorkStore(vault)))
         assertFalse(Files.exists(dir.resolve(".arcana/work")), "nothing is created for nothing")
+    }
+
+    // ---- the kinds, the commands and the generated notes ----
+
+    private fun service(): Pair<WorkService, Vault> {
+        val dir = Files.createTempDirectory("arcana-work-svc")
+        val vault = Vault(dir)
+        var t = 1_000L
+        return WorkService(WorkStore(vault), clock = { t++ }, random = java.util.Random(3)) to vault
+    }
+
+    @Test
+    fun anItemIsCapturedWithAnExplicitKindAndEachKindListsOnlyItsOwn() {
+        val (work, _) = service()
+        work.capture(WorkKind.Todo, "buy a domain")
+        work.capture(WorkKind.Question, "what is the outbox pattern?")
+        work.capture(WorkKind.Research, "compare KMP and Flutter")
+        work.capture(WorkKind.Thought, "maybe a splash screen")
+        assertEquals(listOf("buy a domain"), work.items(WorkKind.Todo).map { it.text })
+        assertEquals(listOf("what is the outbox pattern?"), work.items(WorkKind.Question).map { it.text })
+        assertEquals(listOf("compare KMP and Flutter"), work.items(WorkKind.Research).map { it.text })
+        assertEquals(listOf("maybe a splash screen"), work.items(WorkKind.Thought).map { it.text })
+        assertEquals(null, work.capture(WorkKind.Todo, "   "), "nothing to capture")
+    }
+
+    @Test
+    fun changingYourMindKeepsTheItemItsHistoryAndItsNotes() {
+        val (work, _) = service()
+        val item = work.capture(WorkKind.Research, "how does the outbox pattern work")!!
+        work.linkRun(item.id, "run-1")
+        work.linkNote(item.id, "Outbox Notes", WorkRole.Draft)
+        val retyped = work.retype(item.id, WorkKind.Question)!!
+        assertEquals(WorkKind.Question, retyped.kind)
+        assertEquals(item.id, retyped.id)
+        assertEquals(listOf("run-1"), retyped.runs)
+        assertEquals(listOf(WorkArtifact("Outbox Notes", WorkRole.Draft)), retyped.artifacts)
+        assertEquals(emptyList(), work.items(WorkKind.Research))
+        assertEquals(retyped, work.retype(item.id, WorkKind.Question), "retyping to the same kind changes nothing")
+    }
+
+    @Test
+    fun aQuestionIsAnsweredByAnAnswerNoteAndCanBeContinuedLater() {
+        val (work, _) = service()
+        val q = work.capture(WorkKind.Question, "what is the outbox pattern")!!
+        work.linkNote(q.id, "Outbox Answer", WorkRole.Answer)
+        assertEquals(WorkState.InProgress, work.item(q.id)!!.state())
+        assertEquals(WorkState.Answered, work.item(q.id)!!.state(setOf("Outbox Answer")))
+        // continue later: a second answer (or a run) is added to the same item, and the first stays
+        work.linkNote(q.id, "Outbox Answer 2", WorkRole.Answer)
+        assertEquals(2, work.item(q.id)!!.artifacts.size)
+    }
+
+    @Test
+    fun aSkillCanBePinnedToOneItemAndUnpinned() {
+        val (work, _) = service()
+        val item = work.capture(WorkKind.Research, "x")!!
+        assertEquals("create-dev-research-report", work.pinSkill(item.id, "create-dev-research-report")!!.skill)
+        assertEquals("", work.pinSkill(item.id, "")!!.skill)
+    }
+
+    @Test
+    fun closeAndReopenByHandAndCommandsOnAnUnknownItemDoNothing() {
+        val (work, _) = service()
+        val todo = work.capture(WorkKind.Todo, "write the test")!!
+        assertEquals(WorkState.Answered, work.close(todo.id)!!.state())
+        assertEquals(WorkState.Open, work.reopen(todo.id)!!.state())
+        assertEquals(WorkState.Abandoned, work.close(todo.id, WorkClosing.Abandoned)!!.state())
+        assertNull(work.close("nope"))
+        assertNull(work.retype("nope", WorkKind.Todo))
+        assertNull(work.edit("nope", "x"))
+    }
+
+    @Test
+    fun theGeneratedNotesShowOneKindEachWithMarkersAndStates() {
+        val (work, vault) = service()
+        val a = work.capture(WorkKind.Todo, "buy a domain")!!
+        val b = work.capture(WorkKind.Todo, "write the test")!!
+        work.close(b.id)
+        work.capture(WorkKind.Question, "what is the outbox pattern")
+        assertEquals(listOf("Tasks/Todos.md", "Questions/Questions.md"), WorkNotes.sync(vault, WorkStore(vault)).sortedBy { if (it.startsWith("Tasks")) 0 else 1 })
+        val todos = Files.readString(vault.root.resolve("Tasks/Todos.md"))
+        assertTrue("## Open" in todos && "- [ ] buy a domain" in todos && "^${a.id}" in todos, todos)
+        assertTrue("## Done" in todos && "- [x] write the test" in todos, todos)
+        assertTrue("outbox" !in todos, "a question does not appear in the todos")
+        assertEquals(emptyList(), WorkNotes.sync(vault, WorkStore(vault)), "unchanged notes are not rewritten")
+        assertFalse(Files.exists(vault.root.resolve("Research/Research.md")), "research keeps its own note")
+    }
+
+    @Test
+    fun theFirstVersionsPerKindLogIsMovedIntoTheOneLogAsResearch() {
+        val dir = Files.createTempDirectory("arcana-legacy")
+        val vault = Vault(dir)
+        val old = Files.createDirectories(dir.resolve(".arcana/work")).resolve("question.jsonl")
+        Files.writeString(old, """{"type":"captured","id":"cap-q-0611-1650","item":"q-0611-1650","at":5,"kind":"question","text":"research web browser tool","date":"2026-11-06"}""" + "\n")
+        val store = WorkStore(vault)
+        val item = store.items().single()
+        assertEquals(WorkKind.Research, item.kind)
+        assertEquals("q-0611-1650", item.id)
+        assertFalse(Files.exists(old))
+        assertTrue(Files.exists(dir.resolve(".arcana/work/question.jsonl.migrated")))
+        assertEquals(1, WorkStore(vault).items().size, "a second start does not copy it again")
+    }
+
+    @Test
+    fun aPrefixNamesTheKindAndAPlainThoughtStaysAThought() {
+        assertEquals(WorkCapture.Captured(WorkKind.Todo, "buy a domain"), WorkCapture.parse("todo: buy a domain"))
+        assertEquals(WorkCapture.Captured(WorkKind.Todo, "x"), WorkCapture.parse("  TASK:   x  "))
+        assertEquals(WorkCapture.Captured(WorkKind.Question, "what is the outbox pattern"), WorkCapture.parse("question: what is the outbox pattern"))
+        assertEquals(WorkCapture.Captured(WorkKind.Question, "why"), WorkCapture.parse("q: why"))
+        assertEquals(WorkCapture.Captured(WorkKind.Research, "compare KMP and Flutter"), WorkCapture.parse("research: compare KMP and Flutter"))
+        assertEquals(WorkCapture.Captured(WorkKind.Research, "old way"), WorkCapture.parse("? old way"))
+        assertEquals(WorkCapture.Captured(WorkKind.Thought, "an idea"), WorkCapture.parse("thought: an idea"))
+        assertNull(WorkCapture.parse("just a plain thought"))
+        assertNull(WorkCapture.parse("todo:"), "a prefix with nothing after it is not an item")
+        assertNull(WorkCapture.parse("todos are fine: really"), "only the exact prefixes")
+    }
+
+    @Test
+    fun theGeneratedNotesLinkToEachOtherSoNoneIsAnIsland() {
+        val (work, vault) = service()
+        work.capture(WorkKind.Todo, "a"); work.capture(WorkKind.Question, "b")
+        WorkNotes.sync(vault, WorkStore(vault))
+        val todos = Files.readString(vault.root.resolve("Tasks/Todos.md"))
+        assertTrue("[[Questions]]" in todos && "[[Research Backlog]]" in todos && "[[Todos]]" !in todos, todos)
+        val index = VaultIndex.build(vault)
+        assertTrue(index.orphans.none { it.path == "Tasks/Todos.md" || it.path == "Questions/Questions.md" }, "neither note is an island: ${index.orphans.map { it.path }}")
+    }
+
+    @Test
+    fun thoughtsAreReadFromTheDailyNotesNewestFirst() {
+        val dir = Files.createTempDirectory("arcana-thoughts")
+        val vault = Vault(dir)
+        Files.createDirectories(dir.resolve("Thoughts"))
+        Files.writeString(dir.resolve("Thoughts/thought-2026-11-05.md"), "---\ncreated: x\n---\n\n- 08:19 ? old one\n- 09:30 second\nnot a thought\n")
+        Files.writeString(dir.resolve("Thoughts/thought-2026-11-06.md"), "- 16:50 todo: newest\n")
+        Files.writeString(dir.resolve("Thoughts/Thoughts Index.md"), "- [[thought-2026-11-06]]\n")
+        val all = Thoughts.recent(vault, DailyNotes("Thoughts", "[thought-]YYYY-MM-DD"))
+        assertEquals(listOf("todo: newest", "second", "? old one"), all.map { it.text })
+        assertEquals("Thoughts/thought-2026-11-06.md", all.first().path)
+        assertEquals("2026-11-05", all.last().date)
+        assertEquals(emptyList(), Thoughts.recent(Vault(Files.createTempDirectory("arcana-empty")), DailyNotes("Thoughts", "x")))
     }
 }

@@ -10,8 +10,18 @@ import kotlinx.serialization.Serializable
  *
  * Phase 1 only mirrors the research backlog note into this log ([WorkMigration]); nothing reads it for behaviour yet.
  */
-enum class WorkKind(val id: String) {
-    Question("question"), Task("task"), Thought("thought");
+enum class WorkKind(val id: String, val title: String) {
+    /** The default: a plain note, no skill, nothing to answer. */
+    Thought("thought", "Thoughts"),
+
+    /** Wants an answer, usually in chat, kept as a short answer note that the work can continue from later. */
+    Question("question", "Questions"),
+
+    /** Wants a full report from a skill (dev research, a comparison…); answered when a linked report is done. */
+    Research("research", "Research"),
+
+    /** A task: open, in progress, done. */
+    Todo("todo", "Todos");
 
     companion object {
         fun of(id: String): WorkKind? = entries.firstOrNull { it.id == id }
@@ -31,8 +41,8 @@ enum class WorkClosing(val id: String) {
     Merged("merged"),
 }
 
-/** The role a linked note plays for an item: only a [Report] can answer it. */
-enum class WorkRole(val id: String) { Report("report"), Source("source"), Draft("draft") }
+/** The role a linked note plays for an item: only a [Report] (research) or an [Answer] (question) can answer it. */
+enum class WorkRole(val id: String) { Report("report"), Answer("answer"), Source("source"), Draft("draft") }
 
 /**
  * One thing that happened to one item. Every event has its own [id], so reading a log twice, or merging the logs of two
@@ -62,6 +72,14 @@ sealed interface WorkEvent {
     @Serializable @SerialName("artifact")
     data class ArtifactLinked(override val id: String, override val item: String, override val at: Long, val note: String, val role: String) : WorkEvent
 
+    /** The user changed their mind about what the item is (research to question, todo to thought…): same id, same history, another kind. */
+    @Serializable @SerialName("retyped")
+    data class Retyped(override val id: String, override val item: String, override val at: Long, val kind: String) : WorkEvent
+
+    /** The skill pinned to this one item (blank: none, the kind's default applies). */
+    @Serializable @SerialName("skill")
+    data class SkillPinned(override val id: String, override val item: String, override val at: Long, val skill: String) : WorkEvent
+
     @Serializable @SerialName("closed")
     data class Closed(override val id: String, override val item: String, override val at: Long, val reason: String) : WorkEvent
 
@@ -89,6 +107,8 @@ data class WorkItem(
     val runs: List<String> = emptyList(),
     val artifacts: List<WorkArtifact> = emptyList(),
     val closing: WorkClosing? = null,
+    /** The skill pinned to this item, or blank. */
+    val skill: String = "",
 ) {
     /**
      * [doneNotes]: the notes that are finished reports (`status: done`); only the vault knows them, so the caller passes them in.
@@ -97,7 +117,7 @@ data class WorkItem(
      */
     fun state(doneNotes: Set<String> = emptySet()): WorkState = when {
         closing == WorkClosing.Abandoned || closing == WorkClosing.Merged -> WorkState.Abandoned
-        closing == WorkClosing.Answered || artifacts.any { it.role == WorkRole.Report && it.note in doneNotes } -> WorkState.Answered
+        closing == WorkClosing.Answered || artifacts.any { (it.role == WorkRole.Report || it.role == WorkRole.Answer) && it.note in doneNotes } -> WorkState.Answered
         runs.isNotEmpty() || artifacts.isNotEmpty() -> WorkState.InProgress
         else -> WorkState.Open
     }
@@ -128,6 +148,8 @@ object WorkItems {
             val item = items[key] ?: continue
             items[key] = when (e) {
                 is WorkEvent.Edited -> item.copy(text = e.text)
+                is WorkEvent.Retyped -> WorkKind.of(e.kind)?.let { item.copy(kind = it) } ?: item
+                is WorkEvent.SkillPinned -> item.copy(skill = e.skill.trim())
                 is WorkEvent.Aliased -> { byAlias[e.alias] = key; item.copy(aliases = item.aliases + e.alias) }
                 is WorkEvent.RunLinked -> if (e.run in item.runs) item else item.copy(runs = item.runs + e.run)
                 is WorkEvent.ArtifactLinked -> {

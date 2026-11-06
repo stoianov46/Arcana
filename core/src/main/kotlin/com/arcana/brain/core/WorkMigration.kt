@@ -15,7 +15,8 @@ import java.time.ZoneOffset
  * its marker the first time a research is started from it, and from then on it is found by that.
  */
 object WorkMigration {
-    private val kind = WorkKind.Question
+    /** The lines of the backlog note are research questions: the kind Research. */
+    private val kind = WorkKind.Research
 
     /** An id for a line that has no marker: stable for the same text and date, so the same line is the same item on every run. */
     internal fun legacyId(text: String, date: String): String = "legacy-" + hash("${ResearchBacklog.normalize(text)}|$date").take(10)
@@ -34,7 +35,7 @@ object WorkMigration {
     fun sync(vault: Vault, store: WorkStore, now: Long = System.currentTimeMillis()): Int {
         val lines = ResearchBacklog.items(vault)
         if (lines.isEmpty()) return 0
-        val log = store.log(kind)
+        val log = store.log()
         var written = 0
         fun add(e: WorkEvent) { if (log.append(e)) written++ }
 
@@ -75,7 +76,7 @@ object WorkMigration {
      * whose item was closed as answered. Empty when they agree (as they do right after [sync], apart from lines that were deleted from the note).
      */
     fun discrepancies(vault: Vault, store: WorkStore): List<String> {
-        val items = store.log(kind).items()
+        val items = store.items(kind)
         val lines = ResearchBacklog.items(vault)
         val problems = ArrayList<String>()
         for (item in items) {

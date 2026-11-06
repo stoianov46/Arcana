@@ -13,6 +13,11 @@ import com.arcana.brain.core.ChatChunk
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.Layout
 import com.arcana.brain.core.ResearchBacklog
+import com.arcana.brain.core.WorkCapture
+import com.arcana.brain.core.WorkKind
+import com.arcana.brain.core.WorkNotes
+import com.arcana.brain.core.WorkService
+import com.arcana.brain.core.WorkStore
 import com.arcana.brain.core.Skills
 import com.arcana.brain.core.DailyNotes
 import com.arcana.brain.core.listThought
@@ -280,8 +285,13 @@ class AppContext(
         val embeds = files.map { "![[${vault.copyAttachment(config.outputFolder, it)}]]" }
         val full = (listOf(text.trim()) + embeds).filter { it.isNotEmpty() }.joinToString(if (folder.isBlank()) " " else "\n\n")
         val path = if (folder.isBlank()) vault.capture(full, dailyNotes(vault)) else vault.captureNote(folder, full).also { if (folder.trim('/') == dailyNotes(vault).folder.trim('/')) vault.listThought(it) }
-        // a thought that starts with `? ` or `research: ` is also a question for the research backlog (best effort: the thought is saved either way)
-        ResearchBacklog.capturedQuestion(text)?.let { q -> runCatching { ResearchBacklog.add(vault, q) } }
+        // a thought that starts with a kind prefix (`todo: `, `question: `, `research: ` or `? `) is also a work item of that kind (best effort: the thought is saved either way)
+        WorkCapture.parse(text)?.let { c ->
+            runCatching {
+                if (c.kind == WorkKind.Research) ResearchBacklog.add(vault, c.text)
+                else { val store = WorkStore(vault); WorkService(store).capture(c.kind, c.text); WorkNotes.sync(vault, store) }
+            }
+        }
         session.log(SessionKind.Captured, full, path)
         brain.changed()
         path
