@@ -309,6 +309,7 @@ class WorkTest {
         work.close(b.id)
         work.capture(WorkKind.Question, "what is the outbox pattern")
         assertEquals(listOf("Tasks/Todos.md", "Questions/Questions.md"), WorkNotes.sync(vault, WorkStore(vault)).sortedBy { if (it.startsWith("Tasks")) 0 else 1 })
+        assertEquals(emptyList(), WorkNotes.sync(Vault(Files.createTempDirectory("arcana-nothing")), WorkStore(Files.createTempDirectory("arcana-nothing-store"))), "nothing to show, nothing written")
         val todos = Files.readString(vault.root.resolve("Tasks/Todos.md"))
         assertTrue("## Open" in todos && "- [ ] buy a domain" in todos && "^${a.id}" in todos, todos)
         assertTrue("## Done" in todos && "- [x] write the test" in todos, todos)
@@ -352,9 +353,10 @@ class WorkTest {
         work.capture(WorkKind.Todo, "a"); work.capture(WorkKind.Question, "b")
         WorkNotes.sync(vault, WorkStore(vault))
         val todos = Files.readString(vault.root.resolve("Tasks/Todos.md"))
-        assertTrue("[[Questions]]" in todos && "[[Research Backlog]]" in todos && "[[Todos]]" !in todos, todos)
+        assertTrue("[[Questions]]" in todos && "[[Todos]]" !in todos && "[[Research Backlog]]" !in todos, "no backlog note, so no link to it: $todos")
         val index = VaultIndex.build(vault)
         assertTrue(index.orphans.none { it.path == "Tasks/Todos.md" || it.path == "Questions/Questions.md" }, "neither note is an island: ${index.orphans.map { it.path }}")
+        assertEquals(0, index.health("Inbox", 90).brokenNotes, "and no link points at nothing")
     }
 
     @Test
@@ -370,5 +372,14 @@ class WorkTest {
         assertEquals("Thoughts/thought-2026-11-06.md", all.first().path)
         assertEquals("2026-11-05", all.last().date)
         assertEquals(emptyList(), Thoughts.recent(Vault(Files.createTempDirectory("arcana-empty")), DailyNotes("Thoughts", "x")))
+    }
+
+    @Test
+    fun oneTodoAloneStillLeavesNoBrokenLink() {
+        val (work, vault) = service()
+        work.capture(WorkKind.Todo, "the only item")
+        WorkNotes.sync(vault, WorkStore(vault))
+        assertTrue(Files.exists(vault.root.resolve("Questions/Questions.md")), "the note the todos link to exists too, even with no question yet")
+        assertEquals(0, VaultIndex.build(vault).health("Inbox", 90).brokenNotes)
     }
 }
