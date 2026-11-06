@@ -292,8 +292,8 @@ class Colors(val spec: ThemeSpec) {
      * The selected tab: a soft tint of the colour over the background, with the normal text colour in bold, so a tab says where you are without a bright block.
      * [TabOn] (cyan) is for the page tabs of a screen, [TabOnAccent] (violet) for the sidebar and a second row of tabs.
      */
-    val TabOn = hex(mix(cyanRgb, backgroundRgb, 0.32))
-    val TabOnAccent = hex(mix(purpleRgb, backgroundRgb, 0.32))
+    val TabOn = hex(mix(cyanRgb, backgroundRgb, 0.45))
+    val TabOnAccent = hex(mix(purpleRgb, backgroundRgb, 0.45))
     val GreenBg = hex(opt("greenBg") { mix(greenRgb, surfaceRgb, 0.15) })
     val Red = hex(redRgb)
     val RedBg = hex(opt("redBg") { mix(redRgb, surfaceRgb, 0.17) })

@@ -385,15 +385,18 @@ fun HomeScreen(app: AppContext) {
                     }, pickSel.coerceIn(0, (options.size - 1).coerceAtLeast(0)), height - 5)
                 }
             }
-            backlogOpen -> Panel("Lists · " + workKinds.joinToString("   ") { k -> (if (k == workKind) "‹ ${k.title} ${countOf(k)} ›" else "${k.title} ${countOf(k)}") }, Modifier.height(height)) {
+            backlogOpen -> Panel("Lists", Modifier.height(height)) {
+                // the kinds as tabs: the current one is lit (a panel title is one piece of text and cannot show which part is current)
+                Row { workKinds.forEach { k -> TabLabel("${k.title} ${countOf(k)}", k == workKind) } }
+                VGap()
                 val prefix = when (workKind) { WorkKind.Question -> "question: "; WorkKind.Todo -> "todo: "; WorkKind.Thought -> ""; else -> "? " }
                 when {
                     workKind == WorkKind.Research && researchAll.isEmpty() -> Label("✓ No research yet. Capture one with Ctrl+N and start it with “? ” or “research: ”.", color = Palette.CyanSoft)
-                    workKind == WorkKind.Research -> RowList(researchAll.map { q -> BrainRow.Item(if (q.done) "☑" else "☐", if (q.done) Palette.CyanSoft else Palette.Cta, q.question, q.date + (q.link?.let { " · $it" } ?: ""), dim = q.done, open = {}) }, backlogSel.coerceIn(0, (researchAll.size - 1).coerceAtLeast(0)), height - 2)
+                    workKind == WorkKind.Research -> RowList(researchAll.map { q -> BrainRow.Item(if (q.done) "☑" else "☐", if (q.done) Palette.CyanSoft else Palette.Cta, q.question, q.date + (q.link?.let { " · $it" } ?: ""), dim = q.done, open = {}) }, backlogSel.coerceIn(0, (researchAll.size - 1).coerceAtLeast(0)), height - 4)
                     workKind == WorkKind.Thought && thoughts.isEmpty() -> Label("No thoughts yet. Capture one with Ctrl+N.", color = Palette.Dim)
-                    workKind == WorkKind.Thought -> RowList(thoughts.map { t -> Thoughts.promotedAs(t, workItems).let { k -> BrainRow.Item(if (k == null) "✎" else "✓", if (k == null) Palette.Accent else Palette.CyanSoft, t.text, "${t.date} ${t.time}" + (k?.let { " · → ${it.id}" } ?: ""), dim = k != null, open = {}) } }, backlogSel.coerceIn(0, (thoughts.size - 1).coerceAtLeast(0)), height - 2)
+                    workKind == WorkKind.Thought -> RowList(thoughts.map { t -> Thoughts.promotedAs(t, workItems).let { k -> BrainRow.Item(if (k == null) "✎" else "✓", if (k == null) Palette.Accent else Palette.CyanSoft, t.text, "${t.date} ${t.time}" + (k?.let { " · → ${it.id}" } ?: ""), dim = k != null, open = {}) } }, backlogSel.coerceIn(0, (thoughts.size - 1).coerceAtLeast(0)), height - 4)
                     kindItems.isEmpty() -> Label("Nothing here. Capture one with Ctrl+N and start it with “$prefix”.", color = Palette.Dim)
-                    else -> RowList(kindItems.map { i -> workRow(i, open = { askQuestion(i) }) }, backlogSel.coerceIn(0, (kindItems.size - 1).coerceAtLeast(0)), height - 2)
+                    else -> RowList(kindItems.map { i -> workRow(i, open = { askQuestion(i) }) }, backlogSel.coerceIn(0, (kindItems.size - 1).coerceAtLeast(0)), height - 4)
                 }
             }
             hygieneOpen -> Panel("Vault hygiene · ${hygiene?.total ?: 0} issues" + (hygieneKind?.let { " · ${it.label}" } ?: ""), Modifier.height(height)) {
