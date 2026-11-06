@@ -36,7 +36,7 @@ internal fun computeSnapshot(app: AppContext, vault: Vault, index: VaultIndex, h
     val reports = Reports.scan(vault)
     val work = WorkStore(vault).items()
     val done = reports.filter { it.status.equals("done", ignoreCase = true) }.map { it.title }.toSet()
-    return BrainStats.compute(weeks, index.notes, health, reports, work, done, app.usage.toList(), hygiene, app.config.inboxFolder, LocalDate.now())
+    return BrainStats.compute(weeks, index.notes, health, reports, work, done, app.usage.toList(), hygiene, LocalDate.now())
 }
 
 @Composable

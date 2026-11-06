@@ -80,6 +80,10 @@ sealed interface WorkEvent {
     @Serializable @SerialName("skill")
     data class SkillPinned(override val id: String, override val item: String, override val at: Long, val skill: String) : WorkEvent
 
+    /** Where the item came from: the thought it was promoted from (`thought:<note>|<time>|<hash>`), so that thought can be shown as already used. */
+    @Serializable @SerialName("sourced")
+    data class Sourced(override val id: String, override val item: String, override val at: Long, val origin: String) : WorkEvent
+
     @Serializable @SerialName("closed")
     data class Closed(override val id: String, override val item: String, override val at: Long, val reason: String) : WorkEvent
 
@@ -109,6 +113,8 @@ data class WorkItem(
     val closing: WorkClosing? = null,
     /** The skill pinned to this item, or blank. */
     val skill: String = "",
+    /** What the item was made from (see [WorkEvent.Sourced]), or blank. */
+    val origin: String = "",
 ) {
     /**
      * [doneNotes]: the notes that are finished reports (`status: done`); only the vault knows them, so the caller passes them in.
@@ -150,6 +156,7 @@ object WorkItems {
                 is WorkEvent.Edited -> item.copy(text = e.text)
                 is WorkEvent.Retyped -> WorkKind.of(e.kind)?.let { item.copy(kind = it) } ?: item
                 is WorkEvent.SkillPinned -> item.copy(skill = e.skill.trim())
+                is WorkEvent.Sourced -> item.copy(origin = e.origin)
                 is WorkEvent.Aliased -> { byAlias[e.alias] = key; item.copy(aliases = item.aliases + e.alias) }
                 is WorkEvent.RunLinked -> if (e.run in item.runs) item else item.copy(runs = item.runs + e.run)
                 is WorkEvent.ArtifactLinked -> {

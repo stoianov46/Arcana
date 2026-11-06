@@ -30,7 +30,6 @@ sealed interface BottleneckAction {
     data class Hygiene(val kind: HygieneKind?) : BottleneckAction
     data class Library(val filter: String) : BottleneckAction
     data object Work : BottleneckAction
-    data object Inbox : BottleneckAction
     data object None : BottleneckAction
 }
 
@@ -80,7 +79,6 @@ object BrainStats {
         doneNotes: Set<String>,
         usage: List<UsageRecord>,
         hygiene: HygieneReport?,
-        inboxFolder: String,
         today: LocalDate,
     ): BrainSnapshot {
         val span = weeks.coerceIn(1, 52)
@@ -114,7 +112,7 @@ object BrainStats {
             weeks = span, days = days, weekly = weekly, tokensByWeek = tokensByWeek, health = health, reports = reportStats, folders = folders,
             pipeline = pipeline, hubs = hubs, busiestDay = days.maxByOrNull { it.changed }?.takeIf { it.changed > 0 },
             changedInWindow = days.sumOf { it.changed }, activityTrend = trend,
-            bottlenecks = bottlenecks(health, reportStats, pipeline, hygiene, trend, inboxFolder),
+            bottlenecks = bottlenecks(health, reportStats, pipeline, hygiene, trend),
         )
     }
 
@@ -133,12 +131,11 @@ object BrainStats {
     }
 
     /** The bottlenecks, the most pressing first; a clean area becomes a `good` entry so it shows as done. */
-    internal fun bottlenecks(health: BrainHealth, reports: ReportStats, pipeline: List<KindPipeline>, hygiene: HygieneReport?, trend: Double?, inboxFolder: String): List<Bottleneck> {
+    internal fun bottlenecks(health: BrainHealth, reports: ReportStats, pipeline: List<KindPipeline>, hygiene: HygieneReport?, trend: Double?): List<Bottleneck> {
         val out = ArrayList<Bottleneck>()
         fun add(key: String, count: Int, score: Int, title: String, detail: String, action: BottleneckAction) {
             if (count > 0) out += Bottleneck(key, score.coerceIn(1, 100), title, detail, action)
         }
-        add("inbox", health.inbox, 55 + health.inbox * 3, "${health.inbox} ${if (health.inbox == 1) "note" else "notes"} waiting in the inbox", "process them with AI", BottleneckAction.Inbox)
         add("reports", reports.notDone, 60 + reports.notDone * 4, "${reports.notDone} ${if (reports.notDone == 1) "report" else "reports"} not finished", "a report that is not done answers nothing", BottleneckAction.Hygiene(HygieneKind.ReportNotDone))
         val research = pipeline.first { it.kind == WorkKind.Research }
         add("research", research.open, 40 + research.open * 3 + (research.oldestOpenDays ?: 0L).toInt().coerceAtMost(20), "${research.open} research ${if (research.open == 1) "question" else "questions"} never started", research.oldestOpenDays?.let { "the oldest waits $it ${if (it == 1L) "day" else "days"}" } ?: "", BottleneckAction.Work)

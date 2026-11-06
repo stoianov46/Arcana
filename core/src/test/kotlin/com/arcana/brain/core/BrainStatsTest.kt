@@ -12,11 +12,11 @@ class BrainStatsTest {
     private val today = LocalDate.of(2026, 11, 6) // a Friday
     private fun at(day: LocalDate) = day.atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
     private fun note(path: String, day: LocalDate, words: Int = 100, tags: Set<String> = setOf("a"), links: Set<String> = emptySet()) = NoteInfo(path, at(day), words, tags, links, emptySet())
-    private val health = BrainHealth(notes = 4, words = 400, links = 2, tags = 1, inbox = 0, orphans = 0, untagged = 0, brokenNotes = 0, brokenLinks = 0, stale = 0, changedThisWeek = 2, connectedPercent = 100, taggedPercent = 100)
+    private val health = BrainHealth(notes = 4, words = 400, links = 2, tags = 1, orphans = 0, untagged = 0, brokenNotes = 0, brokenLinks = 0, stale = 0, changedThisWeek = 2, connectedPercent = 100, taggedPercent = 100)
     private fun report(status: String, tokens: Long? = null) = ReportInfo("R/x.md", "x", "t", "research", status, "2026-11-01", "2026", "", "", "q", 5L, tokens = tokens)
 
     private fun compute(notes: List<NoteInfo> = emptyList(), work: List<WorkItem> = emptyList(), reports: List<ReportInfo> = emptyList(), usage: List<UsageRecord> = emptyList(), health: BrainHealth = this.health, hygiene: HygieneReport? = null, weeks: Int = 8) =
-        BrainStats.compute(weeks, notes, health, reports, work, emptySet(), usage, hygiene, "Inbox", today)
+        BrainStats.compute(weeks, notes, health, reports, work, emptySet(), usage, hygiene, today)
 
     @Test
     fun theWindowIsWholeWeeksFromAMondayToTodayAndEveryDayIsCounted() {
@@ -83,12 +83,12 @@ class BrainStatsTest {
 
     @Test
     fun bottlenecksAreRankedAndEachSaysWhereToGo() {
-        val h = health.copy(inbox = 2, brokenNotes = 1, brokenLinks = 3, untagged = 5)
+        val h = health.copy(brokenNotes = 1, brokenLinks = 3, untagged = 5)
         val s = compute(health = h, reports = listOf(report("draft"), report("draft")))
         val keys = s.bottlenecks.map { it.key }
-        assertEquals(listOf("reports", "inbox", "broken", "untagged"), keys, "highest score first: ${s.bottlenecks.map { it.key to it.score }}")
+        assertEquals(listOf("reports", "broken", "untagged"), keys, "highest score first: ${s.bottlenecks.map { it.key to it.score }}")
         assertEquals(BottleneckAction.Hygiene(HygieneKind.ReportNotDone), s.bottlenecks.first().action)
-        assertEquals(BottleneckAction.Inbox, s.bottlenecks[1].action)
+        assertEquals(BottleneckAction.Library("broken"), s.bottlenecks[1].action)
         assertEquals(BottleneckAction.Library("untagged"), s.bottlenecks.last().action)
     }
 

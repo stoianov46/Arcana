@@ -356,7 +356,7 @@ class WorkTest {
         assertTrue("[[Questions]]" in todos && "[[Todos]]" !in todos && "[[Research Backlog]]" !in todos, "no backlog note, so no link to it: $todos")
         val index = VaultIndex.build(vault)
         assertTrue(index.orphans.none { it.path == "Tasks/Todos.md" || it.path == "Questions/Questions.md" }, "neither note is an island: ${index.orphans.map { it.path }}")
-        assertEquals(0, index.health("Inbox", 90).brokenNotes, "and no link points at nothing")
+        assertEquals(0, index.health(90).brokenNotes, "and no link points at nothing")
     }
 
     @Test
@@ -380,6 +380,42 @@ class WorkTest {
         work.capture(WorkKind.Todo, "the only item")
         WorkNotes.sync(vault, WorkStore(vault))
         assertTrue(Files.exists(vault.root.resolve("Questions/Questions.md")), "the note the todos link to exists too, even with no question yet")
-        assertEquals(0, VaultIndex.build(vault).health("Inbox", 90).brokenNotes)
+        assertEquals(0, VaultIndex.build(vault).health(90).brokenNotes)
+    }
+
+    @Test
+    fun aThoughtIsPromotedToAnItemOnceAndRemembersWhereItCameFrom() {
+        val dir = Files.createTempDirectory("arcana-promote")
+        val vault = Vault(dir)
+        val store = WorkStore(vault)
+        val thought = ThoughtLine("2026-11-06", "16:50", "buy a domain for the project", "Thoughts/thought-2026-11-06.md")
+        assertNull(Thoughts.promotedAs(thought, store.items()))
+        val item = Thoughts.promote(vault, store, thought, WorkKind.Todo)!!
+        assertEquals(WorkKind.Todo, item.kind)
+        assertEquals("buy a domain for the project", item.text)
+        assertEquals(Thoughts.key(thought), item.origin)
+        assertEquals(WorkKind.Todo, Thoughts.promotedAs(thought, WorkStore(vault).items()), "the link survives a restart")
+        assertNull(Thoughts.promote(vault, store, thought, WorkKind.Question), "a thought is promoted once")
+        assertEquals(1, store.items().size)
+        assertTrue("buy a domain for the project" in Files.readString(dir.resolve("Tasks/Todos.md")))
+    }
+
+    @Test
+    fun aThoughtThatCarriedAPrefixAlreadyIsAnItemAndPromotingResearchUsesTheBacklog() {
+        val dir = Files.createTempDirectory("arcana-promote2")
+        val vault = Vault(dir)
+        val store = WorkStore(vault)
+        val prefixed = ThoughtLine("2026-11-06", "22:19", "todo: test 2", "Thoughts/thought-2026-11-06.md")
+        assertNull(Thoughts.promotedAs(prefixed, store.items()), "not yet captured as an item")
+        WorkService(store).capture(WorkKind.Todo, "test 2")
+        assertEquals(WorkKind.Todo, Thoughts.promotedAs(prefixed, store.items()), "the prefix made it an item when it was captured")
+        assertNull(Thoughts.promote(vault, store, prefixed, WorkKind.Todo))
+
+        val idea = ThoughtLine("2026-11-06", "09:00", "how does the outbox pattern work", "Thoughts/thought-2026-11-06.md")
+        val research = Thoughts.promote(vault, store, idea, WorkKind.Research)!!
+        assertEquals(WorkKind.Research, research.kind)
+        assertEquals(Thoughts.key(idea), research.origin)
+        assertTrue("how does the outbox pattern work" in Files.readString(dir.resolve(ResearchBacklog.PATH)), "research lives in the backlog note")
+        assertEquals(WorkKind.Research, Thoughts.promotedAs(idea, store.items()))
     }
 }

@@ -17,18 +17,17 @@ enum class ScreenGroup(val heading: String) { Workspace("BRAIN"), Account("SYSTE
 
 /** The views of the Library: every note, or the ones that need attention. */
 enum class LibraryFilter(val title: String) {
-    All("All"), Recent("Recent"), Reports("Reports"), Inbox("Inbox"), Orphans("No links"), Untagged("No tags"), Broken("Broken links"), Stale("Stale"), Tags("Tags"),
+    All("All"), Recent("Recent"), Reports("Reports"), Orphans("No links"), Untagged("No tags"), Broken("Broken links"), Stale("Stale"), Tags("Tags"),
 }
 
 /**
  * [inSidebar] false: a screen that is not a tab. It has no number key and is not in the sidebar, and is reached from where its work starts (the Brain
- * screen, the Library's Inbox view, the command palette).
+ * screen, the command palette).
  */
 enum class Screen(val title: String, val icon: String, val group: ScreenGroup = ScreenGroup.Workspace, val inSidebar: Boolean = true) {
     Home("Brain", "◉"),
     Chat("Chat", "»"),
     Library("Library", "▤"),
-    Inbox("Inbox", "▣", inSidebar = false),
     Compose("AI notes", "✦"),
     Session("Session", "◷", inSidebar = false),
     Usage("Usage", "▥", ScreenGroup.Account),

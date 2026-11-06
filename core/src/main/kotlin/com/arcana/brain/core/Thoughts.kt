@@ -27,4 +27,36 @@ object Thoughts {
             .sortedByDescending { it.fileName.toString() }.take(days)
         return files.flatMap { f -> parse(vault.root.relativize(f).toString().replace('\\', '/'), runCatching { Files.readString(f) }.getOrDefault("")) }.take(max)
     }
+
+    /** A thought's identity for the work log: its note, its time and its text, so editing neither creates a second item nor loses the link. */
+    fun key(t: ThoughtLine): String = "thought:${t.path}|${t.time}|${t.text.hashCode().toUInt().toString(36)}"
+
+    /**
+     * The kind this thought already is an item of, or null. Either it was promoted (an item whose origin is its [key]), or it was captured with a kind prefix
+     * (`todo: …`), which made the item when it was captured: an item of that kind with the same text.
+     */
+    fun promotedAs(t: ThoughtLine, items: List<WorkItem>): WorkKind? {
+        items.firstOrNull { it.origin == key(t) }?.let { return it.kind }
+        val prefixed = WorkCapture.parse(t.text) ?: return null
+        return prefixed.kind.takeIf { k -> items.any { it.kind == k && ResearchBacklog.normalize(it.text) == ResearchBacklog.normalize(prefixed.text) } }
+    }
+
+    /**
+     * Makes the thought an item of [kind]: a todo or a question in the work log, research a line of the research backlog (which the log mirrors). A prefix the thought
+     * carries (`todo: `) is not part of the text. Returns the item, or null when the thought already is one. The thought itself is not touched.
+     */
+    fun promote(vault: Vault, store: WorkStore, t: ThoughtLine, kind: WorkKind): WorkItem? {
+        if (promotedAs(t, store.items()) != null) return null
+        val text = (WorkCapture.parse(t.text)?.text ?: t.text).trim()
+        if (text.isEmpty() || kind == WorkKind.Thought) return null
+        val service = WorkService(store)
+        val item = if (kind == WorkKind.Research) {
+            ResearchBacklog.add(vault, text)
+            WorkMigration.sync(vault, store)
+            store.items().lastOrNull { it.kind == WorkKind.Research && ResearchBacklog.normalize(it.text) == ResearchBacklog.normalize(text) }
+        } else service.capture(kind, text)
+        val sourced = item?.let { service.source(it.id, key(t)) }
+        WorkNotes.sync(vault, store)
+        return sourced
+    }
 }

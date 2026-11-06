@@ -78,7 +78,7 @@ fun HomeScreen(app: AppContext) {
     var selected by rememberKept(app, "brain.selected@$where") { mutableIntStateOf(0) }
     val index = app.brain.index
     val vault = remember(app.config.vaultPath) { app.openVault() }
-    val health = remember(index, app.config.inboxFolder, app.config.staleDays) { index?.health(app.config.inboxFolder, app.config.staleDays) }
+    val health = remember(index, app.config.staleDays) { index?.health(app.config.staleDays) }
     val wide = LocalContentWidth.current >= 100
 
     // the hygiene check reads every note once: it runs off the UI thread whenever the vault was read again, and the last result stays on screen meanwhile
@@ -145,6 +145,20 @@ fun HomeScreen(app: AppContext) {
     fun switchKind(by: Int) { workKind = workKinds[(workKinds.indexOf(workKind) + by).mod(workKinds.size)]; backlogSel = 0 }
     val chosenQuestion = researchAll.getOrNull(backlogSel.coerceIn(0, (researchAll.size - 1).coerceAtLeast(0)))
     val chosenThought = thoughts.getOrNull(backlogSel.coerceIn(0, (thoughts.size - 1).coerceAtLeast(0)))
+    // t, q and r on a thought: it becomes a todo, a question or a research item (the thought itself stays where it was written)
+    fun promote(kind: WorkKind) {
+        val thought = chosenThought ?: return
+        val v = vault.getOrNull() ?: return
+        val made = runCatching { Thoughts.promote(v, WorkStore(v), thought, kind) }.getOrNull()
+        if (made == null) navigator.showToast("That thought is already ${Thoughts.promotedAs(thought, workItems)?.id ?: "an item"}.", true)
+        else {
+            reloadWork()
+            allBacklog = runCatching { ResearchBacklog.items(v) }.getOrDefault(allBacklog)
+            backlog = runCatching { ResearchBacklog.open(v) }.getOrDefault(backlog)
+            app.brain.changed()
+            navigator.showToast("Added to ${kind.title.lowercase()}: ${made.text.take(40)}")
+        }
+    }
     val chosenWork = kindItems.getOrNull(backlogSel.coerceIn(0, (kindItems.size - 1).coerceAtLeast(0)))
     // a command on the chosen item of the log: the event is written, the note of the kind is written again, the list is read again
     fun actOn(item: WorkItem, act: (WorkService, WorkItem) -> Unit) {
@@ -236,7 +250,6 @@ fun HomeScreen(app: AppContext) {
         is BottleneckAction.Hygiene -> openHygiene(a.kind)
         is BottleneckAction.Library -> navigator.openLibrary(when (a.filter) { "broken" -> LibraryFilter.Broken; "orphans" -> LibraryFilter.Orphans; "untagged" -> LibraryFilter.Untagged; "stale" -> LibraryFilter.Stale; else -> LibraryFilter.All })
         BottleneckAction.Work -> openBacklog()
-        BottleneckAction.Inbox -> navigator.navigate(Screen.Inbox)
         BottleneckAction.None -> Unit
     }
     // the overview's list: what holds the brain back (each row goes to the fix), what to do next from the work, and where to go
@@ -259,7 +272,6 @@ fun HomeScreen(app: AppContext) {
         add(BrainRow.Item("✎", Palette.Accent, "Capture a thought", "Ctrl+N from anywhere", open = { navigator.openCapture() }))
         add(BrainRow.Item("»", Palette.Accent, if (app.chat.messages.isNotEmpty()) "Continue chat: ${app.chat.title}" else "Ask your brain", "Chat", open = { navigator.navigate(Screen.Chat) }))
         add(BrainRow.Item("▤", Palette.Muted, "Library", "all your notes", open = { navigator.openLibrary(LibraryFilter.All) }))
-        add(BrainRow.Item("▣", Palette.OrangeSoft, "Inbox", (health?.inbox ?: 0).let { if (it > 0) "$it waiting · let AI file them" else "nothing waiting" }, dim = (health?.inbox ?: 0) == 0, open = { navigator.navigate(Screen.Inbox) }))
         add(BrainRow.Item("◷", Palette.Muted, "Session", app.session.let { if (it.needsSaving) "${it.unsavedCount} unsaved · save a summary note" else "nothing unsaved" }, dim = !app.session.needsSaving, open = { navigator.navigate(Screen.Session) }))
         add(BrainRow.Item("✦", Palette.Muted, "Write or improve a note with AI", "AI notes", open = { navigator.navigate(Screen.Compose) }))
     }
@@ -268,7 +280,7 @@ fun HomeScreen(app: AppContext) {
     val current = selected.coerceIn(0, (items.size - 1).coerceAtLeast(0))
 
     if (pickFor != null) Hints("↑↓  choose", "Enter  run it", "p  pin to this item", "u  unpin", "d  default for ${pickFor?.kind?.id}", "Esc  back")
-    else if (backlogOpen) Hints("↑↓  choose", "Tab  next kind", "Enter  " + when (workKind) { WorkKind.Research -> "start it / open its report"; WorkKind.Thought -> "open the note"; else -> "start it in a chat" }, *(if (workKind == WorkKind.Thought) emptyArray() else arrayOf("x  " + (if (workKind == WorkKind.Research) "mark done" else "done / not done"))), *(if (workKind == WorkKind.Question || workKind == WorkKind.Todo) arrayOf("t  question ⇄ todo") else emptyArray()), "Esc  back")
+    else if (backlogOpen) Hints("↑↓  choose", "Tab  next kind", "Enter  " + when (workKind) { WorkKind.Research -> "start it / open its report"; WorkKind.Thought -> "open the note"; else -> "start it in a chat" }, *(if (workKind == WorkKind.Thought) emptyArray() else arrayOf("x  " + (if (workKind == WorkKind.Research) "mark done" else "done / not done"))), *(if (workKind == WorkKind.Question || workKind == WorkKind.Todo) arrayOf("t  question ⇄ todo") else if (workKind == WorkKind.Thought) arrayOf("t  → todo", "q  → question", "r  → research") else emptyArray()), "Esc  back")
     else if (hygieneOpen) Hints("↑↓  choose", "Enter  open the note", "c  chat to fix it", "Esc  back")
     else Hints("↑↓  choose", "Tab  next page", "w  weeks", "Enter  open", "x  done", "t  question ⇄ todo", "h  vault hygiene", "b  all work", "r  re-read the vault")
     Commands(listOf(Command("Re-read the vault", "Brain", "r") { app.brain.changed() }, Command("Vault hygiene: names, properties, reports, islands", "Brain", "h") { openHygiene(null) }, Command("Research backlog: questions captured with “? ”", "Brain", "b") { openBacklog() }))
@@ -305,7 +317,9 @@ fun HomeScreen(app: AppContext) {
             key == Key.Left || key == Key.BackTab -> { switchKind(-1); true }
             key == Key.Enter -> { when (workKind) { WorkKind.Research -> chosenQuestion?.let(::openResearchLine); WorkKind.Thought -> chosenThought?.let { backlogOpen = false; navigator.openLibrary(LibraryFilter.All, it.path) }; else -> chosenWork?.let(::askQuestion) }; true }
             key.char == 'x' || key.char == ' ' -> { if (workKind == WorkKind.Research) chosenQuestion?.takeIf { !it.done }?.let(::markDone) else if (workKind != WorkKind.Thought) toggleDone(); true }
-            key.char == 't' -> { if (workKind == WorkKind.Question || workKind == WorkKind.Todo) retypeNext(); true }
+            key.char == 't' -> { if (workKind == WorkKind.Thought) promote(WorkKind.Todo) else if (workKind == WorkKind.Question || workKind == WorkKind.Todo) retypeNext(); true }
+            key.char == 'q' && workKind == WorkKind.Thought -> { promote(WorkKind.Question); true }
+            key.char == 'r' && workKind == WorkKind.Thought -> { promote(WorkKind.Research); true }
             else -> true
         }
         if (!hygieneOpen && key.char == 'b') { openBacklog(); return@KeyHandler true }
@@ -379,7 +393,7 @@ fun HomeScreen(app: AppContext) {
                     workKind == WorkKind.Research && researchAll.isEmpty() -> Label("✓ No research yet. Capture one with Ctrl+N and start it with “? ” or “research: ”.", color = Palette.CyanSoft)
                     workKind == WorkKind.Research -> RowList(researchAll.map { q -> BrainRow.Item(if (q.done) "☑" else "☐", if (q.done) Palette.CyanSoft else Palette.Cta, q.question, q.date + (q.link?.let { " · $it" } ?: ""), dim = q.done, open = {}) }, backlogSel.coerceIn(0, (researchAll.size - 1).coerceAtLeast(0)), height - 2)
                     workKind == WorkKind.Thought && thoughts.isEmpty() -> Label("No thoughts yet. Capture one with Ctrl+N.", color = Palette.Dim)
-                    workKind == WorkKind.Thought -> RowList(thoughts.map { t -> BrainRow.Item("✎", Palette.Accent, t.text, "${t.date} ${t.time}", open = {}) }, backlogSel.coerceIn(0, (thoughts.size - 1).coerceAtLeast(0)), height - 2)
+                    workKind == WorkKind.Thought -> RowList(thoughts.map { t -> Thoughts.promotedAs(t, workItems).let { k -> BrainRow.Item(if (k == null) "✎" else "✓", if (k == null) Palette.Accent else Palette.CyanSoft, t.text, "${t.date} ${t.time}" + (k?.let { " · → ${it.id}" } ?: ""), dim = k != null, open = {}) } }, backlogSel.coerceIn(0, (thoughts.size - 1).coerceAtLeast(0)), height - 2)
                     kindItems.isEmpty() -> Label("Nothing here. Capture one with Ctrl+N and start it with “$prefix”.", color = Palette.Dim)
                     else -> RowList(kindItems.map { i -> workRow(i, open = { askQuestion(i) }) }, backlogSel.coerceIn(0, (kindItems.size - 1).coerceAtLeast(0)), height - 2)
                 }
@@ -450,15 +464,12 @@ private fun buildRows(app: AppContext, navigator: Navigator, h: BrainHealth?, ha
             fun attention(icon: String, count: Int, what: String, filter: LibraryFilter, color: Color) {
                 if (count > 0) add(BrainRow.Item(icon, color, "$count $what", "", open = { navigator.openLibrary(filter) }))
             }
-            if (h.inbox > 0) {
-                add(BrainRow.Item("▣", Palette.Orange, "${h.inbox} ${if (h.inbox == 1) "note" else "notes"} waiting in the inbox", "process with AI", open = { navigator.navigate(Screen.Inbox) }))
-            }
             attention("⊘", h.orphans, "notes are not linked to anything", LibraryFilter.Orphans, Palette.Orange)
             attention("#", h.untagged, "notes have no tags", LibraryFilter.Untagged, Palette.Blue)
             attention("✕", h.brokenNotes, "notes contain broken links (${h.brokenLinks} in all)", LibraryFilter.Broken, Palette.OrangeSoft)
             attention("◷", h.stale, "notes untouched for ${app.config.staleDays}+ days", LibraryFilter.Stale, Palette.Muted)
-            if (h.inbox + h.orphans + h.untagged + h.brokenNotes + h.stale == 0) {
-                add(BrainRow.Item("✓", Palette.CyanSoft, "Everything is in order", "no inbox, no islands, no broken links", dim = true, open = { navigator.openLibrary(LibraryFilter.All) }))
+            if (h.orphans + h.untagged + h.brokenNotes + h.stale == 0) {
+                add(BrainRow.Item("✓", Palette.CyanSoft, "Everything is in order", "no islands, no broken links", dim = true, open = { navigator.openLibrary(LibraryFilter.All) }))
             }
         }
         // the work: questions, research and todos, each its own section with what is still to do (Enter acts on a row, x marks it done, t turns a question into a todo and back; b opens them all)

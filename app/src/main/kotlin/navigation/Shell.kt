@@ -139,7 +139,7 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
     val nav = app.config.navPosition
     val topBar = nav == "top"
     val sidebarWidth = if (topBar) 0 else if (collapsed) 7 else (size.columns / 5).coerceIn(18, Dimens.SidebarWidth)
-    val health = remember(app.brain.index, app.config.inboxFolder, app.config.staleDays) { app.brain.index?.health(app.config.inboxFolder, app.config.staleDays) }
+    val health = remember(app.brain.index, app.config.staleDays) { app.brain.index?.health(app.config.staleDays) }
     // what the Chat tab says while it waits for you: pulsing, so it is seen from any other screen
     val waitingFor = if (app.chat.approval != null) "!" else if (app.chat.question != null) "?" else null
     var pulse by remember { mutableStateOf(false) }
@@ -163,7 +163,6 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
     }
     val badge: (Screen) -> Pair<String, Color>? = { screen ->
         when (screen) {
-            Screen.Inbox -> health?.inbox?.takeIf { it > 0 }?.let { it.toString() to Palette.Orange }
             Screen.Session -> if (app.session.needsSaving) "${app.session.unsavedCount}" to Palette.Warn else null
             // a dialog the model is waiting on (an approval, a question) must be seen from every screen: the reply cannot go on without an answer
             Screen.Chat -> when {

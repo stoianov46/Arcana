@@ -79,8 +79,6 @@ data class AppConfig(
     /** Esc on a running reply (or an Oracul run) asks "Cancel this reply?" first; off = Esc cancels at once. */
     val confirmCancel: Boolean = true,
     /** Chats are saved to disk and the last one is reopened when Arcana starts. */
-    /** The folder where new, unprocessed notes land; Arcana counts what is waiting there. */
-    val inboxFolder: String = "Inbox",
     /** The embedding model of the semantic search (`semantic_search` tool, `/reindex`): an installed Ollama model such as nomic-embed-text. Blank = the semantic search is off. */
     val embedModel: String = "",
     /** Daily notes: used only when the vault has no Obsidian Daily notes settings of its own. */
@@ -235,7 +233,7 @@ data class AppConfig(
     val skillsFolder: String = "",
     /** The Library lists its notes as a tree of folders that fold and unfold (off: one flat list with the full paths). */
     val libraryTree: Boolean = true,
-    /** The view the Library opens on from the sidebar: a [LibraryFilter] name in lower case (`all`, `recent`, `inbox`, `orphans`, `untagged`, `broken`, `stale`, `tags`). */
+    /** The view the Library opens on from the sidebar: a [LibraryFilter] name in lower case (`all`, `recent`, `orphans`, `untagged`, `broken`, `stale`, `tags`). */
     val libraryTab: String = "all",
     /** How much of a wide Library the list takes, in percent (the preview gets the rest). */
     val libraryListPercent: Int = 30,

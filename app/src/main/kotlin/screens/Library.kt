@@ -36,12 +36,11 @@ import com.jakewharton.mosaic.ui.Row
 private enum class LibraryMode { List, Reading, ConfirmDelete, Rename, Edit, ConfirmDiscard }
 
 /** Notes in view [filter]; [tag] narrows the Tags view to one tag. */
-private fun notesFor(index: VaultIndex, filter: LibraryFilter, tag: String?, inbox: String, staleDays: Int, sort: String = "modified", reports: Map<String, ReportInfo> = emptyMap()): List<NoteInfo> = when (filter) {
+private fun notesFor(index: VaultIndex, filter: LibraryFilter, tag: String?, staleDays: Int, sort: String = "modified", reports: Map<String, ReportInfo> = emptyMap()): List<NoteInfo> = when (filter) {
     LibraryFilter.All -> byDate(index.notes, sort)
     LibraryFilter.Recent -> index.touchedSince(14)
     // the reports in the order Reports.scan gave them: newest first (the notes are looked up by path, so a report outside the index is not listed)
     LibraryFilter.Reports -> reports.values.mapNotNull { index.note(it.path) }
-    LibraryFilter.Inbox -> byDate(index.inFolder(inbox), sort)
     LibraryFilter.Orphans -> index.orphans.sortedBy { it.title.lowercase() }
     LibraryFilter.Untagged -> byDate(index.untagged, sort)
     LibraryFilter.Broken -> index.notes.filter { it.unresolved.isNotEmpty() }.sortedBy { it.title.lowercase() }
@@ -89,7 +88,6 @@ fun LibraryScreen(app: AppContext) {
     // A note the dashboard asked us to show: selected once, as soon as the index is there.
     var startNote by remember { mutableStateOf(navigator.libraryNote.also { navigator.libraryNote = null }) }
 
-    val inbox = app.config.inboxFolder
     // the notes with `type: report` (the research skills write them): read once per index, listed in the Reports view and counted on its tab
     val reports = remember(index, vault) { vault.getOrNull()?.let { v -> runCatching { Reports.scan(v) }.getOrDefault(emptyList()) }.orEmpty() }
     val reportByPath = remember(reports) { reports.associateBy { it.path } }
@@ -103,7 +101,7 @@ fun LibraryScreen(app: AppContext) {
             NoteInfo(n.path, n.modified, words, emptySet(), emptySet(), emptySet())
         }
     }
-    val shown = if (index == null) emptyList() else notesFor(index, filter, tag, inbox, staleDays, app.config.librarySort, reportByPath).let { if (filter == LibraryFilter.All && hidden.isNotEmpty()) byDate(it + hidden, app.config.librarySort) else it }
+    val shown = if (index == null) emptyList() else notesFor(index, filter, tag, staleDays, app.config.librarySort, reportByPath).let { if (filter == LibraryFilter.All && hidden.isNotEmpty()) byDate(it + hidden, app.config.librarySort) else it }
     val tags = index?.tagCounts.orEmpty()
     // The notes as a tree of folders (fold with Enter, h, l) unless the user chose the flat list, is typing a filter (matches are listed with their paths) or is in the tag list.
     val tree = app.config.libraryTree && !showingTags && picker.filter.isEmpty() && filter != LibraryFilter.Reports
@@ -326,20 +324,18 @@ fun LibraryScreen(app: AppContext) {
                 key.char == 'd' -> { if (current != null) { if (isHiddenPath(current.path)) navigator.showToast("Notes in hidden folders are Arcana's own: they cannot be trashed here.", isError = true) else mode = LibraryMode.ConfirmDelete }; true }
                 key.char == 's' && filter == LibraryFilter.Reports -> { current?.let { runAgain(it) }; true }
                 key.char == 'f' && filter == LibraryFilter.Reports -> { current?.let { runAgain(it, refresh = true) }; true }
-                key.char == 'p' && filter == LibraryFilter.Inbox -> { navigator.navigate(Screen.Inbox); true }
                 else -> false
             }
         }
     }
 
-    val health = remember(index, inbox, staleDays) { index?.health(inbox, staleDays) }
+    val health = remember(index, staleDays) { index?.health(staleDays) }
     val listTitle = if (showingTags) "Tags" else if (filter == LibraryFilter.Reports) reportsTitle(reports) else "Notes · ${shown.size}"
     val tabs = LibraryFilter.entries.map { f ->
         val n = when (f) {
             LibraryFilter.All -> health?.notes
             LibraryFilter.Recent -> index?.touchedSince(14)?.size
             LibraryFilter.Reports -> reports.size
-            LibraryFilter.Inbox -> health?.inbox
             LibraryFilter.Orphans -> health?.orphans
             LibraryFilter.Untagged -> health?.untagged
             LibraryFilter.Broken -> health?.brokenNotes
@@ -374,7 +370,6 @@ fun LibraryScreen(app: AppContext) {
                 ActionItem("r", "Rename", current != null),
                 ActionItem("o", "Open in Obsidian", current != null),
                 ActionItem("d", "Trash", current != null, Palette.Red),
-                *(if (filter == LibraryFilter.Inbox) arrayOf(ActionItem("p", "Process inbox with AI", accent = Palette.Cta)) else emptyArray()),
                 *(if (tree) arrayOf(ActionItem("h l", "Fold"), ActionItem("+ -", "All")) else emptyArray()),
                 *(if (!showingTags) arrayOf(ActionItem("t", if (app.config.libraryTree) "Flat list" else "Tree")) else emptyArray()),
                 ActionItem(".", if (showHidden) "Hide hidden" else "Hidden"),
@@ -524,7 +519,6 @@ private fun NoteList(
             },
             total = shown.size,
             emptyText = when (filter) {
-                LibraryFilter.Inbox -> "The inbox is empty."
                 LibraryFilter.Orphans -> "Every note is connected."
                 LibraryFilter.Untagged -> "Every note has a tag."
                 LibraryFilter.Broken -> "No broken links."

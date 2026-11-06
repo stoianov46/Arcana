@@ -12,7 +12,6 @@ import com.arcana.brain.app.screens.ChatScreen
 import com.arcana.brain.app.screens.ChangelogScreen
 import com.arcana.brain.app.screens.GuideScreen
 import com.arcana.brain.app.screens.HomeScreen
-import com.arcana.brain.app.screens.InboxScreen
 import com.arcana.brain.app.screens.LibraryScreen
 import com.arcana.brain.app.screens.NoteComposerScreen
 import com.arcana.brain.app.screens.SessionScreen
@@ -69,7 +68,6 @@ private fun ArcanaApp(onQuit: () -> Unit) {
             Screen.Home -> HomeScreen(app)
             Screen.Chat -> ChatScreen(app)
             Screen.Library -> LibraryScreen(app)
-            Screen.Inbox -> InboxScreen(app)
             Screen.Session -> SessionScreen(app)
             Screen.Compose -> NoteComposerScreen(app)
             Screen.Usage -> UsageScreen(app)

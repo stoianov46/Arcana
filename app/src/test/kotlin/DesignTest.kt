@@ -270,8 +270,8 @@ class DesignTest {
     fun savedTabOrderIsAppliedWithinSectionsAndRepairsItself() {
         val tabs = Screen.entries.filter { it.inSidebar }
         assertEquals(tabs, Screen.ordered(emptyList()))
-        assertEquals(false, Screen.Inbox.inSidebar); assertEquals(false, Screen.Session.inSidebar)
-        assertEquals(tabs, Screen.ordered(listOf("Session", "Inbox")), "a saved order that names the screens that are no longer tabs is repaired")
+        assertEquals(false, Screen.Session.inSidebar)
+        assertEquals(tabs, Screen.ordered(listOf("Session", "Gone")), "a saved order that names the screens that are no longer tabs is repaired")
         val moved = Screen.ordered(listOf("Chat", "Home", "Settings", "Usage"))
         assertEquals(listOf(Screen.Chat, Screen.Home), moved.take(2))
         assertEquals(listOf(Screen.Settings, Screen.Usage, Screen.Guide, Screen.Changelog), moved.filter { it.group == Screen.Settings.group }, "the Account section keeps its own order")

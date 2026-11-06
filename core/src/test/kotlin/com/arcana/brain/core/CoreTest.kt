@@ -452,15 +452,14 @@ class CoreTest {
         assertEquals(listOf("Inbox/Fresh.md"), index.inFolder("Inbox").map { it.path })
         assertEquals(1, index.deadLinks)
         assertEquals("project", index.tagCounts.first { it.first == "project" }.first)
-        val health = index.health("Inbox", staleDays = 90)
+        val health = index.health(staleDays = 90)
         assertEquals(5, health.notes)
-        assertEquals(1, health.inbox)
         assertEquals(2, health.orphans)
         assertEquals(1, health.brokenNotes)
         assertEquals(1, health.stale)
         assertEquals(60, health.connectedPercent, "3 of 5 notes are connected")
         assertEquals(4, health.untagged, "only Hub has tags; Deep has no real frontmatter")
-        assertEquals(100, VaultIndex(emptyList()).health("Inbox", 90).connectedPercent, "an empty vault is not unhealthy")
+        assertEquals(100, VaultIndex(emptyList()).health(90).connectedPercent, "an empty vault is not unhealthy")
         assertEquals(listOf("Deep", "Idea"), index.linksOf("Hub.md").map { it.title })
         assertTrue(index.related("Hub.md").map { it.path }.containsAll(listOf("Idea.md", "Sub/Deep.md")))
         assertTrue("Lonely.md" !in index.related("Hub.md").map { it.path }, "an unconnected note is not related")
@@ -503,51 +502,12 @@ class CoreTest {
     }
 
     @Test
-    fun aMessyModelReplyBecomesACheckedPlan() {
-        val reply = "Sure! Here you go:\n```json\n{\"title\": \"Call: Anna / flights\", \"summary\": \"Ask Anna about flights.\\nSoon.\", " +
-            "\"tags\": [\"#travel\", \"to do\", \"travel\"], \"links\": [\"lisbon trip\", \"[[Ghost note]]\", \"Hub\"], \"folder\": \"projects\", \"extra\": 1}\n```"
-        val plan = InboxProcessing.parse(reply, "Fallback", listOf("Lisbon Trip", "Hub"), listOf("Projects", "Areas"))!!
-        assertEquals("Call Anna flights", plan.title, "characters that cannot be in a name are cleaned")
-        assertEquals("Ask Anna about flights. Soon.", plan.summary)
-        assertEquals(listOf("travel", "to-do"), plan.tags, "# removed, spaces become dashes, duplicates dropped")
-        assertEquals(listOf("Lisbon Trip", "Hub"), plan.links, "only real notes, with their real spelling")
-        assertEquals("Projects", plan.folder, "matched to an existing folder, case-insensitively")
-        assertEquals("", InboxProcessing.parse("""{"folder": "Invented"}""", "F", emptyList(), listOf("Projects"))!!.folder, "an invented folder is dropped")
-        assertEquals("Fallback", InboxProcessing.parse("""{"summary": "x"}""", "Fallback", emptyList(), emptyList())!!.title)
-        assertNull(InboxProcessing.parse("no json here", "F", emptyList(), emptyList()))
-        assertNull(InboxProcessing.parse("{ broken", "F", emptyList(), emptyList()))
-    }
-
-    @Test
     fun tagsAreMergedIntoFrontmatter() {
         assertEquals("---\ntags: [a, b]\n---\n\n", mergeFrontmatterTags("", listOf("a", "b")))
         assertEquals("", mergeFrontmatterTags("", emptyList()))
         assertEquals("---\ntitle: X\ntags: [old, new]\n---\n\n", mergeFrontmatterTags("---\ntitle: X\ntags: [old]\n---\n\n", listOf("new", "old")))
         assertEquals("---\ntags: [one, two, three]\n---\n\n", mergeFrontmatterTags("---\ntags:\n- one\n- two\n---\n\n", listOf("three")), "a block list is rewritten as one line")
         assertEquals("---\ncreated: 1\ntags: [x]\n---\n\n", mergeFrontmatterTags("---\ncreated: 1\n---\n\n", listOf("x")))
-    }
-
-    @Test
-    fun anInboxNoteIsFiledWithABackupAndNothingLost() {
-        val dir = Files.createTempDirectory("inbox")
-        Files.createDirectories(dir.resolve("Inbox"))
-        Files.writeString(dir.resolve("Inbox/call anna.md"), "---\ncreated: 5\n---\n\nCall Anna about flights.\n")
-        val vault = Vault(dir)
-        val plan = InboxPlan("Call Anna", "Projects", listOf("travel"), listOf("Lisbon Trip"), "Ask Anna about flights.")
-        val done = vault.processInboxNote("Inbox/call anna.md", plan)
-        assertEquals("Projects/Call Anna.md", done.path)
-        assertTrue(!Files.exists(dir.resolve("Inbox/call anna.md")), "the note left the inbox")
-        val text = vault.read("Projects/Call Anna.md")
-        assertTrue(text.startsWith("---\ncreated: 5\ntags: [travel]\n---\n\n> [!summary] Ask Anna about flights.\n\nCall Anna about flights."), text)
-        assertTrue(text.trimEnd().endsWith("## Related\n\n- [[Lisbon Trip]]"))
-        assertEquals("---\ncreated: 5\n---\n\nCall Anna about flights.\n", Files.readString(dir.resolve(done.backup)), "the original is kept exactly")
-        // a name already taken gets a number; keepName leaves the file name alone
-        Files.writeString(dir.resolve("Inbox/other.md"), "body")
-        assertEquals("Projects/Call Anna 2.md", vault.processInboxNote("Inbox/other.md", plan).path)
-        Files.writeString(dir.resolve("Inbox/keep.md"), "body")
-        assertEquals("Projects/keep.md", vault.processInboxNote("Inbox/keep.md", plan, keepName = true).path)
-        assertFailsWith<VaultException> { vault.processInboxNote("Inbox/missing.md", plan) }
-        assertFailsWith<VaultException> { vault.processInboxNote("Projects/keep.md", plan.copy(folder = "../outside")) }
     }
 
     @Test

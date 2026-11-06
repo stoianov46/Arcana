@@ -50,6 +50,14 @@ class WorkService(private val store: WorkStore, private val clock: () -> Long = 
         return item(id)
     }
 
+    /** Records what the item was made from; the same origin twice writes nothing. */
+    fun source(id: String, origin: String): WorkItem? {
+        val item = item(id) ?: return null
+        if (item.origin == origin) return item
+        log.append(WorkEvent.Sourced(eventId("source"), item.id, clock(), origin))
+        return item(id)
+    }
+
     /** Pins [skill] to this one item (blank unpins: the kind's default applies again). */
     fun pinSkill(id: String, skill: String): WorkItem? {
         val item = item(id) ?: return null
