@@ -10,22 +10,20 @@ macOS claim them).
 | 1 | **Brain** (`Home`) | dashboard: vault stats, what needs attention, recent notes, top tags |
 | 2 | **Chat** | hub for talking to the model; attachments, vault answers, tools, questions |
 | 3 | **Library** | browse every note, rename, chat about a note |
-| 5 | **AI notes** (`Compose`) | write or transform notes with AI, refine, apply |
-| 6 | **Session** | what happened this run; save a summary note or log; new session |
-| 7 | **Usage** | dashboard of tokens, speed, estimated price, habits |
-| 8 | **Settings** | tabbed settings (each tab's list scrolls with the cursor in a short window) |
-| 9 | **Guide** | in-app tutorial pages (13, incl. Skills) |
-| 0 | **Changelog** | what has been built, by theme |
+| 4 | **AI notes** (`Compose`) | write or transform notes with AI, refine, apply |
+| 5 | **Usage** | dashboard of tokens, speed, estimated price, habits |
+| 6 | **Settings** | tabbed settings (each tab's list scrolls with the cursor in a short window) |
+| 7 | **Guide** | in-app tutorial pages (13, incl. Skills) |
+| 8 | **Changelog** | what has been built, by theme |
 
 Global keys: `Ctrl+P` command palette · `Ctrl+N` quick capture · `?` key map for the screen · `Ctrl+B` fold the sidebar ·
 `Ctrl+C` ×2 quit · `0`-`9` screens (when not typing). Navigation can be a left sidebar, right sidebar or top bar (Settings → Appearance →
-Navigation). The sidebar shows badges (unsaved session, `…` on Chat for a running reply, `!` when the model waits for an
+Navigation). The sidebar shows badges (`…` on Chat for a running reply, `!` when the model waits for an
 answer) and folds to icons under 90 columns.
 
 ## Brain (Home)
 
-Two columns when ≥100 wide. Left: *Capture* hint, *Needs attention* (notes with no links, no tags, broken
-links), *Top tags*. Right: *Jump back in* (Ask your brain, AI notes, this session), *Recent notes*. Data comes from
+The Brain screen has four pages (Overview, Work, Health, Activity), described in [brain.md](brain.md). Data comes from
 `BrainState.index` / `VaultIndex.health(staleDays)`. Enter opens the highlighted item (Library filter, Chat, a note).
 
 ## Chat (hub)
@@ -100,11 +98,6 @@ and links from what the vault already contains) · Custom. Input accepts attachm
 refine (`f`), add more (`m`), undo (`u`), redo (`r`), then save as new (`n`), add to a note (`a`), replace the source note (`w`, with
 backup), or copy. Leaving with an unapplied draft asks first (the only leave guard besides *Keep chats* off).
 
-## Session
-
-Every run is a session logged to `~/.config/arcana/sessions/` as it happens (asked, task, created, appended, replaced, renamed, deleted,
-saved, captured, processed, attached, tool). Actions: save a **summary note** (model-written from the log and chat transcripts) or the
-**plain log** into the vault; **start a new session** without restarting. Quitting never asks about unsaved activity.
 
 ## Capture (`Ctrl+N`)
 

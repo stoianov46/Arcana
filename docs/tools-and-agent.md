@@ -243,7 +243,7 @@ and don't count as "last answer".
 
 ## Session log and vault refresh
 
-A successful tool call logs `SessionKind.Tool` (`"<tool> <summary>"`). A successful non-`Read` tool calls `brain.changed()` so the
+A successful non-`Read` tool call calls `brain.changed()` so the
 Brain/Library reread the vault.
 
 ## Security model

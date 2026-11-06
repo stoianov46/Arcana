@@ -25,7 +25,7 @@ Arcana (Gradle multi-project)
  navigation/   Shell (layout, sidebar/top bar, footer, global keys)  Navigator (screens, overlays, guards, toasts)
         │                                │
         ▼                                ▼
- screens/      Home Chat Library Compose Session Usage Settings Guide Changelog     overlays: help, palette, capture
+ screens/      Home Chat Library Compose Usage Settings Guide Changelog     overlays: help, palette, capture
         │  use                           │ publish Hints / Commands / FocusMode to Navigator
         ▼
  design/       Theme(Palette) Panel Label Stack Picker FilePicker ScrollView Markdown Attachments TextInput StatusBar …
@@ -33,7 +33,7 @@ Arcana (Gradle multi-project)
  state holders (app/): AppContext ─ ChatSession ─ Generation ─ AppSession ─ BrainState
         │
         ▼
- core/         OllamaClient  Vault  VaultIndex  ChatStore  SessionStore  UsageStore  ConfigStore  ToolBox (Shell, Web), Skills
+ core/         OllamaClient  Vault  VaultIndex  ChatStore  UsageStore  ConfigStore  ToolBox (Shell, Web), Skills
         │
         ▼
  Ollama HTTP (localhost:11434)      vault folder (Markdown files)      ~/.config/arcana/*
@@ -51,7 +51,6 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 | `vision`, `tools: Boolean?`, `modelContext` | model capabilities and maximum context from `/api/show` (`null`/0 = unknown) |
 | `loadedContext` | the window Ollama really loaded the model with, from `/api/ps` `context_length` (0 until the model has run, or on an older Ollama); refreshed after every reply and with the connection (`refreshLoadedContext`) |
 | `usage`, `recordUsage(feature, chunk)` | token accounting (`UsageStore`, `usage.jsonl`) |
-| `session: AppSession` | the run's activity log and "needs saving" logic |
 | `brain: BrainState` | background-built `VaultIndex` + `BrainHealth`; `refresh()` / `changed()` |
 | `chat: ChatSession` | the one persistent chat (survives screen switches) |
 | `captureAttachments` | attachments of the capture overlay (files copied into the vault) |
@@ -60,7 +59,6 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 | `openVault()` | `Result<Vault>` from `config.vaultPath` (`~` expanded) |
 | `attachments(forModel)` | factory for an `Attachments` set wired to model capabilities and last picker dir |
 | `capture(text, files)` | writes to today's thought file (the daily note, in the `Thoughts` folder) via `Vault.capture`, which also lists a new day in `Thoughts Index` (as does a thought saved as a note into that folder: `Vault.listThought`), copies attached files |
-| `newSession()` | ends the session, starts fresh (empty chat, zero usage) without restarting |
 
 ## Subsystems added around the chat loop
 
@@ -111,10 +109,10 @@ Other screens (`Compose`, `Session`) use `rememberGeneration(app, feature)` whic
 
 Startup: `main()` clears the screen, installs `ResizeSignalGuard`, starts `TerminalSize` polling (stty), runs Mosaic in
 `runBlocking`, composes `ArcanaApp`. `ArcanaApp` wires theme (`Palette.use(...)`), connection check, brain refresh, and renders
-`key(app.revision) { <current screen> }` inside `Shell`.
+the current screen inside `Shell`.
 
 Quit: Ctrl+C is **always handled by Arcana** (never left to Mosaic): first press shows a confirmation, the second quits
-(no session-save dialog: the Session screen is the only place a session is saved). Quit = `session.finish()` → complete a `CompletableDeferred`
+(no save dialog). Quit → complete a `CompletableDeferred`
 → cancel the Mosaic job → `Runtime.halt(0)` (background loops must not keep the JVM alive).
 
 ## Key design decisions (and why)

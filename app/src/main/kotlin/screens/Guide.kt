@@ -31,7 +31,6 @@ Arcana is a local-first **research AI-agent system**: local models (run by Ollam
 2. **See**: the **Brain** screen shows how healthy the vault is and what needs attention.
 3. **Research and think**: **Chat** with the model about your notes, attach notes, pictures, PDFs and files; run a research skill to get a sourced report.
 4. **Shape**: **AI notes** summarizes, improves, translates and connects notes.
-5. **Keep**: every **Session** can be saved into the vault as a note of what you did and learned.
 
 ## Moving around
 - Press the **number** next to a screen in the sidebar to open it.
@@ -88,18 +87,17 @@ A short list of things worth fixing. Each one opens the **Library** on exactly t
 
 The **Vault hygiene** section checks the habits that keep the vault navigable (a `type` on every note, plain and unique names, nothing loose in the root, reports finished and fresh, no islands) and shows a count per kind. `h` opens the full list: `Enter` opens the note in the Library, `c` starts a chat with the note attached and the fix ready to send.
 
-Start a thought with **`todo: `**, **`question: `** or **`research: `** (or `? `) and it is also a todo, a question or a research item; no prefix: a plain thought. The **Brain dashboard** shows them in three sections, **Questions**, **Research** and **Todos**, each with what is still open (select a row: `Enter` starts it, `x` marks it done, `t` turns a question into a todo and back); `b` opens the same items in one list, one kind at a time: `Tab` switches between Questions, Research and Todos. On research, `Enter` starts the research in a new chat and `x` marks one done; on a question or a todo `Enter` opens a picker of the skills that may run it (a skill is offered only if its properties say `handles: [research, question, todo]`; `Enter` accepts the preselected one, `p` pins one to this item, `d` makes it the default for the kind, Settings → Skills has the defaults) and then starts it in a new chat (the question, or "Do this task: …", waits in the field; the chat is linked to the item, so it is in progress from your first message and the notes the chat creates are linked to it), `x` marks it done or not done, and `t` turns a question into a todo and back. Todos and questions are also written to `Tasks/Todos.md` and `Questions/Questions.md` in your vault (generated: change them in Brain, not in the note). Research: and a finished report with the same `question:` ticks it automatically.
+In the Capture dialog (`Ctrl+N`) choose what the thought is with `↑` `↓`: **Thought** (the default), **Question**, **Research** or **Todo**. You can also start a thought with **`todo: `**, **`question: `** or **`research: `** (or `? `) and it is also a todo, a question or a research item; no prefix: a plain thought. The **Brain dashboard** shows them in three sections, **Questions**, **Research** and **Todos**, each with what is still open (select a row: `Enter` starts it, `x` marks it done, `t` turns a question into a todo and back); `b` opens the same items in one list, one kind at a time: `Tab` switches between Questions, Research and Todos. On research, `Enter` starts the research in a new chat and `x` marks one done; on a question or a todo `Enter` opens a picker of the skills that may run it (a skill is offered only if its properties say `handles: [research, question, todo]`; `Enter` accepts the preselected one, `p` pins one to this item, `d` makes it the default for the kind, Settings → Skills has the defaults) and then starts it in a new chat (the question, or "Do this task: …", waits in the field; the chat is linked to the item, so it is in progress from your first message and the notes the chat creates are linked to it), `x` marks it done or not done, and `t` turns a question into a todo and back. Todos and questions are also written to `Tasks/Todos.md` and `Questions/Questions.md` in your vault (generated: change them in Brain, not in the note). Research: and a finished report with the same `question:` ticks it automatically.
 
 When everything is in order it says so.
 
 ## Capture and jump back in
 - `Capture a thought` (`Ctrl+N` from anywhere) adds a timestamped line to today's thought file (`Thoughts/thought-YYYY-MM-DD.md`), creating it if needed and listing the new day in `Thoughts/Thoughts Index`. `Tab` (and `Shift+Tab`) in the dialog change **Save to**: the daily note, or one of the folders at the top of your vault (Research, Projects…). In a folder the thought becomes a **note of its own**, named after its first line, with a `created` property; Arcana remembers your last choice.
-- **Jump back in**: continue your chat, open AI notes, see this session, open the last saved session, or open a recently changed note.
 
 On a wide window there are two columns: **Now** (capture, what needs attention, your top tags) and **Jump back in**. `←` `→` switch columns, `↑` `↓` choose, `Enter` opens, `r` reads the vault again (it also refreshes by itself after changes).
 
 ## The sidebar tells you things
-A badge shows what is waiting: `…` on **Chat** while a reply is being written. The Session is not a tab: the Brain Overview lists it under *Go to* (with how many events are unsaved), and `Ctrl+P` has commands for it. On a narrow window (under 90 columns) the sidebar folds to icons by itself; the badge becomes a dot.
+A badge shows what is waiting: `…` on **Chat** while a reply is being written. On a narrow window (under 90 columns) the sidebar folds to icons by itself; the badge becomes a dot.
 """.trim(),
     ),
     GuidePage(
@@ -202,7 +200,7 @@ Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use
 - **Oracul next steps:** if the main model fails a turn, `/takeover` lets the Oracul finish it (offered in a message, never automatic); after an opinion, `/revise` makes the main model correct its answer with it; the bottom bar shows `Ψ model · auto` while an Oracul is set. A good start for a 32 GB Mac with a 9B main model: Oracul `qwen3:30b`, judge `gemma4:12b`, automatic *On problems*.
 - **The Oracul can check with tools:** with *Settings → Helpers → Oracul may use tools* on, it may read files, search notes and run harmless checks to verify an answer; anything that changes something, runs a command or reaches the web asks you first, even in Auto mode (dialog headed Ψ Oracul).
 - **Oracul (second opinion):** *Settings → Helpers*: choose an Oracul model (ideally a bigger or different one than your main model) and a judge. `/oracul` shows what it thinks is wrong or missing in the last answer; `/compare` lets it answer too and a judge picks the better one. With *Automatic second opinion* on (default: on problems) it speaks up by itself after failed tool calls or skipped skill steps, when several turns in a row had a failed call, and in the middle of a turn when the main model has failed several tool calls and keeps trying (the numbers are *Stuck: failed calls* and *Stuck: failing turns* in the same group, default 4 and 3): the Oracul reads the attempts and its advice goes into the loop. It only advises: it changes nothing by itself. With *Oracul may use tools* on it can read your files and notes to check an answer, and anything that changes something or runs a command asks you first.
-- **Storage:** *Settings → Storage* lists the files Arcana keeps (backups, trash, chat history, sessions, usage) with their size; Enter clears one after you confirm, and backups and trash can be pruned to what is older than 30 days.
+- **Storage:** *Settings → Storage* lists the files Arcana keeps (backups, trash, chat history, usage) with their size; Enter clears one after you confirm, and backups and trash can be pruned to what is older than 30 days.
 - **Setup:** a new Arcana starts with a short setup (choose the vault, then tick the memory file, skills folder, guide and starter skills to create). It only creates what is missing; run it again from the palette ("Set up the vault"). Without a screen: `arcana --init <vault>`. The starter skill **decompose** turns a todo list into a plan, asks you the open decisions, then works through it.
 - **Sounds:** *Settings → Sounds* plays a sound when the model waits for you, finishes or fails, so you can work in another screen or window; the Chat tab shows a pulsing `!` (approval) or `?` (question) too. Off by default.
 - **Web asks every time, even in Auto mode** (a search or an address can carry your data out). *Settings → Tools → Search and fetch without asking* (off by default) lets `web_search` and `fetch_url` run at once (the words or the address can carry data out, so keep it for research chats); HTTP requests still ask.
@@ -307,25 +305,6 @@ The result is a **draft**. Keep talking to it: `f` **Refine** rewrites it, `m` *
 - With pictures, saving a new note can also copy them into the vault and embed them (`![[picture.png]]`).
 
 Leaving with a draft that was not applied asks before it is thrown away.
-""".trim(),
-    ),
-    GuidePage(
-        "Session", "Sessions: what you did, kept",
-        """
-# Sessions
-Each time Arcana opens, a **session** starts and records what you do: questions, AI tasks, captured thoughts, notes created, changed or trashed. It is written to disk as it happens, so nothing is lost if the terminal closes.
-
-## The Session screen
-
-It is not a tab: open it from Brain → Overview → *Go to* → Session, or with `Ctrl+P` ("Session: …").
-A timeline of the activity, with counts and the tokens used. From here:
-- `s` **Save summary note**: Gemma writes notes on the session (what you did, what you learned or decided, open questions, next steps) from the activity and the chat. Review it, then `n` saves it as a note.
-- `l` **Save log only**: the activity as a plain list, no AI.
-- `n` **New session**: closes this one and starts fresh without restarting Arcana. The chat starts empty (the old one stays in the history).
-
-Notes are saved in `Sessions` inside your output folder, with `[[links]]` to the notes the session touched, so Obsidian connects them.
-
-The palette (`Ctrl+P`) has the same actions.
 """.trim(),
     ),
     GuidePage(

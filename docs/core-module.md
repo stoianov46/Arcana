@@ -14,7 +14,6 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `VaultIndex.kt` | `VaultIndex`, `NoteInfo`, `BrainHealth`, `DailyNotes`, `Vault.capture` |
 | `Frontmatter.kt` | `mergeFrontmatterTags` (the tags of a note's frontmatter, merged) |
 | `ChatStore.kt` | `ChatStore`, `StoredChat` (persistent chats as JSON files) |
-| `Session.kt` | `SessionKind`, `SessionEvent`, `StoredSession`, `SessionStore`, `SessionStats`, `SessionReport` |
 | `Usage.kt` | `UsageRecord`, `UsageStore` (JSONL), `UsageTotals`, `UsageStats` (totals, `by`, `perDay`, `perHour`, `speedPerDay`, `insights`, `estimatedCost`, `since`, `compact`), `UsageInsights` |
 | `ImageFiles.kt` | picture rules + loading (`ImageAttachment`, base64) |
 | `TextFiles.kt` | text/PDF attachment rules + loading (`FileAttachment`, PDFBox extraction, `TextFiles.block`) |
@@ -34,7 +33,7 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `Compaction.kt` | `Compaction`: `MARK`, `isSummary`, `summaryMessage`, `forModel` (from the latest summary on), `cutPoint` (the latest turns that fit in `keepTokens` stay, at least the last one; without it the last 2; ≥4 older messages; one long turn is cut between its tool rounds at an assistant message), `toSummarize`, `transcript` (tool results cut to 400 characters, ≤30,000 characters) and `INSTRUCTIONS` for the summarizer; the summary is inserted into the chat, nothing is deleted |
 | `Sound.kt` | `ChatSoundEvent` (Attention, Done, Failed), `SoundChoices` (ids, labels, `suggested`), `SoundPlayer` / `CommandSoundPlayer` (`afplay` or the terminal bell), `Sounds.notify(config, event, onChatScreen)` |
 | `Bootstrap.kt`, `StarterSkills.kt` | `Bootstrap.items(vault, config)` / `create(vault, config, ids)`: what a vault needs for Arcana (memory file, skills folder, skills guide, starter skills, output folder) and creating only what is missing (an existing file is never touched); `StarterSkills.all` (`decompose`) and `StarterSkills.GUIDE` are plain Markdown constants |
-| `Storage.kt` | `Storage.areas(configRoot, vaultRoot?)` → `StorageArea`s (backups, trash, vault `.trash`, chats, sessions, usage, tool usage), `use` (files, bytes), `clearable` / `clear(area, olderThanDays)` (empty folders are removed, the area's own folder stays), `size` |
+| `Storage.kt` | `Storage.areas(configRoot, vaultRoot?)` → `StorageArea`s (backups, trash, vault `.trash`, chats, usage, tool usage), `use` (files, bytes), `clearable` / `clear(area, olderThanDays)` (empty folders are removed, the area's own folder stays), `size` |
 | `Artifacts.kt` | `Artifact`, `Artifacts`: which tool calls leave a file or note behind in a chat (the `✦ N changed` pill, `/artifacts`) |
 | `Flow.kt` | `StageKind`, `FlowStage`, `Flow`: a fixed sequence of stages (analyst, planner, worker, reviewer, controller), each with its own model, and the pseudo-tool a model uses to consult a stage |
 | `ModelStatus.kt` | `SystemMemory`, `SystemCpu`, `ModelStatus`: one sentence on why a request has not produced a word yet (model not loaded, prompt being read, memory tight) |
@@ -111,8 +110,6 @@ falls back to the settings; `pathFor(date)`. `Vault.capture(text, daily, now)` a
   `ignoreUnknownKeys`, `encodeDefaults`. A corrupt file loads as defaults.
 - `ChatStore(dir)`: one `<id>.json` per chat (`StoredChat`), `list()` newest first, `latest()`, `save`, `delete`, `prune(keep)`;
   `ChatStore.titleOf(messages)` = first user line.
-- `SessionStore(dir)`: one file per session; `SessionReport` turns events into stats, a duration/clock text, activity Markdown and
-  the note body for "save summary".
 - `UsageStore(path)`: append-only `usage.jsonl` of `UsageRecord(time, feature, model, promptTokens, completionTokens, millis)`;
   `UsageStats` aggregates (totals, `by` key, `perDay`, `since`, `compact` number formatting).
 

@@ -41,7 +41,6 @@
 | `InputTest.kt` / `KeyMappingTest.kt` | text editing (caret, selection, word jumps), Cyrillic mapping, "no control uses z", non-Latin keys don't crash |
 | `PasteRepairTest.kt` | `KeyDispatcher`: a paste that lost its beginning or its middle is typed back whole from the clipboard |
 | `FilePickerState` tests (`FilePickerTest.kt`) | folder browsing, ticking, limits, hidden files |
-| `AppSessionTest.kt` | session logging/saving state |
 
 Conventions: core tests use `Files.createTempDirectory`; tests never touch the user's real config or vault (the app reads
 `ARCANA_CONFIG`; core classes take paths in their constructors). Pure functions (`OllamaProtocol`,

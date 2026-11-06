@@ -3,6 +3,10 @@
 Mosaic 0.18 renders Compose to a character grid. It differs from normal Compose in ways that shaped every primitive here.
 Read this before touching layout, borders, scrolling, input or Markdown.
 
+## Tabs
+
+A selected tab is one design token, not a style copied into each screen: `Palette.TabOn` (a soft cyan tint of the background) for the page tabs of a screen and `Palette.TabOnAccent` (violet) for the sidebar and a second row of tabs, with the normal text colour in bold. `TabLabel(title, on, accent)` in `design/TabBar.kt` draws one; the Library's `TabBar`, the Brain, Usage and Settings tabs and the sidebar all use it, so a theme changes them all at once.
+
 ## Hard facts about Mosaic (and our workarounds)
 
 | Fact | Consequence / workaround |
@@ -38,7 +42,7 @@ Order: **overlay → screen `KeyHandler` → global (Shell)**. A handler returns
 - Chat's field always has focus (`FocusMode(!browsing)`). Letters never trigger actions there; actions are Ctrl keys, `/commands`,
   `@`, the palette.
 - Pending approval (tools) and the file browser (`attachments.browsing`) take the keys first inside the screen.
-- Ctrl+C: first press → confirmation, second → quit (no session-save dialog). Never swallow Ctrl+C in a screen handler (return `false`).
+- Ctrl+C: first press → confirmation, second → quit. Never swallow Ctrl+C in a screen handler (return `false`).
 - Text editing (caret, selection, word moves, Ctrl+U…) is `TextEdit`/`TextFieldState`; call `field.onKey(key)` last in a handler.
 - Cyrillic keys map to the QWERTY key at the same position for shortcuts (`KeyboardLayout`), but text fields receive what was typed.
 - Never use `z`/`Z` as control keys.

@@ -1,7 +1,7 @@
 # `app` module reference
 
 Path: `app/src/main/kotlin/` (package `com.arcana.brain.app`; sub-packages `design`, `input`, `navigation`, `screens`).
-Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `FilePickerTest`, `AppSessionTest`, `PasteRepairTest`).
+Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `FilePickerTest`, `PasteRepairTest`).
 
 ## Top-level state holders (package `com.arcana.brain.app`)
 
@@ -9,7 +9,6 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 |---|---|---|
 | `App.kt` | `main()`, `ArcanaApp` | entry point; creates `AppContext`/`Navigator`; effects for theme, connection, brain refresh; renders the screen inside `Shell` wrapped in `key(app.revision)` |
 | `AppContext.kt` | `AppContext` | the app-wide state; see [architecture.md](architecture.md) |
-| `AppSession.kt` | `AppSession` | the run's logged session: `events`, `log(kind, text, path?)` (persisted as it happens), `markSaved(path)`, `needsSaving`/`unsavedCount` (activity since the last save), `finish()`. Writing the summary note/log into the vault is done by `screens/Session.kt` |
 | `BrainState.kt` | `BrainState` | background `VaultIndex` (`index`, `reading`, `error`, `revision`); `changed()` (after vault writes) and `refresh()` |
 | `ChatSession.kt` | `ChatSession` | the persistent chat: `messages`, `input`, `attachments`, `send()`, `gen`, the tool loop (`runTools`), `Approval` dialogs (folder, shell, web, access, step limit, text calls, memory), `skillRun`/`skillTick` (the active skill run: started by a skill chip or `use_skill`, fed every tool call and result by `runTools`, asked by the completion gate), `Question` (`ask_user`), `offerTools`, `offerMemory`, history, `startNew/open/deleteCurrent`, `persist()` |
 | `Generation.kt` | `Generation`, `GenState`, `rememberGeneration`, `announcesAction` | one streamed model request and the tool-use loop (text-written calls via `TextToolCalls`, the "keep going" nudge, `onStepLimit`, `useTools`, the loop guard: `loopRepeats` stops a round whose thoughts or answer repeat and retries once, `toolsHalted` takes the tools away); observable `state/text/thinking/error/stats`; `gate` (a skill run with a required step open sends the model back instead of letting it finish); `onLive` reports the reply tokens streaming right now (batches of `LIVE_BATCH` pieces) and takes them back when the request's exact counts arrive or it ends |
@@ -27,8 +26,7 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
     (`ScreenGroup.Workspace`="BRAIN", `Account`="SYSTEM"); `ScreenOrder` applies the user's `tabOrder`; `SHORTCUT_KEYS="1234567890"`.
   - `Navigator` holds: `current`, `navigate(screen, force)`, `leaveGuard` (a screen may veto leaving), overlays
     (`helpOpen`, `paletteOpen`, `captureOpen`, `palette`, `captureField`), `toast`/`showToast`, `quitPending`,
-    cross-screen requests (`libraryFilter`, `libraryNote`, `libraryTag`, `noteRequest` to open AI notes with a note,
-    `sessionIntent`), `focusMode`, `actionBars`.
+    cross-screen requests (`libraryFilter`, `libraryNote`, `libraryTag`, `noteRequest` to open AI notes with a note), `focusMode`, `actionBars`.
   - Screen-side API (composable effects): `Hints(vararg)` footer hints, `FocusMode(active)` (true while typing: global letter keys
     off), `Commands(list)` extra palette entries. `Command(label, group, keys, enabled, run)`.
 - `Shell.kt`: layout (left/right sidebar or `TopBar`), `Sidebar` with badges and an icon rail under 90 columns, the logo
@@ -46,7 +44,6 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 | `LibraryTree.kt` | the Library's tree: `LibraryRow` (`Folder`/`Note` with depth), `libraryRows(notes, expanded)`, `ancestorsOf`, `allFolders` (pure, unit-tested) |
 | `Library.kt` | Library | tree or flat list (`AppConfig.libraryTree`, `AppContext.libraryExpanded`), `LibraryMode` (List, Reading, ConfirmDelete, Rename, Edit, ConfirmDiscard); `e` edits the whole file by hand (`Vault.write`); filters from `LibraryFilter`; preview pane; trash; rename; chat about a note; open in Obsidian; `.` shows notes of hidden folders in All (`Vault.hiddenNotes()`, not in the index, so no count/search/Brain sees them; rename/trash refused) |
 | `Compose.kt` | AI notes (`NoteComposerScreen`) | `Task` enum, `Mode` (Start, PickSource, Input, Follow, Title, AppendPick, ConfirmReplace, ConfirmDiscard, Result); conversation + `drafts` stack for undo; attachments |
-| `Session.kt` | Session | `SessionMode` (Overview, Summary, ConfirmNew); exit flow |
 | `Chat.kt` thinking pane | `ThinkingPane` (the panel at the `thinkingPanePlacement` side of the conversation; `thinkingPaneLayout` decides place and size, a strip's rows are counted in the conversation's `outputRows`, a side column splits the width in a `Row`), `wrapWords`, `toggleThinkingPane` (`/thinking`); data from `Generation.liveThinking` |
 | `ChatSession` repeat memory | `turnCalls`, `repeatable`, `NEVER_REMEMBERED`, `CLEARS_MEMORY`, `FAILURE_LOOK`; checked in `runTools` before approval, filled after a run, cleared in `ask` and by changes, commands, `wait` |
 | `Chat.kt` tool results | `toolResultLines`: the first line and a size, the whole task list for `todo`, and an orange `✂` line for a cut (`ToolCuts.marker`) |
