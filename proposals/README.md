@@ -8,6 +8,7 @@ One file per proposal, numbered in the order they were written: `NNNN-short-name
 |---|---|---|---|
 | [0001](0001-retrieval-and-rag.md) | Retrieval and RAG | phases 1, 3 and 4 shipped | One retrieval layer for notes, project code, documents, chats and saved web pages: keywords + meaning fused, explicit modes, measured quality |
 | [0002](0002-work-items-and-provenance.md) | Work items and provenance | phases 1 and 2 shipped | Backlog questions, tasks and thoughts as items with an immutable id and an event log (state is derived); every note a run writes carries where it came from; the app links and suggests (never the model); the Markdown note becomes a generated view. |
+| [0003](0003-strata-and-openai-compatible-providers.md) | Strata and OpenAI-compatible providers | proposed | A client interface, then an OpenAI-compatible client, so Arcana can run Qwen3.8-Flash-Next (125B MoE) through Strata on a 32 GB Mac with real tool calls and thinking; one engine at a time (helpers and semantic search off in Strata mode, pinned v0.2.12); neutral wording and an engine indicator; local only (hosted providers not planned). Phases 0 to 5, 6 not planned. Phase 0 partly measured (tool calls work, about 9 tok/s); waiting for the owner's Ollama comparison. |
 
 ## Status values
 
