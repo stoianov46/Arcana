@@ -15,7 +15,17 @@ data class AppConfig(
     val theme: String = "dark",
     val vaultPath: String = System.getenv("ARCANA_VAULT").orEmpty(),
     val outputFolder: String = "Research",
+    /**
+     * Sampling (see [Sampling]): `model` (default) sends none of the options below and the model's own defaults apply (its Modelfile); `custom` sends them. In custom mode [temperature] is
+     * always sent and every other option only when it is set (null = the model's own). They affect only the chat model: helper models always use their own defaults.
+     */
+    val samplingMode: String = Sampling.MODEL,
     val temperature: Double = 0.7,
+    val topP: Double? = null,
+    val topK: Int? = null,
+    val minP: Double? = null,
+    val presencePenalty: Double? = null,
+    val repeatPenalty: Double? = null,
     val timeoutSeconds: Int = 300,
     val contextNotes: Int = 5,
     /**
@@ -250,12 +260,13 @@ data class AppConfig(
 ) {
     /**
      * This configuration for a request to [model]: [keepAlive] stays only when [model] is the chat model (every request starts the keep-alive timer again, so a helper that is
-     * the same model must send it too, and another model must not be pinned by it).
+     * the same model must send it too, and another model must not be pinned by it). Another model also gets no custom sampling: the values are chosen for the chat model.
      */
     /** [toolSteps] as a limit: 0 means unlimited (the model is never stopped for using too many rounds; the loop guards still work). */
     val toolStepLimit: Int get() = if (toolSteps <= 0) Int.MAX_VALUE else toolSteps
 
-    fun forModel(model: String): AppConfig = copy(model = model, keepAlive = if (model == this.model) keepAlive else "")
+    fun forModel(model: String): AppConfig =
+        if (model == this.model) copy(model = model) else copy(model = model, keepAlive = "", samplingMode = Sampling.MODEL)
 
     /** The `keep_alive` to send, as Ollama takes it (`-1` and `0` are numbers, a time like `30m` is text); null when blank or not a time. */
     fun keepAliveValue(): kotlinx.serialization.json.JsonPrimitive? = keepAlive.trim().let { k ->

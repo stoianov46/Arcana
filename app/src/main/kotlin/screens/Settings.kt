@@ -18,6 +18,7 @@ import com.arcana.brain.app.navigation.Hints
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.ModelFit.Role as FitRole
 import com.arcana.brain.core.AppConfig
+import com.arcana.brain.core.Sampling
 import com.arcana.brain.core.Flow
 import com.arcana.brain.core.StageKind
 import com.arcana.brain.core.Oracul
@@ -195,22 +196,30 @@ private val WorkerRole = Editor.Model("Skill worker", { it.roleWorker }, { c, v 
 private val ReviewerRole = Editor.Model("Skill reviewer", { it.roleReviewer }, { c, v -> c.copy(roleReviewer = v) }, allowNone = true, oracul = true)
 private val JudgeModel = Editor.Model("Judge model", { it.judgeModel }, { c, v -> c.copy(judgeModel = v) }, allowNone = true, oracul = true)
 
+/** The model's own sampling defaults (from `/api/show`), kept here for the rows that step from them and show them; refreshed whenever the Settings screen is drawn. */
+@Volatile private var ownSampling: Map<String, String> = emptyMap()
+
 private val declared: List<Setting> = listOf(
     text(Group.Ollama, "Ollama URL", "Where the Ollama server listens.", { it.ollamaUrl }, { c, v ->
         require(v.startsWith("http://") || v.startsWith("https://")) { "URL must start with http:// or https://" }
         c.copy(ollamaUrl = v.trimEnd('/'))
     }),
     Setting(Group.Ollama, "Model", "The model that answers. Enter lists what is installed.", { it.model }, editor = MainModel),
-    Setting(
-        Group.Ollama, "Temperature", "0 is focused and repeatable, 2 is adventurous. ←/→ step by 0.1, Enter types a value.",
-        value = { it.temperature.toString() },
-        step = { c, dir -> c.copy(temperature = ((c.temperature * 10).toInt() + dir).coerceIn(0, 20) / 10.0) },
-        editor = Editor.Text { c, v ->
-            val t = v.trim().toDoubleOrNull()
-            require(t != null && t in 0.0..2.0) { "Temperature must be between 0 and 2" }
-            c.copy(temperature = t)
-        },
+    choice(
+        Group.Ollama, "Sampling",
+        "How the model picks its next word. Model defaults sends nothing, so the model's own settings apply (what its authors recommend; see the note below). Custom sends the values you set in the rows that appear under it: ←/→ step them, Enter types one, a blank value means the model's own. Applies to the chat model only; helper models always use their own. Ctrl+R in Chat opens the same choices.",
+        listOf(Sampling.MODEL to "Model defaults", Sampling.CUSTOM to "Custom"), { it.samplingMode },
+        { c, v -> if (v == Sampling.CUSTOM) Sampling.toCustom(c, ownSampling) else Sampling.toModel(c) },
     ),
+) + Sampling.params.map { p ->
+    Setting(
+        Group.Ollama, p.label, p.help + if (p.key == "temperature") " Always sent in custom mode." else " Blank: the model's own value.",
+        value = { c -> Sampling.get(c, p.key)?.let(p::format) ?: "(model's own${ownSampling[p.key]?.let { ": $it" }.orEmpty()})" },
+        step = { c, dir -> Sampling.step(c, p, dir, ownSampling) },
+        editor = Editor.Text { c, v -> Sampling.set(c, p.key, Sampling.parse(v, p)) },
+        visible = { it.samplingMode == Sampling.CUSTOM },
+    )
+} + listOf(
     choice(Group.Ollama, "Context window", "How many tokens of conversation the model may hold (num_ctx). Model default leaves Ollama's own setting. A larger window remembers more of a long chat or a big file, but its memory (the KV cache) grows with it and replies get slower: a 30B model at 128k needs roughly 12 GB more than at 8k. It can never exceed what the model was built for (the status bar shows that maximum; most models stop at 128k–256k, a million needs a special model and a lot of memory). The Chat status bar counts against this.", listOf("0" to "Model default", "8192" to "8k", "16384" to "16k", "32768" to "32k", "65536" to "64k", "131072" to "128k", "262144" to "256k", "524288" to "512k", "1048576" to "1M"), { it.contextTokens.toString() }, { c, v -> c.copy(contextTokens = v.toInt()) }),
     choice(
         Group.Ollama, "Keep model loaded",
@@ -450,7 +459,7 @@ private val declared: List<Setting> = listOf(
 private val sections: Map<Group, List<Pair<String, List<String>>>> = mapOf(
     Group.Ollama to listOf(
         "Connection" to listOf("Ollama URL", "Model", "Timeout"),
-        "Generation" to listOf("Temperature", "Context window", "Thinking & effort", "Keep model loaded"),
+        "Generation" to listOf("Sampling", *Sampling.params.map { it.label }.toTypedArray(), "Context window", "Thinking & effort", "Keep model loaded"),
         "Display and cost" to listOf("Model abilities in the bottom bar", "Price: prompt tokens", "Price: reply tokens"),
     ),
     Group.Vault to listOf(
@@ -549,7 +558,8 @@ private fun adviceFor(app: AppContext, label: String): String? {
 private fun settingNote(app: AppContext, label: String): String = when (label) {
     "Context window" -> contextNote(app)
     "Keep model loaded" -> keepAliveNote(app)
-    "Temperature" -> samplingNote(app)
+    "Sampling" -> samplingNote(app)
+    in Sampling.params.map { it.label } -> samplingNote(app)
     "Thinking & effort" -> thinkingNote(app)
     "Noise filter: words", "Noise filter: meaning" -> noiseNote(app)
     "Search in", "Largest file searched" -> projectNote(app)
@@ -619,8 +629,7 @@ private fun samplingNote(app: AppContext): String {
     val own = app.modelParameters
     val line = if (own.isEmpty()) "\n${app.config.model} lists no sampling defaults of its own, so Ollama's general ones apply."
         else "\n${app.config.model}'s own defaults (from its Modelfile): " + own.entries.joinToString(", ") { "${it.key} ${it.value}" } + "."
-    val differs = own["temperature"]?.toDoubleOrNull()?.takeIf { kotlin.math.abs(it - app.config.temperature) > 0.05 }
-    return line + (differs?.let { "\nArcana sends ${app.config.temperature} with every request, so that replaces the model's $it." }.orEmpty())
+    return line + if (app.config.samplingMode == Sampling.CUSTOM) "\nCustom: the values set here replace the model's own for the chat model." else "\nModel defaults: nothing is sent."
 }
 
 private fun thinkingNote(app: AppContext): String {
@@ -656,6 +665,7 @@ private fun contextNote(app: AppContext): String {
 
 @Composable
 fun SettingsScreen(app: AppContext) {
+    ownSampling = app.modelParameters
     val scope = rememberCoroutineScope()
     val picker = remember { PickerState() }
     val listScroll = rememberScrollState()

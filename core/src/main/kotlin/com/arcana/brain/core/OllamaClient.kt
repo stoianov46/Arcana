@@ -201,8 +201,10 @@ object OllamaProtocol {
         if (tools != null && tools.isNotEmpty()) put("tools", tools)
         put("messages", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ChatMessage.serializer()), messages.filter { !it.displayOnly }.map { it.withFilesInlined().copy(thinking = "", think = "") }))
         put("options", buildJsonObject {
-            put("temperature", config.temperature)
+            // custom sampling (Settings → Ollama → Sampling); in model mode nothing is sent and the model's own defaults apply
+            Sampling.options(config).forEach { (k, v) -> put(k, v) }
             if (config.contextTokens > 0) put("num_ctx", config.contextTokens)
+            // the retry after a loop asks for more than whatever is set
             if (repeatPenalty != null) put("repeat_penalty", repeatPenalty)
         })
     }

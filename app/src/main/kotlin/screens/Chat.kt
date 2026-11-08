@@ -114,6 +114,7 @@ internal val SlashCommands = listOf(
     SlashItem("/mode", "Tools mode: ask, auto, plan (cycles)", false),
     SlashItem("/autorun", "Run shell commands without asking (toggle)", false),
     SlashItem("/effort", "Reasoning effort for the next message: pick from the levels this model offers (Ctrl+G)", false, usage = "/effort xhigh   or just /effort to pick from the list", aliases = listOf("/think")),
+    SlashItem("/sampling", "How the model picks its next word: temperature, top P, top K, min P, penalties (Ctrl+R)", false, usage = "/sampling   or /sampling model  (the model's own defaults)  or /sampling custom"),
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false, usage = "e.g. /memory check   (finds repeated lines and dead note paths, asks before removing)"),
     SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
     SlashItem("/reindex", "Build or refresh the semantic search index of your vault (Settings → Search → Embedding model (for meaning))", false),
@@ -175,6 +176,7 @@ internal fun slashMatches(items: List<SlashItem>, query: String): List<SlashItem
 fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf(
     com.arcana.brain.app.navigation.KeySection("The model: thinking, tools, memory", listOf(
         "/effort" to "reasoning effort for the next message: pick from what the model offers (Ctrl+G; /effort xhigh sets it directly)",
+        "/sampling" to "temperature, top P, top K, min P and the penalties: model defaults or your values (Ctrl+R)",
         "/thinking" to "thoughts pane under the conversation (Ctrl+T)",
         "/mode" to "tools: ask, auto, plan",
         "/tools" to "tools on or off",
@@ -210,6 +212,7 @@ fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf
         "Esc" to "cancel the reply (asks first)",
         Shortcuts.label("Ctrl+T") to "thinking pane: show it, resize it, then hide it",
         Shortcuts.label("Ctrl+G") to "reasoning effort: choose what the model offers (off, low, medium, xhigh…) for the next message",
+        Shortcuts.label("Ctrl+R") to "sampling: temperature, top P, top K, min P, penalties (model defaults or your values)",
         "↑↓" to "scroll while it writes",
     )),
     com.arcana.brain.app.navigation.KeySection("Browsing (Esc from the field)", listOf(
@@ -490,7 +493,8 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
     return buildList {
         // the models, one segment: whoever works now comes first as a filled pill, the other one after it, quiet
         add(modelsSegment(ModelIcon.label(config.model, plain), chat.consulting, config, plain, width, app.memoryAdvice(Oracul.model(config), com.arcana.brain.core.ModelFit.Role.Oracul)?.startsWith("⚠") == true))
-        add(statusSegment("temperature", "°${config.temperature}", Palette.Accent, 6))
+        // how the next word is chosen (model defaults or custom): quality-relevant, so it shows the values the model really works with (Ctrl+R changes them)
+        add(samplingSegment(app))
         // the model's thinking: a core fact of how it answers (off is much faster); shown when the model can think
         if (app.thinkingValues.isNotEmpty()) add(thinkingSegment(app, plain))
         if (config.chatUseVault) {
@@ -582,7 +586,7 @@ private const val MaxNotes = 5
 /** How many queued messages are listed above the message field; the rest are counted. */
 private const val QUEUE_SHOWN = 3
 
-private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory, Artifacts, Think }
+private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory, Artifacts, Think, Sampling }
 
 /** What happens to the last answer when it is sent to an existing note. */
 private enum class Target(val verb: String) { Append("Append"), Replace("Replace") }
@@ -606,6 +610,7 @@ fun ChatScreen(app: AppContext) {
     val output = remember { OutputState() }
     val historyPicker = remember { PickerState() }
     val thinkPicker = remember { PickerState() }
+    val sampling = remember { SamplingDialog() }
     var thinkChoices by remember { mutableStateOf(emptyList<ThinkChoice>()) }
     val notePicker = remember { PickerState() }
     val input = chat.input
@@ -874,6 +879,16 @@ fun ChatScreen(app: AppContext) {
         mode = ChatMode.Think
     }
 
+    /** `/sampling` (Ctrl+R): the dialog for temperature, top P, top K, min P and the penalties; `/sampling model` sets the model's own defaults, `/sampling custom` switches to your values. */
+    fun openSampling(args: String = "") {
+        when (args.trim().lowercase()) {
+            "" -> { sampling.open(); mode = ChatMode.Sampling }
+            "model" -> { app.update(com.arcana.brain.core.Sampling.toModel(app.config)); toast("Model defaults: nothing is sent, the model\'s own settings apply.") }
+            "custom" -> { app.update(com.arcana.brain.core.Sampling.toCustom(app.config, app.modelParameters)); toast("Custom: your values are sent (Ctrl+R changes them).") }
+            else -> toast("/sampling takes model or custom, or nothing to open the dialog.", error = true)
+        }
+    }
+
     fun toggleAutoRun() {
         if (!app.config.toolShell) return toast("Shell commands are off. Turn them on in Settings → Tools first.", error = true)
         val on = !app.config.toolAutoShell
@@ -911,7 +926,7 @@ fun ChatScreen(app: AppContext) {
 
     fun runCommand(command: String, args: String = "") {
         // text after a command is only meaningful for these; anywhere else say so instead of guessing
-        if (args.isNotEmpty() && command !in setOf("/oracul", "/compare", "/revise", "/flow", "/goal", "/memory", "/effort", "/think")) return toast("$command takes no text after it. Type just $command.", error = true)
+        if (args.isNotEmpty() && command !in setOf("/oracul", "/compare", "/revise", "/flow", "/goal", "/memory", "/effort", "/think", "/sampling")) return toast("$command takes no text after it. Type just $command.", error = true)
         when (command) {
             "/new" -> startNew()
             "/history" -> openHistory()
@@ -933,6 +948,7 @@ fun ChatScreen(app: AppContext) {
             "/mode" -> cycleMode()
             "/autorun" -> toggleAutoRun()
             "/effort", "/think" -> if (args.isBlank()) openThinkPicker() else setEffortFromText(args)
+            "/sampling" -> openSampling(args)
             "/compact" -> runCompact()
             "/oracul" -> runOracul(compare = false, only = args.ifEmpty { null })
             "/compare" -> runOracul(compare = true, only = args.ifEmpty { null })
@@ -987,6 +1003,7 @@ fun ChatScreen(app: AppContext) {
             Command("Semantic search: build or refresh the index of the vault", "Chat", "/reindex") { chat.reindex { text, error -> toast(text, error = error) } },
             Command("Thinking pane: size, then off (Ctrl+T)", "Chat", "Ctrl+T") { resizeThinkingPane() },
             Command("Reasoning effort: choose for the next message (what the model offers)", "Chat", "Ctrl+G") { openThinkPicker() },
+            Command("Sampling: temperature, top P, top K, min P, penalties", "Chat", "Ctrl+R") { openSampling() },
             Command(if (app.config.thinkingPane) "Thinking pane: turn off" else "Thinking pane: show the model's thoughts live", "Chat", "/thinking") { toggleThinkingPane() },
             Command("Tools mode: ${app.config.toolMode} → next (ask, auto, plan)", "Chat", "/mode", app.config.toolsEnabled) { cycleMode() },
             Command("Oracul: second opinion on the last answer", "Chat", "/oracul", lastAnswer != null) { runOracul(compare = false) },
@@ -1047,6 +1064,7 @@ fun ChatScreen(app: AppContext) {
             ChatMode.Chat -> if (attachments.browsing) attachments.filtering else !browsing && !(gen.state == GenState.Running && input.text.isEmpty())
             ChatMode.History -> historyPicker.filtering
             ChatMode.Think -> thinkPicker.filtering
+            ChatMode.Sampling -> sampling.typing
             ChatMode.PickNote, ChatMode.PickTarget -> notePicker.filtering
             else -> true
         },
@@ -1062,6 +1080,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.ConfirmReplace -> Hints("y  replace", "any other key  keep the note")
         ChatMode.History -> Hints("↑↓  move", "Enter  open", "/  filter", "Esc  back")
         ChatMode.Think -> Hints("↑↓  move", "Enter  use for the next message", "d  make it the Settings value", "Esc  back")
+        ChatMode.Sampling -> if (sampling.typing) Hints("Enter  save", "blank  the model's own", "Ctrl+U  clear line", "Esc  cancel") else Hints("↑↓  move", "←→  change", "Enter  type a value", "m  mode", "r  model defaults", "Esc  back")
         ChatMode.PickNote -> Hints("type  search", "↑↓  move", "Enter  attach", "Esc  cancel")
         ChatMode.PickTarget -> Hints("type  search", "↑↓  move", "Enter  ${target.verb.lowercase()}", "Esc  cancel")
         ChatMode.Chat -> when {
@@ -1201,6 +1220,7 @@ fun ChatScreen(app: AppContext) {
                 key == Key.Escape -> { mode = ChatMode.Chat; true }
                 else -> false
             }
+            ChatMode.Sampling -> sampling.handle(key, app, { toast(it) }) { mode = ChatMode.Chat }
             ChatMode.Think -> when {
                 thinkPicker.handle(key, thinkChoices) { it.label } -> true
                 key == Key.Enter -> {
@@ -1258,6 +1278,7 @@ fun ChatScreen(app: AppContext) {
                 gen.state == GenState.Running && input.text.isEmpty() && !browsing && key.char?.let { it in '0'..'9' } == true -> false
                 key == Key.Thinking -> { resizeThinkingPane(); true }
                 key == Key.Effort -> { openThinkPicker(); true }
+                key == Key.Sampling -> { openSampling(); true }
                 key == Key.Save -> { openSave(null); true }
                 key == Key.Browse -> { openAttach(); true }
                 output.selecting -> output.handle(key, entries, onNotice = { toast(it.text) })
@@ -1400,6 +1421,7 @@ fun ChatScreen(app: AppContext) {
                     )
                 }
             }
+            ChatMode.Sampling -> SamplingPanel(app, sampling)
             ChatMode.Think -> {
                 ScreenHeader("Reasoning effort", "${app.config.model}: what Ollama lists · Enter next message only · d Settings value")
                 VGap()

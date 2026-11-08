@@ -35,6 +35,7 @@ fun KeyEvent.toKey(): Key? {
             ctrl && key.equals("o", ignoreCase = true) -> Key.Browse
             ctrl && key.equals("t", ignoreCase = true) -> Key.Thinking
             ctrl && key.equals("g", ignoreCase = true) -> Key.Effort
+            ctrl && key.equals("r", ignoreCase = true) -> Key.Sampling
             ctrl && key.equals("s", ignoreCase = true) -> Key.Save
             ctrl && key.equals("x", ignoreCase = true) -> Key.Skip
             ctrl && key.equals("p", ignoreCase = true) -> Key.Palette

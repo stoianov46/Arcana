@@ -57,7 +57,8 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
   - `listModels(): List<String>` and `modelDetails(): List<ModelDetails>` (`/api/tags` + `show` per model: size, capabilities; `summary()` is
     the `19 GB · dense · tools · thinking`, `MoE` for a mixture of experts, from `model_info`, else from the tensor list (`OllamaProtocol.parseTensorLayout`) text of the model picker).
   - `loadedContext(model)` (`/api/ps`, `OllamaProtocol.parseLoadedContext`): the `context_length` Ollama loaded the model with; 0 when it is not loaded or this Ollama is too old to say.
-  - `chatRequest` sends `options.temperature`, and `num_ctx` when `AppConfig.contextTokens > 0`.
+  - `chatRequest` sends the sampling options of `Sampling.options(config)` (none in `model` mode; in `custom` mode the temperature and every option that has a value: `top_p`, `top_k`, `min_p`, `presence_penalty`, `repeat_penalty`), `num_ctx` when `AppConfig.contextTokens > 0`, and `repeat_penalty` for the retry after a loop (wins over the setting).
+  - `Sampling` (`Sampling.kt`): the one definition of the six options (range, step, help), `get`/`set`/`parse`/`step`, `options`, `effective` (what the model really works with: set values, else its Modelfile's), `toCustom`/`toModel`. `AppConfig.forModel(other)` resets `samplingMode` to `model`: custom values are for the chat model only.
 - `OllamaProtocol` (pure, unit-tested): `chatRequest(config, messages, jsonMode, tools)`, `parseChunk(line)`, `parseCapabilities`,
   `parseModels`. Messages are serialized with `ChatMessage.withFilesInlined()` (text files become part of `content`).
   Defaults are not encoded, so app-only fields (`imageNames`, `stats`, `noteNames`, `sources`) never reach Ollama when empty.

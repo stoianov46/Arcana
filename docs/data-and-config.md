@@ -23,7 +23,9 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 |---|---|---|
 | `ollamaUrl` | `http://localhost:11434` | Ollama base URL |
 | `model` | `gemma4:latest` | model for every feature |
-| `temperature` | 0.7 | sampling temperature |
+| `samplingMode` | `model` | `model` sends no sampling option (the model's own defaults apply); `custom` sends the values below. Chat model only |
+| `temperature` | 0.7 | sent in custom mode (always) |
+| `topP` / `topK` / `minP` / `presencePenalty` / `repeatPenalty` | blank | sent in custom mode only when set; blank = the model's own |
 | `timeoutSeconds` | 300 | HTTP timeout per request |
 | `vaultPath` | `$ARCANA_VAULT` or empty | Obsidian vault folder (`~` allowed) |
 | `outputFolder` | `Research` | vault folder for notes Arcana creates for you (AI notes, saved chats; visible content, never skills or memory; empty = vault root). It used to be `Arcana`, which was confusing next to the internal `.arcana/`; an existing config keeps its saved value |

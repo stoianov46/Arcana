@@ -34,6 +34,8 @@ sealed interface Key {
     data object Thinking : Key
     /** Choose the reasoning effort of the next message from what the model offers (Ctrl+G, the same as `/think`). */
     data object Effort : Key
+    /** Open the sampling dialog (Ctrl+R, the same as `/sampling`): temperature, top P, top K, min P and the penalties. */
+    data object Sampling : Key
     /** Open the file browser of the field being edited (Ctrl+O). */
     data object Browse : Key
     /** Delete the word before the caret (Alt+Backspace, Ctrl+W). */

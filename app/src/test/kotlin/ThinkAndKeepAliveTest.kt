@@ -81,6 +81,40 @@ class ThinkAndKeepAliveTest {
     }
 
     @Test
+    fun customSamplingGoesWithTheChatRequestAndModelDefaultsSendNothing() {
+        val f = fake(qwen38)
+        try {
+            val app = app(f) { copy(samplingMode = "custom", temperature = 1.0, topK = 20, presencePenalty = 1.5) }
+            runBlocking { app.refreshConnection() }
+            app.chat.send("one")
+            waitFor(f, 1)
+            val first = f.bodies[0].substringAfter("\"options\"")
+            assertTrue("\"temperature\":1.0" in first && "\"top_k\":20" in first && "\"presence_penalty\":1.5" in first, first)
+            assertTrue("top_p" !in first && "min_p" !in first, "an option left blank is not sent: $first")
+            app.update(app.config.copy(samplingMode = "model"))
+            app.chat.send("two")
+            waitFor(f, 2)
+            val second = f.bodies[1].substringAfter("\"options\"")
+            assertTrue("temperature" !in second && "top_k" !in second, "model defaults send no sampling at all: $second")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun theSamplingIndicatorShowsTheValuesTheModelReallyWorksWith() {
+        val f = fake(qwen38)
+        try {
+            val app = app(f) { copy(samplingMode = "custom", temperature = 0.6, topK = 40) }
+            runBlocking { app.refreshConnection() }
+            val custom = com.arcana.brain.app.screens.samplingSegment(app)
+            assertEquals("sampling custom T0.6 P0.95 K40", custom.parts.joinToString("") { it.text }, "the model's own top_p stays, what Settings set replaces the rest")
+            val bright = custom.parts.filter { it.bold }.map { it.text.trim() }
+            assertEquals(listOf("custom", "T0.6", "K40"), bright, "what Settings set is bright, what the model decides is quiet")
+            app.update(app.config.copy(samplingMode = "model"))
+            assertEquals("sampling model T1 P0.95 K20", com.arcana.brain.app.screens.samplingSegment(app).parts.joinToString("") { it.text })
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun aLevelTheModelDoesNotListIsNotKeptOrSent() {
         val f = fake(qwen38)
         try {

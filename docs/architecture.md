@@ -46,7 +46,7 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 | Member | Purpose |
 |---|---|
 | `config` (+ `update(newConfig)`) | current `AppConfig`; `update` saves to disk, bumps `revision` when needed |
-| `client: OllamaClient` | reads `config` lazily (URL/model/temperature/timeout changes apply at once) |
+| `client: OllamaClient` | reads `config` lazily (URL/model/sampling/timeout changes apply at once) |
 | `connection: Connection` | `Checking / Online(models) / ModelMissing(models) / Offline(error)`; refreshed by `refreshConnection()` |
 | `vision`, `tools: Boolean?`, `modelContext` | model capabilities and maximum context from `/api/show` (`null`/0 = unknown) |
 | `loadedContext` | the window Ollama really loaded the model with, from `/api/ps` `context_length` (0 until the model has run, or on an older Ollama); refreshed after every reply and with the connection (`refreshLoadedContext`) |
