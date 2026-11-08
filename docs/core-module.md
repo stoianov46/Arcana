@@ -44,7 +44,7 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `Diff.kt` | `Diff.unified(old, new, context)`: a git-style line diff (`@@ -a,b +c,d @@` hunks, `  ` context, `- ` removed, `+ ` added; common start and end cut off first, an LCS for the middle, big middles shown as one replacement); used by the change previews |
 | `Shell.kt` | `ShellPolicy` (blocked / safe commands; `curl` and `wget` are blocked: use `http_request`) and `runShell` (the `run_command` runner) |
 | `Web.kt` | `WebPolicy` (public addresses only), `fetchUrl` (manual redirects, size/time limits), `htmlToText` |
-| `WebSearch.kt` | `WebSearch.search` with three backends (DuckDuckGo HTML, SearXNG JSON, Brave API), pure parsers, `format`; `SearchResult` |
+| `WebSearch.kt` | `WebSearch.search` with four backends (DuckDuckGo HTML, SearXNG JSON, Brave API, Ollama hosted search), pure parsers, `format`; `SearchResult` |
 | `TextToolCalls.kt` | `TextToolCalls.extract`: finds a tool call the model wrote as text at the end of a reply |
 
 ## `OllamaClient.kt`

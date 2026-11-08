@@ -105,7 +105,7 @@ class FileAccess(roots: List<Path>) {
  * files inside the allowed folders. A failed call returns "Error: …" as its result, so the model can react to it.
  */
 class ToolBox(private val vault: Vault?, folders: List<Path>, private val backups: Path, private val outputFolder: String = "", private val model: String = "Arcana", private val readOnly: Boolean = false, private val shell: Boolean = false, private val web: Boolean = false,
-    private val searchBackend: String = "duckduckgo", private val searchUrl: String = "", private val searchKey: String = "",
+    private val searchBackend: String = "duckduckgo", private val searchUrl: String = "", private val searchKey: String = "", private val ollamaKey: String = "",
     /** The vault folder that holds skills (see [Skills]); blank turns skills off. */ private val skillsFolder: String = "",
     /** The project the user works on (see [projectNote]): allowed like the vault, and what a relative path or a default folder means. */ private val project: Path? = null,
     /** The semantic search of the vault ([SemanticSearch]); null = no embedding model is set up, and the `semantic_search` tool is not offered. */ private val semantic: SemanticSearch? = null,
@@ -619,7 +619,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         preview = { a -> listOf("Search the web for:", a.str("query").trim(), "Sent to ${WebSearch.describe(searchBackend, searchUrl)}; nothing else leaves your computer.") },
     ) { a ->
         val query = a.str("query").trim()
-        val (used, results) = WebSearch.searchWithFallback(query, a.int("limit") ?: WebSearch.DEFAULT_LIMIT, searchBackend, searchUrl, searchKey)
+        val (used, results) = WebSearch.searchWithFallback(query, a.int("limit") ?: WebSearch.DEFAULT_LIMIT, searchBackend, searchUrl, searchKey, ollamaKey)
         WebSearch.format(query, used, results) + (if (used != searchBackend.ifBlank { "duckduckgo" }) "\n(The chosen search backend was limiting requests, so $used answered.)" else "")
     }
 

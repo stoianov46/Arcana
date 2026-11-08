@@ -20,7 +20,7 @@ class SearchLimited(message: String) : IllegalArgumentException(message)
 data class SearchResult(val title: String, val url: String, val snippet: String)
 
 /**
- * Searching the web for the `web_search` tool, through one of three backends: DuckDuckGo's plain HTML page (no setup, no key; it can
+ * Searching the web for the `web_search` tool, through one of four backends: Ollama's hosted search (a free account's key), DuckDuckGo's plain HTML page (no setup, no key; it can
  * refuse after many queries), a SearXNG server the user runs (JSON API; its address may be on their own network), or the Brave Search API
  * (needs a key). Only the search words leave the computer. The parsers are pure functions so they can be tested without a network.
  */
@@ -35,12 +35,12 @@ object WebSearch {
 
     internal fun resetCooldown() { duckBlockedUntil = 0L }
 
-    private fun label(backend: String) = when (backend) { "searxng" -> "SearXNG"; "brave" -> "Brave Search"; else -> "DuckDuckGo" }
+    private fun label(backend: String) = when (backend) { "searxng" -> "SearXNG"; "brave" -> "Brave Search"; "ollama" -> "Ollama"; else -> "DuckDuckGo" }
 
     /** The backends in the order they are tried: the chosen one, then every other that is set up (a Brave key, a SearXNG address); DuckDuckGo last, and not at all while it cools down. */
-    internal fun order(backend: String, searxUrl: String, key: String, now: Long = System.currentTimeMillis()): List<String> {
+    internal fun order(backend: String, searxUrl: String, key: String, ollamaKey: String = "", now: Long = System.currentTimeMillis()): List<String> {
         val first = backend.ifBlank { "duckduckgo" }
-        val rest = listOf("brave", "searxng", "duckduckgo").filter { it != first && (it != "brave" || key.isNotBlank()) && (it != "searxng" || searxUrl.isNotBlank()) && (it != "duckduckgo" || now >= duckBlockedUntil) }
+        val rest = listOf("ollama", "brave", "searxng", "duckduckgo").filter { it != first && (it != "ollama" || ollamaKey.isNotBlank()) && (it != "brave" || key.isNotBlank()) && (it != "searxng" || searxUrl.isNotBlank()) && (it != "duckduckgo" || now >= duckBlockedUntil) }
         return listOf(first) + rest
     }
 
@@ -49,18 +49,18 @@ object WebSearch {
      * answered with its results. When none does, the error says what each one said and how to set up a backend that does not limit (a Brave key, SearXNG).
      */
     fun searchWithFallback(
-        query: String, limit: Int, backend: String, searxUrl: String, key: String,
-        run: (String) -> List<SearchResult> = { b -> search(query, limit, b, searxUrl, key) },
+        query: String, limit: Int, backend: String, searxUrl: String, key: String, ollamaKey: String = "",
+        run: (String) -> List<SearchResult> = { b -> search(query, limit, b, searxUrl, key, ollamaKey) },
     ): Pair<String, List<SearchResult>> {
         val said = ArrayList<String>()
-        for (b in order(backend, searxUrl, key)) {
+        for (b in order(backend, searxUrl, key, ollamaKey)) {
             try {
                 return b to run(b)
             } catch (e: IllegalArgumentException) {
                 said += e.message.orEmpty()
             }
         }
-        val advice = " Web search is paused, and the wait tool cannot help (it sleeps at most 2 minutes). Do NOT call web_search again, and do NOT guess addresses for fetch_url. Carry on from the vault (search_notes, read_note), pages the user gave you and what you know; mark every claim that needs the web \"unverified\" and say in your answer or report that search was unavailable. Tell the user: Brave Search (a free key from api-dashboard.search.brave.com, in Settings → Tools → Search API key) or their own SearXNG server (Settings → Tools → Search backend and Search address) makes searching dependable."
+        val advice = " Web search is paused, and the wait tool cannot help (it sleeps at most 2 minutes). Do NOT call web_search again, and do NOT guess addresses for fetch_url. Carry on from the vault (search_notes, read_note), pages the user gave you and what you know; mark every claim that needs the web \"unverified\" and say in your answer or report that search was unavailable. Tell the user: Ollama search (a free key from ollama.com/settings/keys, in Settings → Tools → Ollama API key), Brave Search (Settings → Tools → Brave API key) or their own SearXNG server (Settings → Tools → Search backend and Search address) makes searching dependable."
         throw IllegalArgumentException(said.first() + (if (said.size > 1) " Also tried: " + said.drop(1).joinToString(" ") else "") + advice)
     }
 
@@ -79,11 +79,12 @@ object WebSearch {
     fun describe(backend: String, searxUrl: String): String = when (backend) {
         "searxng" -> "your SearXNG server (${runCatching { URI(searxUrl).host }.getOrNull() ?: searxUrl})"
         "brave" -> "the Brave Search API (api.search.brave.com)"
+        "ollama" -> "Ollama web search (ollama.com)"
         else -> "DuckDuckGo (html.duckduckgo.com)"
     }
 
     /** The results for [query] (at most [limit]); throws IllegalArgumentException with a user-facing reason when the search cannot be done. */
-    fun search(query: String, limit: Int, backend: String, searxUrl: String, key: String): List<SearchResult> {
+    fun search(query: String, limit: Int, backend: String, searxUrl: String, key: String, ollamaKey: String = ""): List<SearchResult> {
         require(query.isNotBlank()) { "Give the words to search for." }
         val n = limit.coerceIn(1, MAX_LIMIT)
         val q = URLEncoder.encode(query.trim(), Charsets.UTF_8)
@@ -93,8 +94,15 @@ object WebSearch {
                 val base = searxUrl.trim().trimEnd('/')
                 parseSearx(get("$base/search?q=$q&format=json", emptyMap(), "SearXNG"), n)
             }
+            "ollama" -> {
+                require(ollamaKey.isNotBlank()) { "No Ollama API key is set. Add it in Settings → Tools → Ollama API key, or choose another search backend." }
+                val body = Json.encodeToString(JsonObject.serializer(), JsonObject(mapOf("query" to JsonPrimitive(query.trim()), "max_results" to JsonPrimitive(n))))
+                parseOllama(send(HttpRequest.newBuilder(URI("https://ollama.com/api/web_search")).timeout(Duration.ofSeconds(WebPolicy.TIMEOUT_SECONDS))
+                    .header("Authorization", "Bearer ${ollamaKey.trim()}").header("Content-Type", "application/json").header("Accept", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body)).build(), "Ollama"), n)
+            }
             "brave" -> {
-                require(key.isNotBlank()) { "No Brave Search API key is set. Add it in Settings → Tools → Search API key, or choose another search backend." }
+                require(key.isNotBlank()) { "No Brave Search API key is set. Add it in Settings → Tools → Brave API key, or choose another search backend." }
                 parseBrave(get("https://api.search.brave.com/res/v1/web/search?q=$q&count=$n", mapOf("X-Subscription-Token" to key.trim(), "Accept" to "application/json"), "Brave Search"), n)
             }
             else -> {
@@ -114,6 +122,10 @@ object WebSearch {
         val request = HttpRequest.newBuilder(URI(url)).timeout(Duration.ofSeconds(WebPolicy.TIMEOUT_SECONDS))
             .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Arcana/1.0")
             .apply { headers.forEach { (k, v) -> header(k, v) } }.GET().build()
+        return send(request, name)
+    }
+
+    private fun send(request: HttpRequest, name: String): String {
         val response = try { client.send(request, HttpResponse.BodyHandlers.ofString()) } catch (e: Exception) {
             throw IllegalArgumentException("Could not reach $name: ${e.message ?: e.javaClass.simpleName}")
         }
@@ -146,6 +158,15 @@ object WebSearch {
         return items.mapNotNull { it as? JsonObject }.mapNotNull { o ->
             val url = text(o, "url") ?: return@mapNotNull null
             SearchResult(clean(text(o, "title").orEmpty()).ifEmpty { url }, url, clean(text(o, "content").orEmpty()))
+        }.take(limit)
+    }
+
+    /** The results of Ollama's hosted `web_search`: `{"results":[{"title","url","content"}]}`. */
+    internal fun parseOllama(json: String, limit: Int): List<SearchResult> {
+        val items = (runCatching { Json.parseToJsonElement(json) as? JsonObject }.getOrNull()?.get("results") as? JsonArray) ?: throw IllegalArgumentException("Ollama did not answer with search results.")
+        return items.mapNotNull { it as? JsonObject }.mapNotNull { o ->
+            val url = text(o, "url") ?: return@mapNotNull null
+            SearchResult(clean(text(o, "title").orEmpty()).ifEmpty { url }, url, clean(text(o, "content").orEmpty()).take(500))
         }.take(limit)
     }
 

@@ -67,9 +67,10 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `toolAutoShell` | false | shell commands run without asking (`/autorun`, Settings → Tools); `ShellPolicy.blockedReason` still refuses; Chat status bar shows red `▶ auto-run` |
 | `toolShell` / `toolWeb` | false / false | `run_command` / `fetch_url` and `web_search` may be used (each call still asks) |
 | `embedModel` | `""` | the Ollama embedding model of the semantic search (`semantic_search` tool, `/reindex`); blank = off. The index is the file `~/.config/arcana/embeddings/<hash of vault and model>/index.bin`; see [semantic-search.md](semantic-search.md) |
-| `searchBackend` | `duckduckgo` | `duckduckgo` / `searxng` / `brave`: where `web_search` looks |
+| `searchBackend` | `duckduckgo` | `duckduckgo` / `ollama` / `searxng` / `brave`: where `web_search` looks |
 | `searchUrl` | `""` | address of the user's SearXNG server (used only by that backend) |
-| `searchKey` | `""` | Brave Search API key, stored in plain text in `config.json` (keep the file private); the Settings row shows only its last 4 characters |
+| `ollamaKey` | `""` | Ollama API key (ollama.com/settings/keys) for the `ollama` search backend (the row is shown only while Ollama is the chosen backend; the key stays in effect as a fallback when another backend is chosen); plain text in `config.json`, the Settings row shows only its last 4 characters |
+| `searchKey` | `""` | Brave Search API key (Settings row *Brave API key*, shown only while the Brave backend is chosen), stored in plain text in `config.json` (keep the file private); the Settings row shows only its last 4 characters |
 | `textCalls` | `auto` | a tool call written as text: `auto` runs it, `ask` shows it first, `off` leaves it |
 | `toolAutoSearch` | false | `web_search` and `fetch_url` run without asking (Settings → Tools → *Search and fetch without asking*; needs `toolWeb`; HTTP requests still ask, the Oracul always asks); the Chat status bar shows an orange `↗ auto-search` |
 | `toolFolders` | `""` | Settings → Tools → *Allowed folders* (was *Extra folders*): `;`-separated roots the file tools may read and write besides the vault, `~` expanded (the only place a home or hidden folder can be allowed) |

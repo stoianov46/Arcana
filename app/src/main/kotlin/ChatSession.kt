@@ -760,7 +760,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             readOnly = config.toolMode == "plan",
             shell = config.toolShell,
             web = config.toolWeb,
-            searchBackend = config.searchBackend, searchUrl = config.searchUrl, searchKey = config.searchKey,
+            searchBackend = config.searchBackend, searchUrl = config.searchUrl, searchKey = config.searchKey, ollamaKey = config.ollamaKey,
             skillsFolder = if (config.skillsEnabled) app.skillsFolder(config) else "",
             semantic = semanticIndexFor(config, vault)?.let { SemanticSearch(it) },
             searchTuning = SearchTuning.of(config),

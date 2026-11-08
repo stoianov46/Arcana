@@ -131,10 +131,11 @@ data class AppConfig(
     val keepAlive: String = "",
     /** A tool call the model wrote as text instead of making it: "auto" runs it as a real call, "ask" shows it first, "off" leaves it as text. */
     val textCalls: String = "auto",
-    /** Where web_search looks: "duckduckgo" (no setup), "searxng" (a server the user runs, at [searchUrl]) or "brave" (needs [searchKey]). */
+    /** Where web_search looks: "duckduckgo" (no setup), "searxng" (a server the user runs, at [searchUrl]) or "brave" (needs [searchKey]) or "ollama" (Ollama's hosted search, needs [ollamaKey]). */
     val searchBackend: String = "duckduckgo",
     val searchUrl: String = "",
     val searchKey: String = "",
+    val ollamaKey: String = "",
     /** The Oracul (see [Oracul]): the model that gives second opinions; blank = off. */
     val oraculModel: String = "",
     /** The master switch for every helper model: the Oracul and its second opinions, the judge, the flow, the specialists (`consult`) and the router. Off: only the chat model works (skill roles have their own switch, [skillRolesEnabled]). The models stay set, so switching back loses nothing. */

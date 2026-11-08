@@ -812,6 +812,8 @@ class CoreTest {
             assertEquals(listOf("duckduckgo"), WebSearch.order("duckduckgo", "", ""))
             assertEquals(listOf("duckduckgo", "brave", "searxng"), WebSearch.order("duckduckgo", "http://localhost:8080", "key"))
             assertEquals(listOf("brave", "searxng", "duckduckgo"), WebSearch.order("brave", "http://x", "k"))
+            assertEquals(listOf("ollama", "searxng", "duckduckgo"), WebSearch.order("ollama", "http://x", "", "ok"))
+            assertEquals(listOf("duckduckgo", "ollama", "brave"), WebSearch.order("duckduckgo", "", "k", "ok"))
             val calls = ArrayList<String>()
             val hit = SearchResult("A", "https://a.dev", "")
             val (used, results) = WebSearch.searchWithFallback("q", 5, "duckduckgo", "", "key") { b -> calls += b; if (b == "duckduckgo") throw SearchLimited("limited") else listOf(hit) }
@@ -1397,6 +1399,9 @@ class CoreTest {
         assertTrue(runCatching { WebSearch.parseDuckDuckGo("<html>Unfortunately, bots use DuckDuckGo too. anomaly-modal</html>", 5) }.exceptionOrNull()!!.message!!.contains("human check"))
         val searx = WebSearch.parseSearx("""{"results":[{"title":"A","url":"https://a.dev","content":"about <b>a</b>"},{"url":"https://b.dev"},{"title":"no url"}]}""", 5)
         assertEquals(listOf("A", "https://b.dev"), searx.map { it.title }); assertEquals("about a", searx[0].snippet)
+        val ollama = WebSearch.parseOllama("""{"results":[{"title":"O <b>hit</b>","url":"https://o.dev","content":"about o"},{"title":"no url"}]}""", 5)
+        assertEquals(listOf(SearchResult("O hit", "https://o.dev", "about o")), ollama)
+        assertTrue(runCatching { WebSearch.parseOllama("""{"error":"x"}""", 5) }.exceptionOrNull()!!.message!!.contains("Ollama"))
         val brave = WebSearch.parseBrave("""{"web":{"results":[{"title":"Brave <strong>hit</strong>","url":"https://c.dev","description":"desc"}]}}""", 5)
         assertEquals("Brave hit", brave.single().title)
         assertTrue(WebSearch.format("kotlin", "duckduckgo", d).contains("1. Example Domain & more\n   https://example.com/a?x=1\n   This domain"))
