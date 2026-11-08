@@ -86,6 +86,10 @@ class AppContext(
     var experts by mutableStateOf(0)
         private set
 
+    /** Whether Ollama described the model as dense (no experts); false = MoE or unknown. */
+    var dense by mutableStateOf(false)
+        private set
+
     /** Whether the model can call tools (null = unknown). */
     var tools by mutableStateOf<Boolean?>(null)
         private set
@@ -244,6 +248,7 @@ class AppContext(
         audio = capabilities?.let { "audio" in it }
         thinking = capabilities?.let { "thinking" in it }
         experts = shown?.experts ?: 0
+        dense = shown?.dense ?: false
         kvBytesPerToken = shown?.kvBytesPerToken ?: 0L
         thinkingValues = shown?.thinkingValues.orEmpty()
         modelParameters = shown?.parameters.orEmpty()
