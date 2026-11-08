@@ -64,6 +64,17 @@ object WebSearch {
         throw IllegalArgumentException(said.first() + (if (said.size > 1) " Also tried: " + said.drop(1).joinToString(" ") else "") + advice)
     }
 
+    /** Whether a SearXNG server answers at [searxUrl] (any HTTP answer counts; a refused or timed-out connection does not). The bottom bar warns when the chosen server is off. */
+    fun searxReachable(searxUrl: String): Boolean {
+        val base = searxUrl.trim().trimEnd('/')
+        if (base.isEmpty()) return false
+        return try {
+            val request = HttpRequest.newBuilder(URI(base)).timeout(Duration.ofSeconds(2)).GET().build()
+            client.send(request, HttpResponse.BodyHandlers.discarding())
+            true
+        } catch (e: Exception) { false }
+    }
+
     /** Where the query goes, for the confirmation dialog: the backend's name and host. */
     fun describe(backend: String, searxUrl: String): String = when (backend) {
         "searxng" -> "your SearXNG server (${runCatching { URI(searxUrl).host }.getOrNull() ?: searxUrl})"

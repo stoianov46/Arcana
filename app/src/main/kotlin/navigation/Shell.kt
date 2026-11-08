@@ -355,6 +355,7 @@ private fun footerSegments(app: AppContext, navigator: Navigator): List<StatusSe
         app.cpuPercent?.let { add(statusSegment("cpu", "$it%", if (it >= 85) Palette.Red else if (it >= 60) Palette.Orange else Palette.Green)) }
         if (app.chat.compacting) add(statusSegment("", if (plain) "compacting" else "◌ compacting…", Palette.Blue))
         com.arcana.brain.app.screens.hardwareWarnings(app, plain).forEach { (text, color) -> add(statusSegment("", text, color, bold = true)) }
+        if (app.searxDown) add(statusSegment("", if (plain) "SearXNG offline" else "⚠ SearXNG offline", Palette.Warn, bold = true))
         if (navigator.focusMode) add(statusSegment("", "✎ EDITING  Esc", Palette.Cta, bold = true))
     }
 }
@@ -383,6 +384,14 @@ private fun Footer(app: AppContext, navigator: Navigator, hint: String, columns:
             app.cpuPercent = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.arcana.brain.core.SystemCpu.percent() }
             app.usedMemory = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.arcana.brain.core.SystemMemory.usedBytes() }
             kotlinx.coroutines.delay(2_000)
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            val c = app.config
+            app.searxDown = c.toolWeb && c.searchBackend == "searxng" &&
+                !kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.arcana.brain.core.WebSearch.searxReachable(c.searchUrl) }
+            kotlinx.coroutines.delay(15_000)
         }
     }
     val rows = footerRows(app, navigator, columns)

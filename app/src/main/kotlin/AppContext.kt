@@ -112,6 +112,9 @@ class AppContext(
     /** How busy the whole processor is (like htop), null until read: the `cpu` figure of the Chat status bar. Read every two seconds while the Chat is shown. */
     var cpuPercent by mutableStateOf<Int?>(null)
 
+    /** True while the chosen search backend is SearXNG and its server does not answer: the warning in the bottom bar. Checked every 15 seconds. */
+    var searxDown by mutableStateOf(false)
+
     /** Every model Ollama has loaded (null = not known yet or Ollama cannot be asked): the model-state indicator in the Chat status bar. */
     var loaded by mutableStateOf<List<com.arcana.brain.core.LoadedModel>?>(null)
 
