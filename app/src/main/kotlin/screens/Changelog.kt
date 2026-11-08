@@ -24,9 +24,10 @@ private fun changePages() = listOf(
         "Latest", "The latest work",
         """
 # The latest work
-Built on 24–25 October 2026. Last updated 1 November 2026.
+Built on 24–25 October 2026. Last updated 8 November 2026.
 
 ## Nothing is hidden any more
+- **LLM reports read the Ollama library:** when a model is in the Ollama library, `/create-llm-compare-report` and `/create-llm-landscape-report` read its tags page and its model page as text (new `rpt.py ollama <family>` and `rpt.py ollama <family>:<tag>` in the vault's report kit) and add an optional `## Ollama variants` table (tag, size, context, format, quantization, updated, *fits here*) and, when the page publishes benchmarks as text, `## Published benchmarks` (labelled vendor-reported, with the source and a note that they belong to the base model, not to the quantization). Pictures are never read: a page that shows its benchmarks as a chart image (like `qwen3.6`) is reported as such and the numbers come from a text source or are left out. *Local fit* uses the size Ollama lists (`rpt.py fit --size-gb`) instead of an estimate. Try `python3 .arcana/reference/report-kit/rpt.py ollama qwen3.6 --filter 35b` in the vault.
 - **The skill picker works before you add `handles:`:** the picker that opens when you start an item lists every skill until some skill says `handles: [research]` (or `question`, `todo`) for that kind; after that only those are offered. Before, it was skipped and the automatic skill was attached with no way to change it. In a chat that already has a skill attached, Backspace on the empty field removes it, and `/name` or `@` attaches another.
 - **Lighter charts on the Brain screen:** the solid bars are gone. Each chart has the look that fits it: a thin line for the health gauges, slim blocks for the pipeline, half-height bars for the folders, dots for the most linked notes and braille dots for the weeks. Bars are shorter and the empty part is quiet.
 - **Capture has a kind switcher:** in the Capture dialog (Ctrl+N) a row of four chips, *Thought* (the default), *Question*, *Research* and *Todo*, changed with ↑ and ↓. Anything but Thought also becomes an item of that kind; you can still type `todo: `, `question: ` or `research: ` yourself, and a typed prefix wins.

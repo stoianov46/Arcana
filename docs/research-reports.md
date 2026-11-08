@@ -87,3 +87,19 @@ Every `Research/<Domain>/` has the same shape: a hub `<Domain> Index` (Dev, LLM,
 - `Settings → Library → Opens on` does not list Reports in its choices (that file was out of scope); the config value `libraryTab: "reports"` works.
 - `Reports.groupByDomain` is built and tested but not used by the view yet (the Brain screen and the roadmap's "research view" ideas can use it).
 - The Reports view does not offer "re-run" for the report kinds whose properties lack a `question`/`pair` (the field is then left empty).
+
+## Ollama pages in LLM reports
+
+The two LLM skills (`create-llm-compare-report`, `create-llm-landscape-report`) read the Ollama library as **text** through `rpt.py ollama` (module `ollama_page.py`
+next to it in the vault's report kit, standard library only):
+
+- `rpt.py ollama <family> [--filter 35b]` reads `ollama.com/library/<family>/tags` and prints one table: tag, size, context, input, format (GGUF or MLX), quantization,
+  features (from the tag name), updated, **fits here** (size + 20% against 70% of the machine's memory, the same rule as `rpt.py fit`) and the other names of the same digest.
+- `rpt.py ollama <family>:<tag>` reads the model page: architecture, parameters, quantization and size per layer, licence, capabilities (vision, tools, thinking), downloads, the
+  readme text and any text table in it (`BENCH_TABLE=yes`).
+- **Pictures are never read.** A readme whose benchmarks are only an image (the `qwen3.6` pages) prints `BENCH_IMAGE_ONLY=yes`; the skill then looks for the numbers as text (Hugging Face
+  card, the lab's blog) or leaves them out and says so. Decided on 2026-11-08: no vision model in the report path, because a misread number is worse than a missing one.
+- Report layout: optional `## Ollama variants` and `## Published benchmarks` after the matrix (compare) or after *Run it locally* (landscape). `rpt.py check` verifies them only when present
+  (the variants table with its *Fits* column; benchmarks with a link, and with a table also the vendor-reported and base-model-not-quantization lines). Benchmarks are vendor-reported.
+- Verify: `python3 <vault>/.arcana/reference/report-kit/rpt.py ollama qwen3.6 --filter 35b`, then `ollama qwen3.6:35b-a3b-mtp-q4_K_M` (`BENCH_IMAGE_ONLY=yes`) and `ollama gemma4:26b` (`BENCH_TABLE=yes`).
+  The parser depends on ollama.com's HTML; when the page changes the script says `OLLAMA_TAGS=no` and the skill reports a gap instead of guessing.
