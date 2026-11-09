@@ -30,8 +30,6 @@ sealed interface Key {
     data object Capture : Key
     /** Save what is on screen (Ctrl+S); works even while a text field has the keyboard. */
     data object Save : Key
-    /** Change the size of the Chat's thinking pane (Ctrl+T): it steps through a few heights. */
-    data object Thinking : Key
     /** Choose the reasoning effort of the next message from what the model offers (Ctrl+G, the same as `/think`). */
     data object Effort : Key
     /** Open the sampling dialog (Ctrl+R, the same as `/sampling`): temperature, top P, top K, min P and the penalties. */

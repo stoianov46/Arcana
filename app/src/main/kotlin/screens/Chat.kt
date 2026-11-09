@@ -177,7 +177,7 @@ fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf
     com.arcana.brain.app.navigation.KeySection("The model: thinking, tools, memory", listOf(
         "/effort" to "reasoning effort for the next message: pick from what the model offers (Ctrl+G; /effort xhigh sets it directly)",
         "/sampling" to "temperature, top P, top K, min P and the penalties: model defaults or your values (Ctrl+R)",
-        "/thinking" to "thoughts pane under the conversation (Ctrl+T)",
+        "/thinking" to "thoughts pane under the conversation ([ and ] also switch it on and off and resize it)",
         "/mode" to "tools: ask, auto, plan",
         "/tools" to "tools on or off",
         "/autorun" to "shell commands without asking",
@@ -210,7 +210,6 @@ fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf
     com.arcana.brain.app.navigation.KeySection("While the model works", listOf(
         "Enter" to "queue a message for after the reply",
         "Esc" to "cancel the reply (asks first)",
-        Shortcuts.label("Ctrl+T") to "thinking pane: show it, resize it, then hide it",
         Shortcuts.label("Ctrl+G") to "reasoning effort: choose what the model offers (off, low, medium, xhigh…) for the next message",
         Shortcuts.label("Ctrl+R") to "sampling: temperature, top P, top K, min P, penalties (model defaults or your values)",
         "↑↓" to "scroll while it writes",
@@ -768,20 +767,29 @@ fun ChatScreen(app: AppContext) {
     fun toggleThinkingPane() {
         val on = !app.config.thinkingPane
         app.update(app.config.copy(thinkingPane = on))
-        toast(if (on) "Thinking pane on: it follows the model's thoughts under the conversation (needs a model that can think and a terminal at least 26 rows tall)." else "Thinking pane off.")
+        toast(if (on) "Thinking pane on: it follows the model's thoughts under the conversation ([ and ] change its size and hide it; needs a model that can think and a terminal at least 26 rows tall)." else "Thinking pane off.")
     }
 
-    /** Ctrl+T: switches the pane on, then steps its size through [THINKING_SIZES], and after the last size switches it off again (the next press starts over at the first size). */
-    fun resizeThinkingPane() {
-        if (!app.config.thinkingPane) { toggleThinkingPane(); return }
-        val next = THINKING_SIZES.firstOrNull { it > app.config.thinkingPanePercent }
-        if (next == null) {
-            app.update(app.config.copy(thinkingPane = false, thinkingPanePercent = THINKING_SIZES.first()))
-            toast("Thinking pane off (Ctrl+T turns it on again at ${THINKING_SIZES.first()} %).")
-            return
+    /**
+     * `]` / `[` (empty field or browsing): the one pair of keys for the pane. `]` switches it on when it is off, then makes it 5 % larger (up to [THINKING_MAX]);
+     * `[` makes it 5 % smaller and, at [THINKING_MIN], switches it off. The same 5 % step and the same 10 to 90 % range as Settings → Console → Thinking pane size
+     * and as the Library's list width. `/thinking` and Settings switch the pane too.
+     */
+    fun stepThinkingPane(larger: Boolean) {
+        val now = app.config.thinkingPanePercent.coerceIn(THINKING_MIN, THINKING_MAX)
+        if (!app.config.thinkingPane) {
+            if (!larger) return
+            app.update(app.config.copy(thinkingPane = true, thinkingPanePercent = now))
+            return toast("Thinking pane on at $now % ([ smaller, ] larger, step 5 %; [ at $THINKING_MIN % hides it; needs a model that can think and a terminal at least 26 rows tall).")
         }
-        app.update(app.config.copy(thinkingPanePercent = next))
-        toast("Thinking pane: $next % (Ctrl+T steps through ${THINKING_SIZES.joinToString(", ")} % and then turns it off; Settings → Console sets the size and the placement).")
+        if (larger && now >= THINKING_MAX) return toast("The thinking pane is already at its largest: $now %.")
+        if (!larger && now <= THINKING_MIN) {
+            app.update(app.config.copy(thinkingPane = false, thinkingPanePercent = THINKING_MIN))
+            return toast("Thinking pane off (] turns it on again at $THINKING_MIN %).")
+        }
+        val next = if (larger) (now / 5 + 1) * 5 else ((now + 4) / 5 - 1) * 5
+        app.update(app.config.copy(thinkingPanePercent = next.coerceIn(THINKING_MIN, THINKING_MAX)))
+        toast("Thinking pane: ${next.coerceIn(THINKING_MIN, THINKING_MAX)} % ([ smaller, ] larger, step 5 %; [ at $THINKING_MIN % hides it).")
     }
 
     fun toggleSkills() {
@@ -1001,7 +1009,6 @@ fun ChatScreen(app: AppContext) {
             Command("Memory file (ARCANA.md): open and edit", "Chat", "/memory") { openMemory() },
             Command(if (app.config.skillsEnabled) "Skills: turn off" else "Skills: turn on (list them)", "Chat", "/skills") { toggleSkills() },
             Command("Semantic search: build or refresh the index of the vault", "Chat", "/reindex") { chat.reindex { text, error -> toast(text, error = error) } },
-            Command("Thinking pane: size, then off (Ctrl+T)", "Chat", "Ctrl+T") { resizeThinkingPane() },
             Command("Reasoning effort: choose for the next message (what the model offers)", "Chat", "Ctrl+G") { openThinkPicker() },
             Command("Sampling: temperature, top P, top K, min P, penalties", "Chat", "Ctrl+R") { openSampling() },
             Command(if (app.config.thinkingPane) "Thinking pane: turn off" else "Thinking pane: show the model's thoughts live", "Chat", "/thinking") { toggleThinkingPane() },
@@ -1086,7 +1093,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.Chat -> when {
             output.selecting -> Hints("↑↓  move", "Space  tick", "c  copy", "b  code only", "Esc  leave")
             chat.compacting -> Hints("Wait: summarizing the chat, then you can send", "↑↓  scroll")
-            gen.state == GenState.Running -> Hints("Enter  queue a message", *(if (chat.queued.isNotEmpty()) arrayOf("Backspace  remove queued") else emptyArray()), "Esc  cancel reply", "↑↓  scroll", *(if (app.config.thinkingPane) arrayOf("Ctrl+T  thinking size") else emptyArray()))
+            gen.state == GenState.Running -> Hints("Enter  queue a message", *(if (chat.queued.isNotEmpty()) arrayOf("Backspace  remove queued") else emptyArray()), "Esc  cancel reply", "↑↓  scroll", "[ ]  thinking pane")
             browsing -> Hints("Enter  type a message", "s  select & copy", "↑↓/Space  scroll", "1-9  screens")
             slashMatches.isNotEmpty() -> Hints("↑↓  choose", "Tab  complete", "Enter  run", "Esc  close")
             else -> Hints("Enter  send", "Alt+Enter  new line", "/  commands", "@  note", "Ctrl+O  attach", "Ctrl+S  save", "↑↓  scroll", "Esc  browse")
@@ -1276,7 +1283,8 @@ fun ChatScreen(app: AppContext) {
                 key.char == '?' && input.text.isEmpty() && !browsing && slashMatches.isEmpty() -> false
                 // a digit with an empty field during a reply is a screen number: leave it to the shell
                 gen.state == GenState.Running && input.text.isEmpty() && !browsing && key.char?.let { it in '0'..'9' } == true -> false
-                key == Key.Thinking -> { resizeThinkingPane(); true }
+                // [ and ] are the pane's keys (on, size, off): only with nothing typed yet (or while browsing), and [ only when the pane is on, so a bracket opening a message is still typed
+                (key.char == ']' || (key.char == '[' && app.config.thinkingPane)) && (input.text.isEmpty() || browsing) -> { stepThinkingPane(key.char == ']'); true }
                 key == Key.Effort -> { openThinkPicker(); true }
                 key == Key.Sampling -> { openSampling(); true }
                 key == Key.Save -> { openSave(null); true }
@@ -1623,8 +1631,9 @@ internal fun wrapWords(text: String, width: Int): List<String> {
 /** The most rows (frame included) the thinking strip takes while a dialog is open; the dialog gives up as many lines. */
 private const val DIALOG_STRIP_MAX = 6
 
-/** The sizes (percent of the main axis) Ctrl+T steps through. */
-private val THINKING_SIZES = listOf(15, 25, 35, 50, 75, 85)
+/** The thinking pane's size range in percent of the main axis (`[` `]` step 5; the same as the Settings stepper). */
+private const val THINKING_MIN = 10
+private const val THINKING_MAX = 90
 
 /** Where the thinking pane goes and how big: [size] is its text rows for "top" and "bottom", its whole width in columns for "left" and "right". */
 internal class ThinkingPaneLayout(val placement: String, val size: Int)

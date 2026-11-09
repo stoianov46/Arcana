@@ -33,7 +33,6 @@ fun KeyEvent.toKey(): Key? {
             ctrl && key.equals("k", ignoreCase = true) -> Key.DeleteToLineEnd
             ctrl && key.equals("e", ignoreCase = true) -> Key.TextEnd
             ctrl && key.equals("o", ignoreCase = true) -> Key.Browse
-            ctrl && key.equals("t", ignoreCase = true) -> Key.Thinking
             ctrl && key.equals("g", ignoreCase = true) -> Key.Effort
             ctrl && key.equals("r", ignoreCase = true) -> Key.Sampling
             ctrl && key.equals("s", ignoreCase = true) -> Key.Save
