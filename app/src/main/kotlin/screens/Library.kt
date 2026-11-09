@@ -137,10 +137,10 @@ fun LibraryScreen(app: AppContext) {
     FocusMode(mode == LibraryMode.Rename || mode == LibraryMode.Edit || (mode == LibraryMode.List && (if (showingTags) tagPicker.filtering else picker.filtering)))
     when (mode) {
         LibraryMode.List -> if (picker.filtering || tagPicker.filtering) Hints("↑↓  move", "Enter  choose", "Esc  clear filter")
-        else if (tree) Hints("↑↓  move", "Enter  open / fold", "h l  fold", "+ -  all", "t  flat list", "←→  view", "a  AI", "e  edit", "r  rename", "d  trash", ".  hidden", "/  filter")
+        else if (tree) Hints("↑↓  move", "Enter  open / fold", "h l  fold", "+ -  all", "t  flat list", "[ ]  list width", "←→  view", "a  AI", "e  edit", "r  rename", "d  trash", ".  hidden", "/  filter")
         else if (filter == LibraryFilter.Reports) Hints("↑↓  move", "←→  view", "Enter  read", "s  run its skill again", "f  refresh", "a  AI", "e  edit", "r  rename", "o  Obsidian", "d  trash", "/  filter")
-        else Hints("↑↓  move", "←→  view", "Enter  read", "a  AI", "e  edit", "r  rename", "o  Obsidian", "d  trash", "t  tree", ".  hidden", "/  filter")
-        LibraryMode.Reading -> Hints("↑↓/Space  scroll", "a  AI", "e  edit", "r  rename", "o  Obsidian", "Esc  back")
+        else Hints("↑↓  move", "←→  view", "Enter  read", "a  AI", "e  edit", "r  rename", "o  Obsidian", "d  trash", "t  tree", "[ ]  list width", ".  hidden", "/  filter")
+        LibraryMode.Reading -> Hints("↑↓/Space  scroll", "[ ]  list width", "a  AI", "e  edit", "r  rename", "o  Obsidian", "Esc  back")
         LibraryMode.Rename -> Hints("Enter  rename", "Esc  cancel")
         LibraryMode.ConfirmDelete -> Hints("y  move to trash", "any other key  keep")
         LibraryMode.Edit -> Hints("Ctrl+S  save", "Esc  leave")
@@ -253,6 +253,16 @@ fun LibraryScreen(app: AppContext) {
         if (!folder.expanded) setFolder(folder.path, true) else if (picker.index < rows.lastIndex) picker.index += 1
     }
 
+    /** `[` / `]`: the list takes 5 % less / more of a wide Library (the same `libraryListPercent` as Settings → Library → List width, 20 to 60). */
+    fun resizeList(delta: Int) {
+        if (!wide) return navigator.showToast("The list and the preview share the window only when it is at least 96 columns wide and the preview pane is on.", isError = false)
+        val now = app.config.libraryListPercent.coerceIn(LIBRARY_LIST_MIN, LIBRARY_LIST_MAX)
+        val next = (now + delta).coerceIn(LIBRARY_LIST_MIN, LIBRARY_LIST_MAX)
+        if (next == now) return navigator.showToast("The list is already at its ${if (delta < 0) "narrowest" else "widest"}: $now %.", isError = false)
+        app.update(app.config.copy(libraryListPercent = next))
+        navigator.showToast("List $next %, preview ${100 - next} % ([ narrower, ] wider; Settings → Library → List width sets it too).", isError = false)
+    }
+
     KeyHandler { key ->
         when (mode) {
             LibraryMode.ConfirmDelete -> {
@@ -276,6 +286,7 @@ fun LibraryScreen(app: AppContext) {
                 else -> editField.onKey(key)
             }
             LibraryMode.Reading -> when {
+                key.char == '[' || key.char == ']' -> { resizeList(if (key.char == ']') 5 else -5); true }
                 preview.handle(key) -> true
                 key == Key.Escape || key == Key.Enter || key == Key.Left -> { mode = LibraryMode.List; true }
                 key.char == 'a' -> { current?.let { askAi(it) }; true }
@@ -298,6 +309,7 @@ fun LibraryScreen(app: AppContext) {
                 tree && key.char == 'h' -> { foldOrParent(); true }
                 tree && key.char == '+' -> { app.libraryExpanded = allFolders(shown); true }
                 tree && key.char == '-' -> { app.libraryExpanded = emptySet(); picker.index = 0; true }
+                key.char == '[' || key.char == ']' -> { resizeList(if (key.char == ']') 5 else -5); true }
                 key.char == '.' -> {
                     showHidden = !showHidden; picker.reset()
                     navigator.showToast(if (showHidden) "Showing hidden folders (the All view)" else "Hidden folders are hidden again", isError = false)
@@ -368,12 +380,13 @@ fun LibraryScreen(app: AppContext) {
                 ActionItem("d", "Trash", current != null, Palette.Red),
                 *(if (tree) arrayOf(ActionItem("h l", "Fold"), ActionItem("+ -", "All")) else emptyArray()),
                 *(if (!showingTags) arrayOf(ActionItem("t", if (app.config.libraryTree) "Flat list" else "Tree")) else emptyArray()),
+                *(if (wide) arrayOf(ActionItem("[ ]", "List width")) else emptyArray()),
                 ActionItem(".", if (showHidden) "Hide hidden" else "Hidden"),
                 *(if (filter == LibraryFilter.Reports) arrayOf(ActionItem("s", "Run its skill again", current != null), ActionItem("f", "Refresh", current != null)) else emptyArray()),
                 ActionItem("←→", "View"),
                 ActionItem("/", "Filter"),
             )
-            LibraryMode.Reading -> listOf(ActionItem("↑↓", "Scroll"), ActionItem("a", "AI on this note"), ActionItem("c", "Chat about it"), ActionItem("e", "Edit"), ActionItem("r", "Rename"), ActionItem("o", "Open in Obsidian"), ActionItem("Esc", "Back", accent = Palette.Cta))
+            LibraryMode.Reading -> listOf(ActionItem("↑↓", "Scroll"), *(if (wide) arrayOf(ActionItem("[ ]", "List width")) else emptyArray()), ActionItem("a", "AI on this note"), ActionItem("c", "Chat about it"), ActionItem("e", "Edit"), ActionItem("r", "Rename"), ActionItem("o", "Open in Obsidian"), ActionItem("Esc", "Back", accent = Palette.Cta))
             LibraryMode.ConfirmDelete -> listOf(ActionItem("y", "Move to trash", accent = Palette.Red), ActionItem("any other key", "Keep", accent = Palette.Cta))
             LibraryMode.Rename -> listOf(ActionItem("Enter", "Rename", accent = Palette.Cta), ActionItem("Esc", "Cancel"))
             LibraryMode.Edit -> listOf(ActionItem("Ctrl+S", "Save", accent = Palette.Cta), ActionItem("Esc", "Leave"))
@@ -400,7 +413,7 @@ fun LibraryScreen(app: AppContext) {
             }
             mode == LibraryMode.Reading && current != null && !wide -> Panel(current.title) { NotePreview(app, vault.getOrNull(), index, current, preview, previewRows) }
             wide -> {
-                val percent = app.config.libraryListPercent.coerceIn(20, 60)
+                val percent = app.config.libraryListPercent.coerceIn(LIBRARY_LIST_MIN, LIBRARY_LIST_MAX)
                 val left = ((width - 1) * percent / 100).coerceAtLeast(28)
                 val right = (width - 1 - left).coerceAtLeast(30)
                 Row(Modifier.fillMaxWidth()) {
@@ -560,3 +573,7 @@ private fun NotePreview(app: AppContext, vault: Vault?, index: VaultIndex, note:
     }
     ScrollView(lines, rows, output)
 }
+
+/** The list pane's share of a wide Library, in percent (Settings → Library → List width and the `[` `]` keys). */
+const val LIBRARY_LIST_MIN = 20
+const val LIBRARY_LIST_MAX = 60
