@@ -98,7 +98,7 @@ fun SamplingPanel(app: AppContext, d: SamplingDialog) {
             val set = if (p == null || !custom) null else Sampling.get(c, p.key)
             val ownText = p?.let { own[it.key] }
             val name = p?.label ?: "Mode"
-            val value = if (p == null) (if (custom) "Custom" else "Model defaults") else (set?.let(p::format) ?: ownText ?: "—")
+            val value = if (p == null) Sampling.modeLabel(c.samplingMode) else (set?.let(p::format) ?: ownText ?: "—")
             val meta = when {
                 p == null -> if (custom) "your values are sent" else "nothing is sent"
                 set != null -> if (ownText == null) "set by you" else if (ownText.toDoubleOrNull() == set) "same as the model's" else "set by you · model $ownText"

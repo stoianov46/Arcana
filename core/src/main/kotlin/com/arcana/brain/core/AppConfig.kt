@@ -232,6 +232,12 @@ data class AppConfig(
     val thinkingPanePlacement: String = "bottom",
     /** How much of the main axis the thinking pane takes, in percent: of the height for "top" and "bottom", of the width for "left" and "right". */
     val thinkingPanePercent: Int = 30,
+    /** A column beside the Chat conversation that shows the model, the sampling parameters and the context window (the three facts the bottom bar also shows). Off by default. */
+    val statusPane: Boolean = false,
+    /** How much of the width the status pane takes, in percent (10 to 90). */
+    val statusPanePercent: Int = 30,
+    /** The side the status pane docks on: "right" or "left". A side holds one panel, so it must be free (the thinking pane may sit there too). */
+    val statusPanePlacement: String = "right",
     /** What happens to the results of tools from earlier turns when the chat is sent again: "whole" (kept as they were; the default, nothing is cut silently) or "shorten" (each cut to 1,200 characters, for small context windows). */
     val oldToolOutput: String = "whole",
     /** How many seconds an identical read, search or page fetch of the current question is answered from memory instead of being run (and asked about) again; 0 = every call runs. */

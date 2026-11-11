@@ -11,6 +11,10 @@ object Sampling {
     const val MODEL = "model"
     const val CUSTOM = "custom"
 
+    /** The words the screens use for the two modes, in one place so Settings, the Chat dialog and the status pane never say it differently. [modeShort] is for a narrow column. */
+    fun modeLabel(mode: String): String = if (mode == CUSTOM) "Custom" else "Model defaults"
+    fun modeShort(mode: String): String = if (mode == CUSTOM) "Custom" else "Defaults"
+
     /** One option: [key] is Ollama's name, [short] the letters the status bar uses, the range is what Ollama accepts sensibly. */
     class Param(val key: String, val label: String, val short: String, val min: Double, val max: Double, val step: Double, val integer: Boolean, val start: Double, val help: String) {
         fun format(v: Double): String = if (integer) v.toInt().toString() else "%.2f".format(java.util.Locale.ROOT, v).trimEnd('0').trimEnd('.').ifEmpty { "0" }

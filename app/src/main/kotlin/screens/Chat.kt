@@ -124,6 +124,7 @@ internal val SlashCommands = listOf(
     SlashItem("/goal", "Set a goal: Arcana keeps working until a checker says it is met", false, usage = "e.g. /goal all notes in Inbox are tagged   (/goal alone shows it, /goal clear removes it)"),
     SlashItem("/artifacts", "Files and notes the model wrote or changed in this chat", false),
     SlashItem("/thinking", "Thoughts pane: watch the model's thoughts under the conversation (toggle; not the effort, see /effort)", false),
+    SlashItem("/status", "Status pane: model, sampling (editable) and context window in a right-side column (toggle; { wider, } narrower, off at the smallest)", false),
     SlashItem("/append", "Add the last answer to a note", false),
     SlashItem("/replace", "Replace a note with the last answer", false),
     SlashItem("/clear", "Erase this chat", false),
@@ -145,6 +146,7 @@ internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean
     "/memory" -> if (config.memoryEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/skills" -> if (config.skillsEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/thinking" -> if (config.thinkingPane) "ON" to Palette.Green else "OFF" to Palette.Dim
+    "/status" -> if (config.statusPane) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/helpers" -> if (config.oraculEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/roles" -> if (config.skillRolesEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
     "/flow" -> if (config.flow == Flow.OFF) "OFF" to Palette.Dim else config.flow.uppercase() to Palette.Green
@@ -178,6 +180,7 @@ fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf
         "/effort" to "reasoning effort for the next message: pick from what the model offers (Ctrl+G; /effort xhigh sets it directly)",
         "/sampling" to "temperature, top P, top K, min P and the penalties: model defaults or your values (Ctrl+R)",
         "/thinking" to "thoughts pane under the conversation ([ and ] also switch it on and off and resize it)",
+        "/status" to "status pane: model, sampling options (Ctrl+R edits them in it) and context window in a right-side column ({ wider and on, } narrower and off)",
         "/mode" to "tools: ask, auto, plan",
         "/tools" to "tools on or off",
         "/autorun" to "shell commands without asking",
@@ -585,7 +588,7 @@ private const val MaxNotes = 5
 /** How many queued messages are listed above the message field; the rest are counted. */
 private const val QUEUE_SHOWN = 3
 
-private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory, Artifacts, Think, Sampling }
+private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory, Artifacts, Think, Sampling, Status }
 
 /** What happens to the last answer when it is sent to an existing note. */
 private enum class Target(val verb: String) { Append("Append"), Replace("Replace") }
@@ -610,6 +613,9 @@ fun ChatScreen(app: AppContext) {
     val historyPicker = remember { PickerState() }
     val thinkPicker = remember { PickerState() }
     val sampling = remember { SamplingDialog() }
+    val paneEditor = remember { PaneEditor() }
+    // with the status pane on screen, Ctrl+R edits the sampling in the pane itself instead of opening the full dialog
+    val statusFits = Docks.sideOf(app.config, PaneId.Status) != null && LocalContentWidth.current >= 80
     var thinkChoices by remember { mutableStateOf(emptyList<ThinkChoice>()) }
     val notePicker = remember { PickerState() }
     val input = chat.input
@@ -766,8 +772,17 @@ fun ChatScreen(app: AppContext) {
 
     fun toggleThinkingPane() {
         val on = !app.config.thinkingPane
+        if (on) Docks.refusal(app.config, PaneId.Thinking)?.let { return toast(it, error = true) }
         app.update(app.config.copy(thinkingPane = on))
         toast(if (on) "Thinking pane on: it follows the model's thoughts under the conversation ([ and ] change its size and hide it; needs a model that can think and a terminal at least 26 rows tall)." else "Thinking pane off.")
+    }
+
+    fun toggleStatusPane() {
+        val on = !app.config.statusPane
+        if (on) Docks.refusal(app.config, PaneId.Status)?.let { return toast(it, error = true) }
+        app.update(app.config.copy(statusPane = on))
+        val left = app.config.statusPanePlacement == Docks.LEFT
+        toast(if (on) "Status pane on: the model, sampling options and context window in a ${app.config.statusPanePlacement}-side column (${if (left) "} wider, { narrower" else "{ wider, } narrower"} and off; Ctrl+R edits the sampling in it)." else "Status pane off.")
     }
 
     /**
@@ -779,6 +794,7 @@ fun ChatScreen(app: AppContext) {
         val now = app.config.thinkingPanePercent.coerceIn(THINKING_MIN, THINKING_MAX)
         if (!app.config.thinkingPane) {
             if (!larger) return
+            Docks.refusal(app.config, PaneId.Thinking)?.let { return toast(it, error = true) }
             app.update(app.config.copy(thinkingPane = true, thinkingPanePercent = now))
             return toast("Thinking pane on at $now % ([ smaller, ] larger, step 5 %; [ at $THINKING_MIN % hides it; needs a model that can think and a terminal at least 26 rows tall).")
         }
@@ -790,6 +806,17 @@ fun ChatScreen(app: AppContext) {
         val next = if (larger) (now / 5 + 1) * 5 else ((now + 4) / 5 - 1) * 5
         app.update(app.config.copy(thinkingPanePercent = next.coerceIn(THINKING_MIN, THINKING_MAX)))
         toast("Thinking pane: ${next.coerceIn(THINKING_MIN, THINKING_MAX)} % ([ smaller, ] larger, step 5 %; [ at $THINKING_MIN % hides it).")
+    }
+
+    /**
+     * `{` / `}` (empty field or browsing): the status pane's keys. The pane is on the right, so the keys point the way its left edge moves: `{` makes it wider (and switches it on when it is
+     * off), `}` narrower and, at [THINKING_MIN], off. The 5 % step and the 10 to 90 % range are the thinking pane's. The rules are in [statusPaneStep].
+     */
+    fun stepStatusPane(wider: Boolean) {
+        if (!app.config.statusPane && wider) Docks.refusal(app.config, PaneId.Status)?.let { return toast(it, error = true) }
+        val step = statusPaneStep(app.config.statusPane, app.config.statusPanePercent, wider, left = app.config.statusPanePlacement == Docks.LEFT)
+        if (step.on != app.config.statusPane || step.percent != app.config.statusPanePercent) app.update(app.config.copy(statusPane = step.on, statusPanePercent = step.percent))
+        if (step.message.isNotEmpty()) toast(step.message)
     }
 
     fun toggleSkills() {
@@ -890,7 +917,7 @@ fun ChatScreen(app: AppContext) {
     /** `/sampling` (Ctrl+R): the dialog for temperature, top P, top K, min P and the penalties; `/sampling model` sets the model's own defaults, `/sampling custom` switches to your values. */
     fun openSampling(args: String = "") {
         when (args.trim().lowercase()) {
-            "" -> { sampling.open(); mode = ChatMode.Sampling }
+            "" -> if (statusFits) { paneEditor.open(); mode = ChatMode.Status } else { sampling.open(); mode = ChatMode.Sampling }
             "model" -> { app.update(com.arcana.brain.core.Sampling.toModel(app.config)); toast("Model defaults: nothing is sent, the model\'s own settings apply.") }
             "custom" -> { app.update(com.arcana.brain.core.Sampling.toCustom(app.config, app.modelParameters)); toast("Custom: your values are sent (Ctrl+R changes them).") }
             else -> toast("/sampling takes model or custom, or nothing to open the dialog.", error = true)
@@ -948,6 +975,7 @@ fun ChatScreen(app: AppContext) {
             "/skills" -> toggleSkills()
             "/reindex" -> chat.reindex { text, error -> toast(text, error = error) }
             "/thinking" -> toggleThinkingPane()
+            "/status" -> toggleStatusPane()
             "/flow" -> setFlow(args)
             "/helpers" -> { val on = !app.config.oraculEnabled; app.update(app.config.copy(oraculEnabled = on)); toast(if (on) "Helper models on." else "Helper models off: only ${app.config.model} works (skill roles are separate: /roles).") }
             "/roles" -> { val on = !app.config.skillRolesEnabled; app.update(app.config.copy(skillRolesEnabled = on)); toast(if (on) "Skill roles on: skills use the worker, planner and reviewer they name." else "Skill roles off: a skill is run by ${app.config.model} alone.") }
@@ -1012,6 +1040,7 @@ fun ChatScreen(app: AppContext) {
             Command("Reasoning effort: choose for the next message (what the model offers)", "Chat", "Ctrl+G") { openThinkPicker() },
             Command("Sampling: temperature, top P, top K, min P, penalties", "Chat", "Ctrl+R") { openSampling() },
             Command(if (app.config.thinkingPane) "Thinking pane: turn off" else "Thinking pane: show the model's thoughts live", "Chat", "/thinking") { toggleThinkingPane() },
+            Command(if (app.config.statusPane) "Status pane: turn off (model, sampling, context window)" else "Status pane: show model, sampling and context window", "Chat", "/status") { toggleStatusPane() },
             Command("Tools mode: ${app.config.toolMode} → next (ask, auto, plan)", "Chat", "/mode", app.config.toolsEnabled) { cycleMode() },
             Command("Oracul: second opinion on the last answer", "Chat", "/oracul", lastAnswer != null) { runOracul(compare = false) },
             Command("Oracul: compare with another model's answer", "Chat", "/compare", lastAnswer != null) { runOracul(compare = true) },
@@ -1072,6 +1101,7 @@ fun ChatScreen(app: AppContext) {
             ChatMode.History -> historyPicker.filtering
             ChatMode.Think -> thinkPicker.filtering
             ChatMode.Sampling -> sampling.typing
+            ChatMode.Status -> paneEditor.typing
             ChatMode.PickNote, ChatMode.PickTarget -> notePicker.filtering
             else -> true
         },
@@ -1088,15 +1118,16 @@ fun ChatScreen(app: AppContext) {
         ChatMode.History -> Hints("↑↓  move", "Enter  open", "/  filter", "Esc  back")
         ChatMode.Think -> Hints("↑↓  move", "Enter  use for the next message", "d  make it the Settings value", "Esc  back")
         ChatMode.Sampling -> if (sampling.typing) Hints("Enter  save", "blank  the model's own", "Ctrl+U  clear line", "Esc  cancel") else Hints("↑↓  move", "←→  change", "Enter  type a value", "m  mode", "r  model defaults", "Esc  back")
+        ChatMode.Status -> if (paneEditor.typing) Hints("Enter  save", "Ctrl+U  clear line", "Esc  cancel") else Hints("↑↓  move", "←→  change", "Enter  type or next", "m  sampling mode", "r  model defaults", "Esc  done")
         ChatMode.PickNote -> Hints("type  search", "↑↓  move", "Enter  attach", "Esc  cancel")
         ChatMode.PickTarget -> Hints("type  search", "↑↓  move", "Enter  ${target.verb.lowercase()}", "Esc  cancel")
         ChatMode.Chat -> when {
             output.selecting -> Hints("↑↓  move", "Space  tick", "c  copy", "b  code only", "Esc  leave")
             chat.compacting -> Hints("Wait: summarizing the chat, then you can send", "↑↓  scroll")
-            gen.state == GenState.Running -> Hints("Enter  queue a message", *(if (chat.queued.isNotEmpty()) arrayOf("Backspace  remove queued") else emptyArray()), "Esc  cancel reply", "↑↓  scroll", "[ ]  thinking pane")
-            browsing -> Hints("Enter  type a message", "s  select & copy", "↑↓/Space  scroll", "1-9  screens")
+            gen.state == GenState.Running -> Hints("Enter  queue a message", *(if (chat.queued.isNotEmpty()) arrayOf("Backspace  remove queued") else emptyArray()), "Esc  cancel reply", "↑↓  scroll", "[ ]  thinking", "{ }  status pane")
+            browsing -> Hints("Enter  type a message", "s  select & copy", "↑↓/Space  scroll", "1-9  screens", "[ ]  thinking", "{ }  status pane")
             slashMatches.isNotEmpty() -> Hints("↑↓  choose", "Tab  complete", "Enter  run", "Esc  close")
-            else -> Hints("Enter  send", "Alt+Enter  new line", "/  commands", "@  note", "Ctrl+O  attach", "Ctrl+S  save", "↑↓  scroll", "Esc  browse")
+            else -> Hints("Enter  send", "Alt+Enter  new line", "/  commands", "@  note", "Ctrl+O  attach", "Ctrl+S  save", "↑↓  scroll", "[ ]  thinking", "{ }  status pane")
         }
     }
 
@@ -1228,6 +1259,7 @@ fun ChatScreen(app: AppContext) {
                 else -> false
             }
             ChatMode.Sampling -> sampling.handle(key, app, { toast(it) }) { mode = ChatMode.Chat }
+            ChatMode.Status -> paneEditor.handle(key, app) { mode = ChatMode.Chat }
             ChatMode.Think -> when {
                 thinkPicker.handle(key, thinkChoices) { it.label } -> true
                 key == Key.Enter -> {
@@ -1283,8 +1315,12 @@ fun ChatScreen(app: AppContext) {
                 key.char == '?' && input.text.isEmpty() && !browsing && slashMatches.isEmpty() -> false
                 // a digit with an empty field during a reply is a screen number: leave it to the shell
                 gen.state == GenState.Running && input.text.isEmpty() && !browsing && key.char?.let { it in '0'..'9' } == true -> false
-                // [ and ] are the pane's keys (on, size, off): only with nothing typed yet (or while browsing), and [ only when the pane is on, so a bracket opening a message is still typed
+                // [ and ] are the thinking pane's keys (on, size, off): only with nothing typed yet (or while browsing), and [ only when the pane is on, so a bracket opening a message is still typed
                 (key.char == ']' || (key.char == '[' && app.config.thinkingPane)) && (input.text.isEmpty() || browsing) -> { stepThinkingPane(key.char == ']'); true }
+                // { and } are the status pane's keys (on, size, off); the pane is on the right, so { (pointing left) makes it wider and } narrower; } is typed as text while the pane is off
+                // (on the left the keys swap: } points right, the way its right edge moves)
+                (key.char == '{' || key.char == '}') && (key.char == (if (app.config.statusPanePlacement == Docks.LEFT) '}' else '{') || app.config.statusPane) && (input.text.isEmpty() || browsing) ->
+                    { stepStatusPane(key.char == (if (app.config.statusPanePlacement == Docks.LEFT) '}' else '{')); true }
                 key == Key.Effort -> { openThinkPicker(); true }
                 key == Key.Sampling -> { openSampling(); true }
                 key == Key.Save -> { openSave(null); true }
@@ -1463,7 +1499,7 @@ fun ChatScreen(app: AppContext) {
                     Picker(noteChoices(), notePicker, label = { it.path }, rows = bodyRows(extra = 4), icon = { "▤" }, iconColor = { Palette.Accent }, meta = { relativeTime(it.modified) }, placeholder = "Type to search your notes")
                 }
             }
-            ChatMode.Chat -> {
+            ChatMode.Chat, ChatMode.Status -> {
                 // read again after every message, so an edit of the file shows up
                 val memoryChars = remember(chat.messages.size, app.config.memoryEnabled, mode) { if (app.config.memoryEnabled) app.openVault().getOrNull()?.memoryLength() ?: 0 else 0 }
                 val count = chat.messages.size
@@ -1522,24 +1558,39 @@ fun ChatScreen(app: AppContext) {
                         chat.indexing?.let { Label((if (app.config.plainGlyphs) "" else "◌ ") + it, color = Palette.Blue) }
                     }
                 }
-                if (pane != null && side) {
-                    val total = LocalContentWidth.current
-                    val convWidth = total - pane.size - 1
-                    val paneHeight = scrollRows + statusRow + 2
-                    val paneBox: @Composable RowScope.() -> Unit = {
-                        Box(Modifier.weight(pane.size.toFloat() / total)) {
-                            CompositionLocalProvider(LocalContentWidth provides pane.size) { ThinkingPane(app, gen, chat, paneHeight - 2, app.config.model, Modifier.height(paneHeight)) }
+                // the docks: full-height columns beside the conversation, one panel per side (see Docks). A column needs room, so with too little the conversation takes the whole width.
+                val total = LocalContentWidth.current
+                val paneHeight = scrollRows + statusRow + 2
+                val columns = buildList<DockColumn> {
+                    if (pane != null && side) add(DockColumn(pane.placement, pane.size) { ThinkingPane(app, gen, chat, paneHeight - 2, app.config.model, Modifier.height(paneHeight)) })
+                    val statusDock = Docks.sideOf(app.config, PaneId.Status)
+                    if (statusDock != null && total >= 80 && none { it.side == statusDock }) {
+                        // the column keeps the conversation at least 40 columns when the other side is taken too
+                        val room = total - 40 - 1 - sumOf { it.width + 1 }
+                        val want = (total * app.config.statusPanePercent.coerceIn(THINKING_MIN, THINKING_MAX) / 100).coerceIn(24, (total - 60).coerceAtLeast(24))
+                        val w = minOf(want, room - 1)
+                        if (w >= 24) add(DockColumn(statusDock, w) { StatusPane(app, chat, paneEditor, mode == ChatMode.Status, paneHeight) })
+                    }
+                }
+                when {
+                    columns.isNotEmpty() -> {
+                        val left = columns.firstOrNull { it.side == Docks.LEFT }
+                        val right = columns.firstOrNull { it.side == Docks.RIGHT }
+                        val convWidth = total - columns.sumOf { it.width + 1 }
+                        val box: @Composable RowScope.(DockColumn) -> Unit = { col ->
+                            Box(Modifier.weight(col.width.toFloat() / total)) { CompositionLocalProvider(LocalContentWidth provides col.width) { col.content() } }
+                        }
+                        Row(Modifier.fillMaxWidth()) {
+                            if (left != null) { box(left); HGap() }
+                            Box(Modifier.weight(convWidth.toFloat() / total)) { CompositionLocalProvider(LocalContentWidth provides convWidth) { conversation() } }
+                            if (right != null) { HGap(); box(right) }
                         }
                     }
-                    Row(Modifier.fillMaxWidth()) {
-                        if (pane.placement == "left") { paneBox(); HGap() }
-                        Box(Modifier.weight(convWidth.toFloat() / total)) { CompositionLocalProvider(LocalContentWidth provides convWidth) { conversation() } }
-                        if (pane.placement == "right") { HGap(); paneBox() }
+                    else -> {
+                        if (pane?.placement == "top") ThinkingPane(app, gen, chat, pane.size, app.config.model)
+                        conversation()
+                        if (pane != null && pane.placement == "bottom") ThinkingPane(app, gen, chat, pane.size, app.config.model)
                     }
-                } else {
-                    if (pane?.placement == "top") ThinkingPane(app, gen, chat, pane.size, app.config.model)
-                    conversation()
-                    if (pane != null && pane.placement == "bottom") ThinkingPane(app, gen, chat, pane.size, app.config.model)
                 }
                 if (question != null) {
                     val qLines = questionLines(question, panelWidth())
@@ -1632,8 +1683,11 @@ internal fun wrapWords(text: String, width: Int): List<String> {
 private const val DIALOG_STRIP_MAX = 6
 
 /** The thinking pane's size range in percent of the main axis (`[` `]` step 5; the same as the Settings stepper). */
-private const val THINKING_MIN = 10
-private const val THINKING_MAX = 90
+internal const val THINKING_MIN = 10
+internal const val THINKING_MAX = 90
+
+/** One docked column: its [side], its [width] in columns and what it draws. */
+private class DockColumn(val side: String, val width: Int, val content: @Composable () -> Unit)
 
 /** Where the thinking pane goes and how big: [size] is its text rows for "top" and "bottom", its whole width in columns for "left" and "right". */
 internal class ThinkingPaneLayout(val placement: String, val size: Int)

@@ -211,7 +211,7 @@ private val declared: List<Setting> = listOf(
     choice(
         Group.Ollama, "Sampling",
         "How the model picks its next word. Model defaults sends nothing, so the model's own settings apply (what its authors recommend; see the note below). Custom sends the values you set in the rows that appear under it: ←/→ step them, Enter types one, a blank value means the model's own. Applies to the chat model only; helper models always use their own. Ctrl+R in Chat opens the same choices.",
-        listOf(Sampling.MODEL to "Model defaults", Sampling.CUSTOM to "Custom"), { it.samplingMode },
+        listOf(Sampling.MODEL to Sampling.modeLabel(Sampling.MODEL), Sampling.CUSTOM to Sampling.modeLabel(Sampling.CUSTOM)), { it.samplingMode },
         { c, v -> if (v == Sampling.CUSTOM) Sampling.toCustom(c, ownSampling) else Sampling.toModel(c) },
     ),
 ) + Sampling.params.map { p ->
@@ -342,9 +342,12 @@ private val declared: List<Setting> = listOf(
     toggle(Group.Tools, "Finish open todos", "On: when the model ends its turn with open steps on its own todo list, it is sent back once to finish them or to close the list, so it does not stop at 5 of 7. Off: it may stop with steps open.", { it.todoGuard }, { c, v -> c.copy(todoGuard = v) }),
     toggle(Group.Console, "Show thinking", "Show \"<model> is thinking…\" while a reasoning model works before its first words.", { it.showThinking }, { c, v -> c.copy(showThinking = v) }),
     choice(Group.Console, "Comparison view", "How /compare shows the answers in Chat. Side by side: the main model's answer and the Oracul models' answers in columns, each under a coloured name, the verdict below across the whole width (needs a window of about 80 columns for two answers, 120 for three, else they stack). Stacked: one under another.", listOf("side" to "Side by side", "stacked" to "Stacked"), { it.comparisonView }, { c, v -> c.copy(comparisonView = v) }),
-    toggle(Group.Console, "Thinking pane", "A split window under the Chat conversation that follows what a reasoning model is thinking while it works (and shows its last thoughts when idle), so you can watch its reasoning without it filling the conversation. Needs a model that can think (the model list in Settings → Ollama says so) and a terminal at least 26 rows tall; /thinking in Chat toggles it. Off by default.", { it.thinkingPane }, { c, v -> c.copy(thinkingPane = v) }),
-    choice(Group.Console, "Thinking pane placement", "Where the thinking pane sits around the conversation: bottom or top (a strip across the full width), left or right (a column beside the conversation; needs a window about 80 columns wide, else it goes to the bottom). In Chat, `]` switches it on and makes it larger, `[` makes it smaller and, at the smallest size, switches it off (`/thinking` too).", listOf("bottom" to "Bottom", "top" to "Top", "left" to "Left", "right" to "Right"), { it.thinkingPanePlacement }, { c, v -> c.copy(thinkingPanePlacement = v) }),
+    toggle(Group.Console, "Thinking pane", "A split window under the Chat conversation that follows what a reasoning model is thinking while it works (and shows its last thoughts when idle), so you can watch its reasoning without it filling the conversation. Needs a model that can think (the model list in Settings → Ollama says so) and a terminal at least 26 rows tall; /thinking in Chat toggles it. Off by default.", { it.thinkingPane }, { c, v -> if (v) Docks.refusal(c, PaneId.Thinking)?.let { throw IllegalArgumentException(it) }; c.copy(thinkingPane = v) }),
+    choice(Group.Console, "Thinking pane placement", "Where the thinking pane sits around the conversation: bottom or top (a strip across the full width), left or right (a column beside the conversation; needs a window about 80 columns wide, else it goes to the bottom). In Chat, `]` switches it on and makes it larger, `[` makes it smaller and, at the smallest size, switches it off (`/thinking` too).", listOf("bottom" to "Bottom", "top" to "Top", "left" to "Left", "right" to "Right"), { it.thinkingPanePlacement }, { c, v -> if (c.thinkingPane) Docks.refusal(c, PaneId.Thinking, v)?.let { throw IllegalArgumentException(it) }; c.copy(thinkingPanePlacement = v) }),
     stepper(Group.Console, "Thinking pane size", "How much of the main axis the pane takes, in percent: of the conversation's height when it is at the bottom or top, of the width when it is left or right (10 to 90, ←/→ step by 5). It always shows the end of the stream. The conversation keeps a few rows of its own whatever you set.", 10..90, 5, { it.thinkingPanePercent }, { c, n -> c.copy(thinkingPanePercent = n) }, unit = " %"),
+    toggle(Group.Console, "Status pane", "A right-side column in Chat in three sections: the model, the sampling options (each a value and a slider) and the context settings; Ctrl+R edits the model, the sampling, the thinking effort and the context right there (↑↓ ←→ Enter) and the context window (a ▰▰▰▰▰▰▰▱▱▱ bar in three tones: filled, room up to auto-compact, the rest). Needs a window about 80 columns wide, else the conversation takes the whole width. In Chat, `{` switches it on and makes it wider, `}` makes it narrower and, at the smallest size, switches it off (`/status` too). Off by default.", { it.statusPane }, { c, v -> if (v) Docks.refusal(c, PaneId.Status)?.let { throw IllegalArgumentException(it) }; c.copy(statusPane = v) }),
+    choice(Group.Console, "Status pane placement", "The side the status column docks on. A side holds one panel: the thinking pane (placed left or right) and the status pane cannot share a side, so a panel can take a side only after the other one there is switched off. On the left the width keys swap: `}` wider, `{` narrower.", listOf("right" to "Right", "left" to "Left"), { it.statusPanePlacement }, { c, v -> if (c.statusPane) Docks.refusal(c, PaneId.Status, v)?.let { throw IllegalArgumentException(it) }; c.copy(statusPanePlacement = v) }),
+    stepper(Group.Console, "Status pane size", "How much of the window's width the status column takes, in percent (10 to 90, ←/→ step by 5). In Chat, `{` makes it wider and `}` narrower (the column is on the right: the keys point the way its left edge moves).", 10..90, 5, { it.statusPanePercent }, { c, n -> c.copy(statusPanePercent = n) }, unit = " %"),
     choice(Group.Console, "System messages", "Arcana sometimes sends the model a message in your name: the reminder about open todo steps, a redo after the controller's verdict, an unmet goal, /revise. Marked: they show as a dim ⚙ System block, so it is clear you did not write them. Hidden: not shown (they are still sent).", listOf("marked" to "Marked", "hidden" to "Hidden"), { it.systemMessages }, { c, v -> c.copy(systemMessages = v) }),
     choice(Group.Console, "Thinking in Chat", "What a reasoning model thought before it answered, kept apart from the answer. Summary: one dim line with its length. Full: all of it, dimmed, above the answer. Hidden: not shown (it is still kept with the chat).", listOf("summary" to "Summary", "full" to "Full", "hidden" to "Hidden"), { it.thinkingView }, { c, v -> c.copy(thinkingView = v) }),
     choice(Group.Console, "Auto-compact", "When the context window is this full, Arcana first asks the model to summarize the older part of the chat (like /compact), then sends your message. Nothing is deleted: the summary appears in the chat as a divider and the model just stops being sent what is above it. Off: only /compact does it.", listOf("0" to "Off", "70" to "At 70%", "80" to "At 80%", "90" to "At 90%"), { it.autoCompactPercent.toString() }, { c, v -> c.copy(autoCompactPercent = v.toInt()) }),
@@ -479,6 +482,7 @@ private val sections: Map<Group, List<Pair<String, List<String>>>> = mapOf(
     Group.Console to listOf(
         "Chat" to listOf("Answer from vault", "Render Markdown", "Confirm before cancelling", "Comparison view", "Copy as"),
         "Thinking" to listOf("Show thinking", "Thinking pane", "Thinking pane placement", "Thinking pane size", "Thinking in Chat"),
+        "Status" to listOf("Status pane", "Status pane placement", "Status pane size"),
         "History and compacting" to listOf("Auto-compact", "Keep after compacting", "Chat history", "Keep chats", "Chats kept"),
     ),
     Group.Tools to listOf(
@@ -690,6 +694,12 @@ fun SettingsScreen(app: AppContext) {
         notice = if (advice != null) Notice("$what saved. $advice", isError = advice.startsWith("⚠")) else Notice("$what saved")
     }
 
+    /** ←/→/Enter on a steppable row; a setter that refuses (a dock side that is taken) shows its reason instead of crashing. */
+    fun stepSetting(setting: Setting, dir: Int) {
+        val step = setting.step ?: return
+        try { changed(step(app.config, dir), setting.label) } catch (e: IllegalArgumentException) { notice = Notice(e.message ?: "Invalid value", isError = true) }
+    }
+
     fun commitText(setting: Setting, editor: Editor.Text) {
         try {
             changed(editor.apply(app.config, field.text), setting.label)
@@ -762,7 +772,7 @@ fun SettingsScreen(app: AppContext) {
                 else if (com.arcana.brain.core.Storage.use(area).files == 0) notice = Notice("${area.title} is already empty.")
                 else editing = Editing.ConfirmClear(area.id)
             }
-            null -> setting.step?.let { changed(it(app.config, 1), setting.label) }
+            null -> stepSetting(setting, 1)
         }
     }
 
@@ -956,8 +966,8 @@ fun SettingsScreen(app: AppContext) {
                 key == Key.Down || key.char == 'j' -> { index = (index + 1).coerceAtMost(inGroup.lastIndex); true }
                 key == Key.Tab -> { switchGroup(1); true }
                 key == Key.BackTab -> { switchGroup(-1); true }
-                key == Key.Left -> { selected?.step?.let { changed(it(app.config, -1), selected.label) }; true }
-                key == Key.Right -> { selected?.step?.let { changed(it(app.config, 1), selected.label) }; true }
+                key == Key.Left -> { selected?.let { stepSetting(it, -1) }; true }
+                key == Key.Right -> { selected?.let { stepSetting(it, 1) }; true }
                 key == Key.Enter -> { selected?.let(::startEdit); true }
                 key.char == 't' -> { testConnection(); true }
                 key.char == 'R' -> { editing = Editing.ConfirmReset; true }
