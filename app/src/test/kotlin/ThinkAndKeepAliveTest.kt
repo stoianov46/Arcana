@@ -1,6 +1,9 @@
 package com.arcana.brain.app
 
 import com.arcana.brain.app.screens.ThinkLevels
+import com.arcana.brain.app.screens.thinkLabel
+import com.arcana.brain.app.screens.thinkText
+import com.arcana.brain.core.OllamaProtocol
 import com.arcana.brain.core.AppConfig
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.ConfigStore
@@ -78,6 +81,40 @@ class ThinkAndKeepAliveTest {
             waitFor(f, 2)
             assertTrue("\"think\":false" in f.bodies[1], "the next message is back to the Settings value (off): ${f.bodies[1]}")
         } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun aPlainGgufThatCanThinkButListsNoLevelsOffersOnAndOff() {
+        val f = fake("""{"capabilities":["completion","tools","thinking"],"model_info":{"qwen35.context_length":262144}}""")
+        try {
+            val app = app(f) { copy(thinking = "default") }
+            runBlocking { app.refreshConnection() }
+            assertEquals(listOf("default", "off", "on"), ThinkLevels.options, "no `thinking` block and no effort in the template: only on/off is known")
+            assertEquals("", ThinkLevels.onLevel)
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun aGgufTemplateThatNamesItsEffortLevelsGivesLowMediumAndOnAsItsDefault() {
+        val template = "{%- set resolved_reasoning_effort = reasoning_effort|default('xhigh') %}\n{%- if resolved_reasoning_effort not in ('xhigh', 'medium', 'low') %}"
+        val body = """{"capabilities":["completion","tools","thinking"],"template":${kotlinx.serialization.json.JsonPrimitive(template)},"model_info":{"qwen35.context_length":262144}}"""
+        assertEquals(listOf("low", "medium") to "xhigh", OllamaProtocol.parseTemplateEfforts(body), "xhigh is the default and cannot be sent by name: only low and medium are choices")
+        val f = fake(body)
+        try {
+            val app = app(f) { copy(thinking = "default") }
+            runBlocking { app.refreshConnection() }
+            assertEquals(listOf("default", "off", "low", "medium", "on"), ThinkLevels.options)
+            assertEquals("xhigh", ThinkLevels.onLevel, "on runs at the template's default")
+            assertEquals("On (xhigh)", thinkLabel("on"))
+            assertEquals("ON (xhigh)", thinkText("on"))
+            assertEquals("xhigh", ThinkLevels.defaultWord, "auto shows the level too")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun theThinkingPaneKeepsFollowingAfterTheCapAndSaysWhatFellOff() {
+        assertEquals("newest", liveThoughts(StringBuilder("newest"), 0))
+        assertEquals("… 120 earlier characters not shown\n\nnewest", liveThoughts(StringBuilder("newest"), 120))
     }
 
     @Test

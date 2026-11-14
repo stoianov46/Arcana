@@ -319,15 +319,18 @@ private fun SectionRule(title: String, right: String = "", rightColor: Color = P
     }
 }
 
-/** One selectable `name   value` row of the pane. */
+/** One selectable `name   ‹ value ›` row of the pane; the arrows mark that ← → switch the value (bright while the row is selected). */
 @Composable
 private fun ValueRow(name: String, value: String, selected: Boolean, tone: Color = Palette.Text) {
     val width = panelWidth()
     val bg = if (selected) Palette.Selected else Color.Unspecified
-    val left = (width - value.length).coerceAtLeast(2)
+    val arrow = if (selected) Palette.Text else Palette.Dim
+    val left = (width - value.length - 4).coerceAtLeast(2)
     Row {
         Label(((if (selected) "» " else "  ") + name).padEnd(left).take(left - 1) + " ", color = if (selected) Palette.Text else Palette.Muted, background = bg, textStyle = if (selected) TextStyle.Bold else TextStyle.Unspecified)
+        Label("‹ ", color = arrow, background = bg)
         Label(value, color = tone, background = bg, textStyle = TextStyle.Bold)
+        Label(" ›", color = arrow, background = bg)
     }
 }
 
@@ -411,7 +414,7 @@ internal fun StatusPane(app: AppContext, chat: ChatSession, d: PaneEditor, focus
                 val value = c.thinking.takeIf { it in options } ?: "default"
                 val text = when {
                     !offered -> "not offered"
-                    value == "default" -> autoWord(defaultWord).let { if (it.length + 9 > width) "auto" else it }
+                    value == "default" -> autoWord(defaultWord).let { if (it.length + 13 > width) "auto" else it }
                     else -> thinkLabel(value)
                 }
                 ValueRow("Effort", text, focused && d.index == PaneRows.EFFORT, if (offered) thinkColor(value, options, defaultWord) else Palette.Dim)
@@ -463,7 +466,7 @@ internal fun StatusPane(app: AppContext, chat: ChatSession, d: PaneEditor, focus
             Label((if (plain) "" else "◌ ") + "summarizing the chat… ${secs}s" + if (chat.compactingAuto) " (auto)" else "", color = Palette.Orange, textStyle = TextStyle.Bold, wrap = true)
         }
         val ctxSettings = listOf(
-            Triple(PaneRows.WINDOW, "Window", windowLabel(c.contextTokens).let { if (it.length + 9 > width) "Default" else it }),
+            Triple(PaneRows.WINDOW, "Window", windowLabel(c.contextTokens).let { if (it.length + 13 > width) "Default" else it }),
             Triple(PaneRows.AUTO, "Auto-compact", autoCompactLabel(c.autoCompactPercent)),
             Triple(PaneRows.KEEP, "Keep", if (c.compactKeepPercent <= 0) "last 2" else "${c.compactKeepPercent} %"),
         )

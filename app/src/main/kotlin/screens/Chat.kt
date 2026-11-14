@@ -243,6 +243,9 @@ internal object ThinkLevels {
 
     /** What the model does when nothing is sent, as Ollama reports it (`medium`, `on`, `off`), or blank when it does not say. */
     @Volatile var defaultWord: String = ""
+
+    /** The level `on` really runs at for a model whose template names it (`xhigh` for a Qwen3.8 GGUF, which Ollama cannot send by name), or blank. */
+    @Volatile var onLevel: String = ""
 }
 
 /** The model's own default as a word: Ollama's `false`/`true` are off/on, a level stays as it is; blank when Ollama does not say. */
@@ -275,11 +278,12 @@ internal fun thinkColor(value: String, options: List<String>, defaultWord: Strin
     val levels = options.filter { it != "default" && it != "off" && it != "on" }
     return when (value) {
         "off" -> Palette.Blue
-        "on" -> Palette.Orange
+        "on" -> if (ThinkLevels.onLevel.isNotEmpty()) Palette.Red else Palette.Orange
         "default" -> if (defaultWord.isEmpty() || defaultWord == "default") Palette.Muted else thinkColor(defaultWord, options, "")
         else -> {
             val at = levels.indexOf(value)
-            if (at < 0) Palette.Muted
+            if (value.isNotEmpty() && value == ThinkLevels.onLevel) Palette.Red
+            else if (at < 0) Palette.Muted
             else {
                 val t = if (levels.size <= 1) 0.5 else at.toDouble() / (levels.size - 1)
                 if (t < 0.34) Palette.Green else if (t < 0.8) Palette.Orange else Palette.Red
@@ -292,9 +296,11 @@ internal fun thinkColor(value: String, options: List<String>, defaultWord: Strin
 internal fun autoWord(defaultWord: String): String = if (defaultWord.isEmpty()) "auto" else "auto ($defaultWord)"
 
 /** The name of a thinking choice as a person reads it: `Model default`, `Off`, `On`, `Xhigh`. */
-internal fun thinkLabel(value: String): String = when (value) { "default" -> "Model default"; "off" -> "Off"; "on" -> "On"; else -> value.replaceFirstChar { it.uppercase() } }
+internal fun thinkLabel(value: String): String = when (value) { "default" -> "Model default"; "off" -> "Off"; "on" -> "On" + onSuffix(); else -> value.replaceFirstChar { it.uppercase() } }
 
-internal fun thinkText(setting: String): String = if (setting == "default") "MODEL DEFAULT" else setting.uppercase()
+private fun onSuffix(): String = ThinkLevels.onLevel.takeIf { it.isNotEmpty() }?.let { " ($it)" }.orEmpty()
+
+internal fun thinkText(setting: String): String = if (setting == "default") "MODEL DEFAULT" else setting.uppercase() + if (setting == "on") onSuffix() else ""
 
 /** What the reasoning-effort control says and how it looks: [text] is `✦ think xhigh`, [width] the columns it takes with its key hint and a gap before it. */
 private class EffortView(val text: String, val color: com.jakewharton.mosaic.ui.Color, val width: Int)
@@ -1745,7 +1751,7 @@ private fun ThinkingPane(app: AppContext, gen: Generation, chat: ChatSession, ro
     val width = panelWidth()
     val wrapped = if (text.isEmpty()) emptyList() else wrapWords(sanitizeForTerminal(text), width)
     val shown = wrapped.takeLast(rows)
-    Panel("Thinking · $model" + thinkTitleWord(app, chat, running) + (if (running) " · live" else "") + (if (text.isEmpty()) "" else " · ${UsageStats.compact(text.length.toLong())} characters")) {
+    Panel("Thinking · $model" + thinkTitleWord(app, chat, running) + (if (running) " · live" else "") + (if (text.isEmpty()) "" else " · ${UsageStats.compact((if (running) maxOf(gen.liveThinkingChars, text.length) else text.length).toLong())} characters")) {
         // nothing to show yet: say so, wrapped to the pane (a side column is narrow)
         val empty = if (shown.isNotEmpty()) emptyList() else wrapWords(if (running) thinkingWaitText(app, gen, model) else "The thoughts of a reasoning model appear here while it works.", width)
         for (i in 0 until rows) {

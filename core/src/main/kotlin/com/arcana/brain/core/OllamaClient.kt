@@ -60,6 +60,8 @@ data class ChatMessage(
      * was made with the full chat, so its token counts no longer say what the model is sent (0 = not known: a summary from an older version).
      */
     val contextAt: Int = 0,
+    /** When the message was made, in epoch milliseconds (0 = not known: a chat from before this was kept). `chat_stats` measures the chat's time from these. */
+    val at: Long = 0,
 ) {
     companion object {
         /**
@@ -70,12 +72,12 @@ data class ChatMessage(
 
         fun system(content: String) = ChatMessage("system", content)
         fun user(content: String, images: List<ImageAttachment> = emptyList(), notes: List<String> = emptyList(), files: List<FileAttachment> = emptyList()) =
-            ChatMessage("user", content, images.map { it.base64 }, images.map { it.name }, noteNames = notes, files = files)
+            ChatMessage("user", content, images.map { it.base64 }, images.map { it.name }, noteNames = notes, files = files, at = System.currentTimeMillis())
         fun assistant(content: String, stats: ReplyStats? = null, sources: List<String> = emptyList(), thinking: String = "", sourcesCut: List<String> = emptyList(), sourcesBy: String = "", sourcesInfo: List<String> = emptyList(), toolsUsed: List<String> = emptyList()) =
-            ChatMessage("assistant", content, stats = stats, sources = sources, sourcesCut = sourcesCut, thinking = thinking, sourcesBy = sourcesBy, sourcesInfo = sourcesInfo, toolsUsed = toolsUsed)
+            ChatMessage("assistant", content, stats = stats, sources = sources, sourcesCut = sourcesCut, thinking = thinking, sourcesBy = sourcesBy, sourcesInfo = sourcesInfo, toolsUsed = toolsUsed, at = System.currentTimeMillis())
         fun assistantCalls(content: String, calls: List<ToolCall>, stats: ReplyStats? = null, thinking: String = "") =
-            ChatMessage("assistant", content, stats = stats, toolCalls = calls, thinking = thinking)
-        fun toolResult(name: String, content: String) = ChatMessage("tool", content, toolName = name)
+            ChatMessage("assistant", content, stats = stats, toolCalls = calls, thinking = thinking, at = System.currentTimeMillis())
+        fun toolResult(name: String, content: String) = ChatMessage("tool", content, toolName = name, at = System.currentTimeMillis())
     }
 
     /** A line for the reader only (see [ChatMessage.DISPLAY_ONLY]): shown and saved with the chat, never sent to any model. */
@@ -155,7 +157,7 @@ data class PullProgress(val status: String, val total: Long = 0, val completed: 
 }
 
 /** What `/api/show` says about a model: its abilities, its context, its experts, and the values its `think` accepts (`true`, `false`, `low`…; empty when it cannot think or Ollama does not say). */
-data class ModelShow(val capabilities: List<String>, val contextLength: Int, val experts: Int, val thinkingValues: List<String>, val thinkingDefault: String = "", val kvBytesPerToken: Long = 0, val dense: Boolean = false, val parameters: Map<String, String> = emptyMap())
+data class ModelShow(val capabilities: List<String>, val contextLength: Int, val experts: Int, val thinkingValues: List<String>, val thinkingDefault: String = "", val kvBytesPerToken: Long = 0, val dense: Boolean = false, val parameters: Map<String, String> = emptyMap(), val onLevel: String = "")
 
 class OllamaException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
@@ -174,7 +176,7 @@ private data class WireChunk(
 private data class WireMessage(val content: String = "", val thinking: String = "", @SerialName("tool_calls") val toolCalls: List<ToolCall> = emptyList())
 
 @Serializable
-private data class WireShow(val capabilities: List<String> = emptyList(), @SerialName("model_info") val modelInfo: JsonObject = JsonObject(emptyMap()), val thinking: JsonObject? = null, val tensors: List<WireTensor> = emptyList(), val parameters: String? = null)
+private data class WireShow(val template: String? = null, val capabilities: List<String> = emptyList(), @SerialName("model_info") val modelInfo: JsonObject = JsonObject(emptyMap()), val thinking: JsonObject? = null, val tensors: List<WireTensor> = emptyList(), val parameters: String? = null)
 
 @Serializable
 private data class WireTensor(val name: String = "", val shape: List<Long> = emptyList())
@@ -232,6 +234,22 @@ object OllamaProtocol {
         val t = json.decodeFromString<WireShow>(body).thinking ?: return emptyList<String>() to ""
         val values = (t["values"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }.orEmpty()
         values to ((t["default"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "")
+    }.getOrDefault(emptyList<String>() to "")
+
+    /** Levels Ollama accepts in `think`; anything else (`xhigh`) is refused, or turned into `max` on `/v1`, which a template may then refuse. */
+    private val SENDABLE_LEVELS = listOf("low", "medium", "high", "max")
+
+    /**
+     * What a plain GGUF's chat template says about reasoning effort: `reasoning_effort|default('xhigh')` is the level thinking runs at when none is sent, and the
+     * `not in ('xhigh', 'medium', 'low')` check lists the levels it accepts. Returns the levels Ollama can send (low to max, the default left out) and the default;
+     * both empty when the template has no such setting.
+     */
+    fun parseTemplateEfforts(body: String): Pair<List<String>, String> = runCatching {
+        val template = json.decodeFromString<WireShow>(body).template.orEmpty()
+        val default = Regex("""reasoning_effort\s*\|\s*default\(\s*['"](\w+)['"]""").find(template)?.groupValues?.get(1) ?: return emptyList<String>() to ""
+        val accepted = Regex("""resolved_reasoning_effort not in \(([^)]*)\)""").find(template)?.groupValues?.get(1)
+            ?.let { list -> Regex("""['"](\w+)['"]""").findAll(list).map { it.groupValues[1] }.toSet() }.orEmpty()
+        SENDABLE_LEVELS.filter { it in accepted && it != default } to default
     }.getOrDefault(emptyList<String>() to "")
 
     /**
@@ -435,7 +453,11 @@ class OllamaClient(private val config: () -> AppConfig) {
             throw OllamaException("Cannot reach Ollama at ${cfg.ollamaUrl}: ${e.message}", e)
         }
         if (response.statusCode() != 200) return@withContext ModelShow(emptyList(), 0, 0, emptyList())
-        val (values, default) = OllamaProtocol.parseThinking(response.body())
+        val (listed, default) = OllamaProtocol.parseThinking(response.body())
+        // a plain GGUF (Hugging Face) has the capability from its template but no `thinking` block: then only on/off is known
+        val canThink = "thinking" in OllamaProtocol.parseCapabilities(response.body())
+        val (templateLevels, templateDefault) = if (listed.isEmpty() && canThink) OllamaProtocol.parseTemplateEfforts(response.body()) else emptyList<String>() to ""
+        val values = listed.ifEmpty { if (canThink) listOf("false") + templateLevels + "true" else emptyList() }
         var experts = OllamaProtocol.parseExperts(response.body())
         var dense = OllamaProtocol.parseDense(response.body())
         if (experts == 0 && !dense) {
@@ -443,7 +465,7 @@ class OllamaClient(private val config: () -> AppConfig) {
             val (e, d) = layoutCache.getOrPut(cfg.ollamaUrl + " " + model) { runCatching { tensorLayout(cfg, model) }.getOrNull() ?: return@getOrPut 0 to false }
             experts = e; dense = d
         }
-        ModelShow(OllamaProtocol.parseCapabilities(response.body()), OllamaProtocol.parseContextLength(response.body()), experts, values, default, OllamaProtocol.parseKvBytesPerToken(response.body()), dense, OllamaProtocol.parseParameters(response.body()))
+        ModelShow(OllamaProtocol.parseCapabilities(response.body()), OllamaProtocol.parseContextLength(response.body()), experts, values, default.ifEmpty { templateDefault }, OllamaProtocol.parseKvBytesPerToken(response.body()), dense, OllamaProtocol.parseParameters(response.body()), templateDefault)
     }
 
     private val layoutCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Int, Boolean>>()

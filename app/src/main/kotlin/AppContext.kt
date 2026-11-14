@@ -257,6 +257,7 @@ class AppContext(
         modelParameters = shown?.parameters.orEmpty()
         com.arcana.brain.app.screens.ThinkLevels.options = com.arcana.brain.app.screens.thinkOptions(thinkingValues)
         thinkingDefault = shown?.thinkingDefault.orEmpty()
+        com.arcana.brain.app.screens.ThinkLevels.onLevel = shown?.onLevel.orEmpty()
         com.arcana.brain.app.screens.ThinkLevels.defaultWord = com.arcana.brain.app.screens.thinkDefaultWord(thinkingDefault)
         tools = capabilities?.let { "tools" in it }
     }

@@ -1149,6 +1149,24 @@ class CoreTest {
     }
 
     @Test
+    fun chatTimeRunsFirstToLastAndActiveTimeSkipsLongPauses() {
+        val min = 60_000L
+        val t0 = 1_000_000_000L
+        fun at(m: Long) = ChatMessage("user", "x", at = t0 + m * min)
+        // 0, 5, 10 min; a 10-hour night; 610 + 3 min
+        val chat = listOf(at(0), at(5), at(10), at(10 * 60 + 10), at(10 * 60 + 13))
+        val (total, active) = ChatStats.spans(chat)!!
+        assertEquals(613 * min, total)
+        assertEquals(13 * min, active)
+        assertNull(ChatStats.spans(listOf(ChatMessage("user", "old"), ChatMessage("assistant", "old"))))
+        assertNull(ChatStats.spans(listOf(at(0))))
+        val text = ChatStats.describe(chat, "m", 0, 0, 0, 0)
+        assertTrue("Chat time: 10 h 13 min 0 s" in text && "Active time: 13 min 0 s" in text, text)
+        assertTrue("Chat time" !in ChatStats.describe(listOf(ChatMessage("user", "old")), "m", 0, 0, 0, 0))
+        assertTrue(ChatMessage.user("a").at > 0 && ChatMessage.assistant("b").at > 0 && ChatMessage.toolResult("t", "r").at > 0)
+    }
+
+    @Test
     fun tagsWrittenAnyWayAreFoundAndAgentTagsStayNextToArcanas() {
         fun tags(front: String) = VaultIndex.frontmatterTags("---\n$front\n---\n\n")
         assertEquals(listOf("project", "ai"), tags("tags: project ai"))
