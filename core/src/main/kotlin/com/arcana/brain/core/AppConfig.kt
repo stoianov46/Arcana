@@ -254,6 +254,8 @@ data class AppConfig(
     val libraryTab: String = "all",
     /** How much of a wide Library the list takes, in percent (the preview gets the rest). */
     val libraryListPercent: Int = 30,
+    /** How much of a wide Templates tab the list takes, in percent (the prompt preview gets the rest); `[` and `]` change it in the tab. */
+    val promptsListPercent: Int = 40,
     /** How the lists that are ordered by date are ordered: "modified" (newest first) or "title" (A to Z). */
     val librarySort: String = "modified",
     /** Show the note preview beside the list in a wide window (off: the list takes the whole width and Enter opens the note). */

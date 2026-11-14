@@ -76,6 +76,9 @@ class MdLine(val runs: List<Run>, val fill: Color = Color.Unspecified)
 
 private data class Look(val color: Color, val style: TextStyle = TextStyle.Unspecified)
 
+/** The colour of bold or italic text: the theme's own [color] when there is one and the text is plain body text (a heading or a quotation keeps its colour), else unchanged. */
+private fun emphasis(look: Look, color: Color?): Color = if (color != null && look.color == Palette.ConsoleText) color else look.color
+
 private val MD_HEADING = Regex("""^(#{1,6})\s+(.*)$""")
 private val MD_RULE = Regex("""^\s*([-*_])(\s*\1){2,}\s*$""")
 private val MD_BULLET = Regex("""^(\s*)[-*+]\s+(.*)$""")
@@ -240,9 +243,9 @@ private fun highlightCode(line: String, lang: String): List<Run> {
             m.groups["comment"] != null -> Run(text, Palette.ConsoleDim, bg, TextStyle.Italic)
             m.groups["string"] != null -> {
                 val isKey = json && line.substring(m.range.last + 1).trimStart().startsWith(":")
-                Run(text, if (isKey) Palette.Blue else Palette.Green, bg)
+                Run(text, if (isKey) Palette.Blue else Palette.SyntaxString, bg)
             }
-            m.groups["number"] != null -> Run(text, Palette.Orange, bg)
+            m.groups["number"] != null -> Run(text, Palette.SyntaxNumber, bg)
             else -> {
                 val after = line.getOrNull(m.range.last + 1)
                 when {
@@ -288,8 +291,8 @@ private fun renderBlock(line: String, w: Int, base: Color): List<MdLine> {
     MD_HEADING.matchEntire(line)?.let { m ->
         val level = m.groupValues[1].length
         val (mark, markColor, textColor) = when (level) {
-            1 -> Triple("█ ", Palette.Accent, Palette.ConsoleUser)
-            2 -> Triple("▌ ", Palette.Accent, Palette.ConsoleUser)
+            1 -> Triple("█ ", Palette.ConsoleHeadingMark, Palette.ConsoleUser)
+            2 -> Triple("▌ ", Palette.ConsoleHeadingMark, Palette.ConsoleUser)
             3 -> Triple("▸ ", Palette.ConsoleTool, Palette.ConsoleText)
             else -> Triple("· ", Palette.ConsoleDim, Palette.ConsoleText)
         }
@@ -320,7 +323,7 @@ private fun renderBlock(line: String, w: Int, base: Color): List<MdLine> {
         return wrapRuns(parseInline(m.groupValues[3], Look(base)), w, listOf(Run(marker, Palette.ConsoleTool, style = TextStyle.Bold)), marker.length)
     }
     MD_QUOTE.matchEntire(line)?.let { m ->
-        return wrapRuns(parseInline(m.groupValues[1], Look(Palette.ConsoleMuted, TextStyle.Italic)), w, listOf(Run("▎ ", Palette.Accent)), 2)
+        return wrapRuns(parseInline(m.groupValues[1], Look(Palette.ConsoleMuted, TextStyle.Italic)), w, listOf(Run("▎ ", Palette.ConsoleQuote)), 2)
     }
     return wrapRuns(parseInline(line, Look(base)), w, emptyList(), 0)
 }
@@ -340,7 +343,7 @@ private fun highlightNumbers(text: String, look: Look): List<Run> {
         val color = when {
             core.startsWith("-") || core.startsWith("−") -> Palette.ConsoleErr
             core.startsWith("+") -> Palette.ConsoleOk
-            else -> Palette.Cta
+            else -> Palette.ConsoleNumber
         }
         out += Run(m.value, color, style = look.style + TextStyle.Bold)
         last = m.range.last + 1
@@ -375,7 +378,7 @@ private fun parseInline(s: String, look: Look): List<Run> {
                 val end = s.indexOf(mark, i + 2)
                 if (end > i + 2) {
                     flush()
-                    out += parseInline(s.substring(i + 2, end), look.copy(style = look.style + TextStyle.Bold))
+                    out += parseInline(s.substring(i + 2, end), look.copy(color = emphasis(look, Palette.ConsoleBold), style = look.style + TextStyle.Bold))
                     i = end + 2
                     continue
                 }
@@ -396,7 +399,7 @@ private fun parseInline(s: String, look: Look): List<Run> {
                 while (end > 0 && (s[end - 1].isWhitespace() || (end + 1 < s.length && s[end + 1].isLetterOrDigit()))) end = s.indexOf(c, end + 1)
                 if (opensWord && end > i + 1) {
                     flush()
-                    out += parseInline(s.substring(i + 1, end), look.copy(style = look.style + TextStyle.Italic))
+                    out += parseInline(s.substring(i + 1, end), look.copy(color = emphasis(look, Palette.ConsoleItalic), style = look.style + TextStyle.Italic))
                     i = end + 1
                     continue
                 }
@@ -405,7 +408,7 @@ private fun parseInline(s: String, look: Look): List<Run> {
                 val m = MD_LINK.find(s.substring(i))
                 if (m != null) {
                     flush()
-                    out += parseInline(m.groupValues[1], Look(Palette.ConsoleUser, look.style))
+                    out += parseInline(m.groupValues[1], Look(Palette.ConsoleLink, look.style))
                     out += Run(" (${m.groupValues[2]})", Palette.ConsoleDim)
                     i += m.value.length
                     continue

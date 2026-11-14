@@ -222,7 +222,42 @@ object Themes {
         transparent = true,
     )
 
-    val all = listOf(Dark, Light, SoftDark, SoftLight, Darcula, SolarizedDark, SolarizedLight, Nord, Brasil, Liberty, Ghost)
+    /**
+     * A monochrome theme: one hue, a light blue (RGB 167 182 214, about 221 degrees) on black. The roles differ by lightness and saturation, not by hue
+     * (the app never uses colour as the only signal: ✓ ⚠ ◆ and bold carry the meaning too): `cyan` (key hints, active tabs, primary values) is the brightest,
+     * `text` the body, `purple` (borders, headings, focus) a more saturated mid blue, and `green`, `orange` (warnings, code, the prompt band) and `blue` pale
+     * blues. The one exception is `red`, a muted rose, so an error still stands out. A normal (opaque) theme, like [Dark]; it needs a truecolor terminal
+     * (on 256 colours the dark surfaces all round to black).
+     */
+    val Monochrome = ThemeSpec(
+        "monochrome", "Monochrome",
+        mapOf(
+            "background" to 0x000000, "surface" to 0x0B131D, "surfaceHigh" to 0x17232F, "entry" to 0x121D29, "selected" to 0x1D2C42,
+            "text" to 0xA7B6D6, "muted" to 0x7B8AAA, "dim" to 0x4A566B,
+            "green" to 0xB8D4E8, "red" to 0xC48CA0, "blue" to 0x8EAEEB, "orange" to 0xC8D2E6, "purple" to 0x7F9AD0, "gray" to 0x7A869A, "cyan" to 0xD3DDF2,
+            "codeFg" to 0xC8D2E6,
+            // the console (model output), told apart by brightness and saturation: headings and links the brightest, bullets the accent blue, code a saturated blue on a chip
+            "consoleUser" to 0xD3DDF2, "consoleTool" to 0x7F9AD0, "consoleCodeFg" to 0x8EAEEB, "consoleCodeBg" to 0x111C2B,
+        ),
+    )
+
+    /**
+     * [Monochrome] plus ONE warm accent, amber (about 40 degrees, the complement of the blue): warnings, your own messages (name and band), the list markers of the
+     * console, the thinking effort (`thinkAccent`: dim amber, amber, light amber), the context bar (`contextAccent`) and the status pane's values (`statusAccent`).
+     * Everything else stays blue, and errors stay rose. Needs a truecolor terminal, like [Monochrome].
+     */
+    val MonochromeAccent = ThemeSpec(
+        "monochrome-accent", "Monochrome Accent",
+        Monochrome.colors + mapOf(
+            "orange" to 0xE8B35E, "consoleTool" to 0xE8B35E,
+            // a more colourful console: aqua bold (a cool cousin of the blue that stays calm next to the amber; saturated, since a pastel reads weak), pale-blue italics, saturated links, amber figures and heading blocks, gold strings and deep-amber numbers in code
+            "consoleBold" to 0x6FD0CC, "consoleItalic" to 0xB8D4E8, "consoleLink" to 0x8EAEEB, "consoleNumber" to 0xE8B35E,
+            "consoleHeadingMark" to 0xE8B35E, "consoleQuote" to 0xB8924A, "syntaxString" to 0xF0C674, "syntaxNumber" to 0xE4A04F,
+            "statusAccent" to 0xE8B35E, "thinkAccent" to 0xE8B35E, "contextAccent" to 0xE8B35E,
+        ),
+    )
+
+    val all = listOf(Dark, Light, SoftDark, SoftLight, Darcula, SolarizedDark, SolarizedLight, Nord, Brasil, Liberty, Ghost, Monochrome, MonochromeAccent)
 
     /** Same list, under the name the palette and settings code also use. */
     val themeList get() = all
@@ -333,7 +368,31 @@ class Colors(val spec: ThemeSpec) {
     val ConsoleDim = hex(opt("consoleDim") { c.getValue("dim") })
 
     /** Headings, links and the speaker of a message. */
-    val ConsoleUser = hex(opt("consoleUser") { blueRgb })
+    private val consoleUserRgb = opt("consoleUser") { blueRgb }
+    val ConsoleUser = hex(consoleUserRgb)
+
+    // Optional finer steps of the console (each falls back to what the console used before, so a theme that sets none looks as it did):
+    /** The colour of **bold** text in the body (null: the text colour, bold only). */
+    val ConsoleBold: Color? = c["consoleBold"]?.let { hex(it) }
+
+    /** The colour of *italic* text in the body (null: the text colour, italic only). */
+    val ConsoleItalic: Color? = c["consoleItalic"]?.let { hex(it) }
+
+    /** Links: the heading colour unless set. */
+    val ConsoleLink = hex(opt("consoleLink") { consoleUserRgb })
+
+    /** Figures in the text (money, percentages, long numbers): the call-to-action colour unless set. */
+    val ConsoleNumber = hex(opt("consoleNumber") { cyanRgb })
+
+    /** The block before a level 1 and 2 heading: the accent unless set. */
+    val ConsoleHeadingMark = hex(opt("consoleHeadingMark") { purpleRgb })
+
+    /** The bar of a quotation: the accent unless set. */
+    val ConsoleQuote = hex(opt("consoleQuote") { purpleRgb })
+
+    /** In code blocks: strings (the green role unless set) and numbers (the orange role unless set). */
+    val SyntaxString = hex(opt("syntaxString") { greenRgb })
+    val SyntaxNumber = hex(opt("syntaxNumber") { orangeRgb })
 
     /** List markers. */
     val ConsoleTool = hex(opt("consoleTool") { orangeRgb })
@@ -351,6 +410,26 @@ class Colors(val spec: ThemeSpec) {
     val UserName = hex(orangeRgb)
     val UserBg = hex(opt("promptBand") { mix(orangeRgb, surfaceRgb, if (light) 0.22 else 0.15) })
     val UserText = hex(opt("promptText") { mix(orangeRgb, textRgb, 0.22) })
+
+    // ---- Optional accents: a theme may colour the status pane, the thinking effort and the context bar by ONE accent instead of the green/orange/red scales (null = the usual scales) ----
+    private fun accent(key: String): Int? = c[key]
+
+    /** The status pane's own values (the thinking pane switch, the compaction room, the next message's effort). */
+    val StatusAccent: Color? = accent("statusAccent")?.let { hex(it) }
+
+    /** The thinking effort, low to high: a quiet shade of the accent, the accent, a light shade of it ([thinkShade]). */
+    val ThinkAccent: Color? = accent("thinkAccent")?.let { hex(it) }
+    private val thinkRgb = accent("thinkAccent")
+
+    /** The context bar: the accent while there is room, a light shade of it getting full; the red role past the limit stays red. */
+    val ContextAccent: Color? = accent("contextAccent")?.let { hex(it) }
+    private val contextRgb = accent("contextAccent")
+
+    /** [t] 0..1 (low to high effort) as a shade of the think accent; null without one. */
+    fun thinkShade(t: Double): Color? = thinkRgb?.let { hex(if (t < 0.34) mix(it, backgroundRgb, 0.6) else if (t < 0.8) it else mix(0xFFFFFF, it, 0.4)) }
+
+    /** The context accent made lighter, for a bar that is getting full. */
+    val ContextHot: Color? = contextRgb?.let { hex(mix(0xFFFFFF, it, 0.4)) }
 
     /** One colour of the animated logo's rainbow, [t] (0..1, wrapping) round the colour wheel: soft pastels. */
     fun logoShade(t: Double): Color = hex(hsv((t % 1.0 + 1.0) % 1.0, if (light) 0.45 else 0.34, if (light) 0.70 else 0.86))
@@ -421,6 +500,19 @@ object Palette {
     val ConsoleErr get() = colors.ConsoleErr
     val ConsoleCodeFg get() = colors.ConsoleCodeFg
     val ConsoleCodeBg get() = colors.ConsoleCodeBg
+    val ConsoleBold get() = colors.ConsoleBold
+    val ConsoleItalic get() = colors.ConsoleItalic
+    val ConsoleLink get() = colors.ConsoleLink
+    val ConsoleNumber get() = colors.ConsoleNumber
+    val ConsoleHeadingMark get() = colors.ConsoleHeadingMark
+    val ConsoleQuote get() = colors.ConsoleQuote
+    val SyntaxString get() = colors.SyntaxString
+    val SyntaxNumber get() = colors.SyntaxNumber
+    val StatusAccent get() = colors.StatusAccent
+    val ThinkAccent get() = colors.ThinkAccent
+    val ContextAccent get() = colors.ContextAccent
+    val ContextHot get() = colors.ContextHot
+    fun thinkShade(t: Double) = colors.thinkShade(t)
 }
 
 object Dimens {

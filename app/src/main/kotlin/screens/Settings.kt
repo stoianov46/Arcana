@@ -48,8 +48,11 @@ internal sealed interface Editor {
     class Text(val apply: (AppConfig, String) -> AppConfig) : Editor
     /** Enter lists the installed models; [set] stores the choice in the setting this editor belongs to ([allowNone]: blank is a valid choice and means off). */
     class Model(val label: String, val get: (AppConfig) -> String, val set: (AppConfig, String) -> AppConfig, val allowNone: Boolean = false, val oracul: Boolean = false, val multi: Boolean = false, val embed: Boolean = false) : Editor
-    /** Enter opens the folder browser (Space chooses the folder); [set] stores the chosen path. */
-    class Folder(val title: String, val subtitle: String, val set: (AppConfig, String) -> AppConfig) : Editor
+    /**
+     * Enter opens the folder browser (Space chooses the folder, `f` searches all sub-folders); [set] stores the chosen path. The browser starts in the folder [get] says (the vault when null);
+     * [clearable] adds `x` to set the empty value; [typed] adds `e` to type or paste a path instead (what it does with the text, throwing IllegalArgumentException for a bad one).
+     */
+    class Folder(val title: String, val subtitle: String, val get: ((AppConfig) -> String)? = null, val clearable: Boolean = false, val typed: ((AppConfig, String) -> AppConfig)? = null, val set: (AppConfig, String) -> AppConfig) : Editor
 
     /**
      * A list of places separated by `;`, edited without typing: [specials] are words with a meaning (`vault`, `working`) that are switched on and off, every other entry is a folder, added with the
@@ -129,6 +132,13 @@ private fun soundSetting(label: String, help: String, event: com.arcana.brain.co
         hear(c, next)
         set(c, next)
     }
+
+/** A typed or pasted Working folder: empty (none) or an existing folder. */
+private fun workingFolderPath(value: String): String {
+    val path = value.trim()
+    require(path.isEmpty() || Files.isDirectory(AppContext.expandHome(path))) { "That folder does not exist" }
+    return path
+}
 
 private fun tilde(path: String) = path.replace(System.getProperty("user.home"), "~")
 
@@ -358,11 +368,15 @@ private val declared: List<Setting> = listOf(
     choice(Group.Console, "Copy as", "What select mode (s) puts on the clipboard. Markdown: as written. Plain text: markers removed.", listOf("markdown" to "Markdown", "plain" to "Plain text"), { it.copyAs }, { c, v -> c.copy(copyAs = v) }),
 
     toggle(Group.Tools, "Tools in Chat", "Lets the model search, read and write your notes, and read and write files in the folders below. Every change asks you first. Needs a model with tool support (Gemma 4 has it). Also /tools in Chat.", { it.toolsEnabled }, { c, v -> c.copy(toolsEnabled = v) }),
-    text(Group.Tools, "Working folder", "Optional: the one folder you are working in right now (a web project, a repository). It is searched by the model as part of Settings → Search → Search in (`working`). Where it matters: relative paths and commands (run_command, git) start there instead of in your vault; the model is told about it; its own ARCANA.md / CLAUDE.md / AGENTS.md is passed on as instructions; the status bar shows ▣ and its name. It is allowed automatically, so you do not need to list it under Allowed folders. It grants nothing outside itself. Needs tools on. Empty = no working folder.", { it.projectFolder }, { c, v ->
-        val path = v.trim()
-        require(path.isEmpty() || java.nio.file.Files.isDirectory(AppContext.expandHome(path))) { "That folder does not exist" }
-        c.copy(projectFolder = path)
-    }, allowEmpty = true, emptyLabel = "(none)"),
+    Setting(
+        Group.Tools, "Working folder", "Optional: the one folder you are working in right now (a web project, a repository). It is searched by the model as part of Settings → Search → Search in (`working`). Where it matters: relative paths and commands (run_command, git) start there instead of in your vault; the model is told about it; its own ARCANA.md / CLAUDE.md / AGENTS.md is passed on as instructions; the status bar shows ▣ and its name. It is allowed automatically, so you do not need to list it under Allowed folders. It grants nothing outside itself. Needs tools on. Enter opens a folder browser (no typing needed): Space chooses the folder shown, f searches ALL sub-folders by name, x clears it (no working folder), e types or pastes a path.",
+        value = { it.projectFolder.ifEmpty { "(none)" } },
+        editor = Editor.Folder(
+            "Working folder", "The folder you are working in: Space chooses it, f searches all sub-folders by name, x clears it",
+            get = { it.projectFolder }, clearable = true,
+            typed = { c, v -> c.copy(projectFolder = workingFolderPath(v)) },
+        ) { c, v -> c.copy(projectFolder = v) },
+    ),
     Setting(
         Group.Tools, "Allowed folders",
         "Where the model may read and write besides your vault, separated by ;  For example ~/Projects;~/Documents, or ~ for your whole home folder (a home or hidden folder can only be allowed here, Chat never offers it on the spot). Every change, command and web access still asks you first; nothing outside the vault, these folders and the Working folder is ever touched. This is only PERMISSION: which of them are searched (by words and meaning) is chosen in Settings → Search → Search in. Enter opens the list: add folders with the folder browser, remove them again.",
@@ -719,12 +733,16 @@ fun SettingsScreen(app: AppContext) {
                 editing = Editing.Typing(setting, editor)
             }
             is Editor.Folder -> {
-                val start = app.config.vaultPath.takeIf { it.isNotBlank() }?.let { AppContext.expandHome(it) }?.takeIf { Files.isDirectory(it) }
+                val start = (editor.get?.invoke(app.config) ?: app.config.vaultPath).takeIf { it.isNotBlank() }?.let { AppContext.expandHome(it) }?.takeIf { Files.isDirectory(it) }
                     ?: Path.of(System.getProperty("user.home"))
                 editing = Editing.PickFolder(DirectoryPickerState(start, onChoose = { path ->
                     if (!Files.isDirectory(path)) notice = Notice("Not a directory: $path", isError = true)
-                    else { changed(editor.set(app.config, path.toString()), editor.title); editing = null }
-                }, onCancel = { editing = null }), editor.title, editor.subtitle)
+                    else { changed(editor.set(app.config, tilde(path.toAbsolutePath().normalize().toString()).takeIf { editor.get != null } ?: path.toString()), editor.title); editing = null }
+                }, onCancel = { editing = null },
+                    onClear = if (editor.clearable) ({ changed(editor.set(app.config, ""), editor.title); editing = null }) else null,
+                    clearLabel = "No ${editor.title.lowercase()}",
+                    onType = editor.typed?.let { apply -> { field.set(editor.get?.invoke(app.config).orEmpty()); editing = Editing.Typing(setting, Editor.Text(apply)) } },
+                ), editor.title, editor.subtitle)
             }
             is Editor.Folders -> { picker.reset(); editing = Editing.EditList(setting, editor) }
             Editor.Theme -> {
@@ -838,7 +856,7 @@ fun SettingsScreen(app: AppContext) {
         Editing.PickTheme -> Hints("↑↓  preview", "Enter  choose", "/  filter", "Esc  cancel")
         is Editing.EditList -> Hints("↑↓  move", "Enter / Space  switch on or off · remove · add", "x  remove a folder", "e  edit as text", "Esc  done")
         is Editing.PickFolder ->
-            if (mode.browser.filtering) Hints("↑↓  move", "Enter  open", "Esc  clear filter") else Hints("Space  use folder", "Enter  open", "←  up", "/  filter", "Esc  cancel")
+            Hints(*mode.browser.hints().toTypedArray())
         Editing.ConfirmReset -> Hints("y  reset all", "any other key  keep")
         is Editing.ConfirmClear -> storageAreas(app.config).firstOrNull { it.id == mode.areaId }?.let { if (it.prunable) Hints("y  clear what is older than $PRUNE_DAYS days", "a  clear everything", "any other key  keep") else Hints("y  clear it", "any other key  keep") } ?: Hints("any other key  back")
     }

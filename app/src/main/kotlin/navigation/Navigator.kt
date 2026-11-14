@@ -29,6 +29,7 @@ enum class Screen(val title: String, val icon: String, val group: ScreenGroup = 
     Chat("Chat", "»"),
     Library("Library", "▤"),
     Compose("AI notes", "✦"),
+    Prompts("Templates", "❯"),
     Usage("Usage", "▥", ScreenGroup.Account),
     Settings("Settings", "✱", ScreenGroup.Account),
     Guide("Guide", "¶", ScreenGroup.Account),

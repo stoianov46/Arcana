@@ -100,8 +100,8 @@ internal fun compactionView(used: Long?, estimated: Boolean, window: Int, autoPe
 /** The colour of the context bar: green while there is room, orange from 60 %, red from 85 % (the same as the bottom bar's gauge). */
 internal fun contextColor(share: Double): Color = when {
     share >= 0.85 -> Palette.Red
-    share >= 0.60 -> Palette.Orange
-    else -> Palette.Green
+    share >= 0.60 -> Palette.ContextHot ?: Palette.Orange
+    else -> Palette.ContextAccent ?: Palette.Green
 }
 
 /** Where the thinking pane can go: a strip under or over the conversation, or a column on a side. */
@@ -426,10 +426,10 @@ internal fun StatusPane(app: AppContext, chat: ChatSession, d: PaneEditor, focus
                     val (on, off) = slimBar(filled, barCells, plain)
                     Row { Label("  "); Label(on, color = tone); Label(off, color = Palette.Dim) }
                 }
-                if (chat.thinkNext.isNotEmpty() && !tight) Label("  next message: ${thinkLabel(chat.thinkNext).lowercase()}", color = Palette.Blue)
+                if (chat.thinkNext.isNotEmpty() && !tight) Label("  next message: ${thinkLabel(chat.thinkNext).lowercase()}", color = Palette.StatusAccent ?: Palette.Blue)
             }
             if (PaneRows.VIEW in shown) ValueRow("In chat", c.thinkingView.replaceFirstChar { it.uppercase() }, focused && d.index == PaneRows.VIEW)
-            if (PaneRows.PANE in shown) ValueRow("Pane", if (c.thinkingPane) "On" else "Off", focused && d.index == PaneRows.PANE, if (c.thinkingPane) Palette.Green else Palette.Muted)
+            if (PaneRows.PANE in shown) ValueRow("Pane", if (c.thinkingPane) "On" else "Off", focused && d.index == PaneRows.PANE, if (c.thinkingPane) (Palette.StatusAccent ?: Palette.Green) else Palette.Muted)
             if (PaneRows.PLACE in shown) ValueRow("Side", c.thinkingPanePlacement.replaceFirstChar { it.uppercase() }, focused && d.index == PaneRows.PLACE)
             if (!tight) VGap()
         }
@@ -449,7 +449,7 @@ internal fun StatusPane(app: AppContext, chat: ChatSession, d: PaneEditor, focus
         // three tones in one bar: the filled context (green, orange, red by how full), the room up to the auto-compact line (blue), the rest of the window (quiet)
         Row {
             Label(ink.repeat(cellsOf.used), color = tone)
-            Label(hollow.repeat(cellsOf.room), color = Palette.Blue)
+            Label(hollow.repeat(cellsOf.room), color = Palette.StatusAccent ?: Palette.Blue)
             Label(hollow.repeat(cellsOf.free), color = Palette.Dim)
             Label(if (!known) "  —" else "  ${"%.0f".format(share * 100)}%", color = tone, textStyle = TextStyle.Bold)
         }
@@ -457,7 +457,7 @@ internal fun StatusPane(app: AppContext, chat: ChatSession, d: PaneEditor, focus
         if (!tight) Row { Label(ink + " ", color = tone); Label(view.usedText + " of " + view.windowText.removePrefix("window "), color = Palette.Muted) }
         if (c.autoCompactPercent > 0 && !chat.compacting) {
             Row {
-                Label(hollow + " ", color = if (view.warn) Palette.Orange else Palette.Blue)
+                Label(hollow + " ", color = if (view.warn) Palette.Orange else Palette.StatusAccent ?: Palette.Blue)
                 Label(if (view.warn) "due: compacts next" else if (view.roomText.isNotEmpty()) view.roomText.removeSuffix(" left before it") + " to compact" else "auto-compact ${c.autoCompactPercent} %", color = if (view.warn) Palette.Orange else Palette.Muted, textStyle = if (view.warn) TextStyle.Bold else TextStyle.Unspecified)
             }
         }

@@ -11,15 +11,22 @@ macOS claim them).
 | 2 | **Chat** | hub for talking to the model; attachments, vault answers, tools, questions |
 | 3 | **Library** | browse every note, rename, chat about a note |
 | 4 | **AI notes** (`Compose`) | write or transform notes with AI, refine, apply |
-| 5 | **Usage** | dashboard of tokens, speed, estimated price, habits |
-| 6 | **Settings** | tabbed settings (each tab's list scrolls with the cursor in a short window) |
-| 7 | **Guide** | in-app tutorial pages (13, incl. Skills) |
-| 8 | **Changelog** | what has been built, by theme |
+| 5 | **Templates** (`Prompts`) | prompts you wrote once, picked and run: a new chat that sends them, `{{blanks}}` asked first |
+| 6 | **Usage** | dashboard of tokens, speed, estimated price, habits |
+| 7 | **Settings** | tabbed settings (each tab's list scrolls with the cursor in a short window) |
+| 8 | **Guide** | in-app tutorial pages (12, incl. Skills and Templates) |
+| 9 | **Changelog** | what has been built, by theme |
 
 Global keys: `Ctrl+P` command palette · `Ctrl+N` quick capture · `?` key map for the screen · `Ctrl+B` fold the sidebar ·
 `Ctrl+C` ×2 quit · `0`-`9` screens (when not typing). Navigation can be a left sidebar, right sidebar or top bar (Settings → Appearance →
 Navigation). The sidebar shows badges (`…` on Chat for a running reply, `!` when the model waits for an
 answer) and folds to icons under 90 columns.
+
+## Templates (`screens/Prompts.kt`, `core/PromptTemplates.kt`)
+Prompts you use again and again, picked from a list instead of retyped. A template is **one note in the vault's `Prompts/` folder** (`PromptTemplates.FOLDER`; a visible folder, so Obsidian edits them too, and the Library lists them): the properties block has `type: prompt` and an optional `description` (the line shown in the list; otherwise the first line of the prompt), the text after it is the prompt. `{{name}}` in the text is a **blank** (`PromptTemplates.placeholders`/`fill`: found once each, in order; single braces and JSON are left alone).
+- **Keys:** `Enter` runs it in a **new chat that is sent at once** (`Generation`-free: the screen puts the text in the new chat's field and sets `ChatSession.autoSend`; the Chat screen sends it as soon as it is shown). A template with blanks first asks for each value (one panel per blank, `Enter` next, `Esc` cancels; an empty value is refused). `u` puts the text in the message field of the CURRENT chat instead, unsent (added after what is already typed). `n` asks for a name, then opens the editor (the note is made on the first `Ctrl+S`, not before); `e` edits the whole note (properties included, `Ctrl+S` saves, a note that changed on disk meanwhile is not overwritten); `d` moves it to the vault trash after `y`; `/` filters by name; `[` and `]` make the list 5 % narrower / wider (`promptsListPercent`, 20 to 60, same keys as the Library).
+- **Layout:** the list on the left (blank count as meta) and the full prompt on the right in a wide window (90+ columns); a single list with the description as meta in a narrow one. An empty folder says how to start.
+- **Not built:** seeding example templates, per-template folders in the list, running a template with a chosen skill, sharing templates between vaults. Not tried with a real model send yet (the run, the fill and the editor were seen in a pty and unit-tested at the logic level).
 
 ## Brain (Home)
 
@@ -210,11 +217,11 @@ Tabs (groups) and rows:
 - **Prompts**: Memory file path, Memory file, System prompt, Summary prompt. **Helpers**: Helper models (the master switch), Oracul model, More Oracul models (a tick list), Judge model, Oracul server, Oracul may use tools, Route: images to, Route: code to, Chat context: messages / characters each. **Opinions**: Automatic second opinion, Judge verdict on opinions, Judge automatically, Stuck: failed calls, Stuck: failing turns, Loop guard: repeated text (`loopRepeats`), Loop guard: repeated calls (`loopCalls`; these two stay active when helper models are off). **Flow**: Flow, Flow analyst, Flow controller, Flow check command, Flow redos, Specialists as tools, Goal turns. **Skills**: Skill roles (the switch), Roles apply to, Skill planner, Skill worker, Skill reviewer. 
 - **Accessibility**: Interface scale, Screen-reader output. **Tabs**: order of the screens.
 
-Values apply immediately and persist to `config.json`. Themes: Dark, Light, Soft Dark, Soft Light, Darcula, Solarized Dark/Light, Nord, Brasil (green and yellow), Liberty (blue and yellow) and Ghost (transparent: `ThemeSpec.transparent` paints no background, card or list entry, so the terminal's own background shows; neon borders; for a dark terminal). Without truecolor (`COLORTERM`) every colour is snapped to the nearest 256-colour cube level (`ColorSupport`, `fit` in `Theme.kt`).
+Values apply immediately and persist to `config.json`. Themes: Dark, Light, Soft Dark, Soft Light, Darcula, Solarized Dark/Light, Nord, Brasil (green and yellow), Liberty (blue and yellow), Monochrome (light blue `A7B6D6` on black: one hue, the roles told apart by brightness and saturation, with a muted rose only for errors; needs a truecolor terminal), Monochrome Accent (the same plus ONE amber: warnings, your messages, console list markers, the thinking effort, the context bar and the status pane values; in the console aqua bold, pale-blue italics, amber figures and list markers, gold strings and deep-amber numbers in code)  and Ghost (transparent: `ThemeSpec.transparent` paints no background, card or list entry, so the terminal's own background shows; neon borders; for a dark terminal). Without truecolor (`COLORTERM`) every colour is snapped to the nearest 256-colour cube level (`ColorSupport`, `fit` in `Theme.kt`).
 
 ## Guide
 
-`screens/Guide.kt` holds 13 pages (Markdown strings rendered by the same renderer; the **Skills** page explains skills, the progress badge and troubleshooting for users). **When you change behaviour, update the matching Guide
+`screens/Guide.kt` holds 12 pages (Markdown strings rendered by the same renderer; the **Skills** page explains skills, the progress badge and troubleshooting for users). **When you change behaviour, update the matching Guide
 page, the Changelog page and this file.**
 
 **ask_user without options:** `ChatSession.askUser` sends a question that asks to choose (`multiple=true` or words like "choose one") but has fewer than two options back to the model once (`bouncedQuestions`), so a small model supplies the options; the same text asked again is shown as an open question.

@@ -14,6 +14,7 @@ import com.arcana.brain.app.screens.GuideScreen
 import com.arcana.brain.app.screens.HomeScreen
 import com.arcana.brain.app.screens.LibraryScreen
 import com.arcana.brain.app.screens.NoteComposerScreen
+import com.arcana.brain.app.screens.PromptsScreen
 import com.arcana.brain.app.screens.SettingsScreen
 import com.arcana.brain.app.screens.SetupScreen
 import com.arcana.brain.app.screens.UsageScreen
@@ -66,6 +67,7 @@ private fun ArcanaApp(onQuit: () -> Unit) {
             Screen.Chat -> ChatScreen(app)
             Screen.Library -> LibraryScreen(app)
             Screen.Compose -> NoteComposerScreen(app)
+            Screen.Prompts -> PromptsScreen(app)
             Screen.Usage -> UsageScreen(app)
             Screen.Settings -> SettingsScreen(app)
             Screen.Guide -> GuideScreen(app)

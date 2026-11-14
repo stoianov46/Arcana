@@ -58,7 +58,8 @@ Everything is in **Settings**. Pages are tabs (a long tab such as Tools or Conso
 - The model at the bottom left shows the state: green means ready, red means Ollama is not running, orange means the chosen model is not installed. Press `t` in Settings to test the connection.
 
 ## Vault
-- **Vault path**: `Enter` opens a folder browser. Folders with an `.obsidian` directory are marked as vaults.
+- **Vault path**: `Enter` opens a folder browser. Folders with an `.obsidian` directory are marked as vaults. Every folder browser (vault, Working folder, Allowed folders) has `f`: it searches ALL folders below the one shown by name (type part of the name, `Enter` opens it, `Space` uses it); `~` then `f` searches your whole home folder.
+- **Working folder**: `Enter` opens the same folder browser instead of asking for a typed path; `Space` chooses, `f` searches by name, `x` clears the working folder, `e` types or pastes a path.
 - **Output folder**: where new notes are saved, inside the vault.
 - **Daily notes folder** and **format**: used by capture. If your vault uses Obsidian's Daily notes plugin, Arcana reads *its* settings and these are only fallbacks.
 - **Stale after**: how many days without a change make a note "stale".
@@ -286,6 +287,25 @@ If a skill lists `requires:` steps, the Chat status bar shows `◆ coingecko-for
 """.trim(),
     ),
     GuidePage(
+        "Templates", "Templates: prompts you run again and again",
+        """
+# Templates
+Keep the prompts you use often and run them with one key. Press the **Templates** number key (5 by default).
+
+## How it works
+- A template is **a note in the `Prompts` folder of your vault**. The text of the note is the prompt. Obsidian can edit it too.
+- **`Enter`** starts a **new chat and sends the prompt** at once.
+- **`u`** puts the prompt in the message field of the chat you are in, without sending, so you can add to it first.
+- **`n`** makes a new template (name first, then write it; `Ctrl+S` saves), **`e`** edits, **`d`** moves it to the trash, **`/`** filters by name, **`[`** and **`]`** make the list narrower or wider.
+
+## Blanks
+Write `{{topic}}` (double braces) where something changes each time. When you press `Enter`, Arcana asks for each blank in turn and puts your answers into the prompt. Normal braces, for example JSON, are left alone.
+
+## Give it a good list line
+Add a property `description: one line` at the top of the note (`---` lines around it, together with `type: prompt`). Without it the list shows the first line of the prompt.
+""".trim(),
+    ),
+    GuidePage(
         "AI notes", "AI notes: shape your notes",
         """
 # AI notes
@@ -401,7 +421,7 @@ Letters like `k` `j` `s` only act as keys when you are not typing in a field.
 The **Usage** screen is a dashboard of what the model did, over this session, today, 7 days, 30 days or all time (`←` `→`). `Tab` switches page: **Orchestration** (what the helper models cost and did: tokens by chat and helpers, models, flow acceptance, redos, verdicts, goals, routes; scroll with ↑↓), **Overview** (totals, a chart of tokens by hour or day, and insights: busiest day, peak hour, streak, week on week, typical and slowest reply, context load), **Breakdown** (by feature and model with their share, what the Oracul, Planner and Judge cost, when in the day you use it, speed trend) and **Recent replies** (a table of the latest ones with tokens, time and speed). In a small terminal Overview and Breakdown scroll (`↑` `↓`, `PgUp` `PgDn`) and nothing is left out; Recent replies and Tools scroll inside their panel. The footer also shows a running total. Everything is stored in `~/.config/arcana/usage.jsonl`.
 
 ## Make it yours (Settings)
-- **Appearance**: colour theme (Dark, Light, Soft, Darcula, Solarized, Nord, Brasil, Liberty, and Ghost: see-through, so your terminal's own transparent or blurred background shows, with glowing neon borders), sidebar, logo animation.
+- **Appearance**: colour theme (Dark, Light, Soft, Darcula, Solarized, Nord, Brasil, Liberty, Monochrome: light blue on black, Monochrome Accent: the same with one amber accent for the status pane, thinking effort and context bar, and Ghost: see-through, so your terminal's own transparent or blurred background shows, with glowing neon borders), sidebar, logo animation.
 - **Console**: Markdown rendering, chat history length, whether chats are kept, what copying puts on the clipboard.
 - **Accessibility**: interface density and a plain-words mode for screen readers.
 - **Tabs**: put the screens in the order you like. A tab's position is its number key.

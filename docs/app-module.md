@@ -22,7 +22,7 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 ## `navigation/`
 
 - `Navigator.kt`
-  - `Screen` enum (Home, Chat, Library, Compose, Session, Usage, Settings, Guide, Changelog) with `title`, `icon`, `group` and `inSidebar` (Inbox and Session are `false`: no tab and no number key, reached from Brain's Overview, the Library's Inbox view and the command palette)
+  - `Screen` enum (Home, Chat, Library, Compose, Prompts (title "Templates"), Session, Usage, Settings, Guide, Changelog) with `title`, `icon`, `group` and `inSidebar` (Inbox and Session are `false`: no tab and no number key, reached from Brain's Overview, the Library's Inbox view and the command palette)
     (`ScreenGroup.Workspace`="BRAIN", `Account`="SYSTEM"); `ScreenOrder` applies the user's `tabOrder`; `SHORTCUT_KEYS="1234567890"`.
   - `Navigator` holds: `current`, `navigate(screen, force)`, `leaveGuard` (a screen may veto leaving), overlays
     (`helpOpen`, `paletteOpen`, `captureOpen`, `palette`, `captureField`), `toast`/`showToast`, `quitPending`,
@@ -43,6 +43,7 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 | `Chat.kt` | Chat | `ChatMode` (Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave (only with Keep chats off), ConfirmClear); `messageLines` renders messages incl. tool steps; approval and question panels (buttons inside); the `/` menu (`SlashItem` with its `usage` line, `slashMatches`, `slashState`, `splitSlash`, `unknownCommand`, `toolUsage`); typed commands take text (`runCommand(command, args)`); the Oracul blocks (`opinionLines`) and their split view (`sideBySide`, `columnCount`); `chatStatus` (the worker and the Oracul as one `modelsSegment`, the working model first), the comparison title (`comparisonTitleRuns`, `partColor`) + `contextUsage`; select mode via `OutputState` |
 | `LibraryTree.kt` | the Library's tree: `LibraryRow` (`Folder`/`Note` with depth), `libraryRows(notes, expanded)`, `ancestorsOf`, `allFolders` (pure, unit-tested) |
 | `Library.kt` | Library | tree or flat list (`AppConfig.libraryTree`, `AppContext.libraryExpanded`), `LibraryMode` (List, Reading, ConfirmDelete, Rename, Edit, ConfirmDiscard); `e` edits the whole file by hand (`Vault.write`); filters from `LibraryFilter`; preview pane; trash; rename; chat about a note; open in Obsidian; `.` shows notes of hidden folders in All (`Vault.hiddenNotes()`, not in the index, so no count/search/Brain sees them; rename/trash refused) |
+| `Prompts.kt` | Templates (`PromptsScreen`) | `PromptMode` (List, Fill, NewName, Edit, ConfirmDiscard, ConfirmDelete); the prompt notes of `Prompts/`, `{{blank}}` questions, run = new chat + `ChatSession.autoSend` |
 | `Compose.kt` | AI notes (`NoteComposerScreen`) | `Task` enum, `Mode` (Start, PickSource, Input, Follow, Title, AppendPick, ConfirmReplace, ConfirmDiscard, Result); conversation + `drafts` stack for undo; attachments |
 | `Chat.kt` thinking pane | `ThinkingPane` (the panel at the `thinkingPanePlacement` side of the conversation; `thinkingPaneLayout` decides place and size, a strip's rows are counted in the conversation's `outputRows`, a side column splits the width in a `Row`), `wrapWords`, `toggleThinkingPane` (`/thinking`); data from `Generation.liveThinking` |
 | `Docks.kt` | `PaneId`, `Docks` (placement, `occupant`, `refusal`, `sideOf`): the IDE-like dock rules, one panel per left/right side (tested in `DocksTest`); Chat draws the columns as `DockColumn`s |
@@ -58,7 +59,7 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 | `UsageTeam.kt` | the Usage → Orchestration page: `teamLines` (what the orchestration cost and did, as wrapped lines for a `ScrollView`), `TeamPage`, `shareBar` |
 | `Changelog.kt` | Changelog | `changePages()`: hand-written pages (Latest, Tools, Chat, Brain, Interface, Start); same scroll/select view as Guide |
 | `Settings.kt` | Settings | declarative `settings` list (`Setting`, `choice`, `toggle`, `stepper`, `text`, `Editor.{Text,Model,Folder,Folders,Theme}`; `Setting.advanced()` hides a row until *Show advanced search settings* is on), tabs by `Group` (the **Search** tab has three essential rows: *Search in*, *Search by*, *Embedding model (for meaning)*); `Editor.Folders` is the folder-list editor (`placeRows`, `toggledPlaces`: switch `vault`/`working`, add with the folder browser, remove) used by *Search in* and *Allowed folders*; the model picker shows `ModelDetails` |
-| `Guide.kt` | Guide | 13 pages (Markdown strings; incl. "Skills") |
+| `Guide.kt` | Guide | 12 pages (Markdown strings; incl. "Skills" and "Templates") |
 | `Common.kt` | helpers | `bodyRows`, `outputRows(fixed, notice, actions)`, `panelWidth`, `outputWidth`, `WithVault`, `GenerationView`, `ReplyStatus`, `relativeTime`, `saveFailure` |
 | `AttachBrowser.kt` | shared | the full-screen file browser used by Chat, AI notes and Capture |
 
@@ -85,7 +86,7 @@ Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `
 | `Picker.kt` | `PickerState` + `Picker<T>`: `/` filters (any order of words), ↑↓, Enter; optional `icon`/`iconColor`/`meta`, and for trees `indent` (two spaces per level), `labelColor` and `total` (the count shown in the search strip) |
 | `ScreenMemory.kt` | `ScreenMemory` (in `AppContext.screenMemory`) and `rememberKept(app, key) { … }`: a screen's state holders that outlive its tab (the shell draws only the current screen, so plain `remember` state is lost on every tab switch). Used by the Library (view, tag, mode, `PickerState`s, preview scroll, show-hidden) and the Brain (selected line, hygiene list). Key = name + `@` + vault path |
 | `FilePicker.kt` | `FilePickerState`/`FilePicker`: folder browser returning files (tick with Space, Tab to attach) |
-| `DirectoryPicker.kt` | folder-only picker (vault path) |
+| `DirectoryPicker.kt` | folder-only picker (vault path, Working folder, Allowed folders): `f` searches every folder below the one shown (5 levels, background thread, hidden and heavy folders skipped), optional `x` clear and `e` type-a-path keys (`DirectoryPickerState.hints`/`actions`) |
 | `Attachments.kt` | `Attachments` state (pictures, files, notes, plain), `AttachmentLine`, `SentAttachments`, `attachBrowserHints` |
 | `ScrollView.kt` | `Line`, `OutputState` (scroll + select mode + copy), `ScrollView`, `ScrollBar`, `RunsRow` |
 | `Markdown.kt` | `parseMarkdown` (blocks), `renderMarkdown` (styled `Line`s), closed code boxes + highlighter, boxed tables, `unmath`, `plainText`, `codeAndTables` |

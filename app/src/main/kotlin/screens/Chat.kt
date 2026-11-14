@@ -1,6 +1,7 @@
 package com.arcana.brain.app.screens
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -276,17 +277,19 @@ internal fun thinkEffect(value: String, options: List<String>, defaultWord: Stri
  */
 internal fun thinkColor(value: String, options: List<String>, defaultWord: String): com.jakewharton.mosaic.ui.Color {
     val levels = options.filter { it != "default" && it != "off" && it != "on" }
+    // a theme with a think accent (Monochrome Accent) shades it from low to high instead of the green / orange / red scale
+    val shaded = Palette.thinkShade(0.5) != null
     return when (value) {
         "off" -> Palette.Blue
-        "on" -> if (ThinkLevels.onLevel.isNotEmpty()) Palette.Red else Palette.Orange
+        "on" -> if (shaded) Palette.thinkShade(0.5)!! else if (ThinkLevels.onLevel.isNotEmpty()) Palette.Red else Palette.Orange
         "default" -> if (defaultWord.isEmpty() || defaultWord == "default") Palette.Muted else thinkColor(defaultWord, options, "")
         else -> {
             val at = levels.indexOf(value)
-            if (value.isNotEmpty() && value == ThinkLevels.onLevel) Palette.Red
+            if (value.isNotEmpty() && value == ThinkLevels.onLevel) Palette.thinkShade(1.0) ?: Palette.Red
             else if (at < 0) Palette.Muted
             else {
                 val t = if (levels.size <= 1) 0.5 else at.toDouble() / (levels.size - 1)
-                if (t < 0.34) Palette.Green else if (t < 0.8) Palette.Orange else Palette.Red
+                if (shaded) Palette.thinkShade(t)!! else if (t < 0.34) Palette.Green else if (t < 0.8) Palette.Orange else Palette.Red
             }
         }
     }
@@ -1028,6 +1031,9 @@ fun ChatScreen(app: AppContext) {
         if (app.config.toolsEnabled && app.tools == false) toast("${app.config.model} cannot use tools, so it will only answer. Choose another model in Settings → Ollama → Model.", error = true)
         chat.send(text) { input.set(text) }
     }
+
+    // a prompt template run from the Prompts tab: its text is in the field, and it goes out as soon as the chat is shown
+    LaunchedEffect(chat.autoSend) { if (chat.autoSend) { chat.autoSend = false; send() } }
 
     // Select mode walks entries: each of your messages is one, and a reply is split into its Markdown blocks.
     val shownMessages = chat.messages.toList() + if (gen.text.isNotEmpty()) listOf(ChatMessage.assistant(gen.text)) else emptyList()

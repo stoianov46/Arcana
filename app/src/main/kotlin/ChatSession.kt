@@ -1760,6 +1760,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     /** Starts an empty conversation. The old one stays saved and can be opened again from the history. */
+    /** Set by the Prompts screen: the Chat screen sends what is in the message field as soon as it is shown, then clears this. */
+    var autoSend by mutableStateOf(false)
+
     fun startNew() {
         backlogQuestion = ""
         backlogId = ""
