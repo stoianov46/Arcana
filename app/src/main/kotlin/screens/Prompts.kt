@@ -19,6 +19,8 @@ import com.arcana.brain.app.navigation.LocalNavigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.PromptTemplate
 import com.arcana.brain.core.PromptTemplates
+import com.arcana.brain.core.Skill
+import com.arcana.brain.core.Skills
 import com.arcana.brain.core.Vault
 import com.jakewharton.mosaic.layout.fillMaxWidth
 import com.jakewharton.mosaic.layout.height
@@ -27,11 +29,11 @@ import com.jakewharton.mosaic.ui.Box
 import com.jakewharton.mosaic.ui.Row
 
 /** What the Prompts screen is doing. */
-internal enum class PromptMode { List, Fill, NewName, Edit, ConfirmDiscard, ConfirmDelete }
+internal enum class PromptMode { List, Fill, NewName, Edit, ConfirmDiscard, ConfirmDelete, PickSkill }
 
 /**
  * The Templates tab (`Screen.Prompts`): the templates in the vault's Prompts folder, picked and run. Enter starts a NEW chat with the prompt and sends it (the blanks, `{{like this}}`,
- * are asked first, one by one); `u` puts it in the message field of the current chat instead, unsent. `n` writes a new template, `e` edits one, `d` trashes it.
+ * are asked first, one by one); `u` puts it in the message field of the current chat instead, unsent. `s` attaches a skill (the template then runs with it attached). `n` writes a new template, `e` edits one, `d` trashes it.
  */
 @Composable
 fun PromptsScreen(app: AppContext) {
@@ -40,6 +42,12 @@ fun PromptsScreen(app: AppContext) {
     var version by remember { mutableIntStateOf(0) }
     val templates = remember(vault, version, app.brain.revision) { vault.getOrNull()?.let { runCatching { PromptTemplates.list(it) }.getOrDefault(emptyList()) }.orEmpty() }
     val picker = remember { PickerState() }
+    val skillPicker = remember { PickerState() }
+    /** The skills of the vault, for `s` and for attaching when a template runs (none while skills are switched off). */
+    val skills = remember(vault, app.config.skillsEnabled, app.config.skillsFolder, version) {
+        val v = vault.getOrNull()
+        if (v == null || !app.config.skillsEnabled) emptyList() else runCatching { Skills.discoverAll(v, app.skillsFolder()) }.getOrDefault(emptyList())
+    }
     var mode by remember { mutableStateOf(PromptMode.List) }
 
     val nameField = remember { TextFieldState() }
@@ -57,19 +65,29 @@ fun PromptsScreen(app: AppContext) {
     val current = picker.selected(templates) { it.name }
     val wide = LocalContentWidth.current >= 90
 
-    FocusMode(mode == PromptMode.Fill || mode == PromptMode.NewName || mode == PromptMode.Edit || (mode == PromptMode.List && picker.filtering))
+    FocusMode(mode == PromptMode.Fill || mode == PromptMode.NewName || mode == PromptMode.Edit || ((mode == PromptMode.List && picker.filtering) || (mode == PromptMode.PickSkill && skillPicker.filtering)))
     when (mode) {
-        PromptMode.List -> if (picker.filtering) Hints("↑↓  move", "Enter  run", "Esc  clear filter") else Hints("↑↓  move", "Enter  run in a new chat", "u  use in this chat", "n  new", "e  edit", "d  trash", "[ ]  list width", "/  filter")
+        PromptMode.List -> if (picker.filtering) Hints("↑↓  move", "Enter  run", "Esc  clear filter") else Hints("↑↓  move", "Enter  run in a new chat", "u  use in this chat", "s  skill", "n  new", "e  edit", "d  trash", "[ ]  list width", "/  filter")
         PromptMode.Fill -> Hints("Enter  next", "Esc  cancel")
         PromptMode.NewName -> Hints("Enter  write the prompt", "Esc  cancel")
         PromptMode.Edit -> Hints("Ctrl+S  save", "Esc  leave")
         PromptMode.ConfirmDiscard -> Hints("y  discard", "any other key  keep editing")
         PromptMode.ConfirmDelete -> Hints("y  move to trash", "any other key  keep")
+        PromptMode.PickSkill -> Hints("↑↓  move", "Enter  attach", "/  filter", "Esc  cancel")
+    }
+
+    /** Puts the template's skill on the chat as an attached skill (like `/name` in the Chat); a skill that is gone is said, and the prompt runs without it. */
+    fun attachSkill(name: String) {
+        if (name.isBlank()) return
+        val skill = Skills.find(skills, name)
+        if (skill == null) return navigator.showToast("Skill “$name” is not in ${app.skillsFolder()}/ (or skills are off): the prompt runs without it.", true)
+        if (skill.path !in app.chat.attachments.notes) app.chat.attachments.notes += skill.path
     }
 
     /** A new chat with [text] in the message field, sent at once. */
-    fun runNow(text: String) {
+    fun runNow(text: String, skill: String = "") {
         app.chat.startNew()
+        attachSkill(skill)
         app.chat.input.set(text)
         app.chat.autoSend = true
         navigator.navigate(Screen.Chat)
@@ -77,7 +95,7 @@ fun PromptsScreen(app: AppContext) {
 
     fun run(t: PromptTemplate) {
         if (t.body.isBlank()) return navigator.showToast("“${t.name}” is empty: press e to write it.", true)
-        if (t.placeholders.isEmpty()) return runNow(t.body)
+        if (t.placeholders.isEmpty()) return runNow(t.body, t.skill)
         filling = t; fillIndex = 0; fillValues.clear(); fillField.clear(); mode = PromptMode.Fill
     }
 
@@ -86,6 +104,7 @@ fun PromptsScreen(app: AppContext) {
         val blanks = t.placeholders
         val text = t.body
         app.chat.input.set(if (app.chat.input.text.isBlank()) text else app.chat.input.text + "\n\n" + text)
+        attachSkill(t.skill)
         navigator.navigate(Screen.Chat)
         if (blanks.isNotEmpty()) navigator.showToast("Fill in " + blanks.joinToString(", ") { "{{$it}}" } + " before you send it.")
     }
@@ -107,7 +126,20 @@ fun PromptsScreen(app: AppContext) {
         if (value.isEmpty()) return navigator.showToast("Type a value for $name (Esc cancels).", true)
         fillValues[name] = value
         fillField.clear()
-        if (fillIndex + 1 < t.placeholders.size) fillIndex++ else { mode = PromptMode.List; filling = null; runNow(PromptTemplates.fill(t.body, fillValues.toMap())) }
+        if (fillIndex + 1 < t.placeholders.size) fillIndex++ else { mode = PromptMode.List; filling = null; runNow(PromptTemplates.fill(t.body, fillValues.toMap()), t.skill) }
+    }
+
+    fun chooseSkill(t: PromptTemplate) {
+        if (!app.config.skillsEnabled) return navigator.showToast("Skills are switched off (Settings → Skills).", true)
+        skillPicker.reset()
+        mode = PromptMode.PickSkill
+    }
+
+    fun setSkill(t: PromptTemplate, name: String) {
+        val v = vault.getOrNull() ?: return
+        runCatching { PromptTemplates.setSkill(v, t.path, name) }
+            .onSuccess { app.brain.changed(); version++; navigator.showToast(if (name.isBlank()) "“${t.name}” runs without a skill." else "“${t.name}” now runs with the skill $name.") }
+            .onFailure { navigator.showToast(it.message ?: "Could not save.", true) }
     }
 
     fun startEdit(t: PromptTemplate) {
@@ -174,11 +206,22 @@ fun PromptsScreen(app: AppContext) {
             }
             PromptMode.ConfirmDiscard -> { mode = if (key.char == 'y' || key.char == 'Y') PromptMode.List else PromptMode.Edit; true }
             PromptMode.ConfirmDelete -> { if (key.char == 'y' || key.char == 'Y') current?.let { trash(it) }; mode = PromptMode.List; true }
+            PromptMode.PickSkill -> {
+                val options = listOf("") + skills.map { it.name }
+                val label = { n: String -> if (n.isEmpty()) "(no skill)" else n }
+                when {
+                    key == Key.Escape && !skillPicker.filtering -> { mode = PromptMode.List; true }
+                    skillPicker.handle(key, options, label = label) -> true
+                    key == Key.Enter -> { skillPicker.selected(options, label)?.let { n -> current?.let { setSkill(it, n) } }; mode = PromptMode.List; true }
+                    else -> true
+                }
+            }
             PromptMode.List -> when {
                 picker.handle(key, templates, label = { it.name }) -> true
                 !picker.filtering && (key.char == '[' || key.char == ']') -> { resizeList(if (key.char == ']') 5 else -5); true }
                 key == Key.Enter -> { current?.let { run(it) }; true }
                 key.char == 'u' -> { current?.let { useHere(it) }; true }
+                key.char == 's' -> { current?.let { chooseSkill(it) }; true }
                 key.char == 'n' -> { nameField.clear(); mode = PromptMode.NewName; true }
                 key.char == 'e' -> { current?.let { startEdit(it) }; true }
                 key.char == 'd' || key == Key.Delete -> { if (current != null) mode = PromptMode.ConfirmDelete; true }
@@ -191,6 +234,7 @@ fun PromptsScreen(app: AppContext) {
         PromptMode.List -> listOf(
             ActionItem("Enter", "Run in a new chat", current != null, Palette.Cta),
             ActionItem("u", "Use in this chat", current != null),
+            ActionItem("s", "Skill", current != null),
             ActionItem("n", "New"),
             ActionItem("e", "Edit", current != null),
             ActionItem("d", "Trash", current != null, Palette.Red),
@@ -202,6 +246,7 @@ fun PromptsScreen(app: AppContext) {
         PromptMode.Edit -> listOf(ActionItem("Ctrl+S", "Save", accent = Palette.Cta), ActionItem("Esc", "Leave"))
         PromptMode.ConfirmDiscard -> listOf(ActionItem("y", "Discard the changes", accent = Palette.Red), ActionItem("any other key", "Keep editing", accent = Palette.Cta))
         PromptMode.ConfirmDelete -> listOf(ActionItem("y", "Move to trash", accent = Palette.Red), ActionItem("any other key", "Keep", accent = Palette.Cta))
+        PromptMode.PickSkill -> listOf(ActionItem("Enter", "Attach", accent = Palette.Cta), ActionItem("/", "Filter"), ActionItem("Esc", "Cancel"))
     }
     val listRows = outputRows(fixed = 3 + 2 + 1, actions = actions)
     val width = LocalContentWidth.current
@@ -226,6 +271,18 @@ fun PromptsScreen(app: AppContext) {
                 if (mode == PromptMode.ConfirmDiscard) Warning("Discard what you changed? Nothing has been saved.")
                 TextValue(editField, mode == PromptMode.Edit, "", maxRows = (listRows - 2 - (if (mode == PromptMode.ConfirmDiscard) 1 else 0)).coerceAtLeast(3))
             }
+            mode == PromptMode.PickSkill -> {
+                val options = listOf("") + skills.map { it.name }
+                Panel("Skill for · ${current?.name.orEmpty()}", accent = Palette.Cta) {
+                    Hint(if (current?.skill.isNullOrBlank()) "The template runs with no skill. Choose one to attach it every time it runs." else "Now: ${current?.skill}. Choose another, or “(no skill)” to remove it.")
+                    Picker(
+                        items = options, state = skillPicker, label = { n -> if (n.isEmpty()) "(no skill)" else n },
+                        rows = (listRows - 3).coerceAtLeast(3), icon = { n -> if (n.isEmpty()) "○" else "◆" }, iconColor = { n -> if (n.isEmpty()) Palette.Dim else Palette.Accent },
+                        meta = { n -> skills.firstOrNull { it.name == n }?.description?.substringBefore(". ")?.take(60).orEmpty() },
+                        placeholder = "Press / to filter skills", emptyText = "No skills in ${app.skillsFolder()}/ yet.",
+                    )
+                }
+            }
             mode == PromptMode.ConfirmDelete -> Panel("Move to trash?", accent = Palette.Red) {
                 Warning("“${current?.name}” is moved to the vault's .trash folder. You can restore it from there or from Obsidian.")
             }
@@ -236,41 +293,45 @@ fun PromptsScreen(app: AppContext) {
                 Row(Modifier.fillMaxWidth()) {
                     Box(Modifier.weight(percent / 100f)) {
                         CompositionLocalProvider(LocalContentWidth provides left) {
-                            Panel("Prompt templates · ${templates.size}", Modifier.height(listRows + 3)) { TemplateList(templates, picker, listRows, showMeta = false) }
+                            Panel("Prompt templates · ${templates.size}", Modifier.height(listRows + 3)) { TemplateList(templates, picker, listRows, showMeta = false, skills) }
                         }
                     }
                     HGap()
                     Box(Modifier.weight((100 - percent) / 100f)) {
                         CompositionLocalProvider(LocalContentWidth provides right) {
-                            Panel(current?.name ?: "Preview", Modifier.height(listRows + 3), accent = Palette.Dim) { TemplatePreview(current, listRows) }
+                            Panel(current?.name ?: "Preview", Modifier.height(listRows + 3), accent = Palette.Dim) { TemplatePreview(current, listRows, skills) }
                         }
                     }
                 }
             }
-            else -> Panel("Prompt templates · ${templates.size}") { TemplateList(templates, picker, listRows, showMeta = true) }
+            else -> Panel("Prompt templates · ${templates.size}") { TemplateList(templates, picker, listRows, showMeta = true, skills) }
         }
         ActionBar(actions)
     }
 }
 
 @Composable
-private fun TemplateList(templates: List<PromptTemplate>, picker: PickerState, rows: Int, showMeta: Boolean) {
+private fun TemplateList(templates: List<PromptTemplate>, picker: PickerState, rows: Int, showMeta: Boolean, skills: List<Skill>) {
     Picker(
         items = templates, state = picker, label = { t -> t.name },
         rows = rows, icon = { "❯" }, iconColor = { Palette.Accent },
-        meta = { t -> if (showMeta) t.description else t.placeholders.size.let { if (it == 0) "" else "$it blank${if (it == 1) "" else "s"}" } },
+        meta = { t -> (if (t.skill.isNotBlank()) "◆ ${t.skill}  " else "") + (if (showMeta) t.description else t.placeholders.size.let { if (it == 0) "" else "$it blank${if (it == 1) "" else "s"}" }) },
         placeholder = "Press / to filter prompts",
         emptyText = "No prompt templates yet. Press n to write one: it becomes a note in the ${PromptTemplates.FOLDER} folder of your vault.",
     )
 }
 
 @Composable
-private fun TemplatePreview(t: PromptTemplate?, rows: Int) {
+private fun TemplatePreview(t: PromptTemplate?, rows: Int, skills: List<Skill>) {
     if (t == null) return Hint("Choose a prompt to see what it says.")
+    if (t.skill.isNotBlank()) {
+        val there = Skills.find(skills, t.skill) != null
+        Label("◆ skill ${t.skill}" + if (there) " (attached when it runs)" else " (not found: runs without it)", color = if (there) Palette.Accent else Palette.Orange)
+    }
     if (t.description.isNotBlank() && !t.body.startsWith(t.description)) Label(t.description, color = Palette.Muted)
     if (t.placeholders.isNotEmpty()) Label("Asks for: " + t.placeholders.joinToString(", "), color = Palette.Orange)
     val lines = wrapWords(sanitizeForTerminal(t.body), LocalContentWidth.current - 4)
-    val room = (rows - 1 - (if (t.placeholders.isEmpty()) 0 else 1) - (if (t.description.isNotBlank() && !t.body.startsWith(t.description)) 1 else 0)).coerceAtLeast(1)
+    val room = (rows - 1 - (if (t.skill.isBlank()) 0 else 1) - (if (t.placeholders.isEmpty()) 0 else 1) - (if (t.description.isNotBlank() && !t.body.startsWith(t.description)) 1 else 0)).coerceAtLeast(1)
     lines.take(room).forEach { Label(it) }
     if (lines.size > room) Label("… ${lines.size - room} more lines (e edits it)", color = Palette.Muted)
 }

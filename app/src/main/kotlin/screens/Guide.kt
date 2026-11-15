@@ -296,13 +296,14 @@ Keep the prompts you use often and run them with one key. Press the **Templates*
 - A template is **a note in the `Prompts` folder of your vault**. The text of the note is the prompt. Obsidian can edit it too.
 - **`Enter`** starts a **new chat and sends the prompt** at once.
 - **`u`** puts the prompt in the message field of the chat you are in, without sending, so you can add to it first.
+- **`s`** attaches a **skill** to the template: choose one from the list (or *no skill*). Every time the template runs (`Enter` or `u`), that skill is attached to the chat, as if you had typed `/name`. The list line and the preview show `◆ skill name`. You can also write `skill: name` in the note's properties.
 - **`n`** makes a new template (name first, then write it; `Ctrl+S` saves), **`e`** edits, **`d`** moves it to the trash, **`/`** filters by name, **`[`** and **`]`** make the list narrower or wider.
 
 ## Blanks
 Write `{{topic}}` (double braces) where something changes each time. When you press `Enter`, Arcana asks for each blank in turn and puts your answers into the prompt. Normal braces, for example JSON, are left alone.
 
 ## Give it a good list line
-Add a property `description: one line` at the top of the note (`---` lines around it, together with `type: prompt`). Without it the list shows the first line of the prompt.
+Add a property `description: one line` at the top of the note (`---` lines around it, together with `type: prompt`; a `skill: name` line goes in the same place). Without it the list shows the first line of the prompt.
 """.trim(),
     ),
     GuidePage(

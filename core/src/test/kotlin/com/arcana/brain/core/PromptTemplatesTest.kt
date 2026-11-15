@@ -37,4 +37,20 @@ class PromptTemplatesTest {
         assertTrue(v.read(path).startsWith("---\ntype: prompt\n"))
         assertFailsWith<IllegalArgumentException> { PromptTemplates.create(v, "  ") }
     }
+
+    @Test
+    fun aTemplateCanNameASkillThatIsAttachedWhenItRuns() {
+        val v = vault()
+        val path = PromptTemplates.create(v, "Deep dive", "Research {{topic}}.", "A deep dive", skill = "/research")
+        assertEquals("research", PromptTemplates.list(v).single().skill, "the leading slash is dropped")
+        assertTrue("skill: research" in v.read(path))
+        PromptTemplates.setSkill(v, path, "analyse")
+        val changed = PromptTemplates.list(v).single()
+        assertEquals("analyse", changed.skill)
+        assertEquals("Research {{topic}}.", changed.body, "the prompt and the description stay")
+        assertEquals("A deep dive", changed.description)
+        PromptTemplates.setSkill(v, path, "")
+        assertEquals("", PromptTemplates.list(v).single().skill, "a blank name removes the skill")
+        assertEquals("", PromptTemplates.create(v, "Plain", "Hello").let { p -> PromptTemplates.parse(p, v.read(p)).skill })
+    }
 }
