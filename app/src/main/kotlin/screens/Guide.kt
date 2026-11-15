@@ -296,7 +296,8 @@ Keep the prompts you use often and run them with one key. Press the **Templates*
 - A template is **a note in the `Prompts` folder of your vault**. The text of the note is the prompt. Obsidian can edit it too.
 - **`Enter`** starts a **new chat and sends the prompt** at once.
 - **`u`** puts the prompt in the message field of the chat you are in, without sending, so you can add to it first.
-- **`s`** attaches a **skill** to the template: choose one from the list (or *no skill*). Every time the template runs (`Enter` or `u`), that skill is attached to the chat, as if you had typed `/name`. The list line and the preview show `◆ skill name`. You can also write `skill: name` in the note's properties.
+- **`s`** attaches a **skill or notes** to the template: a list of your skills and notes opens (type to filter); choose a skill to set it (it replaces the skill), a note to add it, or *remove the skill and the notes*. Every time the template runs (`Enter` or `u`), they are attached to the chat, as if you had typed `/name` and `@`. The list line and the preview show `◆ skill name` and `▤ notes`. You can also write `skill: name` and `notes: [Folder/Note.md]` in the note's properties.
+- **While you write a template** (`n`, or `e` to edit), **`Ctrl+O`** opens the same list; your choice goes into the properties at the top of the text, and `Ctrl+S` saves it with the prompt.
 - **`n`** makes a new template (name first, then write it; `Ctrl+S` saves), **`e`** edits, **`d`** moves it to the trash, **`/`** filters by name, **`[`** and **`]`** make the list narrower or wider.
 
 ## Blanks

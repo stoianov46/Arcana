@@ -53,4 +53,28 @@ class PromptTemplatesTest {
         assertEquals("", PromptTemplates.list(v).single().skill, "a blank name removes the skill")
         assertEquals("", PromptTemplates.create(v, "Plain", "Hello").let { p -> PromptTemplates.parse(p, v.read(p)).skill })
     }
+
+    @Test
+    fun theEditorTextTakesASkillAndNotesWithoutLosingThePrompt() {
+        val start = PromptTemplates.noteText("")
+        var text = PromptTemplates.withSkill(start, "/research")
+        text = PromptTemplates.withNote(text, "Notes/A.md")
+        text = PromptTemplates.withNote(text, "Notes/B.md")
+        text = PromptTemplates.withNote(text, "Notes/A.md")
+        val t = PromptTemplates.parse("Prompts/x.md", text + "Do {{it}}.")
+        assertEquals("research", t.skill)
+        assertEquals(listOf("Notes/A.md", "Notes/B.md"), t.notes, "each note once, in order")
+        assertEquals("prompt", Skills.frontmatter(text)["type"], "the other properties stay")
+        assertEquals(listOf("Notes/A.md", "Notes/B.md"), PromptTemplates.parseNotes("[[[Notes/A]].md, \"Notes/B.md\"]".replace("[[[Notes/A]].md", "Notes/A.md")))
+        val cleared = PromptTemplates.parse("Prompts/x.md", PromptTemplates.withoutAttachments(text) + "Do it.")
+        assertEquals("", cleared.skill); assertTrue(cleared.notes.isEmpty())
+        assertEquals("Do it.", cleared.body)
+        val v = vault()
+        val path = PromptTemplates.create(v, "Mix", "Body")
+        PromptTemplates.addNote(v, path, "Notes/A.md"); PromptTemplates.setSkill(v, path, "research")
+        val saved = PromptTemplates.list(v).single()
+        assertEquals(listOf("Notes/A.md"), saved.notes); assertEquals("research", saved.skill); assertEquals("Body", saved.body)
+        PromptTemplates.clearAttachments(v, path)
+        assertTrue(PromptTemplates.list(v).single().let { it.notes.isEmpty() && it.skill.isEmpty() && it.body == "Body" })
+    }
 }
