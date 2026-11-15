@@ -84,6 +84,15 @@ object Oracul {
     fun isSystemPrompt(message: ChatMessage): Boolean = message.role == "user" && !isOpinion(message) &&
         listOf(REDO_PROMPT, TODO_PROMPT, GOAL_PROMPT, REVISE_PROMPT).any { message.content.startsWith(it) }
 
+    /** Which part of Arcana sent a [isSystemPrompt] message, for its title in the chat (read from the text, nothing is stored); null for any other message. */
+    fun systemSource(message: ChatMessage): String? = when {
+        !isSystemPrompt(message) -> null
+        message.content.startsWith(REDO_PROMPT) -> "Controller · redo"
+        message.content.startsWith(TODO_PROMPT) -> "Todo · open steps"
+        message.content.startsWith(GOAL_PROMPT) -> "Goal checker · goal not met"
+        else -> "Reviewer · revise"
+    }
+
     fun isPlan(message: ChatMessage): Boolean = message.role == "user" && message.content.startsWith(MARK_PLAN)
 
     fun isAnalysis(message: ChatMessage): Boolean = message.role == "user" && message.content.startsWith(MARK_ANALYSIS)

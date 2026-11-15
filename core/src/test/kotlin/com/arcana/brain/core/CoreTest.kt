@@ -825,6 +825,9 @@ class CoreTest {
             val advice = e!!.message.orEmpty()
             assertTrue("do NOT guess addresses" in advice && "search_notes" in advice && "unverified" in advice && "wait tool cannot help" in advice, advice)
             assertTrue("read a page you know" !in advice, advice)
+            assertTrue("fetch_url directly" in advice && "never one built from a guess" in advice, advice)
+            assertEquals(50, WebSearch.braveQuery((1..80).joinToString(" ") { "w$it" }).split(" ").size, "Brave takes at most 50 words")
+            assertEquals(400, WebSearch.braveQuery("x".repeat(900)).length, "and 400 characters")
         } finally { WebSearch.resetCooldown() }
     }
 
@@ -2284,6 +2287,39 @@ class CoreTest {
         assertTrue(java.nio.file.Files.readString(file).startsWith("# Memory"), "the rest of the file is untouched")
         assertEquals(0, vault.cleanMemory())
         assertTrue(Vault(java.nio.file.Files.createTempDirectory("arcana-mem3")).auditMemory().clean, "no memory file: nothing to report")
+    }
+
+    @Test
+    fun aSystemMessageNamesThePartOfArcanaThatSentIt() {
+        fun src(text: String) = Oracul.systemSource(ChatMessage("user", text))
+        assertEquals("Controller · redo", src(Oracul.REDO_PROMPT))
+        assertEquals("Todo · open steps", src(Oracul.TODO_PROMPT + ": a; b."))
+        assertEquals("Goal checker · goal not met", src(Oracul.goalContinue("ship it")))
+        assertEquals("Reviewer · revise", src(Oracul.REVISE_PROMPT))
+        assertEquals(null, src("hello"), "a message the user wrote has no source")
+    }
+
+    @Test
+    fun theArtifactListHasOneEntryPerFileAndOpensOnlyVaultNotesInTheLibrary() {
+        val dir = java.nio.file.Files.createTempDirectory("vault").toRealPath()
+        java.nio.file.Files.createDirectories(dir.resolve("Notes"))
+        java.nio.file.Files.writeString(dir.resolve("Notes/Plan.md"), "x")
+        java.nio.file.Files.writeString(dir.resolve("Notes/data.csv"), "x")
+        java.nio.file.Files.createDirectories(dir.resolve(".hidden"))
+        java.nio.file.Files.writeString(dir.resolve(".hidden/a.md"), "x")
+        val outside = java.nio.file.Files.createTempFile("out", ".md")
+        val list = listOf(Artifact("Notes/Plan.md", "created", "create_note", 1), Artifact("Notes/data.csv", "created", "write_file", 2), Artifact("Notes/Plan.md", "edited", "edit_file", 3))
+        val entries = Artifacts.entries(list)
+        assertEquals(listOf("Notes/Plan.md", "Notes/data.csv"), entries.map { it.artifact.path }, "newest first, one per path")
+        assertEquals("edited", entries[0].artifact.action)
+        assertEquals(2, entries[0].times)
+        assertEquals("Notes/Plan.md", Artifacts.libraryNote(entries[0].artifact, dir))
+        assertEquals("Notes/Plan.md", Artifacts.libraryNote(Artifact(dir.resolve("Notes/Plan.md").toString(), "created", "write_file", 1), dir), "an absolute path inside the vault")
+        assertEquals(null, Artifacts.libraryNote(entries[1].artifact, dir), "not Markdown")
+        assertEquals(null, Artifacts.libraryNote(Artifact("Notes/Plan.md", "deleted", "delete_path", 1), dir))
+        assertEquals(null, Artifacts.libraryNote(Artifact("Notes/Gone.md", "created", "create_note", 1), dir), "not there any more")
+        assertEquals(null, Artifacts.libraryNote(Artifact(outside.toString(), "created", "write_file", 1), dir), "outside the vault")
+        assertEquals(null, Artifacts.libraryNote(Artifact(".hidden/a.md", "created", "write_file", 1), dir), "hidden folders are not in the Library")
     }
 
     @Test

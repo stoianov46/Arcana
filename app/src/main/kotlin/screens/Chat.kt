@@ -629,6 +629,7 @@ fun ChatScreen(app: AppContext) {
     val notePicker = remember { PickerState() }
     val input = chat.input
     var mode by remember { mutableStateOf(ChatMode.Chat) }
+    var artifactIndex by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     // Chat opens with the field NOT focused (browsing): j/k/g/s and the number keys are shortcuts until Enter starts typing; Esc leaves the field again.
     var browsing by remember { mutableStateOf(true) }
     var past by remember { mutableStateOf<List<StoredChat>>(emptyList()) }
@@ -988,7 +989,7 @@ fun ChatScreen(app: AppContext) {
             "/flow" -> setFlow(args)
             "/helpers" -> { val on = !app.config.oraculEnabled; app.update(app.config.copy(oraculEnabled = on)); toast(if (on) "Helper models on." else "Helper models off: only ${app.config.model} works (skill roles are separate: /roles).") }
             "/roles" -> { val on = !app.config.skillRolesEnabled; app.update(app.config.copy(skillRolesEnabled = on)); toast(if (on) "Skill roles on: skills use the worker, planner and reviewer they name." else "Skill roles off: a skill is run by ${app.config.model} alone.") }
-            "/artifacts" -> if (chat.artifacts.isEmpty()) toast("Nothing written or changed in this chat yet.") else mode = ChatMode.Artifacts
+            "/artifacts" -> if (chat.artifacts.isEmpty()) toast("Nothing written or changed in this chat yet.") else { artifactIndex = 0; mode = ChatMode.Artifacts }
             "/goal" -> runGoal(args)
             "/mode" -> cycleMode()
             "/autorun" -> toggleAutoRun()
@@ -1062,7 +1063,7 @@ fun ChatScreen(app: AppContext) {
             Command(if (app.config.toolAutoShell) "Shell commands: ask before running again" else "Shell commands: run without asking", "Chat", "/autorun", app.config.toolsEnabled && app.config.toolShell) { toggleAutoRun() },
             Command(if (app.config.toolsEnabled) "Tools: turn off" else "Tools: turn on (read and write notes and files)", "Chat", "/tools") { toggleTools() },
             Command(if (app.config.chatUseVault) "Answer from my vault: turn off" else "Answer from my vault: turn on", "Chat", "/vault") { toggleVault() },
-            Command("Files and notes changed in this chat", "Chat", "Esc then f", chat.artifacts.isNotEmpty()) { mode = ChatMode.Artifacts },
+            Command("Files and notes changed in this chat", "Chat", "Esc then f", chat.artifacts.isNotEmpty()) { artifactIndex = 0; mode = ChatMode.Artifacts },
             Command("Select & copy", "Chat", "Esc then s", entries.isNotEmpty()) { browsing = true; output.beginSelect { toast(it.text) } },
             Command("Append the last answer to a note…", "Chat", "/append", lastAnswer != null) { openTargetPick(Target.Append) },
             Command("Replace a note with the last answer…", "Chat", "/replace", lastAnswer != null) { openTargetPick(Target.Replace) },
@@ -1123,7 +1124,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.Save -> Hints("Enter  save", "Tab  whole chat / last answer", "Ctrl+O  overwrite a note", "Esc  cancel")
         ChatMode.Leave -> Hints("w  save to vault", "Esc  leave chat", "any other key  stay")
         ChatMode.ConfirmClear -> Hints("y  erase this chat", "any other key  keep")
-        ChatMode.Artifacts -> Hints("1-9  open the note in the Library", "any other key  back")
+        ChatMode.Artifacts -> Hints("↑↓  choose", "Enter  open the note in the Library", "1-9  open that one", "any other key  back")
         ChatMode.ConfirmMemory -> Hints("y  remove the repeated lines", "any other key  leave it as it is")
         ChatMode.ConfirmCancel -> Hints("Enter  cancel it", "y  cancel it", "any other key  keep going")
         ChatMode.ConfirmReplace -> Hints("y  replace", "any other key  keep the note")
@@ -1227,12 +1228,20 @@ fun ChatScreen(app: AppContext) {
                 true
             }
             ChatMode.Artifacts -> {
-                val list = chat.artifacts.toList().asReversed()
-                val picked = key.char?.takeIf { it in '1'..'9' }?.let { list.getOrNull(it - '1') }
-                mode = ChatMode.Chat
-                if (picked != null) {
-                    if (picked.path.endsWith(".md") && picked.action != "deleted") navigator.openLibrary(LibraryFilter.All, note = picked.path)
-                    else toast("${picked.path} is not a note in the Library.", error = picked.action == "deleted")
+                val list = Artifacts.entries(chat.artifacts.toList())
+                val root = app.openVault().getOrNull()?.root
+                fun open(i: Int) {
+                    val picked = list.getOrNull(i)?.artifact ?: return
+                    val note = root?.let { Artifacts.libraryNote(picked, it) }
+                    if (note != null) { mode = ChatMode.Chat; navigator.openLibrary(LibraryFilter.All, note = note) }
+                    else toast(if (picked.action == "deleted") "${picked.path} is deleted." else "${picked.path} is not a note the Library can open (only Markdown notes in the vault).", error = picked.action == "deleted")
+                }
+                when {
+                    key == Key.Up -> artifactIndex = (artifactIndex - 1).coerceAtLeast(0)
+                    key == Key.Down -> artifactIndex = (artifactIndex + 1).coerceAtMost((list.size - 1).coerceAtLeast(0))
+                    key == Key.Enter -> open(artifactIndex)
+                    key.char in '1'..'9' -> open(key.char!! - '1')
+                    else -> mode = ChatMode.Chat
                 }
                 true
             }
@@ -1356,7 +1365,7 @@ fun ChatScreen(app: AppContext) {
                 browsing -> when {
                     key == Key.Enter -> { browsing = false; true }
                     // f: the files and notes the model wrote or changed in this chat (the ✦ pill)
-                    key.char == 'f' && chat.artifacts.isNotEmpty() -> { mode = ChatMode.Artifacts; true }
+                    key.char == 'f' && chat.artifacts.isNotEmpty() -> { artifactIndex = 0; mode = ChatMode.Artifacts; true }
                     else -> output.handle(key, entries, letters = true, onNotice = { toast(it.text) })
                 }
                 // in a message of several lines Up/Down move the caret between them; on the first / last line they scroll the conversation
@@ -1422,14 +1431,28 @@ fun ChatScreen(app: AppContext) {
                 ActionBar(listOf(ActionItem("y", "Erase chat", accent = Palette.Red), ActionItem("any other key", "Keep it", accent = Palette.Cta)), style = ActionStyle.Button)
             }
             ChatMode.Artifacts -> {
-                val list = chat.artifacts.toList().asReversed()
+                val list = Artifacts.entries(chat.artifacts.toList())
+                val root = app.openVault().getOrNull()?.root
+                val openable = list.map { e -> root?.let { Artifacts.libraryNote(e.artifact, it) } != null }
+                val sel = artifactIndex.coerceIn(0, (list.size - 1).coerceAtLeast(0))
+                val rows = 12
+                val first = (sel - rows + 1).coerceAtLeast(0)
                 ScreenHeader("Chat", "Written or changed in this chat")
                 VGap()
-                Panel("${list.map { it.path }.distinct().size} files and notes · newest first", accent = Palette.Purple) {
-                    list.take(9).forEachIndexed { i, a -> Label("${i + 1}  ${Artifacts.line(a)}", color = if (a.action == "deleted") Palette.Red else Palette.Text) }
-                    if (list.size > 9) Hint("… and ${list.size - 9} older")
+                Panel("${list.size} files and notes · newest first · ▤ opens in the Library", accent = Palette.Purple) {
+                    if (first > 0) Hint("… $first newer")
+                    list.drop(first).take(rows).forEachIndexed { j, e ->
+                        val i = first + j
+                        val a = e.artifact
+                        val mark = if (app.config.plainGlyphs) (if (openable[i]) "[n]" else "[ ]") else if (openable[i]) "▤" else "❐"
+                        val num = if (i < 9) "${i + 1}" else " "
+                        val times = if (e.times > 1) "  ×${e.times}" else ""
+                        val color = if (a.action == "deleted") Palette.Red else if (openable[i]) Palette.Text else Palette.Muted
+                        Label("${if (i == sel) "›" else " "} $num $mark ${Artifacts.line(a)}$times", color = if (i == sel) Palette.Cta else color)
+                    }
+                    if (first + rows < list.size) Hint("… ${list.size - first - rows} older")
                 }
-                ActionBar(listOf(ActionItem("1-9", "Open in the Library", accent = Palette.Cta), ActionItem("any other key", "Back")), style = ActionStyle.Button)
+                ActionBar(listOf(ActionItem("↑↓", "Choose"), ActionItem("Enter", "Open in the Library", openable.getOrNull(sel) == true, accent = Palette.Cta), ActionItem("1-9", "Open that one"), ActionItem("any other key", "Back")), style = ActionStyle.Button)
             }
             ChatMode.ConfirmMemory -> {
                 val audit = memoryAudit
@@ -1776,8 +1799,9 @@ internal fun messageLines(app: AppContext, message: ChatMessage, entry: Int, wid
     if (Oracul.isSystemPrompt(message)) {
         if (app.config.systemMessages == "hidden") return emptyList()
         return buildList {
-            add(Line(if (app.config.plainGlyphs) "[system] Arcana to the model" else "⚙ System · Arcana to the model", Palette.ConsoleDim, bold = true))
-            wrap(sanitizeForTerminal(message.content), (width - 2).coerceAtLeast(10)).forEach { add(Line("  $it", Palette.ConsoleDim)) }
+            val source = Oracul.systemSource(message) ?: "Arcana"
+            add(Line(if (app.config.plainGlyphs) "[system] $source -> model" else "⚙ System · $source → model", Palette.ConsoleTool, bold = true))
+            wrap(sanitizeForTerminal(message.content), (width - 2).coerceAtLeast(10)).forEach { add(Line("  $it", Palette.Muted)) }
             add(Line(""))
         }
     }
@@ -1804,7 +1828,7 @@ internal fun messageLines(app: AppContext, message: ChatMessage, entry: Int, wid
             addAll(thinkingLines(message.thinking, config.thinkingView, config.plainGlyphs, width))
             addAll(renderMarkdown(parseMarkdown(message.content), width, entry = { entry + it }, rich = config.renderMarkdown, plainGlyphs = config.plainGlyphs))
             // the tools it asked for, one line and one select entry each
-            message.toolCalls.forEachIndexed { i, call -> add(Line("${if (config.plainGlyphs) "[tool]" else "⚙"} ${call.name}  ${sanitizeForTerminal(callSummary(call, config))}".take(width), Palette.ConsoleTool, bold = true, entry = entry + blocks + i)) }
+            message.toolCalls.forEachIndexed { i, call -> add(Line("${if (config.plainGlyphs) "[tool]" else "⚙"} ${call.name}  ${sanitizeForTerminal(callSummary(call, config))}".take(width), if (call.name == com.arcana.brain.core.TODO) Palette.Todo else Palette.ConsoleTool, bold = true, entry = entry + blocks + i)) }
             // the notes the answer was built from, when the vault was searched
             if (message.sources.isNotEmpty()) {
                 addAll(sourceLines(message, config.plainGlyphs, width))
@@ -1940,8 +1964,8 @@ private fun toolResultLines(message: ChatMessage, plain: Boolean, width: Int, en
     if (message.toolName == com.arcana.brain.core.TODO && !text.startsWith("Error:")) {
         val items = text.lineSequence().takeWhile { it.firstOrNull()?.isDigit() == true }.map { sanitizeForTerminal(it) }.toList()
         val summary = text.lineSequence().drop(items.size).firstOrNull().orEmpty()
-        return items.map { l -> Line("    ${if (plain) l else l.replace("[x]", "☑").replace("[~]", "▸").replace("[ ]", "☐")}".take(width), if ("[x]" in l) Palette.Green else if ("[~]" in l) Palette.Cta else Palette.Muted, entry = entry) } +
-            listOf(Line("    ${sanitizeForTerminal(summary)}".take(width), Palette.Muted, entry = entry), Line(""))
+        return items.map { l -> Line("    ${if (plain) l else l.replace("[x]", "☑").replace("[~]", "▸").replace("[ ]", "☐")}".take(width), Palette.Todo, bold = "[~]" in l, entry = entry) } +
+            listOf(Line("    ${sanitizeForTerminal(summary)}".take(width), Palette.Todo, entry = entry), Line(""))
     }
     val failed = text.startsWith("Error:") || text.startsWith("The user denied") || text.startsWith("The user did not allow") ||
         text.startsWith("Timed out") || (text.startsWith("exit code ") && !text.startsWith("exit code 0"))

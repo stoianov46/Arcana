@@ -35,7 +35,7 @@ class MonochromeThemeTest {
     @Test
     fun everyColourIsTheBlueHueExceptTheRoseRed() {
         for ((role, rgb) in c) {
-            if (role in setOf("background", "red")) continue
+            if (role in setOf("background", "red", "todo")) continue
             assertTrue(hue(rgb) in 200.0..225.0, "$role is blue (hue ${hue(rgb).toInt()})")
         }
         assertTrue(hue(c.getValue("red")) in 320.0..350.0, "errors are a rose, so they still stand out")
@@ -56,6 +56,15 @@ class MonochromeThemeTest {
         val steps = listOf("background", "surface", "entry", "surfaceHigh").map { lum(c.getValue(it)) }
         assertEquals(steps.sorted(), steps, "background < surface < entry < surfaceHigh")
         assertTrue(lum(c.getValue("selected")) > lum(c.getValue("entry")), "the selected row is lighter than the rows around it")
+    }
+
+    @Test
+    fun theTaskListIsARealGreenReadableOnEveryLayer() {
+        assertTrue(hue(c.getValue("todo")) in 120.0..160.0, "todo is green")
+        for (layer in listOf("background", "surface", "entry", "selected")) assertTrue(contrast(c.getValue("todo"), c.getValue(layer)) >= 4.5, "todo on $layer")
+        assertEquals(c.getValue("todo"), com.arcana.brain.app.design.Themes.MonochromeAccent.colors.getValue("todo"))
+        val d = com.arcana.brain.app.design.Colors(Themes.Dark)
+        assertEquals(d.Green, d.Todo, "other themes keep the green role")
     }
 
     @Test

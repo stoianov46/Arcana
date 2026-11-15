@@ -60,7 +60,7 @@ object WebSearch {
                 said += e.message.orEmpty()
             }
         }
-        val advice = " Web search is paused, and the wait tool cannot help (it sleeps at most 2 minutes). Do NOT call web_search again, and do NOT guess addresses for fetch_url. Carry on from the vault (search_notes, read_note), pages the user gave you and what you know; mark every claim that needs the web \"unverified\" and say in your answer or report that search was unavailable. Tell the user: Ollama search (a free key from ollama.com/settings/keys, in Settings → Tools → Ollama API key), Brave Search (Settings → Tools → Brave API key) or their own SearXNG server (Settings → Tools → Search backend and Search address) makes searching dependable."
+        val advice = " Web search is paused, and the wait tool cannot help (it sleeps at most 2 minutes). Do NOT call web_search again, and do NOT guess addresses for fetch_url. You CAN still call fetch_url directly on an address you are certain of: one the user gave you, one written in a vault note, or the official documentation or home page of the very thing asked about; never one built from a guess (a 404 on a guessed address is not an answer). Carry on from the vault (search_notes, read_note), those pages and what you know; mark every claim that needs the web \"unverified\" and say in your answer or report that search was unavailable. Tell the user: Ollama search (a free key from ollama.com/settings/keys, in Settings → Tools → Ollama API key), Brave Search (Settings → Tools → Brave API key) or their own SearXNG server (Settings → Tools → Search backend and Search address) makes searching dependable."
         throw IllegalArgumentException(said.first() + (if (said.size > 1) " Also tried: " + said.drop(1).joinToString(" ") else "") + advice)
     }
 
@@ -103,7 +103,7 @@ object WebSearch {
             }
             "brave" -> {
                 require(key.isNotBlank()) { "No Brave Search API key is set. Add it in Settings → Tools → Brave API key, or choose another search backend." }
-                parseBrave(get("https://api.search.brave.com/res/v1/web/search?q=$q&count=$n", mapOf("X-Subscription-Token" to key.trim(), "Accept" to "application/json"), "Brave Search"), n)
+                parseBrave(get("https://api.search.brave.com/res/v1/web/search?q=${URLEncoder.encode(braveQuery(query), Charsets.UTF_8)}&count=$n", mapOf("X-Subscription-Token" to key.trim(), "Accept" to "application/json"), "Brave Search"), n)
             }
             else -> {
                 val now = System.currentTimeMillis()
@@ -117,6 +117,9 @@ object WebSearch {
             }
         }
     }
+
+    /** Brave answers HTTP 422 to a query over 400 characters or 50 words, so a long one is cut to its limits instead of failing. */
+    internal fun braveQuery(query: String): String = query.trim().split(Regex("\\s+")).take(50).joinToString(" ").take(400).trim()
 
     private fun get(url: String, headers: Map<String, String>, name: String): String {
         val request = HttpRequest.newBuilder(URI(url)).timeout(Duration.ofSeconds(WebPolicy.TIMEOUT_SECONDS))
@@ -132,6 +135,7 @@ object WebSearch {
         val code = response.statusCode()
         if (code == 403 && name == "SearXNG") throw IllegalArgumentException("SearXNG refused the request (HTTP 403). Its settings must allow format json.")
         if (code == 401 || code == 403) throw IllegalArgumentException("$name refused the request (HTTP $code): check the API key.")
+        if (code == 402) throw SearchLimited("$name says this account's limit or plan is used up (HTTP 402). Try again later or choose another search backend in Settings → Tools.")
         if (code == 429 || code == 202) throw SearchLimited("$name is limiting requests right now (HTTP $code). Try again later or choose another search backend in Settings → Tools.")
         if (code !in 200..299) throw IllegalArgumentException("$name answered HTTP $code.")
         return response.body().take(WebPolicy.MAX_BYTES)

@@ -236,6 +236,8 @@ object Themes {
             "text" to 0xA7B6D6, "muted" to 0x7B8AAA, "dim" to 0x4A566B,
             "green" to 0xB8D4E8, "red" to 0xC48CA0, "blue" to 0x8EAEEB, "orange" to 0xC8D2E6, "purple" to 0x7F9AD0, "gray" to 0x7A869A, "cyan" to 0xD3DDF2,
             "codeFg" to 0xC8D2E6,
+            // the one other exception besides red: the task list in the chat is a real green (it is the plan the user follows), readable on every layer
+            "todo" to 0x7FD6A4,
             // the console (model output), told apart by brightness and saturation: headings and links the brightest, bullets the accent blue, code a saturated blue on a chip
             "consoleUser" to 0xD3DDF2, "consoleTool" to 0x7F9AD0, "consoleCodeFg" to 0x8EAEEB, "consoleCodeBg" to 0x111C2B,
         ),
@@ -396,6 +398,9 @@ class Colors(val spec: ThemeSpec) {
 
     /** List markers. */
     val ConsoleTool = hex(opt("consoleTool") { orangeRgb })
+
+    /** The task list in the chat (its call line and its items): the green role, unless a theme sets `todo` (the monochrome themes do: a real green, since their `green` is a blue). */
+    val Todo = hex(opt("todo") { greenRgb })
     val ConsoleOk = hex(opt("consoleOk") { greenRgb })
     val ConsoleErr = hex(opt("consoleErr") { redRgb })
 
@@ -496,6 +501,7 @@ object Palette {
     val ConsoleDim get() = colors.ConsoleDim
     val ConsoleUser get() = colors.ConsoleUser
     val ConsoleTool get() = colors.ConsoleTool
+    val Todo get() = colors.Todo
     val ConsoleOk get() = colors.ConsoleOk
     val ConsoleErr get() = colors.ConsoleErr
     val ConsoleCodeFg get() = colors.ConsoleCodeFg

@@ -446,10 +446,10 @@ internal fun StatusPane(app: AppContext, chat: ChatSession, d: PaneEditor, focus
         val tone = if (!known) Palette.Dim else contextColor(share)
         val ink = if (plain) "#" else Chart.BarStyle.Slim.on.toString()
         val hollow = if (plain) "-" else Chart.BarStyle.Slim.off.toString()
-        // three tones in one bar: the filled context (green, orange, red by how full), the room up to the auto-compact line (blue), the rest of the window (quiet)
+        // three tones in one bar: the filled context (green, orange, red by how full), the room up to the auto-compact line (always blue, also in Monochrome Accent, where the fill itself is amber), the rest of the window (quiet)
         Row {
             Label(ink.repeat(cellsOf.used), color = tone)
-            Label(hollow.repeat(cellsOf.room), color = Palette.StatusAccent ?: Palette.Blue)
+            Label(hollow.repeat(cellsOf.room), color = Palette.Blue)
             Label(hollow.repeat(cellsOf.free), color = Palette.Dim)
             Label(if (!known) "  —" else "  ${"%.0f".format(share * 100)}%", color = tone, textStyle = TextStyle.Bold)
         }
@@ -457,7 +457,7 @@ internal fun StatusPane(app: AppContext, chat: ChatSession, d: PaneEditor, focus
         if (!tight) Row { Label(ink + " ", color = tone); Label(view.usedText + " of " + view.windowText.removePrefix("window "), color = Palette.Muted) }
         if (c.autoCompactPercent > 0 && !chat.compacting) {
             Row {
-                Label(hollow + " ", color = if (view.warn) Palette.Orange else Palette.StatusAccent ?: Palette.Blue)
+                Label(hollow + " ", color = if (view.warn) Palette.Orange else Palette.Blue)
                 Label(if (view.warn) "due: compacts next" else if (view.roomText.isNotEmpty()) view.roomText.removeSuffix(" left before it") + " to compact" else "auto-compact ${c.autoCompactPercent} %", color = if (view.warn) Palette.Orange else Palette.Muted, textStyle = if (view.warn) TextStyle.Bold else TextStyle.Unspecified)
             }
         }
