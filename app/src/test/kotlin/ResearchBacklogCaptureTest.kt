@@ -5,7 +5,6 @@ import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.ConfigStore
 import com.arcana.brain.core.EventStore
 import com.arcana.brain.core.ResearchBacklog
-import com.arcana.brain.core.SessionStore
 import com.arcana.brain.core.ToolUseStore
 import com.arcana.brain.core.UsageStore
 import java.nio.file.Files
@@ -19,7 +18,7 @@ class ResearchBacklogCaptureTest {
     private fun app(vault: Path): AppContext {
         val dir = Files.createTempDirectory("arcana-backlog")
         val store = ConfigStore(dir.resolve("config.json")).also { it.save(AppConfig(vaultPath = vault.toString())) }
-        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), SessionStore(dir.resolve("sessions")), EventStore(dir.resolve("events.jsonl")))
+        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), EventStore(dir.resolve("events.jsonl")))
     }
 
     @Test

@@ -27,7 +27,6 @@ import com.arcana.brain.core.ImageFiles
 import com.arcana.brain.core.Note
 import com.arcana.brain.core.NoteTask
 import com.arcana.brain.core.Prompts
-import com.arcana.brain.core.SessionKind
 import com.arcana.brain.core.Vault
 import java.nio.file.Path
 
@@ -199,7 +198,6 @@ private fun NoteComposerContent(app: AppContext, vault: Vault) {
         applied = false
         usedPictures = sent.picturePaths
         attachments.clear()
-        app.session.log(SessionKind.Task, subject(), source?.path)
         conversation += messages
         mode = Mode.Result
         notice = null
@@ -318,7 +316,6 @@ private fun NoteComposerContent(app: AppContext, vault: Vault) {
                 shown
             }
             val saved = vault.create(app.config.outputFolder, title.text, body, app.config.model)
-            app.session.log(SessionKind.Created, saved.title, saved.path)
             app.brain.changed()
             applied = true
             notes = vault.notes()
@@ -330,7 +327,6 @@ private fun NoteComposerContent(app: AppContext, vault: Vault) {
     fun appendTo(target: Note) {
         notice = runCatching {
             vault.append(target.path, task.heading(input.text), shown)
-            app.session.log(SessionKind.Appended, "${task.label} → ${target.title}", target.path)
             app.brain.changed()
             applied = true
             Notice("Added to ${target.path}")
@@ -342,7 +338,6 @@ private fun NoteComposerContent(app: AppContext, vault: Vault) {
         val note = source ?: return
         notice = runCatching {
             val backup = vault.replace(note.path, shown)
-            app.session.log(SessionKind.Replaced, note.title, note.path)
             app.brain.changed()
             applied = true
             Notice("Replaced ${note.path}. The old text is kept in $backup")

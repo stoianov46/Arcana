@@ -93,7 +93,6 @@ class InputTest {
 
     @Test
     fun mosaicKeyEventsMapOntoTheKeyModel() {
-        assertEquals(Key.Thinking, KeyEvent("t", ctrl = true).toKey(), "Ctrl+T resizes the thinking pane")
         assertEquals(Key.Enter, KeyEvent("Enter").toKey())
         assertEquals(Key.BackTab, KeyEvent("Tab", shift = true).toKey())
         assertEquals(Key.Select(Key.Right), KeyEvent("ArrowRight", shift = true).toKey())

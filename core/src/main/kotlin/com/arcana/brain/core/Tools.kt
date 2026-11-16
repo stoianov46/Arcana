@@ -105,14 +105,15 @@ class FileAccess(roots: List<Path>) {
  * files inside the allowed folders. A failed call returns "Error: …" as its result, so the model can react to it.
  */
 class ToolBox(private val vault: Vault?, folders: List<Path>, private val backups: Path, private val outputFolder: String = "", private val model: String = "Arcana", private val readOnly: Boolean = false, private val shell: Boolean = false, private val web: Boolean = false,
-    private val searchBackend: String = "duckduckgo", private val searchUrl: String = "", private val searchKey: String = "",
+    private val searchBackend: String = "duckduckgo", private val searchUrl: String = "", private val searchKey: String = "", private val ollamaKey: String = "",
     /** The vault folder that holds skills (see [Skills]); blank turns skills off. */ private val skillsFolder: String = "",
     /** The project the user works on (see [projectNote]): allowed like the vault, and what a relative path or a default folder means. */ private val project: Path? = null,
     /** The semantic search of the vault ([SemanticSearch]); null = no embedding model is set up, and the `semantic_search` tool is not offered. */ private val semantic: SemanticSearch? = null,
     /** How the vault search weighs and filters its results (Settings → Search); see [SearchTuning]. */ private val searchTuning: SearchTuning = SearchTuning(),
     /** The search of the project's files (the working folder and the search folders): null = none, and the `search_files` tool is not offered. */ private val projectSearch: ProjectSearch? = null,
     /** The notes of the vault are searched (Settings → Search → Search in has `vault`): without it `search_vault` is not offered. */ private val notesSearch: Boolean = true,
-    /** How a search is done when the model does not say (the user's Search by setting). */ private val searchMode: RetrievalMode = RetrievalMode.Both) {
+    /** How a search is done when the model does not say (the user's Search by setting). */ private val searchMode: RetrievalMode = RetrievalMode.Both,
+    /** The run these tools work for, and where its notes are recorded (see [Provenance]); null = nobody records where notes came from. */ private val origin: Origin? = null, private val provenance: Provenance? = null) {
     val access = FileAccess(listOfNotNull(vault?.root, project) + folders + listOfNotNull(Layout.globalSkills().takeIf { skillsFolder.isNotBlank() && java.nio.file.Files.isDirectory(it) })) // the user's own skills (see [Layout]) are readable too
 
     /** The skills found now: a toolbox is built for each message, so a skill added in Obsidian is there at once. */
@@ -416,7 +417,8 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
             ToolRisk.Write, { "“${it.str("title")}”" + it.str("folder").let { f -> if (f.isEmpty()) "" else " in $f" } },
             { a -> listOf("New note “${a.str("title")}”${a.str("folder").let { if (it.isEmpty()) "" else " in $it" }}") + a.str("content").lines().take(PREVIEW_LINES).map { "+ $it" } },
         ) { a ->
-            val note = vault.create(a.str("folder").trim('/').ifEmpty { outputFolder }, a.str("title"), a.str("content"), model)
+            val note = vault.create(a.str("folder").trim('/').ifEmpty { outputFolder }, a.str("title"), a.str("content"), model, origin)
+            origin?.let { provenance?.touched(it, note.path, NoteAction.Created) }
             "Created ${note.path}"
         },
         ToolSpec(
@@ -429,7 +431,9 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
             ToolRisk.Write, { it.str("path") },
             { a -> listOf("Set properties of ${a.str("path")}") + a.str("properties").lines().filter { it.isNotBlank() }.take(PREVIEW_LINES).map { "+ $it" } },
         ) { a ->
-            val keys = vault.setProperties(notePath(a.str("path")), a.str("properties"))
+            val path = notePath(a.str("path"))
+            val keys = vault.setProperties(path, a.str("properties"))
+            origin?.let { provenance?.touched(it, path, NoteAction.Properties) }
             "Set ${keys.joinToString()} in ${a.str("path")}"
         },
         ToolSpec(
@@ -469,13 +473,15 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
             schema(
                 "path" to ("string" to "Path of the note inside the vault"),
                 "content" to ("string" to "The Markdown to add"),
-                "heading" to ("string" to "A heading to put above it (optional)"),
+                "heading" to ("string" to "A heading to put above it (optional; leave empty when content already starts with its own heading)"),
                 required = listOf("path", "content"),
             ),
             ToolRisk.Write, { it.str("path") },
             { a -> listOf("Add to ${a.str("path")}") + a.str("content").lines().take(PREVIEW_LINES).map { "+ $it" } },
         ) { a ->
-            vault.append(notePath(a.str("path")), a.str("heading").ifBlank { null }, a.str("content"))
+            val path = notePath(a.str("path"))
+            vault.append(path, a.str("heading").ifBlank { null }, a.str("content"))
+            origin?.let { provenance?.touched(it, path, NoteAction.Appended) }
             "Added to ${a.str("path")}"
         },
     )
@@ -613,7 +619,7 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
         preview = { a -> listOf("Search the web for:", a.str("query").trim(), "Sent to ${WebSearch.describe(searchBackend, searchUrl)}; nothing else leaves your computer.") },
     ) { a ->
         val query = a.str("query").trim()
-        val (used, results) = WebSearch.searchWithFallback(query, a.int("limit") ?: WebSearch.DEFAULT_LIMIT, searchBackend, searchUrl, searchKey)
+        val (used, results) = WebSearch.searchWithFallback(query, a.int("limit") ?: WebSearch.DEFAULT_LIMIT, searchBackend, searchUrl, searchKey, ollamaKey)
         WebSearch.format(query, used, results) + (if (used != searchBackend.ifBlank { "duckduckgo" }) "\n(The chosen search backend was limiting requests, so $used answered.)" else "")
     }
 

@@ -77,7 +77,7 @@ class VaultIndex(val notes: List<NoteInfo>) {
     }
 
     /** The vault's vital signs and its to-do list: what is waiting, disconnected, untagged, broken or forgotten. */
-    fun health(inboxFolder: String, staleDays: Int, now: Long = System.currentTimeMillis()): BrainHealth {
+    fun health(staleDays: Int, now: Long = System.currentTimeMillis()): BrainHealth {
         val n = notes.size
         fun percent(part: Int) = if (n == 0) 100 else ((n - part) * 100.0 / n).toInt()
         val orphanCount = orphans.size
@@ -87,7 +87,6 @@ class VaultIndex(val notes: List<NoteInfo>) {
             words = totalWords,
             links = totalLinks,
             tags = tagCounts.size,
-            inbox = inFolder(inboxFolder).size,
             orphans = orphanCount,
             untagged = untaggedCount,
             brokenNotes = notes.count { it.unresolved.isNotEmpty() },
@@ -258,8 +257,6 @@ data class BrainHealth(
     val words: Long,
     val links: Int,
     val tags: Int,
-    /** Notes waiting in the inbox folder. */
-    val inbox: Int,
     /** Notes with no links in or out. */
     val orphans: Int,
     val untagged: Int,

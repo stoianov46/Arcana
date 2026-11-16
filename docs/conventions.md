@@ -63,7 +63,6 @@ Create `val attachments = remember { app.attachments() }` (or `app.attachments(f
 1. Prompt in `Prompts` (core) + unit test of its shape.
 2. Run it through `Generation` (`rememberGeneration(app, "<Feature>")` so usage is recorded under that name).
 3. Render with `GenerationView`/`renderMarkdown`; let the user review before anything is written to the vault.
-4. Log to the session (`app.session.log(SessionKind.…)`); add a `SessionKind` + label if it is a new kind of activity.
 
 ### Add a tool
 See [tools-and-agent.md](tools-and-agent.md#how-to-add-a-tool). A new tool also needs: a row in `Arcana LLM Reference.md` (vault), a `SlashKind.forTool` mapping if it is not Read/Write/Shell/Web, and its name in the Guide.

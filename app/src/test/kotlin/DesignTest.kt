@@ -268,13 +268,15 @@ class DesignTest {
 
     @Test
     fun savedTabOrderIsAppliedWithinSectionsAndRepairsItself() {
-        assertEquals(Screen.entries.toList(), Screen.ordered(emptyList()))
+        val tabs = Screen.entries.filter { it.inSidebar }
+        assertEquals(tabs, Screen.ordered(emptyList()))
+        assertEquals(tabs, Screen.ordered(listOf("Session", "Inbox", "Gone")), "a saved order that names screens that no longer exist is repaired")
         val moved = Screen.ordered(listOf("Chat", "Home", "Settings", "Usage"))
         assertEquals(listOf(Screen.Chat, Screen.Home), moved.take(2))
         assertEquals(listOf(Screen.Settings, Screen.Usage, Screen.Guide, Screen.Changelog), moved.filter { it.group == Screen.Settings.group }, "the Account section keeps its own order")
-        assertEquals(Screen.entries.toSet(), moved.toSet(), "screens the list leaves out are slotted back in")
+        assertEquals(tabs.toSet(), moved.toSet(), "screens the list leaves out are slotted back in")
         // a name from another version, or a repeated one, is ignored
-        assertEquals(Screen.entries.size, Screen.ordered(listOf("Gone", "Chat", "Chat")).size)
+        assertEquals(tabs.size, Screen.ordered(listOf("Gone", "Chat", "Chat")).size)
         // a section never splits, even from a hand-edited file: sections follow the order of their first tab
         val crossed = Screen.ordered(listOf("Settings", "Home", "Usage"))
         assertEquals(listOf(Screen.Settings, Screen.Usage, Screen.Guide, Screen.Changelog), crossed.take(4))
@@ -638,7 +640,7 @@ class DesignTest {
         assertEquals("usage: /some_new_tool <path> <content>", toolUsage("some_new_tool", listOf("path", "content")), "a tool without a curated example shows its required arguments")
         assertEquals("needs no text: just /another", toolUsage("another", emptyList()))
         val withText = SlashCommands.filter { it.usage.isNotEmpty() }.map { it.name }
-        assertEquals(listOf("/oracul", "/revise", "/compare", "/effort", "/memory", "/flow", "/goal"), withText, "exactly the commands that accept text carry an example")
+        assertEquals(listOf("/oracul", "/revise", "/compare", "/effort", "/sampling", "/memory", "/flow", "/goal"), withText, "exactly the commands that accept text carry an example")
         assertTrue(SlashCommands.filter { it.usage.isEmpty() }.none { it.name in setOf("/oracul", "/revise", "/compare", "/flow", "/goal", "/memory") })
     }
 
@@ -703,5 +705,94 @@ class DesignTest {
         state.offset = 25 // the reader scrolled down
         state.applyTop()
         assertEquals(25, state.offset, "asked once: it does not pull the view back to the top every frame")
+    }
+}
+
+class ChartTest {
+    @kotlin.test.Test
+    fun sparkScalesToTheLargestAndMarksQuietWeeksWithADot() {
+        kotlin.test.assertEquals("·▁▄█", com.arcana.brain.app.design.Chart.spark(listOf(0, 1, 4, 8)))
+        kotlin.test.assertEquals("···", com.arcana.brain.app.design.Chart.spark(listOf(0, 0, 0)))
+        kotlin.test.assertEquals("", com.arcana.brain.app.design.Chart.spark(emptyList()))
+        kotlin.test.assertEquals("▁█", com.arcana.brain.app.design.Chart.spark(listOf(1, 1000)), "a small value is still a bar")
+    }
+
+    @kotlin.test.Test
+    fun barFillsInProportionAndNeverHidesASmallValue() {
+        val bar = { v: Int, m: Int, w: Int -> com.arcana.brain.app.design.Chart.bar(v, m, w) }
+        kotlin.test.assertEquals("█████░░░░░", bar(50, 100, 10))
+        kotlin.test.assertEquals("██████████", bar(100, 100, 10))
+        kotlin.test.assertEquals("█░░░░░░░░░", bar(1, 100, 10), "above zero shows at least one cell")
+        kotlin.test.assertEquals("░░░░░░░░░░", bar(0, 100, 10))
+        kotlin.test.assertEquals("░░░░", bar(5, 0, 4))
+        kotlin.test.assertEquals("", bar(5, 10, 0))
+    }
+
+    @kotlin.test.Test
+    fun heatLevelsRunFromNothingToTheBusiestAndTheCalendarHasSevenRows() {
+        val chart = com.arcana.brain.app.design.Chart
+        kotlin.test.assertEquals(listOf(0, 1, 2, 4, 4), listOf(0, 1, 5, 8, 10).map { chart.heatLevel(it, 10) })
+        kotlin.test.assertEquals('·', chart.heatGlyph(0))
+        kotlin.test.assertEquals('█', chart.heatGlyph(4))
+        val monday = java.time.LocalDate.of(2026, 11, 2)
+        val days = (0 until 9).map { com.arcana.brain.core.DayPoint(monday.plusDays(it.toLong()), if (it == 0) 5 else 0) }
+        val grid = chart.heatLevels(days, 2)
+        kotlin.test.assertEquals(7, grid.size)
+        kotlin.test.assertEquals(4, grid[0][0], "the busiest day is the top level")
+        kotlin.test.assertEquals(0, grid[1][0])
+        kotlin.test.assertEquals(null, grid[3][1], "days after today are blank")
+    }
+}
+
+class ChartPartsTest {
+    @kotlin.test.Test
+    fun aBarSplitsIntoItsFilledAndEmptyCells() {
+        kotlin.test.assertEquals("████" to "░░░░░░", com.arcana.brain.app.design.Chart.barParts(40, 100, 10))
+        kotlin.test.assertEquals("" to "░░░", com.arcana.brain.app.design.Chart.barParts(0, 100, 3))
+        kotlin.test.assertEquals("███" to "", com.arcana.brain.app.design.Chart.barParts(100, 100, 3))
+    }
+}
+
+class CaptureKindTest {
+    private fun text(s: String, kind: com.arcana.brain.core.WorkKind) = com.arcana.brain.app.navigation.captureText(s, kind)
+    private val todo = com.arcana.brain.core.WorkKind.Todo
+    @kotlin.test.Test
+    fun theChosenKindPutsItsPrefixInFrontAndATypedPrefixIsNeverDoubled() {
+        kotlin.test.assertEquals("todo: buy a domain", text("buy a domain", todo))
+        kotlin.test.assertEquals("question: why", text("why", com.arcana.brain.core.WorkKind.Question))
+        kotlin.test.assertEquals("research: outbox pattern", text("outbox pattern", com.arcana.brain.core.WorkKind.Research))
+        kotlin.test.assertEquals("an idea", text("an idea", com.arcana.brain.core.WorkKind.Thought), "a plain thought is saved as typed")
+        kotlin.test.assertEquals("todo: already", text("todo: already", todo))
+        kotlin.test.assertEquals("question: typed wins", text("question: typed wins", todo), "a prefix typed by hand beats the kind chosen")
+        kotlin.test.assertEquals("", text("", todo))
+    }
+}
+
+private typealias Style = com.arcana.brain.app.design.Chart.BarStyle
+
+class BarStyleTest {
+    private val chart = com.arcana.brain.app.design.Chart
+
+    @kotlin.test.Test
+    fun everyStyleFillsInProportionAndShowsAtLeastOneCellForAnyValue() {
+        for (style in Style.entries) {
+            val bar = chart.bar(40, 100, 10, style)
+            kotlin.test.assertEquals(10, bar.length, "$style keeps its width")
+            kotlin.test.assertEquals(4, bar.count { it == style.on }, "$style fills 4 of 10")
+            kotlin.test.assertEquals(6, bar.count { it == style.off })
+            kotlin.test.assertEquals(1, chart.bar(1, 1000, 10, style).count { it == style.on }, "$style: a small value still shows")
+            kotlin.test.assertEquals(0, chart.bar(0, 100, 10, style).count { it == style.on }, "$style: zero shows nothing")
+        }
+    }
+
+    @kotlin.test.Test
+    fun theStylesHaveTheGlyphsEachChartWasGiven() {
+        kotlin.test.assertEquals("━━━━──", chart.bar(4, 6, 6, Style.Line))
+        kotlin.test.assertEquals("▰▰▱▱", chart.bar(2, 4, 4, Style.Slim))
+        kotlin.test.assertEquals("▄▄▁▁", chart.bar(2, 4, 4, Style.Half))
+        kotlin.test.assertEquals("●○○○", chart.bar(1, 4, 4, Style.Dots))
+        kotlin.test.assertEquals("⣿⣿⣿⣀", chart.bar(3, 4, 4, Style.Braille))
+        kotlin.test.assertEquals("██░░", chart.bar(2, 4, 4), "the default stays the solid block")
+        kotlin.test.assertEquals(7, chart.filledCells(38, 100, 20), "38% of 20 cells is 7")
     }
 }

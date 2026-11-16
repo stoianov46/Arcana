@@ -18,7 +18,10 @@ import com.arcana.brain.app.navigation.Hints
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.ModelFit.Role as FitRole
 import com.arcana.brain.core.AppConfig
+import com.arcana.brain.core.Sampling
 import com.arcana.brain.core.Flow
+import com.arcana.brain.core.StageKind
+import com.arcana.brain.core.Oracul
 import com.arcana.brain.core.STEP_LIMIT_AUTO_ROUNDS
 import com.arcana.brain.core.Skills
 import com.jakewharton.mosaic.layout.background
@@ -45,8 +48,11 @@ internal sealed interface Editor {
     class Text(val apply: (AppConfig, String) -> AppConfig) : Editor
     /** Enter lists the installed models; [set] stores the choice in the setting this editor belongs to ([allowNone]: blank is a valid choice and means off). */
     class Model(val label: String, val get: (AppConfig) -> String, val set: (AppConfig, String) -> AppConfig, val allowNone: Boolean = false, val oracul: Boolean = false, val multi: Boolean = false, val embed: Boolean = false) : Editor
-    /** Enter opens the folder browser (Space chooses the folder); [set] stores the chosen path. */
-    class Folder(val title: String, val subtitle: String, val set: (AppConfig, String) -> AppConfig) : Editor
+    /**
+     * Enter opens the folder browser (Space chooses the folder, `f` searches all sub-folders); [set] stores the chosen path. The browser starts in the folder [get] says (the vault when null);
+     * [clearable] adds `x` to set the empty value; [typed] adds `e` to type or paste a path instead (what it does with the text, throwing IllegalArgumentException for a bad one).
+     */
+    class Folder(val title: String, val subtitle: String, val get: ((AppConfig) -> String)? = null, val clearable: Boolean = false, val typed: ((AppConfig, String) -> AppConfig)? = null, val set: (AppConfig, String) -> AppConfig) : Editor
 
     /**
      * A list of places separated by `;`, edited without typing: [specials] are words with a meaning (`vault`, `working`) that are switched on and off, every other entry is a folder, added with the
@@ -71,6 +77,9 @@ private class Setting(
 ) {
     /** The same setting, shown only while "Show advanced search settings" is on. */
     fun advanced() = Setting(group, label, help, value, step, editor, visible = { it.searchAdvanced })
+
+    /** The same setting, shown only while [show] holds (for example the key of the search backend that is chosen). */
+    fun showWhen(show: (AppConfig) -> Boolean) = Setting(group, label, help, value, step, editor, visible = show)
 }
 
 private fun choice(group: Group, label: String, help: String, options: List<Pair<String, String>>, get: (AppConfig) -> String, set: (AppConfig, String) -> AppConfig) =
@@ -124,6 +133,13 @@ private fun soundSetting(label: String, help: String, event: com.arcana.brain.co
         set(c, next)
     }
 
+/** A typed or pasted Working folder: empty (none) or an existing folder. */
+private fun workingFolderPath(value: String): String {
+    val path = value.trim()
+    require(path.isEmpty() || Files.isDirectory(AppContext.expandHome(path))) { "That folder does not exist" }
+    return path
+}
+
 private fun tilde(path: String) = path.replace(System.getProperty("user.home"), "~")
 
 private fun vaultRoot(c: AppConfig): Path? = c.vaultPath.trim().takeIf { it.isNotEmpty() }?.let { AppContext.expandHome(it) }?.takeIf { Files.isDirectory(it) }
@@ -161,6 +177,29 @@ private val EmbedModel = Editor.Model("Embedding model (for meaning)", { it.embe
 
 private val OraculModel = Editor.Model("Oracul model", { it.oraculModel }, { c, v -> c.copy(oraculModel = v) }, allowNone = true, oracul = true)
 private val ExtraModels = Editor.Model("More Oracul models", { it.oraculExtra }, { c, v -> c.copy(oraculExtra = v.split(',').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")) }, allowNone = true, oracul = true, multi = true)
+/** What a blank stage setting shows: the Oracul model it falls back to, by name. */
+private fun oraculFallback(c: AppConfig): String = Oracul.model(c).let { if (it.isEmpty()) "(the Oracul model, not set)" else "(the Oracul model: $it)" }
+
+/** The addition to a blank planner/reviewer row while Specialists as tools is on: the model a consult asks instead. */
+private fun consultNote(c: AppConfig): String =
+    if (!c.flowTools || !c.oraculEnabled) "" else Oracul.model(c).let { if (it.isEmpty()) "; consult: none, Oracul model not set" else "; consult asks the Oracul model: $it" }
+
+/**
+ * What the Specialists as tools row shows: off, or on with the model each specialist would really ask (own setting, else
+ * the Oracul model), or why it would do nothing, so "On" is never a promise that is not kept.
+ */
+private fun specialistsSummary(c: AppConfig): String {
+    if (!c.flowTools) return "Off"
+    if (!c.oraculEnabled) return "On, but does nothing: Helper models are off"
+    if (!c.toolsEnabled) return "On, but does nothing: Tools in Chat is off"
+    val parts = listOf(StageKind.Analyst to "analyst", StageKind.Planner to "planner", StageKind.Reviewer to "reviewer").map { (kind, name) ->
+        val model = Flow.consultModel(c, kind)
+        val via = if (Flow.consultSource(c, kind) == "the Oracul model") " (Oracul)" else ""
+        if (model.isEmpty()) "$name: none" else "$name: $model$via"
+    }
+    return if (parts.all { it.endsWith(": none") }) "On, but no model is set (Settings → Helpers → Oracul model)" else "On · " + parts.joinToString(" · ")
+}
+
 private val AnalystRole = Editor.Model("Flow analyst", { it.flowAnalyst }, { c, v -> c.copy(flowAnalyst = v) }, allowNone = true, oracul = true)
 private val ControllerRole = Editor.Model("Flow controller", { it.flowController }, { c, v -> c.copy(flowController = v) }, allowNone = true, oracul = true)
 private val RouteVisionRole = Editor.Model("Route: images to", { it.routeVision }, { c, v -> c.copy(routeVision = v) }, allowNone = true)
@@ -170,22 +209,30 @@ private val WorkerRole = Editor.Model("Skill worker", { it.roleWorker }, { c, v 
 private val ReviewerRole = Editor.Model("Skill reviewer", { it.roleReviewer }, { c, v -> c.copy(roleReviewer = v) }, allowNone = true, oracul = true)
 private val JudgeModel = Editor.Model("Judge model", { it.judgeModel }, { c, v -> c.copy(judgeModel = v) }, allowNone = true, oracul = true)
 
+/** The model's own sampling defaults (from `/api/show`), kept here for the rows that step from them and show them; refreshed whenever the Settings screen is drawn. */
+@Volatile private var ownSampling: Map<String, String> = emptyMap()
+
 private val declared: List<Setting> = listOf(
     text(Group.Ollama, "Ollama URL", "Where the Ollama server listens.", { it.ollamaUrl }, { c, v ->
         require(v.startsWith("http://") || v.startsWith("https://")) { "URL must start with http:// or https://" }
         c.copy(ollamaUrl = v.trimEnd('/'))
     }),
     Setting(Group.Ollama, "Model", "The model that answers. Enter lists what is installed.", { it.model }, editor = MainModel),
-    Setting(
-        Group.Ollama, "Temperature", "0 is focused and repeatable, 2 is adventurous. ←/→ step by 0.1, Enter types a value.",
-        value = { it.temperature.toString() },
-        step = { c, dir -> c.copy(temperature = ((c.temperature * 10).toInt() + dir).coerceIn(0, 20) / 10.0) },
-        editor = Editor.Text { c, v ->
-            val t = v.trim().toDoubleOrNull()
-            require(t != null && t in 0.0..2.0) { "Temperature must be between 0 and 2" }
-            c.copy(temperature = t)
-        },
+    choice(
+        Group.Ollama, "Sampling",
+        "How the model picks its next word. Model defaults sends nothing, so the model's own settings apply (what its authors recommend; see the note below). Custom sends the values you set in the rows that appear under it: ←/→ step them, Enter types one, a blank value means the model's own. Applies to the chat model only; helper models always use their own. Ctrl+R in Chat opens the same choices.",
+        listOf(Sampling.MODEL to Sampling.modeLabel(Sampling.MODEL), Sampling.CUSTOM to Sampling.modeLabel(Sampling.CUSTOM)), { it.samplingMode },
+        { c, v -> if (v == Sampling.CUSTOM) Sampling.toCustom(c, ownSampling) else Sampling.toModel(c) },
     ),
+) + Sampling.params.map { p ->
+    Setting(
+        Group.Ollama, p.label, p.help + if (p.key == "temperature") " Always sent in custom mode." else " Blank: the model's own value.",
+        value = { c -> Sampling.get(c, p.key)?.let(p::format) ?: "(model's own${ownSampling[p.key]?.let { ": $it" }.orEmpty()})" },
+        step = { c, dir -> Sampling.step(c, p, dir, ownSampling) },
+        editor = Editor.Text { c, v -> Sampling.set(c, p.key, Sampling.parse(v, p)) },
+        visible = { it.samplingMode == Sampling.CUSTOM },
+    )
+} + listOf(
     choice(Group.Ollama, "Context window", "How many tokens of conversation the model may hold (num_ctx). Model default leaves Ollama's own setting. A larger window remembers more of a long chat or a big file, but its memory (the KV cache) grows with it and replies get slower: a 30B model at 128k needs roughly 12 GB more than at 8k. It can never exceed what the model was built for (the status bar shows that maximum; most models stop at 128k–256k, a million needs a special model and a lot of memory). The Chat status bar counts against this.", listOf("0" to "Model default", "8192" to "8k", "16384" to "16k", "32768" to "32k", "65536" to "64k", "131072" to "128k", "262144" to "256k", "524288" to "512k", "1048576" to "1M"), { it.contextTokens.toString() }, { c, v -> c.copy(contextTokens = v.toInt()) }),
     choice(
         Group.Ollama, "Keep model loaded",
@@ -199,7 +246,7 @@ private val declared: List<Setting> = listOf(
         value = { it.vaultPath.ifEmpty { "(not set)" } }, editor = Editor.Folder("Vault path", "Your Obsidian vault folder") { c, v -> c.copy(vaultPath = v) },
     ),
     toggle(Group.Library, "Library as a tree", "The Library shows your notes as folders that fold and unfold (Enter or h / l). Off: one flat list with the full path of every note. You can also press t in the Library.", { it.libraryTree }, { c, v -> c.copy(libraryTree = v) }),
-    text(Group.Vault, "Output folder", "What Arcana writes FOR you (AI notes, saved chats, session summaries) goes to this visible folder inside the vault. Reports and research from skills go to the folders their skills name (for example Reports/…). Arcana's own working files (skills, the memory file) are not content and live apart, hidden: see the next three rows. Empty = the vault root.", { it.outputFolder }, { c, v -> c.copy(outputFolder = v.trim('/')) }, allowEmpty = true),
+    text(Group.Vault, "Output folder", "What Arcana writes FOR you (AI notes, saved chats) goes to this visible folder inside the vault. Reports and research from skills go to the folders their skills name (for example Reports/…). Arcana's own working files (skills, the memory file) are not content and live apart, hidden: see the next three rows. Empty = the vault root.", { it.outputFolder }, { c, v -> c.copy(outputFolder = v.trim('/')) }, allowEmpty = true),
     Setting(
         Group.Vault, "Where Arcana's own files are (this vault)", "Arcana's working files for THIS vault live in the hidden folder .arcana/ inside it (Obsidian, the note search and the graph do not show it): skills in .arcana/skills/ and the memory file .arcana/ARCANA.md. An older vault that still has Skills/ or a root ARCANA.md keeps using them until you run arcana --migrate in a terminal (it moves them, never overwrites). Show hidden files in Finder with Cmd+Shift+. This row only shows the place; change it with the Skills folder and Memory file path settings.",
         value = { c -> vaultRoot(c)?.let { tilde(it.resolve(com.arcana.brain.core.Layout.INTERNAL).toString()) + "/" } ?: "(no vault yet)" },
@@ -264,7 +311,6 @@ private val declared: List<Setting> = listOf(
     toggle(Group.Search, "Show advanced search settings", "Shows the settings that fine-tune a search: balance of words and meaning, the noise filter, candidates, passages per note, how much is sent to the model, the biggest file. The defaults are good; leave this off unless results need tuning.", { it.searchAdvanced }, { c, v -> c.copy(searchAdvanced = v) }),
     stepper(Group.Search, "Largest file searched", "The biggest CODE or text file (in KB) the file search reads; a bigger one (a generated file, a data dump) is left out. Documents (PDF, Word) have their own limit, 30 MB, and at most about 500 passages of text each. ←/→ step by 50.", 50..2000, 50, { it.searchMaxFileKb }, { c, n -> c.copy(searchMaxFileKb = n) }, " KB").advanced(),
     stepper(Group.Search, "Context notes", "How many notes Ask your vault sends to the model.", 1..20, 1, { it.contextNotes }, { c, n -> c.copy(contextNotes = n) }).advanced(),
-    text(Group.Vault, "Inbox folder", "Where new, unprocessed notes land. The Brain screen counts what is waiting there.", { it.inboxFolder }, { c, v -> c.copy(inboxFolder = v.trim('/')) }, allowEmpty = true),
     text(Group.Vault, "Daily notes folder", "Where capture (Ctrl+N) writes the thought files, with their Thoughts Index. Default Thoughts, a folder of its own so the vault root stays free. Used only when Obsidian's Daily notes plugin has no setting of its own for the vault. Empty = the vault root.", { it.dailyFolder }, { c, v -> c.copy(dailyFolder = v.trim('/')) }, allowEmpty = true),
     text(Group.Vault, "Daily note format", "The file name of a daily note, like Obsidian's: YYYY-MM-DD, DD.MM.YYYY…; text in [brackets] is kept as it is. The default `[thought-]YYYY-MM-DD` gives thought-2026-11-02.md, so thought files stay apart from other notes named by date. Used only without an Obsidian setting.", { it.dailyFormat }, { c, v -> c.copy(dailyFormat = v.trim()) }),
     stepper(Group.Vault, "Stale after", "A note counts as stale after this many days without a change. ←/→ step by 30.", 7..1000, 30, { it.staleDays }, { c, n -> c.copy(staleDays = n) }, " days"),
@@ -275,8 +321,8 @@ private val declared: List<Setting> = listOf(
         Group.Appearance, "Colour theme", "Applies at once. ←/→ step through the themes, Enter opens the list with a preview.",
         value = { Themes.byId(it.theme).name },
         step = { c, dir ->
-            val i = Themes.all.indexOfFirst { it.id == c.theme }.coerceAtLeast(0)
-            c.copy(theme = Themes.all[(i + dir).mod(Themes.all.size)].id)
+            val i = Themes.themeList.indexOfFirst { it.id == c.theme }.coerceAtLeast(0)
+            c.copy(theme = Themes.themeList[(i + dir).mod(Themes.themeList.size)].id)
         },
         editor = Editor.Theme,
     ),
@@ -292,23 +338,26 @@ private val declared: List<Setting> = listOf(
             c.copy(thinking = options[(options.indexOf(c.thinking).coerceAtLeast(0) + dir).mod(options.size)])
         },
     ),
-    toggle(Group.Ollama, "Model abilities in the bottom bar", "Next to the model name the bottom bar names what Ollama says the model can do: `vision` (it can look at pictures: attach one with Ctrl+O), `thinking` (it reasons before it answers: Ctrl+T shows or hides that), `tools` (it can use your notes and run commands), `♪ audio` (it can hear sound) and `MoE 128` (a mixture of experts with 128 experts: only a few of them work on each token, so it answers faster than a dense model of the same file size, though all of it must still fit in memory). Nothing is shown for a model that has none of these, or when Ollama does not say.", { it.showModelTraits }, { c, v -> c.copy(showModelTraits = v) }),
+    toggle(Group.Ollama, "Model abilities in the bottom bar", "Next to the model name the bottom bar names what Ollama says the model can do: `vision` (it can look at pictures: attach one with Ctrl+O), `thinking` (it reasons before it answers: `]` in Chat shows that), `tools` (it can use your notes and run commands), `♪ audio` (it can hear sound) and `MoE 128` (a mixture of experts with 128 experts: only a few of them work on each token, so it answers faster than a dense model of the same file size, though all of it must still fit in memory) or `dense` (every part of the model works on each token: slower for its size, but no experts to choose from). Nothing is shown for a model that has none of these, or when Ollama does not say.", { it.showModelTraits }, { c, v -> c.copy(showModelTraits = v) }),
     toggle(Group.Appearance, "Logo animation", "While a reply is being generated, the colours of the sidebar logo sweep along it. Off keeps the logo still.", { it.animateLogo }, { c, v -> c.copy(animateLogo = v) }),
 
     toggle(Group.Console, "Answer from vault", "Chat searches your notes for each question and answers from what it finds, citing the notes. You can also switch this per chat with /vault.", { it.chatUseVault }, { c, v -> c.copy(chatUseVault = v) }),
     toggle(Group.Console, "Render Markdown", "On: headings, bullets and code are drawn as such. Off: the model's text exactly as written.", { it.renderMarkdown }, { c, v -> c.copy(renderMarkdown = v) }),
     toggle(Group.Console, "Confirm before cancelling", "On: Esc during a reply asks \"Cancel this reply?\" (Enter = yes, any other key = keep going), so a stray Esc never throws a reply away. Off: Esc cancels at once.", { it.confirmCancel }, { c, v -> c.copy(confirmCancel = v) }),
-    choice(Group.Library, "Opens on", "The view the Library shows the first time you open it in a run; after that it keeps where you left (view, selected note, scroll) while you visit other tabs. A link from the Brain screen (for example the inbox count) still opens its own view once.", listOf("all" to "All", "recent" to "Recent", "inbox" to "Inbox", "orphans" to "No links", "untagged" to "No tags", "broken" to "Broken links", "stale" to "Stale", "tags" to "Tags", "reports" to "Reports"), { it.libraryTab }, { c, v -> c.copy(libraryTab = v) }),
-    stepper(Group.Library, "List width", "How much of a wide Library the notes list takes, in percent; the preview gets the rest (a window under 96 columns shows one pane at a time). ←/→ step by 5.", 20..60, 5, { it.libraryListPercent }, { c, n -> c.copy(libraryListPercent = n) }, unit = " %"),
-    choice(Group.Library, "Sort by", "How the lists ordered by date (All, Inbox, No tags, a tag) are ordered: newest first, or by title A to Z. No links, Broken links and Stale keep their own order.", listOf("modified" to "Newest first", "title" to "Title A–Z"), { it.librarySort }, { c, v -> c.copy(librarySort = v) }),
+    choice(Group.Library, "Opens on", "The view the Library shows the first time you open it in a run; after that it keeps where you left (view, selected note, scroll) while you visit other tabs. A link from the Brain screen (for example the count of notes without tags) still opens its own view once.", listOf("all" to "All", "recent" to "Recent", "orphans" to "No links", "untagged" to "No tags", "broken" to "Broken links", "stale" to "Stale", "tags" to "Tags", "reports" to "Reports"), { it.libraryTab }, { c, v -> c.copy(libraryTab = v) }),
+    stepper(Group.Library, "List width", "How much of a wide Library the notes list takes, in percent; the preview gets the rest (a window under 96 columns shows one pane at a time). ←/→ step by 5. In the Library, `[` and `]` change it without coming here.", LIBRARY_LIST_MIN..LIBRARY_LIST_MAX, 5, { it.libraryListPercent }, { c, n -> c.copy(libraryListPercent = n) }, unit = " %"),
+    choice(Group.Library, "Sort by", "How the lists ordered by date (All, No tags, a tag) are ordered: newest first, or by title A to Z. No links, Broken links and Stale keep their own order.", listOf("modified" to "Newest first", "title" to "Title A–Z"), { it.librarySort }, { c, v -> c.copy(librarySort = v) }),
     toggle(Group.Library, "Preview pane", "On: a wide window shows the note beside the list. Off: the list takes the whole width and Enter opens the note.", { it.libraryPreview }, { c, v -> c.copy(libraryPreview = v) }),
-    toggle(Group.Library, "Tab counts", "Show how many notes each tab holds (All 120, Inbox 3).", { it.libraryCounts }, { c, v -> c.copy(libraryCounts = v) }),
+    toggle(Group.Library, "Tab counts", "Show how many notes each tab holds (All 120, No tags 8).", { it.libraryCounts }, { c, v -> c.copy(libraryCounts = v) }),
     toggle(Group.Tools, "Finish open todos", "On: when the model ends its turn with open steps on its own todo list, it is sent back once to finish them or to close the list, so it does not stop at 5 of 7. Off: it may stop with steps open.", { it.todoGuard }, { c, v -> c.copy(todoGuard = v) }),
     toggle(Group.Console, "Show thinking", "Show \"<model> is thinking…\" while a reasoning model works before its first words.", { it.showThinking }, { c, v -> c.copy(showThinking = v) }),
     choice(Group.Console, "Comparison view", "How /compare shows the answers in Chat. Side by side: the main model's answer and the Oracul models' answers in columns, each under a coloured name, the verdict below across the whole width (needs a window of about 80 columns for two answers, 120 for three, else they stack). Stacked: one under another.", listOf("side" to "Side by side", "stacked" to "Stacked"), { it.comparisonView }, { c, v -> c.copy(comparisonView = v) }),
-    toggle(Group.Console, "Thinking pane", "A split window under the Chat conversation that follows what a reasoning model is thinking while it works (and shows its last thoughts when idle), so you can watch its reasoning without it filling the conversation. Needs a model that can think (the model list in Settings → Ollama says so) and a terminal at least 26 rows tall; /thinking in Chat toggles it. Off by default.", { it.thinkingPane }, { c, v -> c.copy(thinkingPane = v) }),
-    choice(Group.Console, "Thinking pane placement", "Where the thinking pane sits around the conversation: bottom or top (a strip across the full width), left or right (a column beside the conversation; needs a window about 80 columns wide, else it goes to the bottom). Ctrl+T in Chat changes its size at any moment.", listOf("bottom" to "Bottom", "top" to "Top", "left" to "Left", "right" to "Right"), { it.thinkingPanePlacement }, { c, v -> c.copy(thinkingPanePlacement = v) }),
+    toggle(Group.Console, "Thinking pane", "A split window under the Chat conversation that follows what a reasoning model is thinking while it works (and shows its last thoughts when idle), so you can watch its reasoning without it filling the conversation. Needs a model that can think (the model list in Settings → Ollama says so) and a terminal at least 26 rows tall; /thinking in Chat toggles it. Off by default.", { it.thinkingPane }, { c, v -> if (v) Docks.refusal(c, PaneId.Thinking)?.let { throw IllegalArgumentException(it) }; c.copy(thinkingPane = v) }),
+    choice(Group.Console, "Thinking pane placement", "Where the thinking pane sits around the conversation: bottom or top (a strip across the full width), left or right (a column beside the conversation; needs a window about 80 columns wide, else it goes to the bottom). In Chat, `]` switches it on and makes it larger, `[` makes it smaller and, at the smallest size, switches it off (`/thinking` too).", listOf("bottom" to "Bottom", "top" to "Top", "left" to "Left", "right" to "Right"), { it.thinkingPanePlacement }, { c, v -> if (c.thinkingPane) Docks.refusal(c, PaneId.Thinking, v)?.let { throw IllegalArgumentException(it) }; c.copy(thinkingPanePlacement = v) }),
     stepper(Group.Console, "Thinking pane size", "How much of the main axis the pane takes, in percent: of the conversation's height when it is at the bottom or top, of the width when it is left or right (10 to 90, ←/→ step by 5). It always shows the end of the stream. The conversation keeps a few rows of its own whatever you set.", 10..90, 5, { it.thinkingPanePercent }, { c, n -> c.copy(thinkingPanePercent = n) }, unit = " %"),
+    toggle(Group.Console, "Status pane", "A right-side column in Chat in three sections: the model, the sampling options (each a value and a slider) and the context settings; Ctrl+R edits the model, the sampling, the thinking effort and the context right there (↑↓ ←→ Enter) and the context window (a ▰▰▰▰▰▰▰▱▱▱ bar in three tones: filled, room up to auto-compact, the rest). Needs a window about 80 columns wide, else the conversation takes the whole width. In Chat, `{` switches it on and makes it wider, `}` makes it narrower and, at the smallest size, switches it off (`/status` too). Off by default.", { it.statusPane }, { c, v -> if (v) Docks.refusal(c, PaneId.Status)?.let { throw IllegalArgumentException(it) }; c.copy(statusPane = v) }),
+    choice(Group.Console, "Status pane placement", "The side the status column docks on. A side holds one panel: the thinking pane (placed left or right) and the status pane cannot share a side, so a panel can take a side only after the other one there is switched off. On the left the width keys swap: `}` wider, `{` narrower.", listOf("right" to "Right", "left" to "Left"), { it.statusPanePlacement }, { c, v -> if (c.statusPane) Docks.refusal(c, PaneId.Status, v)?.let { throw IllegalArgumentException(it) }; c.copy(statusPanePlacement = v) }),
+    stepper(Group.Console, "Status pane size", "How much of the window's width the status column takes, in percent (10 to 90, ←/→ step by 5). In Chat, `{` makes it wider and `}` narrower (the column is on the right: the keys point the way its left edge moves).", 10..90, 5, { it.statusPanePercent }, { c, n -> c.copy(statusPanePercent = n) }, unit = " %"),
     choice(Group.Console, "System messages", "Arcana sometimes sends the model a message in your name: the reminder about open todo steps, a redo after the controller's verdict, an unmet goal, /revise. Marked: they show as a dim ⚙ System block, so it is clear you did not write them. Hidden: not shown (they are still sent).", listOf("marked" to "Marked", "hidden" to "Hidden"), { it.systemMessages }, { c, v -> c.copy(systemMessages = v) }),
     choice(Group.Console, "Thinking in Chat", "What a reasoning model thought before it answered, kept apart from the answer. Summary: one dim line with its length. Full: all of it, dimmed, above the answer. Hidden: not shown (it is still kept with the chat).", listOf("summary" to "Summary", "full" to "Full", "hidden" to "Hidden"), { it.thinkingView }, { c, v -> c.copy(thinkingView = v) }),
     choice(Group.Console, "Auto-compact", "When the context window is this full, Arcana first asks the model to summarize the older part of the chat (like /compact), then sends your message. Nothing is deleted: the summary appears in the chat as a divider and the model just stops being sent what is above it. Off: only /compact does it.", listOf("0" to "Off", "70" to "At 70%", "80" to "At 80%", "90" to "At 90%"), { it.autoCompactPercent.toString() }, { c, v -> c.copy(autoCompactPercent = v.toInt()) }),
@@ -319,11 +368,15 @@ private val declared: List<Setting> = listOf(
     choice(Group.Console, "Copy as", "What select mode (s) puts on the clipboard. Markdown: as written. Plain text: markers removed.", listOf("markdown" to "Markdown", "plain" to "Plain text"), { it.copyAs }, { c, v -> c.copy(copyAs = v) }),
 
     toggle(Group.Tools, "Tools in Chat", "Lets the model search, read and write your notes, and read and write files in the folders below. Every change asks you first. Needs a model with tool support (Gemma 4 has it). Also /tools in Chat.", { it.toolsEnabled }, { c, v -> c.copy(toolsEnabled = v) }),
-    text(Group.Tools, "Working folder", "Optional: the one folder you are working in right now (a web project, a repository). It is searched by the model as part of Settings → Search → Search in (`working`). Where it matters: relative paths and commands (run_command, git) start there instead of in your vault; the model is told about it; its own ARCANA.md / CLAUDE.md / AGENTS.md is passed on as instructions; the status bar shows ▣ and its name. It is allowed automatically, so you do not need to list it under Allowed folders. It grants nothing outside itself. Needs tools on. Empty = no working folder.", { it.projectFolder }, { c, v ->
-        val path = v.trim()
-        require(path.isEmpty() || java.nio.file.Files.isDirectory(AppContext.expandHome(path))) { "That folder does not exist" }
-        c.copy(projectFolder = path)
-    }, allowEmpty = true, emptyLabel = "(none)"),
+    Setting(
+        Group.Tools, "Working folder", "Optional: the one folder you are working in right now (a web project, a repository). It is searched by the model as part of Settings → Search → Search in (`working`). Where it matters: relative paths and commands (run_command, git) start there instead of in your vault; the model is told about it; its own ARCANA.md / CLAUDE.md / AGENTS.md is passed on as instructions; the status bar shows ▣ and its name. It is allowed automatically, so you do not need to list it under Allowed folders. It grants nothing outside itself. Needs tools on. Enter opens a folder browser (no typing needed): Space chooses the folder shown, f searches ALL sub-folders by name, x clears it (no working folder), e types or pastes a path.",
+        value = { it.projectFolder.ifEmpty { "(none)" } },
+        editor = Editor.Folder(
+            "Working folder", "The folder you are working in: Space chooses it, f searches all sub-folders by name, x clears it",
+            get = { it.projectFolder }, clearable = true,
+            typed = { c, v -> c.copy(projectFolder = workingFolderPath(v)) },
+        ) { c, v -> c.copy(projectFolder = v) },
+    ),
     Setting(
         Group.Tools, "Allowed folders",
         "Where the model may read and write besides your vault, separated by ;  For example ~/Projects;~/Documents, or ~ for your whole home folder (a home or hidden folder can only be allowed here, Chat never offers it on the spot). Every change, command and web access still asks you first; nothing outside the vault, these folders and the Working folder is ever touched. This is only PERMISSION: which of them are searched (by words and meaning) is chosen in Settings → Search → Search in. Enter opens the list: add folders with the folder browser, remove them again.",
@@ -333,9 +386,10 @@ private val declared: List<Setting> = listOf(
     toggle(Group.Tools, "Shell commands", "Lets the model ask to run commands on this computer (build, test, git…). Every command still waits for your y / n, except harmless ones like git status; Plan mode never offers it. Commands run with your own rights and are NOT limited to the folders above, so read each one before you press y. Off by default.", { it.toolShell }, { c, v -> c.copy(toolShell = v) }),
     toggle(Group.Tools, "Run commands without asking", "On: shell commands run at once, without your y / n (the Chat status bar shows a red ▶ auto-run). Commands Arcana never runs (sudo, rm -rf /, formatting a disk…) are still refused. Needs Shell commands on. Use it for a trusted project and turn it off again.", { it.toolAutoShell }, { c, v -> c.copy(toolAutoShell = v) }),
     choice(Group.Tools, "Calls written as text", "Small models sometimes write a tool call as text (fetch_url(url=\"…\")) instead of making it, and then nothing happens. Auto runs such a call as a real one (it still asks first when it is a change, a command or a web address). Ask shows the call and waits for your y. Off leaves it as text.", listOf("auto" to "Auto", "ask" to "Ask", "off" to "Off"), { it.textCalls }, { c, v -> c.copy(textCalls = v) }),
-    choice(Group.Tools, "Search backend", "Where the web_search tool looks. DuckDuckGo needs no setup or key (it may refuse after many searches); SearXNG is a server you run (set its address below); Brave needs an API key. Only the search words are sent, and every search asks you first. DuckDuckGo has no key and no quota and may answer with a human check (HTTP 202) from some connections: then the other backends you have set up (a Brave key, a SearXNG address) are tried automatically, and DuckDuckGo is left alone for 10 minutes. For dependable searching set up Brave (a free key from api-dashboard.search.brave.com) or SearXNG.", listOf("duckduckgo" to "DuckDuckGo", "searxng" to "SearXNG", "brave" to "Brave"), { it.searchBackend }, { c, v -> c.copy(searchBackend = v) }),
-    text(Group.Tools, "Search address", "The address of your SearXNG server, for example http://localhost:8080 (its settings must allow format json). Used only with the SearXNG backend.", { it.searchUrl }, { c, v -> c.copy(searchUrl = v.trim().trimEnd('/')) }, allowEmpty = true),
-    Setting(Group.Tools, "Search API key", "Your Brave Search API key, used only with the Brave backend. It is stored in config.json on this computer, so keep that file private. Enter types a new key; an empty value removes it.", value = { if (it.searchKey.isEmpty()) "(not set)" else "(set, ends …${it.searchKey.takeLast(4)})" }, editor = Editor.Text { c, v -> c.copy(searchKey = v.trim()) }),
+    choice(Group.Tools, "Search backend", "Where the web_search tool looks. DuckDuckGo needs no setup or key (it may refuse after many searches); SearXNG is a server you run (set its address below); Ollama (ollama.com, a free account and key) and Brave need an API key. Only the search words are sent, and every search asks you first. DuckDuckGo has no key and no quota and may answer with a human check (HTTP 202) from some connections: then the other backends you have set up (an Ollama or Brave key, a SearXNG address) are tried automatically, and DuckDuckGo is left alone for 10 minutes. For dependable searching set up Brave (a free key from api-dashboard.search.brave.com) or SearXNG.", listOf("duckduckgo" to "DuckDuckGo", "ollama" to "Ollama", "searxng" to "SearXNG", "brave" to "Brave"), { it.searchBackend }, { c, v -> c.copy(searchBackend = v) }),
+    text(Group.Tools, "Search address", "The address of your SearXNG server, for example http://localhost:8080 (its settings must allow format json). Used only with the SearXNG backend.", { it.searchUrl }, { c, v -> c.copy(searchUrl = v.trim().trimEnd('/')) }, allowEmpty = true).showWhen { it.searchBackend == "searxng" },
+    Setting(Group.Tools, "Ollama API key", "Your key from ollama.com/settings/keys (a free Ollama account), used by the Ollama search backend. It is stored in config.json on this computer, so keep that file private. Enter types a new key; an empty value removes it.", value = { if (it.ollamaKey.isEmpty()) "(not set)" else "(set, ends …${it.ollamaKey.takeLast(4)})" }, editor = Editor.Text { c, v -> c.copy(ollamaKey = v.trim()) }).showWhen { it.searchBackend == "ollama" },
+    Setting(Group.Tools, "Brave API key", "Your Brave Search API key, used by the Brave backend. It is stored in config.json on this computer, so keep that file private. Enter types a new key; an empty value removes it.", value = { if (it.searchKey.isEmpty()) "(not set)" else "(set, ends …${it.searchKey.takeLast(4)})" }, editor = Editor.Text { c, v -> c.copy(searchKey = v.trim()) }).showWhen { it.searchBackend == "brave" },
     toggle(Group.Tools, "Web pages", "Lets the model ask to search the web (web_search) and to read a public web page (documentation, articles, JSON). Every address waits for your y / n and is shown in full; pages on your own computer or network are never fetched, and what a page says is treated as text, not as instructions. Plan mode never offers it. Off by default.", { it.toolWeb }, { c, v -> c.copy(toolWeb = v) }),
     toggle(Group.Tools, "Search and fetch without asking", "On: web_search and fetch_url run at once, without your y / n, even in Ask mode (the Chat status bar shows an orange ↗ auto-search). Warning: the search words and the address of a page can carry what the model has read to the outside, so use it for research chats, not with private notes in play. Private addresses are still refused, HTTP requests (http_request) still ask for every one, and the Oracul always asks. Needs Web pages on; Plan mode never offers it. Off by default.", { it.toolAutoSearch }, { c, v -> c.copy(toolAutoSearch = v) }),
     toggle(Group.Tools, "Skills", "Skills are runbooks in your vault, one folder each (Skills/<name>/<name>.skill.md with its scripts and reference notes). On: the model is told which skills exist and can load one with use_skill, and Chat's / menu lists them. Needs Tools in Chat. Also /skills.", { it.skillsEnabled }, { c, v -> c.copy(skillsEnabled = v) }),
@@ -345,7 +399,7 @@ private val declared: List<Setting> = listOf(
     choice(Group.Tools, "Old tool output", "What the model is sent of tool results from EARLIER questions in a chat. Whole (default): nothing is cut, so it never reads again what it could no longer see and never answers from half a file; the context gauge shows the cost, and /compact or the automatic compaction makes room. Shorten: each old result is cut to 1,200 characters (the model is told it was cut and can call the tool again), for small context windows. The results of the current question are never cut by this.", listOf("whole" to "Whole", "shorten" to "Shorten"), { it.oldToolOutput }, { c, v -> c.copy(oldToolOutput = v) }),
     stepper(Group.Tools, "Remember repeated reads", "When the model asks for the exact same read, search or web page again in one question, and nothing has changed since, Arcana answers \"you already made this call, the result is above\" instead of running it (and asking you) again. This is how many SECONDS that memory lasts; after that the call runs again, so a note you edited meanwhile is read fresh. 0 = off, every call runs. A change, a command, http_request, a wait, your next message and any failed result (an error, HTTP 429) clear or skip it; wait and the clock tools always run. Nothing is kept between questions.", 0..300, 15, { it.repeatMemorySeconds }, { c, n -> c.copy(repeatMemorySeconds = n) }, " s"),
     choice(Group.Tools, "At the step limit", "What happens when a question has used its steps and the model still wants tools. Ask: a dialog offers more steps. Auto: more steps are given at once, up to ${STEP_LIMIT_AUTO_ROUNDS} times (then it asks); warning: a long run can take a lot of time and tokens, and in Mode Auto its changes run without asking. Changes, commands and web addresses keep their own approval (see Mode and the web settings). Stop: the model answers with what it has.", listOf("ask" to "Ask", "auto" to "Auto", "stop" to "Stop"), { it.stepLimit }, { c, v -> c.copy(stepLimit = v) }),
-    stepper(Group.Tools, "Steps per question", "How many rounds of tool use one question may take before the model has to answer. A round may read several files; raise this for big reviews.", 1..60, 1, { it.toolSteps }, { c, n -> c.copy(toolSteps = n) }),
+    stepper(Group.Tools, "Steps per question", "How many rounds of tool use one question may take before the model has to answer. A round may read several files; raise this for big reviews. Unlimited (step down from 1, or type 0): the model is never stopped for using many rounds, for long tasks; warning: a long run can take a lot of time and tokens, and in Mode Auto its changes run without asking. The loop guards (Opinions) still stop a model that repeats itself, Esc stops the run, and changes, commands and web addresses keep their own approval.", 0..60, 1, { it.toolSteps }, { c, n -> c.copy(toolSteps = n) }, zero = "Unlimited"),
 
     stepper(Group.Ollama, "Price: prompt tokens", "Only for the estimated price in the status bars: what a million prompt tokens would cost on a paid service, in US dollars. Local models cost nothing; this shows what the same work would cost elsewhere.", 0..200, 1, { it.estPriceIn }, { c, n -> c.copy(estPriceIn = n) }, " $/M"),
     stepper(Group.Ollama, "Price: reply tokens", "The same for a million reply tokens (they usually cost more).", 0..400, 1, { it.estPriceOut }, { c, n -> c.copy(estPriceOut = n) }, " $/M"),
@@ -384,17 +438,24 @@ private val declared: List<Setting> = listOf(
     choice(Group.Opinions, "Loop guard: repeated text", "A model sometimes writes the same passage again and again (in its thinking or in its answer) without any error. When the same stretch has come this many times in one round, Arcana stops the round, tells the model out of sight to decide and answer, and asks once more with a higher repeat penalty; if it loops again you get what it had written, or an error that says so. Never = the round runs until the model stops by itself.", listOf("0" to "Never", "3" to "After 3", "5" to "After 5", "8" to "After 8"), { it.loopRepeats.toString() }, { c, v -> c.copy(loopRepeats = v.toInt()) }),
     choice(Group.Opinions, "Loop guard: repeated calls", "When the model makes the same tool call again (same tool, same arguments, nothing changed in between; a failed call counts too), this many times in one question, it is told out of sight to step back and try something different. At twice as many, the tools are taken away for the rest of the question and it has to answer with what it has. A change or a command that worked starts the count again. Never = no check.", listOf("0" to "Never", "2" to "After 2", "3" to "After 3", "4" to "After 4", "6" to "After 6"), { it.loopCalls.toString() }, { c, v -> c.copy(loopCalls = v.toInt()) }),
     choice(Group.Flow, "Flow", "A fixed sequence of models that handles every message: the analyst says what is really asked, the planner plans, the worker does it, the reviewer checks. Careful uses the models below (an unset stage takes the Oracul model; the worker is the chat model unless Skill worker is set) and a message under 60 characters goes straight to the worker. Off: the chat model answers, and skills use the role table. Slow and heavy: several models run for each message.", listOf("off" to "Off", "careful" to "Careful"), { it.flow }, { c, v -> c.copy(flow = v) }),
-    Setting(Group.Flow, "Flow analyst", "The model that reads your request first and writes what is really asked, what is unclear and what a good result looks like (needs Flow: Careful). Blank: the Oracul model.", { it.flowAnalyst.ifEmpty { "(the Oracul model)" } }, editor = AnalystRole),
+    Setting(Group.Flow, "Flow analyst", "The model that reads your request first and writes what is really asked, what is unclear and what a good result looks like (needs Flow: Careful). Blank: the Oracul model. Also the model a consult of the analyst asks (Specialists as tools), even with Flow off.", { it.flowAnalyst.ifEmpty { oraculFallback(it) } }, editor = AnalystRole),
     Setting(Group.Flow, "Flow controller", "The model that checks the finished answer against your request and the reviewer's notes and says done or redo (needs Flow: Careful). On redo the worker is sent back with what to fix. Blank: the Oracul model.", { it.flowController.ifEmpty { "(the Oracul model)" } }, editor = ControllerRole),
     Setting(Group.Flow, "Flow check command", "A shell command the flow runs in the project folder after each answer, as an objective check (for example ./gradlew test). Exit code 0: passed, and the controller is told. Anything else: the output goes back to the worker as a redo, without asking a model. It runs WITHOUT asking, so it needs Settings → Tools → shell commands and auto-run to be on; commands Arcana never runs (sudo, rm -r /, …) are refused. Blank: no command.", { it.flowCheckCommand.ifEmpty { "(none)" } }, editor = Editor.Text { c, v -> c.copy(flowCheckCommand = v.trim()) }),
     stepper(Group.Flow, "Flow redos", "How many times the controller may send the worker back for one message (0 = it only gives its verdict, never a redo). Each redo runs the worker, the reviewer and the controller again, so it is slow. ←/→ step by 1.", 0..Flow.MAX_REDOS, 1, { it.flowRedos }, { c, n -> c.copy(flowRedos = n) }),
-    toggle(Group.Flow, "Specialists as tools", "On: the chat model itself may call the analyst, the planner or the reviewer (the models of Flow analyst, Skill planner, Skill reviewer, else the Oracul model) as a tool called consult, when it finds a task hard or unclear: it writes a brief, the specialist answers, and it carries on. At most 3 times per message, only with tools on. Unlike Flow, the chat model decides when; most messages call nobody.", { it.flowTools }, { c, v -> c.copy(flowTools = v) }),
+    Setting(
+        Group.Flow, "Specialists as tools", "On: the chat model itself may call the analyst, the planner or the reviewer (the models of Flow analyst, Skill planner, Skill reviewer, else the Oracul model: the Flow and Skill rows show which one is used; this works with Flow and Skill roles off) as a tool called consult, when it finds a task hard or unclear: it writes a brief, the specialist answers, and it carries on. At most 3 times per message, only with tools on. Unlike Flow, the chat model decides when; most messages call nobody.",
+        value = { specialistsSummary(it) },
+        step = { c, _ -> c.copy(flowTools = !c.flowTools) },
+    ),
     stepper(Group.Flow, "Goal turns", "How many times /goal may continue the work by itself for one goal before it stops (a message of yours resets the count). Each turn runs the worker and the goal check. ←/→ step by 1.", 1..20, 1, { it.goalTurns }, { c, n -> c.copy(goalTurns = n) }),
     toggle(Group.Skills, "Skill roles", "On: a skill run uses the worker, planner and reviewer the skill names (its worker:, planner:, reviewer: properties) or the role table below. Off: a skill is run by the chat model alone. Independent of Helper models, so you can test one model plus skill roles. /roles in Chat does the same.", { it.skillRolesEnabled }, { c, v -> c.copy(skillRolesEnabled = v) }),
     choice(Group.Skills, "Roles apply to", "Skills only: the planner, worker and reviewer below run for a message that carries a skill. Every message: they run as a pipeline for all chat (a plan first, for messages of 60 characters or more; the worker answers; the reviewer checks). Slower, but each model does what it is best at. A skill's own properties still win.", listOf("skills" to "Skills only", "all" to "Every message"), { it.rolesScope }, { c, v -> c.copy(rolesScope = v) }),
-    Setting(Group.Skills, "Skill planner", "The model that writes a short plan before a skill starts (the worker then sees it). A skill's own `planner:` property wins. Blank: no plan.", { it.rolePlanner.ifEmpty { "(no plan)" } }, editor = PlannerRole),
+    Setting(Group.Skills, "Skill planner", "The model that writes a short plan before a skill starts (the worker then sees it). A skill's own `planner:` property wins. Also the model a consult of the planner asks (Specialists as tools), even with Skill roles off. Blank: no plan in skills; a consult then asks the Oracul model.", { it.rolePlanner.ifEmpty { "(no plan in skills" + consultNote(it) + ")" } }, editor = PlannerRole),
+    text(Group.Skills, "Default skill: research", "The skill a research item runs with when you start it from Brain (Enter), unless that item has its own pin. A skill name, `none` for a plain chat, or empty for automatic: the first skill that says `handles: [research]` in its properties, else the first `…research-report`. In the picker that opens when you start an item, `d` sets this for you and `p` pins a skill to one item. Only skills with `handles:` are offered.", { it.workSkillResearch }, { c, v -> com.arcana.brain.core.WorkSkills.withDefault(c, com.arcana.brain.core.WorkKind.Research, v) }, allowEmpty = true, emptyLabel = "(automatic)"),
+    text(Group.Skills, "Default skill: questions", "The skill a question runs with when you start it from Brain, unless the item has its own pin. A skill name, `none` or empty for a plain chat. Only skills with `handles: [question]` are offered in the picker.", { it.workSkillQuestion }, { c, v -> com.arcana.brain.core.WorkSkills.withDefault(c, com.arcana.brain.core.WorkKind.Question, v) }, allowEmpty = true, emptyLabel = "(a plain chat)"),
+    text(Group.Skills, "Default skill: todos", "The skill a todo runs with when you start it from Brain, unless the item has its own pin. A skill name, `none` or empty for a plain chat. Only skills with `handles: [todo]` are offered in the picker.", { it.workSkillTodo }, { c, v -> com.arcana.brain.core.WorkSkills.withDefault(c, com.arcana.brain.core.WorkKind.Todo, v) }, allowEmpty = true, emptyLabel = "(a plain chat)"),
     Setting(Group.Skills, "Skill worker", "The model that runs skills instead of the chat model. A skill's own `worker:` property wins. Blank: the chat model.", { it.roleWorker.ifEmpty { "(the chat model)" } }, editor = WorkerRole),
-    Setting(Group.Skills, "Skill reviewer", "The model that gives a second opinion when a skill's run is done, whatever the automatic setting says. A skill's own `reviewer:` property wins. Blank: none.", { it.roleReviewer.ifEmpty { "(no review)" } }, editor = ReviewerRole),
+    Setting(Group.Skills, "Skill reviewer", "The model that gives a second opinion when a skill's run is done, whatever the automatic setting says. A skill's own `reviewer:` property wins. Also the model a consult of the reviewer asks (Specialists as tools), even with Skill roles off. Blank: no review in skills; a consult then asks the Oracul model.", { it.roleReviewer.ifEmpty { "(no review in skills" + consultNote(it) + ")" } }, editor = ReviewerRole),
     choice(Group.Sounds, "Play when", "Away: only while another screen than Chat is showing (you are not looking at the reply). Always: also while you are in Chat.", listOf("away" to "Away from Chat", "always" to "Always"), { it.soundWhere }, { c, v -> c.copy(soundWhere = v) }),
     stepper(Group.Sounds, "Volume", "Volume of system sounds and your own file, in percent (the terminal bell has none). ←/→ step by 10 and play a sample.", 0..100, 10, { it.soundVolume }, { c, n ->
         val next = c.copy(soundVolume = n)
@@ -409,7 +470,6 @@ private val declared: List<Setting> = listOf(
     storageSetting(com.arcana.brain.core.Storage.TRASH),
     storageSetting(com.arcana.brain.core.Storage.VAULT_TRASH),
     storageSetting(com.arcana.brain.core.Storage.CHATS),
-    storageSetting(com.arcana.brain.core.Storage.SESSIONS),
     storageSetting(com.arcana.brain.core.Storage.USAGE),
     storageSetting(com.arcana.brain.core.Storage.TOOL_USAGE),
     choice(Group.Accessibility, "Interface scale", "A terminal sets its own font size, so this is the layout density: Spacious keeps the roomy screens for longer, Compact packs more in. Change your terminal's font size for bigger text.", listOf("compact" to "Compact", "normal" to "Normal", "spacious" to "Spacious"), { it.uiScale }, { c, v -> c.copy(uiScale = v) }),
@@ -420,12 +480,12 @@ private val declared: List<Setting> = listOf(
 private val sections: Map<Group, List<Pair<String, List<String>>>> = mapOf(
     Group.Ollama to listOf(
         "Connection" to listOf("Ollama URL", "Model", "Timeout"),
-        "Generation" to listOf("Temperature", "Context window", "Thinking & effort", "Keep model loaded"),
+        "Generation" to listOf("Sampling", *Sampling.params.map { it.label }.toTypedArray(), "Context window", "Thinking & effort", "Keep model loaded"),
         "Display and cost" to listOf("Model abilities in the bottom bar", "Price: prompt tokens", "Price: reply tokens"),
     ),
     Group.Vault to listOf(
         "Location" to listOf("Vault path", "Output folder", "Where Arcana's own files are (this vault)", "Where YOUR files are (every vault)"),
-        "Notes" to listOf("Inbox folder", "Daily notes folder", "Daily note format", "Stale after"),
+        "Notes" to listOf("Daily notes folder", "Daily note format", "Stale after"),
     ),
     Group.Search to listOf(
         "What is searched, and how" to listOf("Search in", "Search by", "Embedding model (for meaning)", "Show advanced search settings"),
@@ -436,12 +496,13 @@ private val sections: Map<Group, List<Pair<String, List<String>>>> = mapOf(
     Group.Console to listOf(
         "Chat" to listOf("Answer from vault", "Render Markdown", "Confirm before cancelling", "Comparison view", "Copy as"),
         "Thinking" to listOf("Show thinking", "Thinking pane", "Thinking pane placement", "Thinking pane size", "Thinking in Chat"),
+        "Status" to listOf("Status pane", "Status pane placement", "Status pane size"),
         "History and compacting" to listOf("Auto-compact", "Keep after compacting", "Chat history", "Keep chats", "Chats kept"),
     ),
     Group.Tools to listOf(
         "Steps" to listOf("Tools in Chat", "Mode", "Finish open todos", "At the step limit", "Steps per question"),
         "Files and shell" to listOf("Working folder", "Allowed folders", "Read without asking", "Shell commands", "Run commands without asking"),
-        "Web" to listOf("Search backend", "Search address", "Search API key", "Web pages", "Search and fetch without asking"),
+        "Web" to listOf("Search backend", "Search address", "Ollama API key", "Brave API key", "Web pages", "Search and fetch without asking"),
         "Skills" to listOf("Skills", "Skills folder"),
         "Tool output" to listOf("Calls written as text", "Old tool output", "Remember repeated reads"),
     ),
@@ -519,7 +580,8 @@ private fun adviceFor(app: AppContext, label: String): String? {
 private fun settingNote(app: AppContext, label: String): String = when (label) {
     "Context window" -> contextNote(app)
     "Keep model loaded" -> keepAliveNote(app)
-    "Temperature" -> samplingNote(app)
+    "Sampling" -> samplingNote(app)
+    in Sampling.params.map { it.label } -> samplingNote(app)
     "Thinking & effort" -> thinkingNote(app)
     "Noise filter: words", "Noise filter: meaning" -> noiseNote(app)
     "Search in", "Largest file searched" -> projectNote(app)
@@ -589,8 +651,7 @@ private fun samplingNote(app: AppContext): String {
     val own = app.modelParameters
     val line = if (own.isEmpty()) "\n${app.config.model} lists no sampling defaults of its own, so Ollama's general ones apply."
         else "\n${app.config.model}'s own defaults (from its Modelfile): " + own.entries.joinToString(", ") { "${it.key} ${it.value}" } + "."
-    val differs = own["temperature"]?.toDoubleOrNull()?.takeIf { kotlin.math.abs(it - app.config.temperature) > 0.05 }
-    return line + (differs?.let { "\nArcana sends ${app.config.temperature} with every request, so that replaces the model's $it." }.orEmpty())
+    return line + if (app.config.samplingMode == Sampling.CUSTOM) "\nCustom: the values set here replace the model's own for the chat model." else "\nModel defaults: nothing is sent."
 }
 
 private fun thinkingNote(app: AppContext): String {
@@ -626,6 +687,7 @@ private fun contextNote(app: AppContext): String {
 
 @Composable
 fun SettingsScreen(app: AppContext) {
+    ownSampling = app.modelParameters
     val scope = rememberCoroutineScope()
     val picker = remember { PickerState() }
     val listScroll = rememberScrollState()
@@ -644,6 +706,12 @@ fun SettingsScreen(app: AppContext) {
         // a model that does not suit this machine's memory is said right away, with a better choice
         val advice = adviceFor(app, what)
         notice = if (advice != null) Notice("$what saved. $advice", isError = advice.startsWith("⚠")) else Notice("$what saved")
+    }
+
+    /** ←/→/Enter on a steppable row; a setter that refuses (a dock side that is taken) shows its reason instead of crashing. */
+    fun stepSetting(setting: Setting, dir: Int) {
+        val step = setting.step ?: return
+        try { changed(step(app.config, dir), setting.label) } catch (e: IllegalArgumentException) { notice = Notice(e.message ?: "Invalid value", isError = true) }
     }
 
     fun commitText(setting: Setting, editor: Editor.Text) {
@@ -665,12 +733,16 @@ fun SettingsScreen(app: AppContext) {
                 editing = Editing.Typing(setting, editor)
             }
             is Editor.Folder -> {
-                val start = app.config.vaultPath.takeIf { it.isNotBlank() }?.let { AppContext.expandHome(it) }?.takeIf { Files.isDirectory(it) }
+                val start = (editor.get?.invoke(app.config) ?: app.config.vaultPath).takeIf { it.isNotBlank() }?.let { AppContext.expandHome(it) }?.takeIf { Files.isDirectory(it) }
                     ?: Path.of(System.getProperty("user.home"))
                 editing = Editing.PickFolder(DirectoryPickerState(start, onChoose = { path ->
                     if (!Files.isDirectory(path)) notice = Notice("Not a directory: $path", isError = true)
-                    else { changed(editor.set(app.config, path.toString()), editor.title); editing = null }
-                }, onCancel = { editing = null }), editor.title, editor.subtitle)
+                    else { changed(editor.set(app.config, tilde(path.toAbsolutePath().normalize().toString()).takeIf { editor.get != null } ?: path.toString()), editor.title); editing = null }
+                }, onCancel = { editing = null },
+                    onClear = if (editor.clearable) ({ changed(editor.set(app.config, ""), editor.title); editing = null }) else null,
+                    clearLabel = "No ${editor.title.lowercase()}",
+                    onType = editor.typed?.let { apply -> { field.set(editor.get?.invoke(app.config).orEmpty()); editing = Editing.Typing(setting, Editor.Text(apply)) } },
+                ), editor.title, editor.subtitle)
             }
             is Editor.Folders -> { picker.reset(); editing = Editing.EditList(setting, editor) }
             Editor.Theme -> {
@@ -718,7 +790,7 @@ fun SettingsScreen(app: AppContext) {
                 else if (com.arcana.brain.core.Storage.use(area).files == 0) notice = Notice("${area.title} is already empty.")
                 else editing = Editing.ConfirmClear(area.id)
             }
-            null -> setting.step?.let { changed(it(app.config, 1), setting.label) }
+            null -> stepSetting(setting, 1)
         }
     }
 
@@ -784,7 +856,7 @@ fun SettingsScreen(app: AppContext) {
         Editing.PickTheme -> Hints("↑↓  preview", "Enter  choose", "/  filter", "Esc  cancel")
         is Editing.EditList -> Hints("↑↓  move", "Enter / Space  switch on or off · remove · add", "x  remove a folder", "e  edit as text", "Esc  done")
         is Editing.PickFolder ->
-            if (mode.browser.filtering) Hints("↑↓  move", "Enter  open", "Esc  clear filter") else Hints("Space  use folder", "Enter  open", "←  up", "/  filter", "Esc  cancel")
+            Hints(*mode.browser.hints().toTypedArray())
         Editing.ConfirmReset -> Hints("y  reset all", "any other key  keep")
         is Editing.ConfirmClear -> storageAreas(app.config).firstOrNull { it.id == mode.areaId }?.let { if (it.prunable) Hints("y  clear what is older than $PRUNE_DAYS days", "a  clear everything", "any other key  keep") else Hints("y  clear it", "any other key  keep") } ?: Hints("any other key  back")
     }
@@ -912,8 +984,8 @@ fun SettingsScreen(app: AppContext) {
                 key == Key.Down || key.char == 'j' -> { index = (index + 1).coerceAtMost(inGroup.lastIndex); true }
                 key == Key.Tab -> { switchGroup(1); true }
                 key == Key.BackTab -> { switchGroup(-1); true }
-                key == Key.Left -> { selected?.step?.let { changed(it(app.config, -1), selected.label) }; true }
-                key == Key.Right -> { selected?.step?.let { changed(it(app.config, 1), selected.label) }; true }
+                key == Key.Left -> { selected?.let { stepSetting(it, -1) }; true }
+                key == Key.Right -> { selected?.let { stepSetting(it, 1) }; true }
                 key == Key.Enter -> { selected?.let(::startEdit); true }
                 key.char == 't' -> { testConnection(); true }
                 key.char == 'R' -> { editing = Editing.ConfirmReset; true }
@@ -970,8 +1042,8 @@ fun SettingsScreen(app: AppContext) {
                 }
             }
             Editing.PickTheme -> {
-                val names = Themes.all.map { it.name }
-                val highlighted = picker.selected(names) { it }?.let { n -> Themes.all.first { it.name == n } } ?: Themes.byId(app.config.theme)
+                val names = Themes.themeList.map { it.name }
+                val highlighted = picker.selected(names) { it }?.let { name -> Themes.themeList.first { it.name == name } } ?: Themes.byId(app.config.theme)
                 ScreenHeader("Settings › Colour theme", "Chosen: ${Themes.byId(app.config.theme).name}")
                 VGap()
                 Panel("Themes") {
@@ -1051,7 +1123,7 @@ private fun GroupBar(current: Group) {
             Row {
                 row.forEach { g ->
                     val on = g == current
-                    Label(" ${g.title} ", color = if (on) Palette.Background else Palette.Muted, background = if (on) Palette.Cta else Color.Unspecified, textStyle = if (on) TextStyle.Bold else TextStyle.Unspecified)
+                    TabLabel(g.title, on)
                     Label(" ")
                 }
             }

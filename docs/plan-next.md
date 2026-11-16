@@ -215,6 +215,8 @@ A **preset** is a named combination of these. Your five stages are one preset (a
 
 **Alternative that costs far less.** Ollama can use cloud-hosted models through its own interface, and many tools expose an OpenAI-compatible API. A client for the **OpenAI-compatible API** would cover OpenAI and, through gateways, many others, without a separate integration for each. I have not checked what Gemini offers in this respect.
 
+**Update 2026-11-07.** The local part (an OpenAI-compatible client, first for Strata and Qwen3.8-Flash-Next, with the client abstraction as its first phase) is now planned in [proposals/0003](../proposals/0003-strata-and-openai-compatible-providers.md); the hosted part (OpenAI, Gemini) is not planned: the owner decided on 2026-11-07 to stay local (Ollama and Strata) for now.
+
 **Open questions.** Do you accept that Arcana is no longer local-only? Which provider first? I recommend postponing this until N10 and the client abstraction are settled.
 
 ---

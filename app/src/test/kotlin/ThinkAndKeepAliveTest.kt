@@ -1,11 +1,13 @@
 package com.arcana.brain.app
 
 import com.arcana.brain.app.screens.ThinkLevels
+import com.arcana.brain.app.screens.thinkLabel
+import com.arcana.brain.app.screens.thinkText
+import com.arcana.brain.core.OllamaProtocol
 import com.arcana.brain.core.AppConfig
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.ConfigStore
 import com.arcana.brain.core.EventStore
-import com.arcana.brain.core.SessionStore
 import com.arcana.brain.core.ToolUseStore
 import com.arcana.brain.core.UsageStore
 import com.sun.net.httpserver.HttpServer
@@ -46,7 +48,7 @@ class ThinkAndKeepAliveTest {
         val dir = Files.createTempDirectory("arcana-think")
         val store = ConfigStore(dir.resolve("config.json"))
         store.save(AppConfig(ollamaUrl = "http://127.0.0.1:${f.server.address.port}", model = "qwen", keepChats = false).config())
-        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), SessionStore(dir.resolve("sessions")), EventStore(dir.resolve("events.jsonl")))
+        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), EventStore(dir.resolve("events.jsonl")))
             .also { it.scope = CoroutineScope(Dispatchers.Default) }
     }
 
@@ -78,6 +80,74 @@ class ThinkAndKeepAliveTest {
             chat.send("easy one")
             waitFor(f, 2)
             assertTrue("\"think\":false" in f.bodies[1], "the next message is back to the Settings value (off): ${f.bodies[1]}")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun aPlainGgufThatCanThinkButListsNoLevelsOffersOnAndOff() {
+        val f = fake("""{"capabilities":["completion","tools","thinking"],"model_info":{"qwen35.context_length":262144}}""")
+        try {
+            val app = app(f) { copy(thinking = "default") }
+            runBlocking { app.refreshConnection() }
+            assertEquals(listOf("default", "off", "on"), ThinkLevels.options, "no `thinking` block and no effort in the template: only on/off is known")
+            assertEquals("", ThinkLevels.onLevel)
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun aGgufTemplateThatNamesItsEffortLevelsGivesLowMediumAndOnAsItsDefault() {
+        val template = "{%- set resolved_reasoning_effort = reasoning_effort|default('xhigh') %}\n{%- if resolved_reasoning_effort not in ('xhigh', 'medium', 'low') %}"
+        val body = """{"capabilities":["completion","tools","thinking"],"template":${kotlinx.serialization.json.JsonPrimitive(template)},"model_info":{"qwen35.context_length":262144}}"""
+        assertEquals(listOf("low", "medium") to "xhigh", OllamaProtocol.parseTemplateEfforts(body), "xhigh is the default and cannot be sent by name: only low and medium are choices")
+        val f = fake(body)
+        try {
+            val app = app(f) { copy(thinking = "default") }
+            runBlocking { app.refreshConnection() }
+            assertEquals(listOf("default", "off", "low", "medium", "on"), ThinkLevels.options)
+            assertEquals("xhigh", ThinkLevels.onLevel, "on runs at the template's default")
+            assertEquals("On (xhigh)", thinkLabel("on"))
+            assertEquals("ON (xhigh)", thinkText("on"))
+            assertEquals("xhigh", ThinkLevels.defaultWord, "auto shows the level too")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun theThinkingPaneKeepsFollowingAfterTheCapAndSaysWhatFellOff() {
+        assertEquals("newest", liveThoughts(StringBuilder("newest"), 0))
+        assertEquals("… 120 earlier characters not shown\n\nnewest", liveThoughts(StringBuilder("newest"), 120))
+    }
+
+    @Test
+    fun customSamplingGoesWithTheChatRequestAndModelDefaultsSendNothing() {
+        val f = fake(qwen38)
+        try {
+            val app = app(f) { copy(samplingMode = "custom", temperature = 1.0, topK = 20, presencePenalty = 1.5) }
+            runBlocking { app.refreshConnection() }
+            app.chat.send("one")
+            waitFor(f, 1)
+            val first = f.bodies[0].substringAfter("\"options\"")
+            assertTrue("\"temperature\":1.0" in first && "\"top_k\":20" in first && "\"presence_penalty\":1.5" in first, first)
+            assertTrue("top_p" !in first && "min_p" !in first, "an option left blank is not sent: $first")
+            app.update(app.config.copy(samplingMode = "model"))
+            app.chat.send("two")
+            waitFor(f, 2)
+            val second = f.bodies[1].substringAfter("\"options\"")
+            assertTrue("temperature" !in second && "top_k" !in second, "model defaults send no sampling at all: $second")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun theSamplingIndicatorShowsTheValuesTheModelReallyWorksWith() {
+        val f = fake(qwen38)
+        try {
+            val app = app(f) { copy(samplingMode = "custom", temperature = 0.6, topK = 40) }
+            runBlocking { app.refreshConnection() }
+            val custom = com.arcana.brain.app.screens.samplingSegment(app)
+            assertEquals("sampling custom T0.6 P0.95 K40", custom.parts.joinToString("") { it.text }, "the model's own top_p stays, what Settings set replaces the rest")
+            val bright = custom.parts.filter { it.bold }.map { it.text.trim() }
+            assertEquals(listOf("custom", "T0.6", "K40"), bright, "what Settings set is bright, what the model decides is quiet")
+            app.update(app.config.copy(samplingMode = "model"))
+            assertEquals("sampling model T1 P0.95 K20", com.arcana.brain.app.screens.samplingSegment(app).parts.joinToString("") { it.text })
         } finally { f.server.stop(0) }
     }
 

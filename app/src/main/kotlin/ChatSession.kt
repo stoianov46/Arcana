@@ -43,7 +43,6 @@ import com.arcana.brain.core.ImageAttachment
 import com.arcana.brain.core.ReportMeta
 import com.arcana.brain.core.Prompts
 import com.arcana.brain.core.ReplyStats
-import com.arcana.brain.core.SessionKind
 import com.arcana.brain.core.ConfigStore
 import com.arcana.brain.core.StoredChat
 import com.arcana.brain.core.ToolBox
@@ -66,6 +65,8 @@ import com.arcana.brain.core.TodoItem
 import com.arcana.brain.core.Todos
 import com.arcana.brain.core.Compaction
 import com.arcana.brain.core.Oracul
+import com.arcana.brain.core.Origin
+import com.arcana.brain.core.Provenance
 import com.arcana.brain.core.OllamaClient
 import com.arcana.brain.core.UsageStats
 import com.arcana.brain.core.CHAT_STATS_DEFINITION
@@ -207,6 +208,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** The marker of that line (see [BacklogItem.id]), blank when it has none. */
     var backlogId by androidx.compose.runtime.mutableStateOf("")
+
+    /** The work item this chat was started for (Brain: Enter on a question, a todo or a research line); blank for any other chat. Its runs and the notes they create are linked to the item. */
+    var workItemId by androidx.compose.runtime.mutableStateOf("")
 
     /** Changes whenever [skillRun] makes progress, so the status bar redraws. */
     var skillTick by androidx.compose.runtime.mutableIntStateOf(0)
@@ -524,7 +528,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val kind = Flow.consultKind(arg("stage")) ?: return "Error: stage must be analyst, planner or reviewer."
         val brief = arg("brief").ifEmpty { return "Error: give a brief: everything the specialist needs." }
         if (consults >= MAX_CONSULTS) return "Error: you have already consulted $MAX_CONSULTS times in this message; carry on with what you have."
-        val model = Flow.careful(app.config).model(kind).ifEmpty { return "Error: no model is set for the ${kind.label.lowercase()} (Settings → Helpers); work without it." }
+        val model = Flow.consultModel(app.config, kind).ifEmpty { return "Error: no model is set for the ${kind.label.lowercase()} and no Oracul model to fall back on (Settings → Helpers → Model, or the ${Flow.consultSource(app.config, kind).takeIf { it != "the Oracul model" } ?: "stage"} setting); work without it." }
         if (consulting != null) return "Error: another model is working right now; try again in a moment."
         if (missingOnOracul(model)) return "Error: the model $model is not installed; work without the ${kind.label.lowercase()}."
         consults++
@@ -562,7 +566,23 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * a failure leaves the report as it is.
      */
     /** The notes this chat created get the backlog line they answer (see [backlogQuestion]); for every finished reply, so it does not depend on the skill run ending cleanly. */
+    /** The notes this chat created are linked to its work item: a report for research, an answer for a question, a draft for the rest. */
+    private fun linkWorkItem() {
+        if (workItemId.isBlank()) return
+        val vault = app.openVault().getOrNull() ?: return
+        runCatching {
+            val store = com.arcana.brain.core.WorkStore(vault)
+            val service = com.arcana.brain.core.WorkService(store)
+            val kind = service.item(workItemId)?.kind ?: return
+            val role = when (kind) { com.arcana.brain.core.WorkKind.Research -> com.arcana.brain.core.WorkRole.Report; com.arcana.brain.core.WorkKind.Question -> com.arcana.brain.core.WorkRole.Answer; else -> com.arcana.brain.core.WorkRole.Draft }
+            var linked = false
+            for (a in artifacts.toList()) if (a.tool == "create_note" && a.action == "created") { service.linkNote(workItemId, a.path.substringAfterLast('/').removeSuffix(".md"), role); linked = true }
+            if (linked) { com.arcana.brain.core.WorkNotes.sync(vault, store); app.brain.changed() }
+        }
+    }
+
     private fun stampBacklog() {
+        linkWorkItem()
         if (backlogQuestion.isBlank()) return
         val vault = app.openVault().getOrNull() ?: return
         for (a in artifacts.toList()) if (a.tool == "create_note" && a.action == "created") ReportMeta.stampBacklog(vault, a.path, backlogQuestion, backlogId.ifBlank { null })
@@ -703,6 +723,29 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     fun projectFolder(config: AppConfig): java.nio.file.Path? =
         config.projectFolder.trim().takeIf { it.isNotEmpty() }?.let { AppContext.expandHome(it) }?.takeIf { java.nio.file.Files.isDirectory(it) }
 
+    /** The run now going on, or the last one: one request of the user and everything done to answer it. Every note its tools write is recorded against it. */
+    var run: Origin? = null
+        private set
+
+    private var provenance: Pair<java.nio.file.Path, Provenance>? = null
+
+    /** The record of runs of [vault], kept for as long as the vault is the same (its de-duplication lives in the instance). */
+    private fun provenanceFor(vault: Vault): Provenance =
+        provenance?.takeIf { it.first == vault.root }?.second ?: Provenance(vault).also { provenance = vault.root to it }
+
+    private fun beginRun(request: String) {
+        val origin = Origin.newRun(id)
+        run = origin
+        app.openVault().getOrNull()?.let { v ->
+            provenanceFor(v).started(origin, request, app.config.model)
+            // a chat started for a work item: this run is work on it (the item is in progress from now on)
+            if (workItemId.isNotBlank()) {
+                runCatching { val store = com.arcana.brain.core.WorkStore(v); com.arcana.brain.core.WorkService(store).linkRun(workItemId, origin.run); com.arcana.brain.core.WorkNotes.sync(v, store) }
+                app.brain.changed()
+            }
+        }
+    }
+
     /** The tools for the current settings, or null when tools are off. */
     fun toolboxFor(config: AppConfig): ToolBox? {
         if (!config.toolsEnabled) return null
@@ -717,12 +760,13 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             readOnly = config.toolMode == "plan",
             shell = config.toolShell,
             web = config.toolWeb,
-            searchBackend = config.searchBackend, searchUrl = config.searchUrl, searchKey = config.searchKey,
+            searchBackend = config.searchBackend, searchUrl = config.searchUrl, searchKey = config.searchKey, ollamaKey = config.ollamaKey,
             skillsFolder = if (config.skillsEnabled) app.skillsFolder(config) else "",
             semantic = semanticIndexFor(config, vault)?.let { SemanticSearch(it) },
             searchTuning = SearchTuning.of(config),
             notesSearch = notesSearched(config),
             searchMode = RetrievalMode.of(config.searchBy),
+            origin = run, provenance = vault?.let { provenanceFor(it) },
             projectSearch = projectRoots(config).takeIf { it.isNotEmpty() }?.let { roots ->
                 ProjectSearch(roots, { source -> projectIndexFor(config, source) }, SearchTuning.of(config), config.searchMaxFileKb.coerceIn(10, 5000) * 1000L, vaultRoot = vault?.root?.toAbsolutePath()?.normalize())
             },
@@ -1011,7 +1055,6 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 if (repeatable(spec) && !FAILURE_LOOK.containsMatchIn(result.take(300))) turnCalls[callKey] = System.currentTimeMillis() to result.take(160).replace('\n', ' ')
             }
             if (allowed && spec != null && !result.startsWith("Error:")) {
-                app.session.log(SessionKind.Tool, "${call.name} ${spec.summary(call.arguments)}")
                 Artifacts.of(call.name, { (call.arguments[it] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty() }, result, System.currentTimeMillis())?.let { artifacts += it; app.recordEvent(Events.ARTIFACT, it.action) }
                 if (spec.risk != ToolRisk.Read) app.brain.changed()
             }
@@ -1048,7 +1091,6 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             val message = ChatMessage.user(text)
             add(message)
             added += message
-            app.session.log(SessionKind.Asked, text)
         }
         return added
     }
@@ -1152,7 +1194,6 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             "stop" -> return 0
             // more steps at once, a few times; each call inside them keeps its own approval (a change, a command and a web address ask as usual)
             "auto" -> if (used < app.config.toolSteps * (1 + STEP_LIMIT_AUTO_ROUNDS)) {
-                app.session.log(SessionKind.Tool, "step limit: ${app.config.toolSteps} more steps (automatic, $used used)")
                 return app.config.toolSteps
             }
         }
@@ -1227,7 +1268,6 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         val level = thinkNext.takeIf { it in com.arcana.brain.app.screens.thinkOptions(app.thinkingValues) }.orEmpty()
         thinkNext = ""
         add(ChatMessage.user(body, sent.pictures, sent.notes, sent.files).copy(think = level))
-        app.session.log(SessionKind.Asked, body)
         // a job that clearly needs file tools, with tools off: offer them now instead of letting the model say it cannot
         if (!app.config.toolsEnabled && app.tools != false && !toolsDeclined && looksLikeToolTask(body)) {
             app.scope.launch {
@@ -1273,7 +1313,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private suspend fun oraculAgent(model: String, box: ToolBox, request: List<ChatMessage>): Pair<String, List<String>> {
         val client = clientFor(model)
         val definitions = box.definitions()
-        val limit = app.config.toolSteps.coerceIn(1, 10)
+        val limit = if (app.config.toolSteps <= 0) 10 else app.config.toolSteps.coerceIn(1, 10)
         val used = ArrayList<String>()
         var messages = request
         for (step in 0..limit) {
@@ -1321,7 +1361,6 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         // the reader sees every call in the chat (what it was about, how it ended); no model is sent it: see OraculSteps
         add(OraculSteps.message(model, call.name, spec.summary(call.arguments), when { !allowed -> OraculSteps.DENIED; Oracul.isFailureText(result) -> OraculSteps.ERROR; else -> OraculSteps.OK }, result))
         if (allowed && !result.startsWith("Error:")) {
-            app.session.log(SessionKind.Tool, "Oracul: ${call.name} ${spec.summary(call.arguments)}")
             if (spec.risk != ToolRisk.Read) app.brain.changed()
         }
         return result
@@ -1585,13 +1624,15 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     private fun ask(body: String) {
         val history = messages.toList()
+        // a new request is a new run (what it writes is recorded against it: Provenance); a cut-off run that this message only continues keeps its run
+        val newChip = history.lastOrNull { it.role == "user" }?.noteNames?.any { Skills.isEntry(it) } == true
+        if (run == null || !(skillRun != null && runInterrupted(history) && !newChip)) beginRun(body)
         val modelCanUseTools = app.tools != false
         val box = if (!modelCanUseTools) null else toolboxFor(app.config)
         toolbox = box
         // a new message of the user ends any earlier run (the gate must not drag an unrelated question back into an unfinished skill)...
         // ...unless the run was cut off (the server did not answer, a failed reply: no final answer followed its last step) and this message has no skill chip of its own:
         // then it is the same job going on ("continue"), and its progress and its gate stay
-        val newChip = history.lastOrNull { it.role == "user" }?.noteNames?.any { Skills.isEntry(it) } == true
         if (skillRun != null && !(runInterrupted(history) && !newChip)) { skillRun = null; skillTick++ }
         clearRoles()
         stuckAdvised = 0
@@ -1609,7 +1650,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             box == null -> if (canRequest) JsonArray(listOf(REQUEST_ACCESS_DEFINITION, ASK_USER_DEFINITION)) else null
             else -> definitionsFor(box)
         }
-        gen.start(tools = offered, maxSteps = Skills.stepsFor(history, app.config.toolSteps)) {
+        gen.start(tools = offered, maxSteps = Skills.stepsFor(history, app.config.toolStepLimit)) {
             // a skill that names its models: the chip's roles apply from the first round
             val chipEntry = history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }
             // a selected flow, or the role table for every message, runs for plain messages too (a short message is neither analysed nor planned)
@@ -1719,9 +1760,14 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     /** Starts an empty conversation. The old one stays saved and can be opened again from the history. */
+    /** Set by the Prompts screen: the Chat screen sends what is in the message field as soon as it is shown, then clears this. */
+    var autoSend by mutableStateOf(false)
+
     fun startNew() {
         backlogQuestion = ""
         backlogId = ""
+        workItemId = ""
+        run = null
         skillRun = null
         thinkNext = ""
         clearRoles()
@@ -1742,6 +1788,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         artifacts.clear()
         backlogQuestion = ""
         backlogId = ""
+        workItemId = ""
+        run = null
         skillRun = null // a run belongs to the conversation it started in (see docs/skills.md)
         skillTick++
         messages.clear(); wholeNotes.clear(); cutAccepted.clear()

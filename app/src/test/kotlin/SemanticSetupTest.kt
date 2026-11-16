@@ -4,7 +4,6 @@ import com.arcana.brain.core.AppConfig
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.ConfigStore
 import com.arcana.brain.core.EventStore
-import com.arcana.brain.core.SessionStore
 import com.arcana.brain.core.ToolUseStore
 import com.arcana.brain.core.UsageStore
 import com.sun.net.httpserver.HttpServer
@@ -60,7 +59,7 @@ class SemanticSetupTest {
         val dir = Files.createTempDirectory("arcana-semantic")
         val store = ConfigStore(dir.resolve("config.json"))
         store.save(AppConfig(ollamaUrl = "http://127.0.0.1:${f.server.address.port}", model = "qwen", keepChats = false, vaultPath = vault.toString(), toolsEnabled = true, toolAutoRead = true))
-        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), SessionStore(dir.resolve("sessions")), EventStore(dir.resolve("events.jsonl")))
+        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), EventStore(dir.resolve("events.jsonl")))
             .also { it.scope = CoroutineScope(Dispatchers.Default) }
     }
 

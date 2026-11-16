@@ -5,7 +5,31 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.jakewharton.mosaic.ui.Color
 
-private fun hex(rgb: Int) = Color((rgb shr 16) and 0xFF, (rgb shr 8) and 0xFF, rgb and 0xFF)
+/**
+ * Whether the terminal gets 24-bit colour, decided the way Mosaic decides it (COLORTERM first, then TERM). Without it
+ * Mosaic rounds every channel c to the 256-colour cube level round(c / 255 * 5), shown as 0, 95, 135, 175, 215 or 255,
+ * which lifts a dark slate such as 1B2A41 to a much lighter lavender (5F5F87).
+ */
+object ColorSupport {
+    val truecolor: Boolean = (System.getenv("COLORTERM") ?: System.getenv("TERM") ?: "").let {
+        System.getenv("NO_COLOR").isNullOrEmpty() && (it.contains("24bit", ignoreCase = true) || it.contains("truecolor", ignoreCase = true))
+    }
+}
+
+private val CubeLevels = intArrayOf(0, 95, 135, 175, 215, 255)
+
+/**
+ * On a 256-colour terminal: each channel is moved to the cube level that really is nearest to it, and handed to Mosaic
+ * as the value (level * 51) that Mosaic rounds back to exactly that level, so a dark colour stays dark instead of being
+ * rounded up. With truecolor it is unchanged.
+ */
+private fun fit(c: Int): Int {
+    if (ColorSupport.truecolor) return c
+    val level = CubeLevels.indices.minBy { kotlin.math.abs(CubeLevels[it] - c) }
+    return level * 51
+}
+
+private fun hex(rgb: Int) = Color(fit((rgb shr 16) and 0xFF), fit((rgb shr 8) and 0xFF), fit(rgb and 0xFF))
 
 private fun channel(rgb: Int, shift: Int) = (rgb shr shift) and 0xFF
 
@@ -41,7 +65,12 @@ private val RequiredRoles = listOf(
     "green", "red", "blue", "orange", "purple", "cyan",
 )
 
-class ThemeSpec(val id: String, val name: String, val colors: Map<String, Int>) {
+/**
+ * One theme. [transparent]: the background, the cards and the list entries are not painted, so the terminal's own
+ * background (its colour, opacity or blur) shows through; the colours of those roles are then only used to judge
+ * light or dark and for the preview swatches.
+ */
+class ThemeSpec(val id: String, val name: String, val colors: Map<String, Int>, val transparent: Boolean = false) {
     init {
         val missing = RequiredRoles.filter { it !in colors }
         require(missing.isEmpty()) { "Theme '$id' lacks colours: ${missing.joinToString()}" }
@@ -144,9 +173,98 @@ object Themes {
         ),
     )
 
-    val all = listOf(Dark, Light, SoftDark, SoftLight, Darcula, SolarizedDark, SolarizedLight, Nord)
 
-    fun byId(id: String): ThemeSpec = all.firstOrNull { it.id == id } ?: Dark
+    /**
+     * A green-and-yellow theme, after the Brazilian flag: both colours are present together in the palette — a deep
+     * emerald-green accent on a dark green base with a golden-yellow code and prompt band, so green and yellow read as
+     * one combination. A normal (opaque) theme, like
+     * [Dark].
+     */
+    val Brasil = ThemeSpec(
+        "brasil", "Brasil",
+        mapOf(
+            "background" to 0x1D2E24, "surface" to 0x263B2F, "surfaceHigh" to 0x30493B, "entry" to 0x2B4335, "selected" to 0x3B5C49,
+            "text" to 0xDDE8D8, "muted" to 0xA3B9A3, "dim" to 0x738B78,
+            "green" to 0xE6CF6A, "red" to 0xE59A82, "blue" to 0x84C49B, "orange" to 0xDDBB5A, "purple" to 0xEBDC9C, "gray" to 0x8A9C8C, "cyan" to 0xA0D2B0,
+            "codeFg" to 0xE8D27A,
+            "promptBand" to 0x263B2F, "promptText" to 0xF0E5B5,
+        ),
+    )
+    /**
+     * A blue-and-yellow theme, after the Ukrainian flag: both colours are present together in the palette — a deep
+     * cobalt-blue accent on a dark blue base with a golden-yellow code and prompt band, so blue and yellow read as one
+     * combination. A normal (opaque) theme, like [Dark].
+     */
+    val Liberty = ThemeSpec(
+        "liberty", "Liberty",
+        mapOf(
+            "background" to 0x1B2A41, "surface" to 0x23364F, "surfaceHigh" to 0x2D4560, "entry" to 0x28405A, "selected" to 0x35557A,
+            "text" to 0xDCE3EE, "muted" to 0x9FB1C9, "dim" to 0x6F84A0,
+            "green" to 0xE3C766, "red" to 0xE59A82, "blue" to 0x7FA8E0, "orange" to 0xDDBB5A, "purple" to 0xEBD998, "gray" to 0x8797AE, "cyan" to 0x9CBEE6,
+            "codeFg" to 0xE8CF7A,
+            "promptBand" to 0x23364F, "promptText" to 0xF0E2B0,
+        ),
+    )
+
+    /**
+     * A see-through theme for a terminal with a transparent or blurred background: nothing behind the text is painted,
+     * only the selected row is tinted (so it stays visible on any background), and the borders, titles and key badges
+     * glow in bright neon accents (violet, cyan, mint, amber) that read on a dark wallpaper. For a dark terminal.
+     */
+    val Ghost = ThemeSpec(
+        "ghost", "Ghost",
+        mapOf(
+            "background" to 0x0B0F14, "surface" to 0x11161D, "surfaceHigh" to 0x363D55, "entry" to 0x2B3248, "selected" to 0x35386E, "focus" to 0x4A3F8F,
+            "text" to 0xE6EAF2, "muted" to 0xA7B0C0, "dim" to 0x6B7587,
+            "green" to 0x5CF2B0, "red" to 0xFF6B8A, "blue" to 0x6EA8FF, "orange" to 0xFFC857, "purple" to 0xB48CFF, "gray" to 0x8791A3, "cyan" to 0x4FE3F5,
+            "codeFg" to 0xFFD27A, "promptBand" to 0x3B4260, "promptText" to 0xF4E7C4,
+        ),
+        transparent = true,
+    )
+
+    /**
+     * A monochrome theme: one hue, a light blue (RGB 167 182 214, about 221 degrees) on black. The roles differ by lightness and saturation, not by hue
+     * (the app never uses colour as the only signal: ✓ ⚠ ◆ and bold carry the meaning too): `cyan` (key hints, active tabs, primary values) is the brightest,
+     * `text` the body, `purple` (borders, headings, focus) a more saturated mid blue, and `green`, `orange` (warnings, code, the prompt band) and `blue` pale
+     * blues. The one exception is `red`, a muted rose, so an error still stands out. A normal (opaque) theme, like [Dark]; it needs a truecolor terminal
+     * (on 256 colours the dark surfaces all round to black).
+     */
+    val Monochrome = ThemeSpec(
+        "monochrome", "Monochrome",
+        mapOf(
+            "background" to 0x000000, "surface" to 0x0B131D, "surfaceHigh" to 0x17232F, "entry" to 0x121D29, "selected" to 0x1D2C42,
+            "text" to 0xA7B6D6, "muted" to 0x7B8AAA, "dim" to 0x4A566B,
+            "green" to 0xB8D4E8, "red" to 0xC48CA0, "blue" to 0x8EAEEB, "orange" to 0xC8D2E6, "purple" to 0x7F9AD0, "gray" to 0x7A869A, "cyan" to 0xD3DDF2,
+            "codeFg" to 0xC8D2E6,
+            // the one other exception besides red: the task list in the chat is a real green (it is the plan the user follows), readable on every layer
+            "todo" to 0x7FD6A4,
+            // the console (model output), told apart by brightness and saturation: headings and links the brightest, bullets the accent blue, code a saturated blue on a chip
+            "consoleUser" to 0xD3DDF2, "consoleTool" to 0x7F9AD0, "consoleCodeFg" to 0x8EAEEB, "consoleCodeBg" to 0x111C2B,
+        ),
+    )
+
+    /**
+     * [Monochrome] plus ONE warm accent, amber (about 40 degrees, the complement of the blue): warnings, your own messages (name and band), the list markers of the
+     * console, the thinking effort (`thinkAccent`: dim amber, amber, light amber), the context bar (`contextAccent`) and the status pane's values (`statusAccent`).
+     * Everything else stays blue, and errors stay rose. Needs a truecolor terminal, like [Monochrome].
+     */
+    val MonochromeAccent = ThemeSpec(
+        "monochrome-accent", "Monochrome Accent",
+        Monochrome.colors + mapOf(
+            "orange" to 0xE8B35E, "consoleTool" to 0xE8B35E,
+            // a more colourful console: aqua bold (a cool cousin of the blue that stays calm next to the amber; saturated, since a pastel reads weak), pale-blue italics, saturated links, amber figures and heading blocks, gold strings and deep-amber numbers in code
+            "consoleBold" to 0x6FD0CC, "consoleItalic" to 0xB8D4E8, "consoleLink" to 0x8EAEEB, "consoleNumber" to 0xE8B35E,
+            "consoleHeadingMark" to 0xE8B35E, "consoleQuote" to 0xB8924A, "syntaxString" to 0xF0C674, "syntaxNumber" to 0xE4A04F,
+            "statusAccent" to 0xE8B35E, "thinkAccent" to 0xE8B35E, "contextAccent" to 0xE8B35E,
+        ),
+    )
+
+    val all = listOf(Dark, Light, SoftDark, SoftLight, Darcula, SolarizedDark, SolarizedLight, Nord, Brasil, Liberty, Ghost, Monochrome, MonochromeAccent)
+
+    /** Same list, under the name the palette and settings code also use. */
+    val themeList get() = all
+
+    fun byId(id: String): ThemeSpec = all.firstOrNull { it.id == (if (id == "freedom") "liberty" else id) } ?: Dark
 }
 
 /** Every colour of one theme, resolved to terminal colours: what is set in the [ThemeSpec], and the rest derived from it. */
@@ -174,12 +292,23 @@ class Colors(val spec: ThemeSpec) {
     private val codeBgRgb = opt("codeBg") { mix(blueRgb, surfaceRgb, 0.12) }
     private val codeFgRgb = opt("codeFg") { mix(orangeRgb, textRgb, 0.35) }
 
-    val Background = hex(backgroundRgb)
-    val Surface = hex(surfaceRgb)
+    /** What a transparent theme paints for a background: nothing, so the terminal's own background shows. */
+    private fun ground(rgb: Int): Color = if (spec.transparent) Color.Unspecified else hex(rgb)
+
+    val Background = ground(backgroundRgb)
+    val Surface = ground(surfaceRgb)
+
+    /**
+     * The theme's real background colour, even when it is transparent: the text colour on a badge or a highlighted tab,
+     * where a see-through [Background] would fall back to the terminal's own text colour and vanish on the accent.
+     */
+    val Ink = hex(backgroundRgb)
+
+    /** The input field and raised blocks that are not focused: solid even in a transparent theme, so a field never disappears. */
     val SurfaceHigh = hex(surfaceHighRgb)
 
     /** A list entry's own block, a step away from the card it sits on. */
-    val EntryBg = hex(entryRgb)
+    val EntryBg = ground(entryRgb)
     val Selected = hex(selectedRgb)
 
     /** The background of the input that has the keyboard. */
@@ -188,6 +317,29 @@ class Colors(val spec: ThemeSpec) {
     val Muted = hex(mutedRgb)
     val Dim = hex(c.getValue("dim"))
     val Green = hex(greenRgb)
+
+    /** Calmer versions of the status colours for large areas such as chart bars: the colour mixed into the background, so a bar never glares. */
+    val GreenSoft = hex(mix(greenRgb, backgroundRgb, 0.55))
+    val RedSoft = hex(mix(redRgb, backgroundRgb, 0.55))
+    val OrangeSoft = hex(mix(orangeRgb, backgroundRgb, 0.55))
+    val CyanSoft = hex(mix(cyanRgb, backgroundRgb, 0.55))
+    val AccentSoft = hex(mix(purpleRgb, backgroundRgb, 0.55))
+
+    /**
+     * The selected tab: a soft tint of the colour over the background, with the normal text colour in bold, so a tab says where you are without a bright block.
+     * [TabOn] (cyan) is for the page tabs of a screen, [TabOnAccent] (violet) for the sidebar and a second row of tabs.
+     */
+    val TabOn = hex(mix(cyanRgb, backgroundRgb, 0.45))
+
+    /**
+     * The colours of the charts: three hues (cyan, violet, amber) all mixed into the background by the same amount, so they read as one set instead of three unrelated
+     * colours, and bright enough for a thin line, which needs more than a block does. [ChartTrack] is the empty part of a bar: quiet, but visible.
+     */
+    val ChartA = hex(mix(cyanRgb, backgroundRgb, 0.82))
+    val ChartB = hex(mix(purpleRgb, backgroundRgb, 0.82))
+    val ChartC = hex(mix(orangeRgb, backgroundRgb, 0.82))
+    val ChartTrack = hex(mix(mutedRgb, backgroundRgb, 0.62))
+    val TabOnAccent = hex(mix(purpleRgb, backgroundRgb, 0.45))
     val GreenBg = hex(opt("greenBg") { mix(greenRgb, surfaceRgb, 0.15) })
     val Red = hex(redRgb)
     val RedBg = hex(opt("redBg") { mix(redRgb, surfaceRgb, 0.17) })
@@ -218,10 +370,37 @@ class Colors(val spec: ThemeSpec) {
     val ConsoleDim = hex(opt("consoleDim") { c.getValue("dim") })
 
     /** Headings, links and the speaker of a message. */
-    val ConsoleUser = hex(opt("consoleUser") { blueRgb })
+    private val consoleUserRgb = opt("consoleUser") { blueRgb }
+    val ConsoleUser = hex(consoleUserRgb)
+
+    // Optional finer steps of the console (each falls back to what the console used before, so a theme that sets none looks as it did):
+    /** The colour of **bold** text in the body (null: the text colour, bold only). */
+    val ConsoleBold: Color? = c["consoleBold"]?.let { hex(it) }
+
+    /** The colour of *italic* text in the body (null: the text colour, italic only). */
+    val ConsoleItalic: Color? = c["consoleItalic"]?.let { hex(it) }
+
+    /** Links: the heading colour unless set. */
+    val ConsoleLink = hex(opt("consoleLink") { consoleUserRgb })
+
+    /** Figures in the text (money, percentages, long numbers): the call-to-action colour unless set. */
+    val ConsoleNumber = hex(opt("consoleNumber") { cyanRgb })
+
+    /** The block before a level 1 and 2 heading: the accent unless set. */
+    val ConsoleHeadingMark = hex(opt("consoleHeadingMark") { purpleRgb })
+
+    /** The bar of a quotation: the accent unless set. */
+    val ConsoleQuote = hex(opt("consoleQuote") { purpleRgb })
+
+    /** In code blocks: strings (the green role unless set) and numbers (the orange role unless set). */
+    val SyntaxString = hex(opt("syntaxString") { greenRgb })
+    val SyntaxNumber = hex(opt("syntaxNumber") { orangeRgb })
 
     /** List markers. */
     val ConsoleTool = hex(opt("consoleTool") { orangeRgb })
+
+    /** The task list in the chat (its call line and its items): the green role, unless a theme sets `todo` (the monochrome themes do: a real green, since their `green` is a blue). */
+    val Todo = hex(opt("todo") { greenRgb })
     val ConsoleOk = hex(opt("consoleOk") { greenRgb })
     val ConsoleErr = hex(opt("consoleErr") { redRgb })
 
@@ -236,6 +415,26 @@ class Colors(val spec: ThemeSpec) {
     val UserName = hex(orangeRgb)
     val UserBg = hex(opt("promptBand") { mix(orangeRgb, surfaceRgb, if (light) 0.22 else 0.15) })
     val UserText = hex(opt("promptText") { mix(orangeRgb, textRgb, 0.22) })
+
+    // ---- Optional accents: a theme may colour the status pane, the thinking effort and the context bar by ONE accent instead of the green/orange/red scales (null = the usual scales) ----
+    private fun accent(key: String): Int? = c[key]
+
+    /** The status pane's own values (the thinking pane switch, the compaction room, the next message's effort). */
+    val StatusAccent: Color? = accent("statusAccent")?.let { hex(it) }
+
+    /** The thinking effort, low to high: a quiet shade of the accent, the accent, a light shade of it ([thinkShade]). */
+    val ThinkAccent: Color? = accent("thinkAccent")?.let { hex(it) }
+    private val thinkRgb = accent("thinkAccent")
+
+    /** The context bar: the accent while there is room, a light shade of it getting full; the red role past the limit stays red. */
+    val ContextAccent: Color? = accent("contextAccent")?.let { hex(it) }
+    private val contextRgb = accent("contextAccent")
+
+    /** [t] 0..1 (low to high effort) as a shade of the think accent; null without one. */
+    fun thinkShade(t: Double): Color? = thinkRgb?.let { hex(if (t < 0.34) mix(it, backgroundRgb, 0.6) else if (t < 0.8) it else mix(0xFFFFFF, it, 0.4)) }
+
+    /** The context accent made lighter, for a bar that is getting full. */
+    val ContextHot: Color? = contextRgb?.let { hex(mix(0xFFFFFF, it, 0.4)) }
 
     /** One colour of the animated logo's rainbow, [t] (0..1, wrapping) round the colour wheel: soft pastels. */
     fun logoShade(t: Double): Color = hex(hsv((t % 1.0 + 1.0) % 1.0, if (light) 0.45 else 0.34, if (light) 0.70 else 0.86))
@@ -258,6 +457,7 @@ object Palette {
     }
 
     val Background get() = colors.Background
+    val Ink get() = colors.Ink
     val Surface get() = colors.Surface
     val SurfaceHigh get() = colors.SurfaceHigh
     val EntryBg get() = colors.EntryBg
@@ -267,6 +467,17 @@ object Palette {
     val Muted get() = colors.Muted
     val Dim get() = colors.Dim
     val Green get() = colors.Green
+    val GreenSoft get() = colors.GreenSoft
+    val RedSoft get() = colors.RedSoft
+    val OrangeSoft get() = colors.OrangeSoft
+    val CyanSoft get() = colors.CyanSoft
+    val AccentSoft get() = colors.AccentSoft
+    val TabOn get() = colors.TabOn
+    val ChartA get() = colors.ChartA
+    val ChartB get() = colors.ChartB
+    val ChartC get() = colors.ChartC
+    val ChartTrack get() = colors.ChartTrack
+    val TabOnAccent get() = colors.TabOnAccent
     val GreenBg get() = colors.GreenBg
     val Red get() = colors.Red
     val RedBg get() = colors.RedBg
@@ -290,10 +501,24 @@ object Palette {
     val ConsoleDim get() = colors.ConsoleDim
     val ConsoleUser get() = colors.ConsoleUser
     val ConsoleTool get() = colors.ConsoleTool
+    val Todo get() = colors.Todo
     val ConsoleOk get() = colors.ConsoleOk
     val ConsoleErr get() = colors.ConsoleErr
     val ConsoleCodeFg get() = colors.ConsoleCodeFg
     val ConsoleCodeBg get() = colors.ConsoleCodeBg
+    val ConsoleBold get() = colors.ConsoleBold
+    val ConsoleItalic get() = colors.ConsoleItalic
+    val ConsoleLink get() = colors.ConsoleLink
+    val ConsoleNumber get() = colors.ConsoleNumber
+    val ConsoleHeadingMark get() = colors.ConsoleHeadingMark
+    val ConsoleQuote get() = colors.ConsoleQuote
+    val SyntaxString get() = colors.SyntaxString
+    val SyntaxNumber get() = colors.SyntaxNumber
+    val StatusAccent get() = colors.StatusAccent
+    val ThinkAccent get() = colors.ThinkAccent
+    val ContextAccent get() = colors.ContextAccent
+    val ContextHot get() = colors.ContextHot
+    fun thinkShade(t: Double) = colors.thinkShade(t)
 }
 
 object Dimens {

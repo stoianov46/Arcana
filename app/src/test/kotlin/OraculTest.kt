@@ -6,7 +6,6 @@ import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.Events
 import com.arcana.brain.core.ConfigStore
 import com.arcana.brain.core.Oracul
-import com.arcana.brain.core.SessionStore
 import com.arcana.brain.core.ToolUseStore
 import com.arcana.brain.core.UsageStore
 import com.sun.net.httpserver.HttpServer
@@ -63,7 +62,7 @@ class OraculTest {
         val dir = Files.createTempDirectory("arcana-oracul")
         val store = ConfigStore(dir.resolve("config.json"))
         store.save(AppConfig(ollamaUrl = "http://127.0.0.1:${f.server.address.port}", model = "worker", keepChats = false).config())
-        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), SessionStore(dir.resolve("sessions")), com.arcana.brain.core.EventStore(dir.resolve("events.jsonl")))
+        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), com.arcana.brain.core.EventStore(dir.resolve("events.jsonl")))
             .also { it.scope = CoroutineScope(Dispatchers.Default) }
     }
 

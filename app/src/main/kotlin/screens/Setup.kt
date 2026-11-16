@@ -62,7 +62,7 @@ fun SetupScreen(app: AppContext) {
 
     FocusMode(true)
     when (step) {
-        SetupStep.Vault -> Hints(*(if (browser.filtering) arrayOf("↑↓  move", "Enter  open", "Esc  clear filter") else arrayOf("Space  use this folder", "Enter  open", "←  up", "/  filter", "s  skip setup")))
+        SetupStep.Vault -> Hints(*(browser.hints() + "s  skip setup").toTypedArray())
         SetupStep.Items -> Hints("↑↓  move", "Space  tick", "Enter  create the ticked", "Esc  ${if (hasVault) "close" else "back"}")
         SetupStep.Done -> Hints("Enter  start")
     }

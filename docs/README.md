@@ -14,7 +14,7 @@ no marketing. Read this page, then open only the file you need.
   `utils/` is an unused template module; ignore it.
 - Package roots: `com.arcana.brain.core` and `com.arcana.brain.app` (sub-packages `design`, `input`, `navigation`, `screens`).
 - Single process, single window. State lives in Compose snapshot state held by `AppContext` (one instance per run).
-- Everything the user does ends up as: a vault file change, a chat file, a session event, a usage record, or config.
+- Everything the user does ends up as: a vault file change, a chat file, a usage record, or config.
 - The LLM is only reached through `OllamaClient` (`/api/chat` streaming, `/api/show`, `/api/tags`, `/api/ps`).
 - **Skills** are plain Markdown + files in the vault, found by folder layout and enforced by the harness (`requires:`); read [skills.md](skills.md) before touching `Skills.kt`, `use_skill`, the gate or the Chat badge.
 - The product rules in [conventions.md](conventions.md) are binding (e.g. "Chat's field always has the keyboard").
@@ -25,7 +25,7 @@ no marketing. Read this page, then open only the file you need.
 |---|---|
 | [architecture.md](architecture.md) | understand modules, layers, data flow, threading, startup/shutdown |
 | [functionality.md](functionality.md) | know what every screen, key and feature does (user-visible behaviour) |
-| [core-module.md](core-module.md) | change Ollama/vault/index/session/chat-store/usage/inbox logic |
+| [core-module.md](core-module.md) | change Ollama/vault/index/chat-store/usage logic |
 | [app-module.md](app-module.md) | find the right file in the UI layer; state holders; navigation; design system; input |
 | [tools-and-agent.md](tools-and-agent.md) | work on the tool-calling loop, dialogs, shell/web/questions, or add a tool |
 | [development.md](development.md) | set up a dev environment, run without touching real data, where to change what, the definition of done (code, tests, docs, vault notes) and the release checklist |
@@ -41,6 +41,7 @@ no marketing. Read this page, then open only the file you need.
 | [conventions.md](conventions.md) | follow project rules; recipes for "add a screen / setting / key / tool" |
 | [research-reports.md](research-reports.md) | the Library's *Reports* view: how reports (`type: report`) are found, marks, stale rules, `s` to run a report's skill again |
 | [vault-hygiene.md](vault-hygiene.md) | the Brain screen's hygiene checks: each rule, the list, open-in-Library and chat-to-fix |
+| [brain.md](brain.md) | the Brain screen: four pages (Overview, Work, Health, Activity), the charts, how the numbers and the bottlenecks are made |
 | [research-backlog.md](research-backlog.md) | the research backlog: `? ` in Capture, `Research/Research Backlog.md`, the Brain list, auto-tick |
 | [report-lifecycle.md](report-lifecycle.md) | what happens to a report after it is written: tokens, work time and rating, refreshing a stale report, the reviewer pass |
 | [retrieval.md](retrieval.md) | how notes and project files are found: `keywords` / `meaning` / `both`, BM25 + vectors fused, the `search_vault` tool, `/vault` answers, the Sources line |
@@ -72,8 +73,6 @@ Note: the vault note `ARCANA.md` (see [functionality.md](functionality.md)) is p
 | Vault | An Obsidian vault: a folder of Markdown notes (`.md`) with `[[wikilinks]]`, `#tags`, YAML frontmatter |
 | Second brain | The product idea: capture → see → think → shape → keep |
 | Brain | The home/dashboard screen (`Screen.Home`) showing vault health |
-| Session | One run of Arcana, logged to disk, can be saved to the vault as a summary note |
-| Inbox | A vault folder (default `Inbox`) of unprocessed notes that AI can file |
 | Capture | `Ctrl+N`: append a timestamped line to today's thought file (`Thoughts/thought-YYYY-MM-DD.md`) |
 | Palette | `Ctrl+P`: searchable list of every action |
 | Tools | Model-callable functions: read/search notes and files, change or delete them, ask the user, run commands, read web pages; changes, commands and fetches need the user's confirmation |

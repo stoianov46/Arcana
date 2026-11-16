@@ -12,9 +12,8 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `Layout.kt` | `Layout`: where Arcana's own files live (`.arcana/skills`, `.arcana/ARCANA.md`, the global `~/.config/arcana/skills` and `ARCANA.md`), `skillsFolder`/`defaultMemory` (automatic choice), `migrate` (`arcana --migrate`) |
 | `Vault.kt` | `Vault` (incl. `rename` with link rewriting, `memoryFile`/`memory`/`ensureMemory`/`remember` (no duplicates, no dead note paths), `auditMemory`/`cleanMemory` (`MemoryLines.kt`: `similar`, `noteRefs`, `MemoryAudit`) for the memory file (`ARCANA.md` or `AppConfig.memoryPath`), `MEMORY_TEMPLATE`), `Note`, `SearchHit`, `NoteTask`, `Prompts` (every prompt template), `VaultException` |
 | `VaultIndex.kt` | `VaultIndex`, `NoteInfo`, `BrainHealth`, `DailyNotes`, `Vault.capture` |
-| `Inbox.kt` | `InboxProcessing` (prompt + parse), `InboxPlan`, `mergeFrontmatterTags`, `Vault.processInboxNote` |
+| `Frontmatter.kt` | `mergeFrontmatterTags` (the tags of a note's frontmatter, merged) |
 | `ChatStore.kt` | `ChatStore`, `StoredChat` (persistent chats as JSON files) |
-| `Session.kt` | `SessionKind`, `SessionEvent`, `StoredSession`, `SessionStore`, `SessionStats`, `SessionReport` |
 | `Usage.kt` | `UsageRecord`, `UsageStore` (JSONL), `UsageTotals`, `UsageStats` (totals, `by`, `perDay`, `perHour`, `speedPerDay`, `insights`, `estimatedCost`, `since`, `compact`), `UsageInsights` |
 | `ImageFiles.kt` | picture rules + loading (`ImageAttachment`, base64) |
 | `TextFiles.kt` | text/PDF attachment rules + loading (`FileAttachment`, PDFBox extraction, `TextFiles.block`) |
@@ -23,10 +22,11 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `Sources.kt` | `PassageSource` (what is searched: files with size and time, their text, their passages), `VaultSource`, `FolderSource` (code, config, text and documents of a folder; skips hidden, build, big, binary), `CodeChunker` (passages with a line and a declaration), `ProjectSearch` (the `search_files` tool's search over folders, one meaning index per folder, path:line / page) |
 | `Documents.kt` | `Documents`: the text of a PDF (page by page), `.docx` and HTML for the file search (best effort, no OCR) |
 | `Skills.kt` | `Skill`, `Skills.discover` (one folder per skill, entry note `<name>.skill.md`, `output:` folder for results, problems), `catalog`, `load`, `loadEntry`, `isEntry`, `chipLabel`, `find`, `summary`, `parseRequirements`/`requirementsOf`; `Requirement` and `SkillRun` (the completion gate's progress) |
-| `VaultIndex.kt` tags | `VaultIndex.frontmatterTags` reads tags however they are written (`tags: [a, b]`, `a, b`, `a b`, `#a #b`, a `- a` list; `tags:`, `tag:` or `Tags:`; several keys all count); `cleanTag` and `isTagKey` are shared with `mergeFrontmatterTags` (Inbox.kt) and `Vault.addTags` |
+| `VaultIndex.kt` tags | `VaultIndex.frontmatterTags` reads tags however they are written (`tags: [a, b]`, `a, b`, `a b`, `#a #b`, a `- a` list; `tags:`, `tag:` or `Tags:`; several keys all count); `cleanTag` and `isTagKey` are shared with `mergeFrontmatterTags` (Frontmatter.kt) and `Vault.addTags` |
 | `ToolCuts.kt` | `ToolCuts.marker(result)`: the line in which a tool says it left something out, shown in the chat as `✂ …` |
 | `Todos.kt` | `TODO`, `TODO_DEFINITION`, `Todos` (`parse`, `describe`, `last`, `render`): the model's own task list, the `todo` pseudo-tool; the list is derived from the latest `todo` call in the chat (`ChatSession.todos`), nothing is stored apart from the messages |
-| `ChatStats.kt` | `CHAT_STATS`, `CHAT_STATS_DEFINITION`, `ChatStats.describe(...)`: the text the `chat_stats` pseudo-tool returns |
+| `PromptTemplates.kt` | `PromptTemplate`, `PromptTemplates` (`FOLDER = "Prompts"`, `list`, `parse`, `placeholders`, `fill`, `noteText`, `create`, `setSkill`, `addNote`, `clearAttachments`, the text-level `withSkill` / `withNote` / `withoutAttachments`, `parseNotes`; a template's optional `skill` and `notes` properties name what is attached when it runs): the notes the Templates tab runs |
+| `ChatStats.kt` | `CHAT_STATS`, `CHAT_STATS_DEFINITION`, `ChatStats.describe(...)`, `ChatStats.spans` (chat time and active time from `ChatMessage.at`): the text the `chat_stats` pseudo-tool returns |
 | `LoopGuard.kt` | `LoopGuard`: `repeating` (the last 80 characters stand N times in the last 12,000), `withoutLoop`, the nudge texts, `Calls` (counts repeated tool calls of a turn: `note` → `Step.None/Warn/Halt`, `forget`, `reset`, `halted`) | the loop guard; pure, no model |
 | `Events.kt` | `StatEvent`, `Events` (the kinds: flow, control, redo, check, goal, route, consult, verdict, opinion, cancel, compact, memory, loop, artifact), `EventStore` (`events.jsonl`), `TeamStats` / `TeamStatsBuilder` (the Usage screen's Orchestration page: helper share of tokens and price, models, flow acceptance at the first check, verdict confirmation rate) |
 | `ToolUsage.kt` | `ToolUseRecord` (time, tool, millis, `ok`/`error`/`denied`, result chars → `approxTokens` = chars/4), `ToolUseStore` (`tool-usage.jsonl` next to the settings), `ToolStats.by/since` → `ToolTotals` |
@@ -34,8 +34,8 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `Compaction.kt` | `Compaction`: `MARK`, `isSummary`, `summaryMessage`, `forModel` (from the latest summary on), `cutPoint` (the latest turns that fit in `keepTokens` stay, at least the last one; without it the last 2; ≥4 older messages; one long turn is cut between its tool rounds at an assistant message), `toSummarize`, `transcript` (tool results cut to 400 characters, ≤30,000 characters) and `INSTRUCTIONS` for the summarizer; the summary is inserted into the chat, nothing is deleted |
 | `Sound.kt` | `ChatSoundEvent` (Attention, Done, Failed), `SoundChoices` (ids, labels, `suggested`), `SoundPlayer` / `CommandSoundPlayer` (`afplay` or the terminal bell), `Sounds.notify(config, event, onChatScreen)` |
 | `Bootstrap.kt`, `StarterSkills.kt` | `Bootstrap.items(vault, config)` / `create(vault, config, ids)`: what a vault needs for Arcana (memory file, skills folder, skills guide, starter skills, output folder) and creating only what is missing (an existing file is never touched); `StarterSkills.all` (`decompose`) and `StarterSkills.GUIDE` are plain Markdown constants |
-| `Storage.kt` | `Storage.areas(configRoot, vaultRoot?)` → `StorageArea`s (backups, trash, vault `.trash`, chats, sessions, usage, tool usage), `use` (files, bytes), `clearable` / `clear(area, olderThanDays)` (empty folders are removed, the area's own folder stays), `size` |
-| `Artifacts.kt` | `Artifact`, `Artifacts`: which tool calls leave a file or note behind in a chat (the `✦ N changed` pill, `/artifacts`) |
+| `Storage.kt` | `Storage.areas(configRoot, vaultRoot?)` → `StorageArea`s (backups, trash, vault `.trash`, chats, usage, tool usage), `use` (files, bytes), `clearable` / `clear(area, olderThanDays)` (empty folders are removed, the area's own folder stays), `size` |
+| `Artifacts.kt` | `Artifact`, `Artifacts`: which tool calls leave a file or note behind in a chat (the `✦ N changed` pill, `/artifacts`; `entries` merges a path's calls, `libraryNote` says which entries the Library can open) |
 | `Flow.kt` | `StageKind`, `FlowStage`, `Flow`: a fixed sequence of stages (analyst, planner, worker, reviewer, controller), each with its own model, and the pseudo-tool a model uses to consult a stage |
 | `ModelStatus.kt` | `SystemMemory`, `SystemCpu`, `ModelStatus`: one sentence on why a request has not produced a word yet (model not loaded, prompt being read, memory tight) |
 | `Router.kt` | `Route`, `Router`: rule-based routing of a message with an image or code to its own model (Settings → Helpers) |
@@ -45,7 +45,7 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `Diff.kt` | `Diff.unified(old, new, context)`: a git-style line diff (`@@ -a,b +c,d @@` hunks, `  ` context, `- ` removed, `+ ` added; common start and end cut off first, an LCS for the middle, big middles shown as one replacement); used by the change previews |
 | `Shell.kt` | `ShellPolicy` (blocked / safe commands; `curl` and `wget` are blocked: use `http_request`) and `runShell` (the `run_command` runner) |
 | `Web.kt` | `WebPolicy` (public addresses only), `fetchUrl` (manual redirects, size/time limits), `htmlToText` |
-| `WebSearch.kt` | `WebSearch.search` with three backends (DuckDuckGo HTML, SearXNG JSON, Brave API), pure parsers, `format`; `SearchResult` |
+| `WebSearch.kt` | `WebSearch.search` with four backends (DuckDuckGo HTML, SearXNG JSON, Brave API, Ollama hosted search), pure parsers, `format`; `SearchResult` |
 | `TextToolCalls.kt` | `TextToolCalls.extract`: finds a tool call the model wrote as text at the end of a reply |
 
 ## `OllamaClient.kt`
@@ -58,7 +58,8 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
   - `listModels(): List<String>` and `modelDetails(): List<ModelDetails>` (`/api/tags` + `show` per model: size, capabilities; `summary()` is
     the `19 GB · dense · tools · thinking`, `MoE` for a mixture of experts, from `model_info`, else from the tensor list (`OllamaProtocol.parseTensorLayout`) text of the model picker).
   - `loadedContext(model)` (`/api/ps`, `OllamaProtocol.parseLoadedContext`): the `context_length` Ollama loaded the model with; 0 when it is not loaded or this Ollama is too old to say.
-  - `chatRequest` sends `options.temperature`, and `num_ctx` when `AppConfig.contextTokens > 0`.
+  - `chatRequest` sends the sampling options of `Sampling.options(config)` (none in `model` mode; in `custom` mode the temperature and every option that has a value: `top_p`, `top_k`, `min_p`, `presence_penalty`, `repeat_penalty`), `num_ctx` when `AppConfig.contextTokens > 0`, and `repeat_penalty` for the retry after a loop (wins over the setting).
+  - `Sampling` (`Sampling.kt`): the one definition of the six options (range, step, help), `get`/`set`/`parse`/`step`, `options`, `effective` (what the model really works with: set values, else its Modelfile's), `toCustom`/`toModel`. `AppConfig.forModel(other)` resets `samplingMode` to `model`: custom values are for the chat model only.
 - `OllamaProtocol` (pure, unit-tested): `chatRequest(config, messages, jsonMode, tools)`, `parseChunk(line)`, `parseCapabilities`,
   `parseModels`. Messages are serialized with `ChatMessage.withFilesInlined()` (text files become part of `content`).
   Defaults are not encoded, so app-only fields (`imageNames`, `stats`, `noteNames`, `sources`) never reach Ollama when empty.
@@ -101,16 +102,9 @@ question with vault excerpts when `hits != null`, keeps tool output older than t
 `VaultIndex.build(vault)` (companion) scans every note once: word count, frontmatter + inline `#tags`, `[[wikilinks]]` resolved to
 paths (unresolved kept separately; a name is tried as a note first, so `[[Qwen3.8 27B vs …]]` with dots is a note, and only a missing name that ends in a dot and 1-5 letters or digits, like `shot.png`, counts as a picture or file and is ignored). **Code blocks and inline code are ignored** for links and tags. Derived: `backlinks`,
 `orphans`, `untagged`, `stale(days)`, `inFolder`, `tagCounts`, `related(path)` (shared tags/links), `touchedSince(days)`,
-`health(inboxFolder, staleDays) -> BrainHealth` (counts + `connectedPercent`/`taggedPercent`).
+`health(staleDays) -> BrainHealth` (counts + `connectedPercent`/`taggedPercent`).
 `DailyNotes.detect(vault, folder, format)` reads `.obsidian/daily-notes.json` (`folder`, `format` in moment.js tokens) else
 falls back to the settings; `pathFor(date)`. `Vault.capture(text, daily, now)` appends `- HH:mm text` (creates the note if needed).
-
-## `Inbox.kt`
-
-`InboxProcessing.prompt(...)` asks for JSON with `title, summary, tags, links, folder`, given tags in use, existing note titles and
-folders. `parse(reply, ...)` tolerates messy replies (extracts the JSON object), **drops links to notes that do not exist and
-unknown/unsafe folders**, returns `InboxPlan?`. `Vault.processInboxNote(path, plan, keepName)`: backup original to `.trash`,
-merge tags into frontmatter (`mergeFrontmatterTags`), add a summary callout and a `## Related` list of `[[links]]`, rename/move.
 
 ## Stores (all JSON/JSONL under the config directory)
 
@@ -118,8 +112,6 @@ merge tags into frontmatter (`mergeFrontmatterTags`), add a summary callout and 
   `ignoreUnknownKeys`, `encodeDefaults`. A corrupt file loads as defaults.
 - `ChatStore(dir)`: one `<id>.json` per chat (`StoredChat`), `list()` newest first, `latest()`, `save`, `delete`, `prune(keep)`;
   `ChatStore.titleOf(messages)` = first user line.
-- `SessionStore(dir)`: one file per session; `SessionReport` turns events into stats, a duration/clock text, activity Markdown and
-  the note body for "save summary".
 - `UsageStore(path)`: append-only `usage.jsonl` of `UsageRecord(time, feature, model, promptTokens, completionTokens, millis)`;
   `UsageStats` aggregates (totals, `by` key, `perDay`, `since`, `compact` number formatting).
 

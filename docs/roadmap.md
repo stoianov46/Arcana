@@ -109,6 +109,16 @@ Arcana as a local-first research AI-agent system (positioning of 2026-11-03: mod
 | Context fixes found in a real chat: the Oracul, judge and planner see the recent conversation (`Oracul.background`; Settings → Helpers → Chat context: messages and characters each, no fixed cap); the worker's window never cuts into the current turn (`Prompts.window`); a reviewer block tells the worker it saw only part of the chat | [oracul.md](oracul.md) | done |
 | `search_notes` explains a miss and searches short or common words as written | [tools-and-agent.md](tools-and-agent.md) | done |
 
+## Directions (proposals)
+
+Bigger lines of improvement that are planned in `proposals/` (index: [proposals/README.md](../proposals/README.md)), not built yet or only partly. Facts move to `docs/` when a phase ships; this table says where each direction stands.
+
+| Proposal | Direction | Status |
+|---|---|---|
+| [0001](../proposals/0001-retrieval-and-rag.md) | One retrieval layer for notes, code, documents, chats and web pages (keywords + meaning) | phases 1, 3 and 4 shipped ([retrieval.md](retrieval.md)) |
+| [0002](../proposals/0002-work-items-and-provenance.md) | Work items with an event log and provenance of every note | phases 1 and 2 shipped ([research-backlog.md](research-backlog.md)) |
+| [0003](../proposals/0003-strata-and-openai-compatible-providers.md) | Run the strongest local model on a 32 GB Mac: a client interface, then an OpenAI-compatible client for Strata and Qwen3.8-Flash-Next (replaces the local part of N4; hosted providers are not planned: local only for now) | proposed, phases 0 to 5 (6 not planned); phase 0 partly measured on the M5 (tool calls work at `Q2_0`, about 9 tok/s), waiting for the Ollama comparison; nothing built |
+
 ## Skipped
 
 | # | Task | Status |

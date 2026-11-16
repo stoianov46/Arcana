@@ -25,7 +25,7 @@ class StatusSegment(val parts: List<StatusPart>, val priority: Int = 5, val seco
 
 /** A pill: [text] on a coloured background, for what should catch the eye (the model, a warning). */
 fun pillSegment(text: String, background: Color, priority: Int = 5) =
-    StatusSegment(listOf(StatusPart(" $text ", Palette.Background, bold = true, background = background)), priority)
+    StatusSegment(listOf(StatusPart(" $text ", Palette.Ink, bold = true, background = background)), priority)
 
 /** `label value`: the label muted, the value in [color]. */
 fun statusSegment(label: String, value: String, color: Color, priority: Int = 5, bold: Boolean = false, second: Boolean = false) = StatusSegment(

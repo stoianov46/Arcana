@@ -7,7 +7,6 @@ import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.ConfigStore
 import com.arcana.brain.core.EventStore
-import com.arcana.brain.core.SessionStore
 import com.arcana.brain.core.ToolCall
 import com.arcana.brain.core.ToolFunction
 import com.arcana.brain.core.ToolUseStore
@@ -24,7 +23,7 @@ class SelectEntriesTest {
     private fun app(): AppContext {
         val dir = Files.createTempDirectory("arcana-select")
         val store = ConfigStore(dir.resolve("config.json")).also { it.save(AppConfig()) }
-        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), SessionStore(dir.resolve("sessions")), EventStore(dir.resolve("events.jsonl")))
+        return AppContext(store, UsageStore(dir.resolve("usage.jsonl")), ToolUseStore(dir.resolve("tool-usage.jsonl")), ChatStore(dir.resolve("chats")), EventStore(dir.resolve("events.jsonl")))
     }
 
     private fun call(name: String, key: String, value: String) = ToolCall(ToolFunction(name, buildJsonObject { put(key, value) }))

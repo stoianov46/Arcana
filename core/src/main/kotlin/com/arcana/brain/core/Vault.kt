@@ -202,7 +202,8 @@ class Vault(root: Path, private val memoryPath: String = "") {
         return null
     }
 
-    fun create(folder: String, title: String, body: String, model: String): Note {
+    /** [origin]: the run that writes the note, stamped as `origin` and `chat` in its properties (see [Origin]); null for a note made by hand or by the user's own save. */
+    fun create(folder: String, title: String, body: String, model: String, origin: Origin? = null): Note {
         val dir = if (folder.isBlank()) root else resolve(folder.trim('/'))
         Files.createDirectories(dir)
         val base = sanitizeTitle(title)
@@ -211,7 +212,7 @@ class Vault(root: Path, private val memoryPath: String = "") {
         while (Files.exists(file)) file = dir.resolve("$base $n.md").also { n++ }
         val created = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
         // Arcana's own properties; a properties block at the top of [body] is merged in (its keys win), never written as a second block
-        val properties = parseProperties("created: $created\ngenerator: arcana\nmodel: $model\ntags: [arcana]")
+        val properties = parseProperties("created: $created\ngenerator: arcana\nmodel: $model\ntags: [arcana]" + (origin?.let { "\norigin: ${it.run}\nchat: ${it.chat}" } ?: ""))
         val (given, text) = splitFrontmatter(body)
         if (given.isNotEmpty()) properties.putAll(parseProperties(propertyText(given)))
         Files.writeString(file, renderProperties(properties) + text.trim() + "\n")
@@ -281,13 +282,22 @@ class Vault(root: Path, private val memoryPath: String = "") {
         return file.relativeTo(root).toString().replace('\\', '/')
     }
 
-    /** Adds [body] to the end of [note], under a `## [heading]` line unless [heading] is null. */
+    /**
+     * Adds [body] to the end of [note], under a `## [heading]` line unless [heading] is null or blank.
+     * The heading is never doubled: `#` marks the caller typed into [heading] are dropped, a doubled marker at the start of
+     * [body] (`## ## X`) is collapsed, and when [body] already starts with a heading of the same text (any level) no extra
+     * one is written. Models often pass the heading both as the argument and as the first line of the content.
+     */
     fun append(note: String, heading: String?, body: String) {
         val file = resolve(note)
         val existing = Files.readString(file)
         val separator = if (existing.endsWith("\n")) "\n" else "\n\n"
-        val title = if (heading == null) "" else "## $heading\n\n"
-        Files.writeString(file, existing + separator + title + body.trim() + "\n")
+        val name = heading?.trim()?.trimStart('#')?.trim().orEmpty()
+        val text = body.trim().replace(Regex("^(#{1,6})([ \\t]+#{1,6})+(?=[ \\t])"), "$1")
+        val first = text.lineSequence().firstOrNull().orEmpty()
+        val bodyHeading = Regex("^#{1,6}[ \\t]+(.*)$").matchEntire(first.trim())?.groupValues?.get(1)?.trim()
+        val title = if (name.isEmpty() || bodyHeading.equals(name, ignoreCase = true)) "" else "## $name\n\n"
+        Files.writeString(file, existing + separator + title + text + "\n")
     }
 
     /**
@@ -618,22 +628,6 @@ object Prompts {
             m.copy(content = content, noteNames = emptyList())
         }
         return listOf(ChatMessage.system(system)) + converted
-    }
-
-    /**
-     * Asks the model to write up a session: what was done, what was decided or learned, and what is still open. It gets the
-     * activity log and, for each chat of the session, its title and a trimmed transcript ([chats]).
-     */
-    fun sessionSummary(config: AppConfig, activity: String, chats: List<Pair<String, String>>): List<ChatMessage> {
-        val transcripts = if (chats.isEmpty()) "" else chats.joinToString("\n\n") { (title, text) -> "### Chat: $title\n${text.take(6000)}" }
-        return listOf(
-            ChatMessage.system(config.systemPrompt),
-            ChatMessage.user(
-                "Write notes on the working session below, for my Obsidian vault. Use these headings: **What I did**, **What I learned or decided**, " +
-                    "**Open questions**, **Next steps**. Be concrete and brief (bullet points), and keep my language. Mention notes as [[Note title]]. " +
-                    "Return Markdown only.\n\n## Activity log\n$activity" + if (transcripts.isEmpty()) "" else "\n\n## Chats\n$transcripts",
-            ),
-        )
     }
 
     fun compose(config: AppConfig, request: String): List<ChatMessage> = listOf(

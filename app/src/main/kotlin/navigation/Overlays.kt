@@ -6,6 +6,7 @@ import com.arcana.brain.app.design.*
 import com.arcana.brain.app.input.Key
 import com.arcana.brain.app.screens.AttachBrowser
 import com.jakewharton.mosaic.modifier.Modifier
+import com.jakewharton.mosaic.ui.Row
 import java.time.LocalDate
 
 /** The commands the palette offers: those of the current screen first, then the ones that work everywhere. */
@@ -13,13 +14,12 @@ fun paletteCommands(app: AppContext, navigator: Navigator, onQuit: () -> Unit): 
     addAll(navigator.screenCommands)
     add(Command("Capture a thought", "Brain", "Ctrl+N") { navigator.openCapture() })
     add(Command("Set up the vault: memory file, skills…", "Brain") { app.setupOpen = true })
-    add(Command("Process the inbox with AI", "Brain") { navigator.navigate(Screen.Inbox) })
     add(Command("Refresh the vault index", "Brain") { app.brain.changed(); navigator.showToast("Reading the vault again…") })
     LibraryFilter.entries.filter { it != LibraryFilter.Tags }.forEach { f ->
         add(Command("Library: ${f.title}", "Brain") { navigator.openLibrary(f) })
     }
     Screen.sidebar.forEach { s -> add(Command("Go to ${s.title}", "Go to", s.shortcut.toString()) { navigator.navigate(s) }) }
-    Themes.all.forEach { t ->
+    Themes.themeList.forEach { t ->
         add(Command("Theme: ${t.name}", "Appearance", if (t.id == app.config.theme) "current" else "") { app.update(app.config.copy(theme = t.id)) })
     }
     listOf("left" to "left sidebar", "right" to "right sidebar", "top" to "top bar").forEach { (id, name) ->
@@ -32,9 +32,6 @@ fun paletteCommands(app: AppContext, navigator: Navigator, onQuit: () -> Unit): 
     add(Command("Quit Arcana", "Arcana", "Ctrl+C ×2") {
         onQuit()
     })
-    add(Command("Session: save a summary note…", "Session") { navigator.sessionIntent = "summary"; navigator.navigate(Screen.Session) })
-    add(Command("Session: save the log", "Session") { navigator.sessionIntent = "log"; navigator.navigate(Screen.Session) })
-    add(Command("Session: start a new one…", "Session") { navigator.sessionIntent = "new"; navigator.navigate(Screen.Session) })
 }
 
 /**
@@ -73,9 +70,14 @@ fun overlayKey(key: Key, app: AppContext, navigator: Navigator, commands: List<C
                     val at = places.indexOf(app.config.captureFolder).coerceAtLeast(0)
                     app.update(app.config.copy(captureFolder = places[Math.floorMod(at + if (key == Key.Tab) 1 else -1, places.size)]))
                 }
+                // ↑ ↓ choose what the thought is: the field is one line, so they are free
+                key == Key.Up || key == Key.Down -> {
+                    val kinds = CAPTURE_KINDS
+                    navigator.captureKind = kinds[Math.floorMod(kinds.indexOf(navigator.captureKind) + if (key == Key.Down) 1 else -1, kinds.size)]
+                }
                 handleAttachmentKey(files, navigator.captureField, key) { text, error -> navigator.showToast(text, error) } -> Unit
                 key == Key.Enter -> {
-                    val text = navigator.captureField.text.trim()
+                    val text = captureText(navigator.captureField.text.trim(), navigator.captureKind)
                     if (text.isNotEmpty() || !files.isEmpty) {
                         app.capture(text, files.plain.toList(), captureFolderNow(app))
                             .onSuccess { path ->
@@ -119,6 +121,19 @@ fun PaletteOverlay(navigator: Navigator, commands: List<Command>) {
 }
 
 /** The folder a thought goes to: the remembered one while it still exists at the top of the vault, else "" (today's daily note). */
+/** The kinds Capture offers, in the order ↑↓ steps through them: a plain thought first (the default). */
+internal val CAPTURE_KINDS = listOf(com.arcana.brain.core.WorkKind.Thought, com.arcana.brain.core.WorkKind.Question, com.arcana.brain.core.WorkKind.Research, com.arcana.brain.core.WorkKind.Todo)
+
+/**
+ * What is saved for [text] when the chosen [kind] is not a plain thought: the kind's prefix in front, which is what makes it an item (see [com.arcana.brain.core.WorkCapture]).
+ * A thought that already starts with a prefix is left alone, so the kind chosen and a prefix typed never double up; the kind chosen does not override a typed one.
+ */
+internal fun captureText(text: String, kind: com.arcana.brain.core.WorkKind): String {
+    if (text.isEmpty() || kind == com.arcana.brain.core.WorkKind.Thought || com.arcana.brain.core.WorkCapture.parse(text) != null) return text
+    val prefix = when (kind) { com.arcana.brain.core.WorkKind.Question -> "question: "; com.arcana.brain.core.WorkKind.Research -> "research: "; com.arcana.brain.core.WorkKind.Todo -> "todo: "; else -> "" }
+    return prefix + text
+}
+
 internal fun captureFolderNow(app: AppContext): String =
     app.config.captureFolder.takeIf { f -> f.isNotBlank() && app.openVault().getOrNull()?.rootFolders()?.contains(f) == true }.orEmpty()
 
@@ -136,6 +151,12 @@ fun CaptureOverlay(app: AppContext, navigator: Navigator) {
         Panel("Capture a thought", accent = Palette.Cta) {
             TextInput("Thought", navigator.captureField, true, "e.g. Ask Anna about the Lisbon flights", maxRows = 3, attachments = app.captureAttachments)
             VGap()
+            Row {
+                Label("Kind  ", color = Palette.Cta)
+                CAPTURE_KINDS.forEach { k -> TabLabel(k.id.replaceFirstChar { it.uppercase() }, k == navigator.captureKind) }
+                Label("  ↑↓ change", color = Palette.Dim)
+            }
+            VGap()
             val folder = captureFolderNow(app)
             if (target == null) {
                 Warning("No vault is set. Choose your vault folder in Settings first.")
@@ -144,7 +165,7 @@ fun CaptureOverlay(app: AppContext, navigator: Navigator) {
                 Hint(if (folder.isEmpty()) "Enter adds it to today's daily note, “$target”, with the time. Tab saves it to a folder of your vault instead."
                 else "Enter saves it as a new note in “$folder/”, named after its first line. Tab chooses another folder, or the daily note.")
                 Hint("Ctrl+O attaches a file: it is copied into the vault and embedded. Esc cancels.")
-                Hint("Start with “? ” or “research: ” and the thought is also added to the research backlog (Brain, key b).")
+                Hint("Kind: a plain thought stays a note; Question, Research and Todo also become an item of that kind (Brain, key b). You can also type “todo: ”, “question: ” or “research: ” (or “? ”) yourself.")
             }
         }
     }

@@ -13,11 +13,14 @@ import com.arcana.brain.core.ChatChunk
 import com.arcana.brain.core.ChatStore
 import com.arcana.brain.core.Layout
 import com.arcana.brain.core.ResearchBacklog
+import com.arcana.brain.core.WorkCapture
+import com.arcana.brain.core.WorkKind
+import com.arcana.brain.core.WorkNotes
+import com.arcana.brain.core.WorkService
+import com.arcana.brain.core.WorkStore
 import com.arcana.brain.core.Skills
 import com.arcana.brain.core.DailyNotes
 import com.arcana.brain.core.listThought
-import com.arcana.brain.core.SessionKind
-import com.arcana.brain.core.SessionStore
 import com.arcana.brain.core.capture
 import com.arcana.brain.core.OllamaClient
 import com.arcana.brain.core.UsageRecord
@@ -43,7 +46,6 @@ class AppContext(
     private val usageStore: UsageStore = UsageStore(),
     private val toolUseStore: ToolUseStore = ToolUseStore(),
     chatStore: ChatStore = ChatStore(),
-    sessionStore: SessionStore = SessionStore(),
     private val eventStore: EventStore = EventStore(),
 ) {
     var config by mutableStateOf(store.load())
@@ -84,6 +86,10 @@ class AppContext(
     var experts by mutableStateOf(0)
         private set
 
+    /** Whether Ollama described the model as dense (no experts); false = MoE or unknown. */
+    var dense by mutableStateOf(false)
+        private set
+
     /** Whether the model can call tools (null = unknown). */
     var tools by mutableStateOf<Boolean?>(null)
         private set
@@ -105,6 +111,9 @@ class AppContext(
 
     /** How busy the whole processor is (like htop), null until read: the `cpu` figure of the Chat status bar. Read every two seconds while the Chat is shown. */
     var cpuPercent by mutableStateOf<Int?>(null)
+
+    /** True while the chosen search backend is SearXNG and its server does not answer: the warning in the bottom bar. Checked every 15 seconds. */
+    var searxDown by mutableStateOf(false)
 
     /** Every model Ollama has loaded (null = not known yet or Ollama cannot be asked): the model-state indicator in the Chat status bar. */
     var loaded by mutableStateOf<List<com.arcana.brain.core.LoadedModel>?>(null)
@@ -156,9 +165,8 @@ class AppContext(
         runCatching { toolUseStore.append(record) }
     }
 
-    /** The working session: everything done since Arcana opened (or since "new session"), logged and kept. */
-    val session = AppSession(sessionStore)
-    val sessionStart: Long get() = session.started
+    /** When this run began: the Usage screen's Session period and the footer's token count start here. */
+    val sessionStart: Long = System.currentTimeMillis()
 
     /** The map of the vault: links, tags and what needs attention. */
     val brain = BrainState(this)
@@ -243,31 +251,19 @@ class AppContext(
         audio = capabilities?.let { "audio" in it }
         thinking = capabilities?.let { "thinking" in it }
         experts = shown?.experts ?: 0
+        dense = shown?.dense ?: false
         kvBytesPerToken = shown?.kvBytesPerToken ?: 0L
         thinkingValues = shown?.thinkingValues.orEmpty()
         modelParameters = shown?.parameters.orEmpty()
         com.arcana.brain.app.screens.ThinkLevels.options = com.arcana.brain.app.screens.thinkOptions(thinkingValues)
         thinkingDefault = shown?.thinkingDefault.orEmpty()
+        com.arcana.brain.app.screens.ThinkLevels.onLevel = shown?.onLevel.orEmpty()
         com.arcana.brain.app.screens.ThinkLevels.defaultWord = com.arcana.brain.app.screens.thinkDefaultWord(thinkingDefault)
         tools = capabilities?.let { "tools" in it }
     }
 
     /** The daily-note settings of the open vault: Obsidian's own when it has them, else the ones from Settings. */
     fun dailyNotes(vault: Vault) = DailyNotes.detect(vault, config.dailyFolder, config.dailyFormat)
-
-    /**
-     * Ends the working session and starts a fresh one, without restarting Arcana: the activity log starts over, the chat
-     * starts empty (the old one stays in the history) and the token count for the session goes back to zero.
-     */
-    fun startNewSession() {
-        session.startNew()
-        chat.startNew()
-        revision++
-    }
-
-    /** Bumped when a new session starts, so every screen is rebuilt from scratch. */
-    var revision by mutableIntStateOf(0)
-        private set
 
     /** The files attached to the thought being captured: only copied into the vault, never read. */
     val captureAttachments: Attachments by lazy { attachments(forModel = false) }
@@ -280,9 +276,13 @@ class AppContext(
         val embeds = files.map { "![[${vault.copyAttachment(config.outputFolder, it)}]]" }
         val full = (listOf(text.trim()) + embeds).filter { it.isNotEmpty() }.joinToString(if (folder.isBlank()) " " else "\n\n")
         val path = if (folder.isBlank()) vault.capture(full, dailyNotes(vault)) else vault.captureNote(folder, full).also { if (folder.trim('/') == dailyNotes(vault).folder.trim('/')) vault.listThought(it) }
-        // a thought that starts with `? ` or `research: ` is also a question for the research backlog (best effort: the thought is saved either way)
-        ResearchBacklog.capturedQuestion(text)?.let { q -> runCatching { ResearchBacklog.add(vault, q) } }
-        session.log(SessionKind.Captured, full, path)
+        // a thought that starts with a kind prefix (`todo: `, `question: `, `research: ` or `? `) is also a work item of that kind (best effort: the thought is saved either way)
+        WorkCapture.parse(text)?.let { c ->
+            runCatching {
+                if (c.kind == WorkKind.Research) ResearchBacklog.add(vault, c.text)
+                else { val store = WorkStore(vault); WorkService(store).capture(c.kind, c.text); WorkNotes.sync(vault, store) }
+            }
+        }
         brain.changed()
         path
     }

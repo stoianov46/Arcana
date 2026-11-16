@@ -24,7 +24,6 @@ import com.arcana.brain.core.UsageStats
 import com.arcana.brain.app.navigation.LocalNavigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.NoteInfo
-import com.arcana.brain.core.SessionKind
 import com.arcana.brain.core.Vault
 import com.arcana.brain.core.VaultIndex
 import com.jakewharton.mosaic.layout.fillMaxWidth
@@ -36,12 +35,11 @@ import com.jakewharton.mosaic.ui.Row
 private enum class LibraryMode { List, Reading, ConfirmDelete, Rename, Edit, ConfirmDiscard }
 
 /** Notes in view [filter]; [tag] narrows the Tags view to one tag. */
-private fun notesFor(index: VaultIndex, filter: LibraryFilter, tag: String?, inbox: String, staleDays: Int, sort: String = "modified", reports: Map<String, ReportInfo> = emptyMap()): List<NoteInfo> = when (filter) {
+private fun notesFor(index: VaultIndex, filter: LibraryFilter, tag: String?, staleDays: Int, sort: String = "modified", reports: Map<String, ReportInfo> = emptyMap()): List<NoteInfo> = when (filter) {
     LibraryFilter.All -> byDate(index.notes, sort)
     LibraryFilter.Recent -> index.touchedSince(14)
     // the reports in the order Reports.scan gave them: newest first (the notes are looked up by path, so a report outside the index is not listed)
     LibraryFilter.Reports -> reports.values.mapNotNull { index.note(it.path) }
-    LibraryFilter.Inbox -> byDate(index.inFolder(inbox), sort)
     LibraryFilter.Orphans -> index.orphans.sortedBy { it.title.lowercase() }
     LibraryFilter.Untagged -> byDate(index.untagged, sort)
     LibraryFilter.Broken -> index.notes.filter { it.unresolved.isNotEmpty() }.sortedBy { it.title.lowercase() }
@@ -89,7 +87,6 @@ fun LibraryScreen(app: AppContext) {
     // A note the dashboard asked us to show: selected once, as soon as the index is there.
     var startNote by remember { mutableStateOf(navigator.libraryNote.also { navigator.libraryNote = null }) }
 
-    val inbox = app.config.inboxFolder
     // the notes with `type: report` (the research skills write them): read once per index, listed in the Reports view and counted on its tab
     val reports = remember(index, vault) { vault.getOrNull()?.let { v -> runCatching { Reports.scan(v) }.getOrDefault(emptyList()) }.orEmpty() }
     val reportByPath = remember(reports) { reports.associateBy { it.path } }
@@ -103,7 +100,7 @@ fun LibraryScreen(app: AppContext) {
             NoteInfo(n.path, n.modified, words, emptySet(), emptySet(), emptySet())
         }
     }
-    val shown = if (index == null) emptyList() else notesFor(index, filter, tag, inbox, staleDays, app.config.librarySort, reportByPath).let { if (filter == LibraryFilter.All && hidden.isNotEmpty()) byDate(it + hidden, app.config.librarySort) else it }
+    val shown = if (index == null) emptyList() else notesFor(index, filter, tag, staleDays, app.config.librarySort, reportByPath).let { if (filter == LibraryFilter.All && hidden.isNotEmpty()) byDate(it + hidden, app.config.librarySort) else it }
     val tags = index?.tagCounts.orEmpty()
     // The notes as a tree of folders (fold with Enter, h, l) unless the user chose the flat list, is typing a filter (matches are listed with their paths) or is in the tag list.
     val tree = app.config.libraryTree && !showingTags && picker.filter.isEmpty() && filter != LibraryFilter.Reports
@@ -140,10 +137,10 @@ fun LibraryScreen(app: AppContext) {
     FocusMode(mode == LibraryMode.Rename || mode == LibraryMode.Edit || (mode == LibraryMode.List && (if (showingTags) tagPicker.filtering else picker.filtering)))
     when (mode) {
         LibraryMode.List -> if (picker.filtering || tagPicker.filtering) Hints("↑↓  move", "Enter  choose", "Esc  clear filter")
-        else if (tree) Hints("↑↓  move", "Enter  open / fold", "h l  fold", "+ -  all", "t  flat list", "←→  view", "a  AI", "e  edit", "r  rename", "d  trash", ".  hidden", "/  filter")
+        else if (tree) Hints("↑↓  move", "Enter  open / fold", "h l  fold", "+ -  all", "t  flat list", "[ ]  list width", "←→  view", "a  AI", "e  edit", "r  rename", "d  trash", ".  hidden", "/  filter")
         else if (filter == LibraryFilter.Reports) Hints("↑↓  move", "←→  view", "Enter  read", "s  run its skill again", "f  refresh", "a  AI", "e  edit", "r  rename", "o  Obsidian", "d  trash", "/  filter")
-        else Hints("↑↓  move", "←→  view", "Enter  read", "a  AI", "e  edit", "r  rename", "o  Obsidian", "d  trash", "t  tree", ".  hidden", "/  filter")
-        LibraryMode.Reading -> Hints("↑↓/Space  scroll", "a  AI", "e  edit", "r  rename", "o  Obsidian", "Esc  back")
+        else Hints("↑↓  move", "←→  view", "Enter  read", "a  AI", "e  edit", "r  rename", "o  Obsidian", "d  trash", "t  tree", "[ ]  list width", ".  hidden", "/  filter")
+        LibraryMode.Reading -> Hints("↑↓/Space  scroll", "[ ]  list width", "a  AI", "e  edit", "r  rename", "o  Obsidian", "Esc  back")
         LibraryMode.Rename -> Hints("Enter  rename", "Esc  cancel")
         LibraryMode.ConfirmDelete -> Hints("y  move to trash", "any other key  keep")
         LibraryMode.Edit -> Hints("Ctrl+S  save", "Esc  leave")
@@ -200,7 +197,6 @@ fun LibraryScreen(app: AppContext) {
         runCatching { v.write(note.path, editField.text) }
             .onSuccess {
                 editOriginal = editField.text
-                app.session.log(SessionKind.Replaced, "${note.title} (edited by hand)", note.path)
                 app.brain.changed()
                 navigator.libraryNote = note.path
                 navigator.showToast("Saved ${note.path}")
@@ -220,7 +216,6 @@ fun LibraryScreen(app: AppContext) {
         if (name == note.title) { mode = LibraryMode.List; return }
         runCatching { v.rename(note.path, name) }
             .onSuccess { result ->
-                app.session.log(SessionKind.Renamed, "${note.path} → ${result.path}" + if (result.linksUpdated > 0) " (${result.linksUpdated} links in ${result.notesChanged} notes updated)" else "", result.path)
                 app.brain.changed()
                 mode = LibraryMode.List
                 navigator.libraryNote = result.path
@@ -233,7 +228,6 @@ fun LibraryScreen(app: AppContext) {
         val v = vault.getOrNull() ?: return
         runCatching { v.trash(note.path) }
             .onSuccess { moved ->
-                app.session.log(SessionKind.Deleted, "${note.title} (moved to $moved)", note.path)
                 app.brain.changed()
                 navigator.showToast("Moved ${note.path} to the trash")
             }
@@ -259,6 +253,16 @@ fun LibraryScreen(app: AppContext) {
         if (!folder.expanded) setFolder(folder.path, true) else if (picker.index < rows.lastIndex) picker.index += 1
     }
 
+    /** `[` / `]`: the list takes 5 % less / more of a wide Library (the same `libraryListPercent` as Settings → Library → List width, 20 to 60). */
+    fun resizeList(delta: Int) {
+        if (!wide) return navigator.showToast("The list and the preview share the window only when it is at least 96 columns wide and the preview pane is on.", isError = false)
+        val now = app.config.libraryListPercent.coerceIn(LIBRARY_LIST_MIN, LIBRARY_LIST_MAX)
+        val next = (now + delta).coerceIn(LIBRARY_LIST_MIN, LIBRARY_LIST_MAX)
+        if (next == now) return navigator.showToast("The list is already at its ${if (delta < 0) "narrowest" else "widest"}: $now %.", isError = false)
+        app.update(app.config.copy(libraryListPercent = next))
+        navigator.showToast("List $next %, preview ${100 - next} % ([ narrower, ] wider; Settings → Library → List width sets it too).", isError = false)
+    }
+
     KeyHandler { key ->
         when (mode) {
             LibraryMode.ConfirmDelete -> {
@@ -282,6 +286,7 @@ fun LibraryScreen(app: AppContext) {
                 else -> editField.onKey(key)
             }
             LibraryMode.Reading -> when {
+                key.char == '[' || key.char == ']' -> { resizeList(if (key.char == ']') 5 else -5); true }
                 preview.handle(key) -> true
                 key == Key.Escape || key == Key.Enter || key == Key.Left -> { mode = LibraryMode.List; true }
                 key.char == 'a' -> { current?.let { askAi(it) }; true }
@@ -304,6 +309,7 @@ fun LibraryScreen(app: AppContext) {
                 tree && key.char == 'h' -> { foldOrParent(); true }
                 tree && key.char == '+' -> { app.libraryExpanded = allFolders(shown); true }
                 tree && key.char == '-' -> { app.libraryExpanded = emptySet(); picker.index = 0; true }
+                key.char == '[' || key.char == ']' -> { resizeList(if (key.char == ']') 5 else -5); true }
                 key.char == '.' -> {
                     showHidden = !showHidden; picker.reset()
                     navigator.showToast(if (showHidden) "Showing hidden folders (the All view)" else "Hidden folders are hidden again", isError = false)
@@ -326,20 +332,18 @@ fun LibraryScreen(app: AppContext) {
                 key.char == 'd' -> { if (current != null) { if (isHiddenPath(current.path)) navigator.showToast("Notes in hidden folders are Arcana's own: they cannot be trashed here.", isError = true) else mode = LibraryMode.ConfirmDelete }; true }
                 key.char == 's' && filter == LibraryFilter.Reports -> { current?.let { runAgain(it) }; true }
                 key.char == 'f' && filter == LibraryFilter.Reports -> { current?.let { runAgain(it, refresh = true) }; true }
-                key.char == 'p' && filter == LibraryFilter.Inbox -> { navigator.navigate(Screen.Inbox); true }
                 else -> false
             }
         }
     }
 
-    val health = remember(index, inbox, staleDays) { index?.health(inbox, staleDays) }
+    val health = remember(index, staleDays) { index?.health(staleDays) }
     val listTitle = if (showingTags) "Tags" else if (filter == LibraryFilter.Reports) reportsTitle(reports) else "Notes · ${shown.size}"
     val tabs = LibraryFilter.entries.map { f ->
         val n = when (f) {
             LibraryFilter.All -> health?.notes
             LibraryFilter.Recent -> index?.touchedSince(14)?.size
             LibraryFilter.Reports -> reports.size
-            LibraryFilter.Inbox -> health?.inbox
             LibraryFilter.Orphans -> health?.orphans
             LibraryFilter.Untagged -> health?.untagged
             LibraryFilter.Broken -> health?.brokenNotes
@@ -374,15 +378,15 @@ fun LibraryScreen(app: AppContext) {
                 ActionItem("r", "Rename", current != null),
                 ActionItem("o", "Open in Obsidian", current != null),
                 ActionItem("d", "Trash", current != null, Palette.Red),
-                *(if (filter == LibraryFilter.Inbox) arrayOf(ActionItem("p", "Process inbox with AI", accent = Palette.Cta)) else emptyArray()),
                 *(if (tree) arrayOf(ActionItem("h l", "Fold"), ActionItem("+ -", "All")) else emptyArray()),
                 *(if (!showingTags) arrayOf(ActionItem("t", if (app.config.libraryTree) "Flat list" else "Tree")) else emptyArray()),
+                *(if (wide) arrayOf(ActionItem("[ ]", "List width")) else emptyArray()),
                 ActionItem(".", if (showHidden) "Hide hidden" else "Hidden"),
                 *(if (filter == LibraryFilter.Reports) arrayOf(ActionItem("s", "Run its skill again", current != null), ActionItem("f", "Refresh", current != null)) else emptyArray()),
                 ActionItem("←→", "View"),
                 ActionItem("/", "Filter"),
             )
-            LibraryMode.Reading -> listOf(ActionItem("↑↓", "Scroll"), ActionItem("a", "AI on this note"), ActionItem("c", "Chat about it"), ActionItem("e", "Edit"), ActionItem("r", "Rename"), ActionItem("o", "Open in Obsidian"), ActionItem("Esc", "Back", accent = Palette.Cta))
+            LibraryMode.Reading -> listOf(ActionItem("↑↓", "Scroll"), *(if (wide) arrayOf(ActionItem("[ ]", "List width")) else emptyArray()), ActionItem("a", "AI on this note"), ActionItem("c", "Chat about it"), ActionItem("e", "Edit"), ActionItem("r", "Rename"), ActionItem("o", "Open in Obsidian"), ActionItem("Esc", "Back", accent = Palette.Cta))
             LibraryMode.ConfirmDelete -> listOf(ActionItem("y", "Move to trash", accent = Palette.Red), ActionItem("any other key", "Keep", accent = Palette.Cta))
             LibraryMode.Rename -> listOf(ActionItem("Enter", "Rename", accent = Palette.Cta), ActionItem("Esc", "Cancel"))
             LibraryMode.Edit -> listOf(ActionItem("Ctrl+S", "Save", accent = Palette.Cta), ActionItem("Esc", "Leave"))
@@ -409,7 +413,7 @@ fun LibraryScreen(app: AppContext) {
             }
             mode == LibraryMode.Reading && current != null && !wide -> Panel(current.title) { NotePreview(app, vault.getOrNull(), index, current, preview, previewRows) }
             wide -> {
-                val percent = app.config.libraryListPercent.coerceIn(20, 60)
+                val percent = app.config.libraryListPercent.coerceIn(LIBRARY_LIST_MIN, LIBRARY_LIST_MAX)
                 val left = ((width - 1) * percent / 100).coerceAtLeast(28)
                 val right = (width - 1 - left).coerceAtLeast(30)
                 Row(Modifier.fillMaxWidth()) {
@@ -524,7 +528,6 @@ private fun NoteList(
             },
             total = shown.size,
             emptyText = when (filter) {
-                LibraryFilter.Inbox -> "The inbox is empty."
                 LibraryFilter.Orphans -> "Every note is connected."
                 LibraryFilter.Untagged -> "Every note has a tag."
                 LibraryFilter.Broken -> "No broken links."
@@ -570,3 +573,7 @@ private fun NotePreview(app: AppContext, vault: Vault?, index: VaultIndex, note:
     }
     ScrollView(lines, rows, output)
 }
+
+/** The list pane's share of a wide Library, in percent (Settings → Library → List width and the `[` `]` keys). */
+const val LIBRARY_LIST_MIN = 20
+const val LIBRARY_LIST_MAX = 60

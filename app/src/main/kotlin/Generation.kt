@@ -79,6 +79,10 @@ class Generation(
         private set
     private var liveThinkingAt = 0L
 
+    /** How many characters the model has thought in the round being streamed, counting those the pane no longer shows (see [MAX_THINKING_CHARS]): the pane's counter. */
+    var liveThinkingChars by mutableIntStateOf(0)
+        private set
+
     /** What the model thought during the round that just ended; [takeThinking] hands it to whoever records the round, once. */
     private var roundThinking = ""
 
@@ -112,7 +116,7 @@ class Generation(
     fun start(json: Boolean = false, tools: JsonArray? = null, maxSteps: Int = 0, prepare: suspend () -> List<ChatMessage>) {
         job?.cancel()
         text = ""
-        liveThinking = ""
+        liveThinking = ""; liveThinkingChars = 0
         error = null
         stats = null
         streamed = 0
@@ -134,6 +138,9 @@ class Generation(
                 while (true) {
                     val buffer = StringBuilder()
                     val thoughts = StringBuilder()
+                    // what the pane shows: always the newest thoughts (the saved copy above keeps the start), with a note of how much fell off the front
+                    val liveTail = StringBuilder()
+                    var droppedThoughts = 0
                     val calls = ArrayList<ToolCall>()
                     if (onToolRound != null && onStepLimit != null && activeTools != null && step > 0 && step >= limit) {
                         limit += onStepLimit.invoke(step)
@@ -173,9 +180,11 @@ class Generation(
                             }
                             if (chunk.thinking.isNotEmpty()) {
                                 if (thoughts.length < MAX_THINKING_CHARS) thoughts.append(chunk.thinking)
+                                liveTail.append(chunk.thinking)
+                                if (liveTail.length > MAX_THINKING_CHARS) { val cut = liveTail.length - MAX_THINKING_CHARS; liveTail.delete(0, cut); droppedThoughts += cut }
                                 if (chunk.content.isEmpty()) thinking = true
                                 val now = System.currentTimeMillis()
-                                if (now - liveThinkingAt >= 100) { liveThinking = thoughts.toString(); liveThinkingAt = now }
+                                if (now - liveThinkingAt >= 100) { liveThinking = liveThoughts(liveTail, droppedThoughts); liveThinkingChars = liveTail.length + droppedThoughts; liveThinkingAt = now }
                             }
                             // the same stretch of text again and again (in the thoughts or in the answer): stop the round instead of waiting for the token limit
                             sinceCheck += chunk.content.length + chunk.thinking.length
@@ -195,7 +204,7 @@ class Generation(
                         badCallRetries++
                         messages = messages + ChatMessage.user(BAD_CALL_NUDGE)
                         text = ""
-                        liveThinking = ""
+                        liveThinking = ""; liveThinkingChars = 0
                         stats = null
                         continue
                     } finally {
@@ -212,7 +221,7 @@ class Generation(
                             roundThinking = ""
                             messages = messages + (if (answered.isBlank()) emptyList() else listOf(ChatMessage.assistant(answered))) + ChatMessage.user(LoopGuard.TEXT_NUDGE)
                             text = ""
-                            liveThinking = ""
+                            liveThinking = ""; liveThinkingChars = 0
                             stats = null
                             continue
                         }
@@ -227,7 +236,7 @@ class Generation(
                         break
                     }
                     roundThinking = thoughts.toString().trim()
-                    if (roundThinking.isNotEmpty()) liveThinking = roundThinking // the last chunks, which the throttle may have skipped
+                    if (roundThinking.isNotEmpty()) liveThinking = liveThoughts(liveTail, droppedThoughts).trim().also { liveThinkingChars = liveTail.length + droppedThoughts } // the last chunks, which the throttle may have skipped
                     // a call the model wrote as text instead of making it: run it as the real thing
                     var roundText = buffer.toString().trim()
                     if (calls.isEmpty() && onToolRound != null && offered != null && textCalls() != "off") {
@@ -352,6 +361,10 @@ private class LoopStop : RuntimeException()
 
 /** The most thinking text kept for one reply; a reasoning model can write far more than anyone reads. */
 private const val MAX_THINKING_CHARS = 20_000
+
+/** The thoughts the pane shows: the newest [tail], and a first line saying how many earlier characters are not shown when some were dropped. */
+internal fun liveThoughts(tail: CharSequence, dropped: Int): String =
+    if (dropped > 0) "… $dropped earlier characters not shown\n\n$tail" else tail.toString()
 
 /** How often an empty reply is answered with [EMPTY_NUDGE] before it counts as an error. */
 private const val MAX_EMPTY_RETRIES = 1

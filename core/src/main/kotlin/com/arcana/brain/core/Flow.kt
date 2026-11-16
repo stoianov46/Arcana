@@ -36,6 +36,20 @@ data class Flow(val name: String, val stages: List<FlowStage>, val redos: Int = 
             else -> null
         }
 
+        /** The model a `consult` of [kind] asks: the stage's own setting, else the Oracul model (empty when neither is set or the helpers are off). */
+        fun consultModel(config: AppConfig, kind: StageKind): String = careful(config).model(kind)
+
+        /** Where [consultModel] gets its model from, in words for the settings and the chat: "Flow analyst", "Skill planner", "Skill reviewer" or "the Oracul model". */
+        fun consultSource(config: AppConfig, kind: StageKind): String {
+            val own = when (kind) {
+                StageKind.Analyst -> "Flow analyst" to config.flowAnalyst
+                StageKind.Planner -> "Skill planner" to config.rolePlanner
+                StageKind.Reviewer -> "Skill reviewer" to config.roleReviewer
+                else -> return ""
+            }
+            return if (own.second.isNotBlank()) own.first else "the Oracul model"
+        }
+
         const val CAREFUL = "careful"
 
         /** The most times the controller may send the worker back for one message. */

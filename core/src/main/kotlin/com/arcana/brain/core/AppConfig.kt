@@ -15,7 +15,17 @@ data class AppConfig(
     val theme: String = "dark",
     val vaultPath: String = System.getenv("ARCANA_VAULT").orEmpty(),
     val outputFolder: String = "Research",
+    /**
+     * Sampling (see [Sampling]): `model` (default) sends none of the options below and the model's own defaults apply (its Modelfile); `custom` sends them. In custom mode [temperature] is
+     * always sent and every other option only when it is set (null = the model's own). They affect only the chat model: helper models always use their own defaults.
+     */
+    val samplingMode: String = Sampling.MODEL,
     val temperature: Double = 0.7,
+    val topP: Double? = null,
+    val topK: Int? = null,
+    val minP: Double? = null,
+    val presencePenalty: Double? = null,
+    val repeatPenalty: Double? = null,
     val timeoutSeconds: Int = 300,
     val contextNotes: Int = 5,
     /**
@@ -79,8 +89,6 @@ data class AppConfig(
     /** Esc on a running reply (or an Oracul run) asks "Cancel this reply?" first; off = Esc cancels at once. */
     val confirmCancel: Boolean = true,
     /** Chats are saved to disk and the last one is reopened when Arcana starts. */
-    /** The folder where new, unprocessed notes land; Arcana counts what is waiting there. */
-    val inboxFolder: String = "Inbox",
     /** The embedding model of the semantic search (`semantic_search` tool, `/reindex`): an installed Ollama model such as nomic-embed-text. Blank = the semantic search is off. */
     val embedModel: String = "",
     /** Daily notes: used only when the vault has no Obsidian Daily notes settings of its own. */
@@ -123,10 +131,11 @@ data class AppConfig(
     val keepAlive: String = "",
     /** A tool call the model wrote as text instead of making it: "auto" runs it as a real call, "ask" shows it first, "off" leaves it as text. */
     val textCalls: String = "auto",
-    /** Where web_search looks: "duckduckgo" (no setup), "searxng" (a server the user runs, at [searchUrl]) or "brave" (needs [searchKey]). */
+    /** Where web_search looks: "duckduckgo" (no setup), "searxng" (a server the user runs, at [searchUrl]) or "brave" (needs [searchKey]) or "ollama" (Ollama's hosted search, needs [ollamaKey]). */
     val searchBackend: String = "duckduckgo",
     val searchUrl: String = "",
     val searchKey: String = "",
+    val ollamaKey: String = "",
     /** The Oracul (see [Oracul]): the model that gives second opinions; blank = off. */
     val oraculModel: String = "",
     /** The master switch for every helper model: the Oracul and its second opinions, the judge, the flow, the specialists (`consult`) and the router. Off: only the chat model works (skill roles have their own switch, [skillRolesEnabled]). The models stay set, so switching back loses nothing. */
@@ -209,14 +218,26 @@ data class AppConfig(
     val toolAutoShell: Boolean = false,
     /** What tools may do: "ask" (changes wait for approval), "auto" (changes run at once, backed up) or "plan" (read-only, the model writes a plan). */
     val toolMode: String = "ask",
-    /** How many rounds of tool use one question may take before the model must answer. */
+    /** How many rounds of tool use one question may take before the model must answer (0 = unlimited). */
     val toolSteps: Int = 8,
+    /** The skill a research item runs with unless the item pins another: a skill name, `none` (a plain chat) or blank (automatic: the first skill that handles research). */
+    val workSkillResearch: String = "",
+    /** The same for questions (blank = a plain chat). */
+    val workSkillQuestion: String = "",
+    /** The same for todos (blank = a plain chat). */
+    val workSkillTodo: String = "",
     /** A pane under the Chat conversation that shows what a reasoning model is thinking while it streams (and the last thoughts when it is idle). Off by default. */
     val thinkingPane: Boolean = false,
     /** Where the thinking pane sits around the conversation: "bottom", "top", "left" or "right". */
     val thinkingPanePlacement: String = "bottom",
     /** How much of the main axis the thinking pane takes, in percent: of the height for "top" and "bottom", of the width for "left" and "right". */
     val thinkingPanePercent: Int = 30,
+    /** A column beside the Chat conversation that shows the model, the sampling parameters and the context window (the three facts the bottom bar also shows). Off by default. */
+    val statusPane: Boolean = false,
+    /** How much of the width the status pane takes, in percent (10 to 90). */
+    val statusPanePercent: Int = 30,
+    /** The side the status pane docks on: "right" or "left". A side holds one panel, so it must be free (the thinking pane may sit there too). */
+    val statusPanePlacement: String = "right",
     /** What happens to the results of tools from earlier turns when the chat is sent again: "whole" (kept as they were; the default, nothing is cut silently) or "shorten" (each cut to 1,200 characters, for small context windows). */
     val oldToolOutput: String = "whole",
     /** How many seconds an identical read, search or page fetch of the current question is answered from memory instead of being run (and asked about) again; 0 = every call runs. */
@@ -229,10 +250,12 @@ data class AppConfig(
     val skillsFolder: String = "",
     /** The Library lists its notes as a tree of folders that fold and unfold (off: one flat list with the full paths). */
     val libraryTree: Boolean = true,
-    /** The view the Library opens on from the sidebar: a [LibraryFilter] name in lower case (`all`, `recent`, `inbox`, `orphans`, `untagged`, `broken`, `stale`, `tags`). */
+    /** The view the Library opens on from the sidebar: a [LibraryFilter] name in lower case (`all`, `recent`, `orphans`, `untagged`, `broken`, `stale`, `tags`). */
     val libraryTab: String = "all",
     /** How much of a wide Library the list takes, in percent (the preview gets the rest). */
     val libraryListPercent: Int = 30,
+    /** How much of a wide Templates tab the list takes, in percent (the prompt preview gets the rest); `[` and `]` change it in the tab. */
+    val promptsListPercent: Int = 40,
     /** How the lists that are ordered by date are ordered: "modified" (newest first) or "title" (A to Z). */
     val librarySort: String = "modified",
     /** Show the note preview beside the list in a wide window (off: the list takes the whole width and Enter opens the note). */
@@ -246,9 +269,13 @@ data class AppConfig(
 ) {
     /**
      * This configuration for a request to [model]: [keepAlive] stays only when [model] is the chat model (every request starts the keep-alive timer again, so a helper that is
-     * the same model must send it too, and another model must not be pinned by it).
+     * the same model must send it too, and another model must not be pinned by it). Another model also gets no custom sampling: the values are chosen for the chat model.
      */
-    fun forModel(model: String): AppConfig = copy(model = model, keepAlive = if (model == this.model) keepAlive else "")
+    /** [toolSteps] as a limit: 0 means unlimited (the model is never stopped for using too many rounds; the loop guards still work). */
+    val toolStepLimit: Int get() = if (toolSteps <= 0) Int.MAX_VALUE else toolSteps
+
+    fun forModel(model: String): AppConfig =
+        if (model == this.model) copy(model = model) else copy(model = model, keepAlive = "", samplingMode = Sampling.MODEL)
 
     /** The `keep_alive` to send, as Ollama takes it (`-1` and `0` are numbers, a time like `30m` is text); null when blank or not a time. */
     fun keepAliveValue(): kotlinx.serialization.json.JsonPrimitive? = keepAlive.trim().let { k ->

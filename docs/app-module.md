@@ -1,7 +1,7 @@
 # `app` module reference
 
 Path: `app/src/main/kotlin/` (package `com.arcana.brain.app`; sub-packages `design`, `input`, `navigation`, `screens`).
-Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `FilePickerTest`, `AppSessionTest`, `PasteRepairTest`).
+Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `FilePickerTest`, `PasteRepairTest`).
 
 ## Top-level state holders (package `com.arcana.brain.app`)
 
@@ -9,7 +9,6 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 |---|---|---|
 | `App.kt` | `main()`, `ArcanaApp` | entry point; creates `AppContext`/`Navigator`; effects for theme, connection, brain refresh; renders the screen inside `Shell` wrapped in `key(app.revision)` |
 | `AppContext.kt` | `AppContext` | the app-wide state; see [architecture.md](architecture.md) |
-| `AppSession.kt` | `AppSession` | the run's logged session: `events`, `log(kind, text, path?)` (persisted as it happens), `markSaved(path)`, `needsSaving`/`unsavedCount` (activity since the last save), `finish()`. Writing the summary note/log into the vault is done by `screens/Session.kt` |
 | `BrainState.kt` | `BrainState` | background `VaultIndex` (`index`, `reading`, `error`, `revision`); `changed()` (after vault writes) and `refresh()` |
 | `ChatSession.kt` | `ChatSession` | the persistent chat: `messages`, `input`, `attachments`, `send()`, `gen`, the tool loop (`runTools`), `Approval` dialogs (folder, shell, web, access, step limit, text calls, memory), `skillRun`/`skillTick` (the active skill run: started by a skill chip or `use_skill`, fed every tool call and result by `runTools`, asked by the completion gate), `Question` (`ask_user`), `offerTools`, `offerMemory`, history, `startNew/open/deleteCurrent`, `persist()` |
 | `Generation.kt` | `Generation`, `GenState`, `rememberGeneration`, `announcesAction` | one streamed model request and the tool-use loop (text-written calls via `TextToolCalls`, the "keep going" nudge, `onStepLimit`, `useTools`, the loop guard: `loopRepeats` stops a round whose thoughts or answer repeat and retries once, `toolsHalted` takes the tools away); observable `state/text/thinking/error/stats`; `gate` (a skill run with a required step open sends the model back instead of letting it finish); `onLive` reports the reply tokens streaming right now (batches of `LIVE_BATCH` pieces) and takes them back when the request's exact counts arrive or it ends |
@@ -23,12 +22,11 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 ## `navigation/`
 
 - `Navigator.kt`
-  - `Screen` enum (Home, Chat, Library, Inbox, Compose, Session, Usage, Settings, Guide, Changelog) with `title`, `icon`, `group`
+  - `Screen` enum (Home, Chat, Library, Compose, Prompts (title "Templates"), Session, Usage, Settings, Guide, Changelog) with `title`, `icon`, `group` and `inSidebar` (Inbox and Session are `false`: no tab and no number key, reached from Brain's Overview, the Library's Inbox view and the command palette)
     (`ScreenGroup.Workspace`="BRAIN", `Account`="SYSTEM"); `ScreenOrder` applies the user's `tabOrder`; `SHORTCUT_KEYS="1234567890"`.
   - `Navigator` holds: `current`, `navigate(screen, force)`, `leaveGuard` (a screen may veto leaving), overlays
     (`helpOpen`, `paletteOpen`, `captureOpen`, `palette`, `captureField`), `toast`/`showToast`, `quitPending`,
-    cross-screen requests (`libraryFilter`, `libraryNote`, `libraryTag`, `noteRequest` to open AI notes with a note,
-    `sessionIntent`), `focusMode`, `actionBars`.
+    cross-screen requests (`libraryFilter`, `libraryNote`, `libraryTag`, `noteRequest` to open AI notes with a note), `focusMode`, `actionBars`.
   - Screen-side API (composable effects): `Hints(vararg)` footer hints, `FocusMode(active)` (true while typing: global letter keys
     off), `Commands(list)` extra palette entries. `Command(label, group, keys, enabled, run)`.
 - `Shell.kt`: layout (left/right sidebar or `TopBar`), `Sidebar` with badges and an icon rail under 90 columns, the logo
@@ -45,10 +43,11 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 | `Chat.kt` | Chat | `ChatMode` (Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave (only with Keep chats off), ConfirmClear); `messageLines` renders messages incl. tool steps; approval and question panels (buttons inside); the `/` menu (`SlashItem` with its `usage` line, `slashMatches`, `slashState`, `splitSlash`, `unknownCommand`, `toolUsage`); typed commands take text (`runCommand(command, args)`); the Oracul blocks (`opinionLines`) and their split view (`sideBySide`, `columnCount`); `chatStatus` (the worker and the Oracul as one `modelsSegment`, the working model first), the comparison title (`comparisonTitleRuns`, `partColor`) + `contextUsage`; select mode via `OutputState` |
 | `LibraryTree.kt` | the Library's tree: `LibraryRow` (`Folder`/`Note` with depth), `libraryRows(notes, expanded)`, `ancestorsOf`, `allFolders` (pure, unit-tested) |
 | `Library.kt` | Library | tree or flat list (`AppConfig.libraryTree`, `AppContext.libraryExpanded`), `LibraryMode` (List, Reading, ConfirmDelete, Rename, Edit, ConfirmDiscard); `e` edits the whole file by hand (`Vault.write`); filters from `LibraryFilter`; preview pane; trash; rename; chat about a note; open in Obsidian; `.` shows notes of hidden folders in All (`Vault.hiddenNotes()`, not in the index, so no count/search/Brain sees them; rename/trash refused) |
-| `Inbox.kt` | Inbox | `InboxMode`; `Analysis` (Ready/Failed); uses `InboxProcessing`; editable plan fields |
+| `Prompts.kt` | Templates (`PromptsScreen`) | `PromptMode` (List, Fill, NewName, Edit, ConfirmDiscard, ConfirmDelete, PickSkill); the prompt notes of `Prompts/`, `{{blank}}` questions, run = new chat + `ChatSession.autoSend` |
 | `Compose.kt` | AI notes (`NoteComposerScreen`) | `Task` enum, `Mode` (Start, PickSource, Input, Follow, Title, AppendPick, ConfirmReplace, ConfirmDiscard, Result); conversation + `drafts` stack for undo; attachments |
-| `Session.kt` | Session | `SessionMode` (Overview, Summary, ConfirmNew); exit flow |
 | `Chat.kt` thinking pane | `ThinkingPane` (the panel at the `thinkingPanePlacement` side of the conversation; `thinkingPaneLayout` decides place and size, a strip's rows are counted in the conversation's `outputRows`, a side column splits the width in a `Row`), `wrapWords`, `toggleThinkingPane` (`/thinking`); data from `Generation.liveThinking` |
+| `Docks.kt` | `PaneId`, `Docks` (placement, `occupant`, `refusal`, `sideOf`): the IDE-like dock rules, one panel per left/right side (tested in `DocksTest`); Chat draws the columns as `DockColumn`s |
+| `StatusPane.kt` | `StatusPane` (Model, Sampling and Context sections; three densities by height), the pure parts `statusPaneStep` (`{` wider / `}` narrower), `sliderCells`, `slimBar`, `contextCells`, `compactionView`, `contextColor` (tested in `StatusPaneTest`); edited with `ChatMode.Status`, which routes the keys to `PaneEditor` (rows `PaneRows`: model, its side (`Docks`), sampling mode and options, thinking effort / in chat / pane / its side, window, auto-compact, keep; `nextModel`, `nextChoice`, `windowLabel`, `pickRows`) |
 | `ChatSession` repeat memory | `turnCalls`, `repeatable`, `NEVER_REMEMBERED`, `CLEARS_MEMORY`, `FAILURE_LOOK`; checked in `runTools` before approval, filled after a run, cleared in `ask` and by changes, commands, `wait` |
 | `Chat.kt` tool results | `toolResultLines`: the first line and a size, the whole task list for `todo`, and an orange `✂` line for a cut (`ToolCuts.marker`) |
 | `ChatSession` queue | `queued`, `enqueue`, `dismissQueued` (drops the newest; Backspace on an empty field in `Chat.kt`, after the attachments, with a toast), `takeQueued`; drained in `runTools` (joins the turn) and `finishReply` (next turn); `Chat.send` queues while `GenState.Running`; a `LaunchedEffect` on failure or cancel returns it to the field |
@@ -60,7 +59,7 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 | `UsageTeam.kt` | the Usage → Orchestration page: `teamLines` (what the orchestration cost and did, as wrapped lines for a `ScrollView`), `TeamPage`, `shareBar` |
 | `Changelog.kt` | Changelog | `changePages()`: hand-written pages (Latest, Tools, Chat, Brain, Interface, Start); same scroll/select view as Guide |
 | `Settings.kt` | Settings | declarative `settings` list (`Setting`, `choice`, `toggle`, `stepper`, `text`, `Editor.{Text,Model,Folder,Folders,Theme}`; `Setting.advanced()` hides a row until *Show advanced search settings* is on), tabs by `Group` (the **Search** tab has three essential rows: *Search in*, *Search by*, *Embedding model (for meaning)*); `Editor.Folders` is the folder-list editor (`placeRows`, `toggledPlaces`: switch `vault`/`working`, add with the folder browser, remove) used by *Search in* and *Allowed folders*; the model picker shows `ModelDetails` |
-| `Guide.kt` | Guide | 13 pages (Markdown strings; incl. "Skills") |
+| `Guide.kt` | Guide | 12 pages (Markdown strings; incl. "Skills" and "Templates") |
 | `Common.kt` | helpers | `bodyRows`, `outputRows(fixed, notice, actions)`, `panelWidth`, `outputWidth`, `WithVault`, `GenerationView`, `ReplyStatus`, `relativeTime`, `saveFailure` |
 | `AttachBrowser.kt` | shared | the full-screen file browser used by Chat, AI notes and Capture |
 
@@ -87,7 +86,7 @@ Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `
 | `Picker.kt` | `PickerState` + `Picker<T>`: `/` filters (any order of words), ↑↓, Enter; optional `icon`/`iconColor`/`meta`, and for trees `indent` (two spaces per level), `labelColor` and `total` (the count shown in the search strip) |
 | `ScreenMemory.kt` | `ScreenMemory` (in `AppContext.screenMemory`) and `rememberKept(app, key) { … }`: a screen's state holders that outlive its tab (the shell draws only the current screen, so plain `remember` state is lost on every tab switch). Used by the Library (view, tag, mode, `PickerState`s, preview scroll, show-hidden) and the Brain (selected line, hygiene list). Key = name + `@` + vault path |
 | `FilePicker.kt` | `FilePickerState`/`FilePicker`: folder browser returning files (tick with Space, Tab to attach) |
-| `DirectoryPicker.kt` | folder-only picker (vault path) |
+| `DirectoryPicker.kt` | folder-only picker (vault path, Working folder, Allowed folders): `f` searches every folder below the one shown (5 levels, background thread, hidden and heavy folders skipped), optional `x` clear and `e` type-a-path keys (`DirectoryPickerState.hints`/`actions`) |
 | `Attachments.kt` | `Attachments` state (pictures, files, notes, plain), `AttachmentLine`, `SentAttachments`, `attachBrowserHints` |
 | `ScrollView.kt` | `Line`, `OutputState` (scroll + select mode + copy), `ScrollView`, `ScrollBar`, `RunsRow` |
 | `Markdown.kt` | `parseMarkdown` (blocks), `renderMarkdown` (styled `Line`s), closed code boxes + highlighter, boxed tables, `unmath`, `plainText`, `codeAndTables` |
@@ -99,7 +98,7 @@ Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `
 
 | File | Provides |
 |---|---|
-| `Key.kt` | `sealed interface Key` (`Up/Down/Enter/Escape/Tab/Backspace…`, `Text(char)`, `PastedNewline` (Alt+Enter and pasted line breaks), plus app keys `Save` Ctrl+S, `Browse` Ctrl+O, `Palette` Ctrl+P, `Capture` Ctrl+N, `Skip` Ctrl+X, `Thinking` Ctrl+T (the thinking pane), `Effort` Ctrl+G (the reasoning-effort picker, same as `/effort`)); helpers `char`, `isUp/isDown` |
+| `Key.kt` | `sealed interface Key` (`Up/Down/Enter/Escape/Tab/Backspace…`, `Text(char)`, `PastedNewline` (Alt+Enter and pasted line breaks), plus app keys `Save` Ctrl+S, `Browse` Ctrl+O, `Palette` Ctrl+P, `Capture` Ctrl+N, `Skip` Ctrl+X, `Effort` Ctrl+G (the reasoning-effort picker, same as `/effort`), `Sampling` Ctrl+R (the sampling dialog, same as `/sampling`)); helpers `char`, `isUp/isDown` |
 | `KeyMapping.kt` | Mosaic `KeyEvent` → `Key` (handles lock bits, Kitty-style modifiers) |
 | `KeyDispatcher.kt` | dispatch order overlay → screen → global; **paste repair** (keys <20 ms apart are text; a paste that lost its beginning or its middle is typed back whole from the clipboard); `Meta` sequences |
 | `MetaSequence.kt` | ESC-prefixed sequences (Alt+arrows, word jumps) |

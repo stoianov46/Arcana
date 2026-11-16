@@ -66,7 +66,7 @@ private fun ActionLine(items: List<ActionItem>) {
             if (i > 0) HGap(ButtonGap)
             Label(
                 " ${item.key} ",
-                color = if (item.enabled) Palette.Background else Palette.Dim,
+                color = if (item.enabled) Palette.Ink else Palette.Dim,
                 background = if (item.enabled) item.accent ?: Palette.Accent else Palette.SurfaceHigh,
                 textStyle = TextStyle.Bold,
             )

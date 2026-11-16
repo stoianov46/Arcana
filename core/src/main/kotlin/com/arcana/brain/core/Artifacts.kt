@@ -1,5 +1,8 @@
 package com.arcana.brain.core
 
+import java.nio.file.Files
+import java.nio.file.Path
+
 /** A file or note one of the model's tools wrote, changed, moved or deleted in this chat: [path], what happened ([action]), the [tool] and when. */
 data class Artifact(val path: String, val action: String, val tool: String, val at: Long)
 
@@ -24,6 +27,30 @@ object Artifacts {
             else -> null
         }
     }
+
+    /** One file of the list: its newest [artifact] and how many tool calls touched it ([times]). */
+    data class Entry(val artifact: Artifact, val times: Int)
+
+    /** The list for the screen: one entry per path (several calls on one file count once), newest first; the action is the last one done to it. */
+    fun entries(list: List<Artifact>): List<Entry> =
+        list.asReversed().groupBy { it.path }.values.map { Entry(it.first(), it.size) }
+
+    /**
+     * The path to hand to the Library when [a] is a note it can open: a Markdown file that is still there and lies inside the vault at [root]
+     * (the path may be relative to the vault, `~/…` or absolute). Null for anything else (a deleted note, a file outside the vault, a non-note).
+     */
+    fun libraryNote(a: Artifact, root: Path): String? = runCatching {
+        if (a.action == "deleted" || !a.path.endsWith(".md", ignoreCase = true)) return null
+        val home = Path.of(System.getProperty("user.home"))
+        val file = when {
+            a.path.startsWith("~/") -> home.resolve(a.path.removePrefix("~/"))
+            else -> root.resolve(a.path)
+        }.toAbsolutePath().normalize()
+        val base = root.toAbsolutePath().normalize()
+        if (!file.startsWith(base) || !Files.isRegularFile(file)) return null
+        if (base.relativize(file).any { it.toString().startsWith(".") }) return null
+        base.relativize(file).joinToString("/")
+    }.getOrNull()
 
     /** One line of the list: `created  Notes/Plan.md  (create_note)`. */
     fun line(a: Artifact): String = "${a.action.padEnd(14)} ${a.path}"

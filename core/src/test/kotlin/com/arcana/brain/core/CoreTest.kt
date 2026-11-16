@@ -179,6 +179,22 @@ class CoreTest {
     }
 
     @Test
+    fun appendNeverDoublesTheHeading() {
+        val dir = Files.createTempDirectory("vault")
+        Files.writeString(dir.resolve("N.md"), "one\n")
+        val vault = Vault(dir)
+        vault.append("N.md", "## Top items", "## Top items\n\nA")      // argument and content both carry it
+        vault.append("N.md", "Chart", "## ## Chart\n\nB")              // doubled marker in the content
+        vault.append("N.md", "## Sources", "- link")                     // marks typed into the argument
+        vault.append("N.md", "  ", "plain")                              // blank heading = none
+        vault.append("N.md", "Method", "### Detail\n\nC")              // a different heading is kept
+        assertEquals(
+            "one\n\n## Top items\n\nA\n\n## Chart\n\nB\n\n## Sources\n\n- link\n\nplain\n\n## Method\n\n### Detail\n\nC\n",
+            vault.read("N.md"),
+        )
+    }
+
+    @Test
     fun noteTasksCarryTheNoteAndTheInstruction() {
         val config = AppConfig()
         val translate = Prompts.noteTask(config, NoteTask.Translate, "Plan", "Hello", input = "Ukrainian").last().content
@@ -357,44 +373,6 @@ class CoreTest {
     }
 
     @Test
-    fun sessionsAreStoredReportedAndSummarised() {
-        val store = SessionStore(Files.createTempDirectory("sessions").resolve("sessions"))
-        assertTrue(store.list().isEmpty())
-        val zone = java.time.ZoneId.of("UTC")
-        val t0 = java.time.LocalDateTime.of(2026, 10, 25, 14, 0).atZone(zone).toInstant().toEpochMilli()
-        val session = StoredSession(
-            "s1", t0, ended = t0 + 4_320_000,
-            events = listOf(
-                SessionEvent(t0 + 60_000, SessionKind.Asked, "What is RAG?"),
-                SessionEvent(t0 + 120_000, SessionKind.Task, "Improve Trip.md", "Trip.md"),
-                SessionEvent(t0 + 180_000, SessionKind.Replaced, "Trip.md", "Trip.md"),
-                SessionEvent(t0 + 240_000, SessionKind.Created, "Summary", "Arcana/Summary.md"),
-                SessionEvent(t0 + 300_000, SessionKind.Attached, "photo.png"),
-            ),
-        )
-        store.save(session)
-        store.save(session.copy(id = "s0", started = t0 - 1000, events = emptyList()))
-        assertEquals(listOf("s1", "s0"), store.list().map { it.id })
-        assertEquals(session, store.list().first())
-        val stats = SessionReport.stats(session.events)
-        assertEquals(SessionStats(1, 1, 1, 1, 0, 1, 0), stats)
-        assertEquals("1 question · 1 AI task · 1 note created · 1 note changed · 1 attachment", stats.describe())
-        assertEquals("no activity yet", SessionStats(0, 0, 0, 0, 0, 0).describe())
-        assertEquals("3 thoughts captured", SessionStats(0, 0, 0, 0, 0, 0, 3).describe())
-        assertEquals(5, stats.total)
-        assertEquals("1h 12m", SessionReport.duration(session.durationMillis))
-        assertEquals("14:01", SessionReport.clock(t0 + 60_000, zone))
-        val note = SessionReport.note(session, "- learned things", zone)
-        assertTrue("## Summary" in note && "- learned things" in note && "[[Arcana/Summary]]" in note && "**Replaced**: Trip.md [[Trip]]" in note)
-        assertTrue("## Summary" !in SessionReport.note(session, "", zone), "a plain log has no summary section")
-        assertEquals("Session 2026-10-25 14-00", SessionReport.title(session, zone))
-        val prompt = Prompts.sessionSummary(AppConfig(), "- log", listOf("Trip" to "You: hi")).last().content
-        assertTrue("What I did" in prompt && "- log" in prompt && "### Chat: Trip" in prompt)
-        store.prune(1)
-        assertEquals(listOf("s1"), store.list().map { it.id })
-    }
-
-    @Test
     fun aNoteWithADotInItsNameIsLinkedButAPictureIsNot() {
         val dir = Files.createTempDirectory("brain-dots")
         fun note(path: String, text: String) { val f = dir.resolve(path); Files.createDirectories(f.parent); Files.writeString(f, text) }
@@ -436,15 +414,14 @@ class CoreTest {
         assertEquals(listOf("Inbox/Fresh.md"), index.inFolder("Inbox").map { it.path })
         assertEquals(1, index.deadLinks)
         assertEquals("project", index.tagCounts.first { it.first == "project" }.first)
-        val health = index.health("Inbox", staleDays = 90)
+        val health = index.health(staleDays = 90)
         assertEquals(5, health.notes)
-        assertEquals(1, health.inbox)
         assertEquals(2, health.orphans)
         assertEquals(1, health.brokenNotes)
         assertEquals(1, health.stale)
         assertEquals(60, health.connectedPercent, "3 of 5 notes are connected")
         assertEquals(4, health.untagged, "only Hub has tags; Deep has no real frontmatter")
-        assertEquals(100, VaultIndex(emptyList()).health("Inbox", 90).connectedPercent, "an empty vault is not unhealthy")
+        assertEquals(100, VaultIndex(emptyList()).health(90).connectedPercent, "an empty vault is not unhealthy")
         assertEquals(listOf("Deep", "Idea"), index.linksOf("Hub.md").map { it.title })
         assertTrue(index.related("Hub.md").map { it.path }.containsAll(listOf("Idea.md", "Sub/Deep.md")))
         assertTrue("Lonely.md" !in index.related("Hub.md").map { it.path }, "an unconnected note is not related")
@@ -487,51 +464,12 @@ class CoreTest {
     }
 
     @Test
-    fun aMessyModelReplyBecomesACheckedPlan() {
-        val reply = "Sure! Here you go:\n```json\n{\"title\": \"Call: Anna / flights\", \"summary\": \"Ask Anna about flights.\\nSoon.\", " +
-            "\"tags\": [\"#travel\", \"to do\", \"travel\"], \"links\": [\"lisbon trip\", \"[[Ghost note]]\", \"Hub\"], \"folder\": \"projects\", \"extra\": 1}\n```"
-        val plan = InboxProcessing.parse(reply, "Fallback", listOf("Lisbon Trip", "Hub"), listOf("Projects", "Areas"))!!
-        assertEquals("Call Anna flights", plan.title, "characters that cannot be in a name are cleaned")
-        assertEquals("Ask Anna about flights. Soon.", plan.summary)
-        assertEquals(listOf("travel", "to-do"), plan.tags, "# removed, spaces become dashes, duplicates dropped")
-        assertEquals(listOf("Lisbon Trip", "Hub"), plan.links, "only real notes, with their real spelling")
-        assertEquals("Projects", plan.folder, "matched to an existing folder, case-insensitively")
-        assertEquals("", InboxProcessing.parse("""{"folder": "Invented"}""", "F", emptyList(), listOf("Projects"))!!.folder, "an invented folder is dropped")
-        assertEquals("Fallback", InboxProcessing.parse("""{"summary": "x"}""", "Fallback", emptyList(), emptyList())!!.title)
-        assertNull(InboxProcessing.parse("no json here", "F", emptyList(), emptyList()))
-        assertNull(InboxProcessing.parse("{ broken", "F", emptyList(), emptyList()))
-    }
-
-    @Test
     fun tagsAreMergedIntoFrontmatter() {
         assertEquals("---\ntags: [a, b]\n---\n\n", mergeFrontmatterTags("", listOf("a", "b")))
         assertEquals("", mergeFrontmatterTags("", emptyList()))
         assertEquals("---\ntitle: X\ntags: [old, new]\n---\n\n", mergeFrontmatterTags("---\ntitle: X\ntags: [old]\n---\n\n", listOf("new", "old")))
         assertEquals("---\ntags: [one, two, three]\n---\n\n", mergeFrontmatterTags("---\ntags:\n- one\n- two\n---\n\n", listOf("three")), "a block list is rewritten as one line")
         assertEquals("---\ncreated: 1\ntags: [x]\n---\n\n", mergeFrontmatterTags("---\ncreated: 1\n---\n\n", listOf("x")))
-    }
-
-    @Test
-    fun anInboxNoteIsFiledWithABackupAndNothingLost() {
-        val dir = Files.createTempDirectory("inbox")
-        Files.createDirectories(dir.resolve("Inbox"))
-        Files.writeString(dir.resolve("Inbox/call anna.md"), "---\ncreated: 5\n---\n\nCall Anna about flights.\n")
-        val vault = Vault(dir)
-        val plan = InboxPlan("Call Anna", "Projects", listOf("travel"), listOf("Lisbon Trip"), "Ask Anna about flights.")
-        val done = vault.processInboxNote("Inbox/call anna.md", plan)
-        assertEquals("Projects/Call Anna.md", done.path)
-        assertTrue(!Files.exists(dir.resolve("Inbox/call anna.md")), "the note left the inbox")
-        val text = vault.read("Projects/Call Anna.md")
-        assertTrue(text.startsWith("---\ncreated: 5\ntags: [travel]\n---\n\n> [!summary] Ask Anna about flights.\n\nCall Anna about flights."), text)
-        assertTrue(text.trimEnd().endsWith("## Related\n\n- [[Lisbon Trip]]"))
-        assertEquals("---\ncreated: 5\n---\n\nCall Anna about flights.\n", Files.readString(dir.resolve(done.backup)), "the original is kept exactly")
-        // a name already taken gets a number; keepName leaves the file name alone
-        Files.writeString(dir.resolve("Inbox/other.md"), "body")
-        assertEquals("Projects/Call Anna 2.md", vault.processInboxNote("Inbox/other.md", plan).path)
-        Files.writeString(dir.resolve("Inbox/keep.md"), "body")
-        assertEquals("Projects/keep.md", vault.processInboxNote("Inbox/keep.md", plan, keepName = true).path)
-        assertFailsWith<VaultException> { vault.processInboxNote("Inbox/missing.md", plan) }
-        assertFailsWith<VaultException> { vault.processInboxNote("Projects/keep.md", plan.copy(folder = "../outside")) }
     }
 
     @Test
@@ -817,8 +755,8 @@ class CoreTest {
         Files.writeString(config.resolve("usage.jsonl"), "{}\n")
         Files.createDirectories(vault.resolve(".trash")); Files.writeString(vault.resolve(".trash/gone.md"), "old")
         val areas = Storage.areas(config, vault)
-        assertEquals(listOf("backups", "trash", "vault-trash", "chats", "sessions", "usage", "tool-usage", "events"), areas.map { it.id })
-        assertEquals(listOf("backups", "trash", "chats", "sessions", "usage", "tool-usage", "events"), Storage.areas(config).map { it.id }, "no vault, no vault trash")
+        assertEquals(listOf("backups", "trash", "vault-trash", "chats", "usage", "tool-usage", "events"), areas.map { it.id })
+        assertEquals(listOf("backups", "trash", "chats", "usage", "tool-usage", "events"), Storage.areas(config).map { it.id }, "no vault, no vault trash")
         fun area(id: String) = areas.first { it.id == id }
         assertEquals(StorageUse(2, 2049), Storage.use(area("backups")))
         assertEquals(StorageUse(1, 3), Storage.use(area("usage")))
@@ -874,6 +812,8 @@ class CoreTest {
             assertEquals(listOf("duckduckgo"), WebSearch.order("duckduckgo", "", ""))
             assertEquals(listOf("duckduckgo", "brave", "searxng"), WebSearch.order("duckduckgo", "http://localhost:8080", "key"))
             assertEquals(listOf("brave", "searxng", "duckduckgo"), WebSearch.order("brave", "http://x", "k"))
+            assertEquals(listOf("ollama", "searxng", "duckduckgo"), WebSearch.order("ollama", "http://x", "", "ok"))
+            assertEquals(listOf("duckduckgo", "ollama", "brave"), WebSearch.order("duckduckgo", "", "k", "ok"))
             val calls = ArrayList<String>()
             val hit = SearchResult("A", "https://a.dev", "")
             val (used, results) = WebSearch.searchWithFallback("q", 5, "duckduckgo", "", "key") { b -> calls += b; if (b == "duckduckgo") throw SearchLimited("limited") else listOf(hit) }
@@ -885,6 +825,9 @@ class CoreTest {
             val advice = e!!.message.orEmpty()
             assertTrue("do NOT guess addresses" in advice && "search_notes" in advice && "unverified" in advice && "wait tool cannot help" in advice, advice)
             assertTrue("read a page you know" !in advice, advice)
+            assertTrue("fetch_url directly" in advice && "never one built from a guess" in advice, advice)
+            assertEquals(50, WebSearch.braveQuery((1..80).joinToString(" ") { "w$it" }).split(" ").size, "Brave takes at most 50 words")
+            assertEquals(400, WebSearch.braveQuery("x".repeat(900)).length, "and 400 characters")
         } finally { WebSearch.resetCooldown() }
     }
 
@@ -1209,6 +1152,24 @@ class CoreTest {
     }
 
     @Test
+    fun chatTimeRunsFirstToLastAndActiveTimeSkipsLongPauses() {
+        val min = 60_000L
+        val t0 = 1_000_000_000L
+        fun at(m: Long) = ChatMessage("user", "x", at = t0 + m * min)
+        // 0, 5, 10 min; a 10-hour night; 610 + 3 min
+        val chat = listOf(at(0), at(5), at(10), at(10 * 60 + 10), at(10 * 60 + 13))
+        val (total, active) = ChatStats.spans(chat)!!
+        assertEquals(613 * min, total)
+        assertEquals(13 * min, active)
+        assertNull(ChatStats.spans(listOf(ChatMessage("user", "old"), ChatMessage("assistant", "old"))))
+        assertNull(ChatStats.spans(listOf(at(0))))
+        val text = ChatStats.describe(chat, "m", 0, 0, 0, 0)
+        assertTrue("Chat time: 10 h 13 min 0 s" in text && "Active time: 13 min 0 s" in text, text)
+        assertTrue("Chat time" !in ChatStats.describe(listOf(ChatMessage("user", "old")), "m", 0, 0, 0, 0))
+        assertTrue(ChatMessage.user("a").at > 0 && ChatMessage.assistant("b").at > 0 && ChatMessage.toolResult("t", "r").at > 0)
+    }
+
+    @Test
     fun tagsWrittenAnyWayAreFoundAndAgentTagsStayNextToArcanas() {
         fun tags(front: String) = VaultIndex.frontmatterTags("---\n$front\n---\n\n")
         assertEquals(listOf("project", "ai"), tags("tags: project ai"))
@@ -1459,6 +1420,9 @@ class CoreTest {
         assertTrue(runCatching { WebSearch.parseDuckDuckGo("<html>Unfortunately, bots use DuckDuckGo too. anomaly-modal</html>", 5) }.exceptionOrNull()!!.message!!.contains("human check"))
         val searx = WebSearch.parseSearx("""{"results":[{"title":"A","url":"https://a.dev","content":"about <b>a</b>"},{"url":"https://b.dev"},{"title":"no url"}]}""", 5)
         assertEquals(listOf("A", "https://b.dev"), searx.map { it.title }); assertEquals("about a", searx[0].snippet)
+        val ollama = WebSearch.parseOllama("""{"results":[{"title":"O <b>hit</b>","url":"https://o.dev","content":"about o"},{"title":"no url"}]}""", 5)
+        assertEquals(listOf(SearchResult("O hit", "https://o.dev", "about o")), ollama)
+        assertTrue(runCatching { WebSearch.parseOllama("""{"error":"x"}""", 5) }.exceptionOrNull()!!.message!!.contains("Ollama"))
         val brave = WebSearch.parseBrave("""{"web":{"results":[{"title":"Brave <strong>hit</strong>","url":"https://c.dev","description":"desc"}]}}""", 5)
         assertEquals("Brave hit", brave.single().title)
         assertTrue(WebSearch.format("kotlin", "duckduckgo", d).contains("1. Example Domain & more\n   https://example.com/a?x=1\n   This domain"))
@@ -2249,6 +2213,11 @@ class CoreTest {
         assertTrue(Oracul.isControl(message) && Oracul.isOpinion(message) && !Oracul.isReview(message) && Oracul.body(message).startsWith("Verdict: redo"))
         assertEquals(4, Flow.of(AppConfig(flow = "careful", oraculModel = "o"))!!.stages.count { it.model == "o" }, "analyst, planner, reviewer and controller default to the Oracul model")
         assertEquals(5, Flow.of(AppConfig(flow = "careful", flowRedos = 99))!!.redos, "the redo limit is capped")
+        val consultConfig = AppConfig(oraculModel = "o", rolePlanner = "p")
+        assertEquals("p", Flow.consultModel(consultConfig, StageKind.Planner), "consult works with Flow off")
+        assertEquals("Skill planner", Flow.consultSource(consultConfig, StageKind.Planner))
+        assertEquals("o", Flow.consultModel(consultConfig, StageKind.Reviewer), "an unset stage falls back to the Oracul model")
+        assertEquals("the Oracul model", Flow.consultSource(consultConfig, StageKind.Reviewer))
     }
 
     @Test
@@ -2318,6 +2287,39 @@ class CoreTest {
         assertTrue(java.nio.file.Files.readString(file).startsWith("# Memory"), "the rest of the file is untouched")
         assertEquals(0, vault.cleanMemory())
         assertTrue(Vault(java.nio.file.Files.createTempDirectory("arcana-mem3")).auditMemory().clean, "no memory file: nothing to report")
+    }
+
+    @Test
+    fun aSystemMessageNamesThePartOfArcanaThatSentIt() {
+        fun src(text: String) = Oracul.systemSource(ChatMessage("user", text))
+        assertEquals("Controller · redo", src(Oracul.REDO_PROMPT))
+        assertEquals("Todo · open steps", src(Oracul.TODO_PROMPT + ": a; b."))
+        assertEquals("Goal checker · goal not met", src(Oracul.goalContinue("ship it")))
+        assertEquals("Reviewer · revise", src(Oracul.REVISE_PROMPT))
+        assertEquals(null, src("hello"), "a message the user wrote has no source")
+    }
+
+    @Test
+    fun theArtifactListHasOneEntryPerFileAndOpensOnlyVaultNotesInTheLibrary() {
+        val dir = java.nio.file.Files.createTempDirectory("vault").toRealPath()
+        java.nio.file.Files.createDirectories(dir.resolve("Notes"))
+        java.nio.file.Files.writeString(dir.resolve("Notes/Plan.md"), "x")
+        java.nio.file.Files.writeString(dir.resolve("Notes/data.csv"), "x")
+        java.nio.file.Files.createDirectories(dir.resolve(".hidden"))
+        java.nio.file.Files.writeString(dir.resolve(".hidden/a.md"), "x")
+        val outside = java.nio.file.Files.createTempFile("out", ".md")
+        val list = listOf(Artifact("Notes/Plan.md", "created", "create_note", 1), Artifact("Notes/data.csv", "created", "write_file", 2), Artifact("Notes/Plan.md", "edited", "edit_file", 3))
+        val entries = Artifacts.entries(list)
+        assertEquals(listOf("Notes/Plan.md", "Notes/data.csv"), entries.map { it.artifact.path }, "newest first, one per path")
+        assertEquals("edited", entries[0].artifact.action)
+        assertEquals(2, entries[0].times)
+        assertEquals("Notes/Plan.md", Artifacts.libraryNote(entries[0].artifact, dir))
+        assertEquals("Notes/Plan.md", Artifacts.libraryNote(Artifact(dir.resolve("Notes/Plan.md").toString(), "created", "write_file", 1), dir), "an absolute path inside the vault")
+        assertEquals(null, Artifacts.libraryNote(entries[1].artifact, dir), "not Markdown")
+        assertEquals(null, Artifacts.libraryNote(Artifact("Notes/Plan.md", "deleted", "delete_path", 1), dir))
+        assertEquals(null, Artifacts.libraryNote(Artifact("Notes/Gone.md", "created", "create_note", 1), dir), "not there any more")
+        assertEquals(null, Artifacts.libraryNote(Artifact(outside.toString(), "created", "write_file", 1), dir), "outside the vault")
+        assertEquals(null, Artifacts.libraryNote(Artifact(".hidden/a.md", "created", "write_file", 1), dir), "hidden folders are not in the Library")
     }
 
     @Test

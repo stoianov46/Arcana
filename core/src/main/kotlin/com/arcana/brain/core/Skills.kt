@@ -29,6 +29,8 @@ class Skill(
     val chars: Int,
     val problems: List<String>,
     val usage: String = "",
+    /** The kinds of work item this skill may run (`handles: [research, question]` in its properties): it is offered for no other. Empty = it is offered for none. */
+    val handles: Set<WorkKind> = emptySet(),
 )
 
 /** The models a skill asks for (`worker:` and `reviewer:` in its properties); blank = not set, the settings decide. */
@@ -108,7 +110,7 @@ object Skills {
         if (text.length > MAX_CHARS) problems += "the entry note has ${text.length} characters; keep it under $MAX_CHARS or the model will not read the end (move detail into a reference/ note)"
         return Skill(
             name = dirName, description = description, version = meta["version"].orEmpty().trim(), output = meta["output"].orEmpty().trim().trim('/'),
-            path = shown(entry), folder = shown(sub), files = filesOf(sub, dirName), chars = text.length, problems = problems, usage = usageOf(meta),
+            path = shown(entry), folder = shown(sub), files = filesOf(sub, dirName), chars = text.length, problems = problems, usage = usageOf(meta), handles = handlesOf(meta),
         )
     }
 
@@ -118,6 +120,10 @@ object Skills {
         val inputs = meta["inputs"].orEmpty().trim().removeSurrounding("[", "]").split(',').map { it.trim().trim('"', '\'') }.filter { it.isNotEmpty() }
         return inputs.joinToString(" ") { "<$it>" }
     }
+
+    /** The kinds of work item named by `handles: [research, question]`; names that are not a kind are ignored. */
+    internal fun handlesOf(meta: Map<String, String>): Set<WorkKind> =
+        meta["handles"].orEmpty().trim().removeSurrounding("[", "]").split(',').mapNotNull { WorkKind.of(it.trim().trim('"', '\'').lowercase()) }.toSet()
 
     /** True when the note at [path] (vault-relative) is a skill's entry note. */
     fun isEntry(path: String): Boolean = path.endsWith(ENTRY_SUFFIX)

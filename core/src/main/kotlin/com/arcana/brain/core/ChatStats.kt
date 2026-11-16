@@ -13,7 +13,7 @@ val CHAT_STATS_DEFINITION: JsonObject = buildJsonObject {
     put("type", "function")
     putJsonObject("function") {
         put("name", CHAT_STATS)
-        put("description", "Get the statistics of this chat so far: the model, tokens in and out, estimated cost, time spent generating, how many tool calls, how full the context window is, and which other models were consulted (the Oracul: second opinions, comparisons, plans, takeovers, and the tokens each model spent). Use it when the user asks how much this chat used or cost, or to decide whether to wrap up.")
+        put("description", "Get the statistics of this chat so far: the model, tokens in and out, estimated cost, chat time (first to last message), active time (without long pauses), time spent generating, how many tool calls, how full the context window is, and which other models were consulted (the Oracul: second opinions, comparisons, plans, takeovers, and the tokens each model spent). Use it when the user asks how much this chat used or cost, or to decide whether to wrap up.")
         putJsonObject("parameters") {
             put("type", "object")
             putJsonObject("properties") {}
@@ -76,6 +76,18 @@ object ChatStats {
         }
     }
 
+    /** A pause between two messages longer than this is left out of the active time (lunch, the night). */
+    const val PAUSE_LIMIT_MILLIS = 30 * 60 * 1000L
+
+    /** The time from the first to the last message, and the same without the long pauses; null when fewer than two messages carry a time (an older chat). */
+    fun spans(messages: List<ChatMessage>): Pair<Long, Long>? {
+        val times = messages.map { it.at }.filter { it > 0 }
+        if (times.size < 2) return null
+        val total = (times.max() - times.min()).coerceAtLeast(0)
+        val active = times.sorted().zipWithNext { a, b -> (b - a).takeIf { it <= PAUSE_LIMIT_MILLIS } ?: 0L }.sum()
+        return total to active
+    }
+
     /**
      * [messages] are the whole chat; [contextLimit] the context window in use (0 when unknown); the prices are the estimate per million tokens
      * from the settings; [sessionMillis] how long Arcana has been running.
@@ -93,6 +105,10 @@ object ChatStats {
             appendLine("Model: $model")
             appendLine("Messages: ${messages.size} (${messages.count { it.role == "user" && !Oracul.isOpinion(it) && !Compaction.isSummary(it) }} from the user, ${replies.size} replies, ${messages.count { it.role == "tool" }} tool results)")
             appendLine("Tokens: ${UsageStats.compact(prompt)} read (prompt, every request counted) + ${UsageStats.compact(generated)} generated = ${UsageStats.compact(prompt + generated)}")
+            spans(messages)?.let { (total, active) ->
+                appendLine("Chat time: ${describeDuration(total / 1000)} (first to last message, pauses included)")
+                appendLine("Active time: ${describeDuration(active / 1000)} (pauses over ${PAUSE_LIMIT_MILLIS / 60_000} min left out)")
+            }
             appendLine("Time spent generating: ${describeDuration(millis / 1000)}" + (if (generated > 0 && millis > 0) " (${"%.1f".format(generated * 1000.0 / millis)} tokens/s)" else ""))
             appendLine("Estimated cost: " + (if (priceIn == 0 && priceOut == 0) "none set (local model, free)" else "$${"%.4f".format(cost)} at $$priceIn / $$priceOut per million tokens in / out"))
             appendLine("Tool calls: ${calls.sumOf { it.value }}" + (if (calls.isEmpty()) "" else " (" + calls.joinToString { "${it.key} ×${it.value}" } + ")"))
