@@ -9,10 +9,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.arcana.brain.app.AppContext
 import com.arcana.brain.app.design.*
-import com.arcana.brain.app.input.Key
-import com.arcana.brain.app.input.KeyHandler
-import com.arcana.brain.app.input.TextFieldState
-import com.arcana.brain.app.input.char
+import com.idea.ink.ui.*
+import com.idea.ink.theme.*
+import com.idea.ink.input.Key
+import com.idea.ink.ui.KeyHandler
+import com.idea.ink.ui.TextFieldState
+import com.idea.ink.ui.char
 import com.arcana.brain.app.navigation.FocusMode
 import com.arcana.brain.app.navigation.Hints
 import com.arcana.brain.app.navigation.Screen
@@ -321,8 +323,8 @@ private val declared: List<Setting> = listOf(
         Group.Appearance, "Colour theme", "Applies at once. ←/→ step through the themes, Enter opens the list with a preview.",
         value = { Themes.byId(it.theme).name },
         step = { c, dir ->
-            val i = Themes.themeList.indexOfFirst { it.id == c.theme }.coerceAtLeast(0)
-            c.copy(theme = Themes.themeList[(i + dir).mod(Themes.themeList.size)].id)
+            val i = Themes.all.indexOfFirst { it.id == c.theme }.coerceAtLeast(0)
+            c.copy(theme = Themes.all[(i + dir).mod(Themes.all.size)].id)
         },
         editor = Editor.Theme,
     ),
@@ -1042,8 +1044,8 @@ fun SettingsScreen(app: AppContext) {
                 }
             }
             Editing.PickTheme -> {
-                val names = Themes.themeList.map { it.name }
-                val highlighted = picker.selected(names) { it }?.let { name -> Themes.themeList.first { it.name == name } } ?: Themes.byId(app.config.theme)
+                val names = Themes.all.map { it.name }
+                val highlighted = picker.selected(names) { it }?.let { name -> Themes.all.first { it.name == name } } ?: Themes.byId(app.config.theme)
                 ScreenHeader("Settings › Colour theme", "Chosen: ${Themes.byId(app.config.theme).name}")
                 VGap()
                 Panel("Themes") {
@@ -1168,7 +1170,7 @@ private fun OptionList(config: AppConfig, items: List<Setting>, selected: Int) {
 @Composable
 private fun shortened(text: String): String {
     val cap = (LocalContentHeight.current / 5).coerceIn(2, 8)
-    val lines = text.split('\n').flatMap { wrap(it, (LocalContentWidth.current - 4).coerceAtLeast(20)) }
+    val lines = text.split('\n').flatMap { wrapText(it, (LocalContentWidth.current - 4).coerceAtLeast(20)) }
     return if (lines.size <= cap) text else lines.take(cap).joinToString("\n").trimEnd() + "…"
 }
 

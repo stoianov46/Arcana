@@ -19,7 +19,7 @@ Arcana (Gradle multi-project)
  terminal (stdin/stdout, pty)
         │ raw bytes
         ▼
- input/        KeyMapping → Key  →  KeyDispatcher (paste repair, overlay → screen → global)
+ Ink input     KeyEvent.toKey() → Key  →  KeyDispatcher (paste repair, overlay → screen → global)
         │
         ▼
  navigation/   Shell (layout, sidebar/top bar, footer, global keys)  Navigator (screens, overlays, guards, toasts)
@@ -28,7 +28,7 @@ Arcana (Gradle multi-project)
  screens/      Home Chat Library Compose Usage Settings Guide Changelog     overlays: help, palette, capture
         │  use                           │ publish Hints / Commands / FocusMode to Navigator
         ▼
- design/       Theme(Palette) Panel Label Stack Picker FilePicker ScrollView Markdown Attachments TextInput StatusBar …
+ Ink (com.idea.ink.ui) Palette Panel Label Stack Picker FilePicker ScrollView Markdown TextInput StatusBar …   +   design/ (Arcana's own: Attachments SlashKind ModelIcon ReplyFooter)
         │
  state holders (app/): AppContext ─ ChatSession ─ Generation ─ AppSession ─ BrainState
         │

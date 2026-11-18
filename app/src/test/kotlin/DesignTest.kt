@@ -1,6 +1,8 @@
 package com.arcana.brain.app
 
-import com.arcana.brain.app.design.ActionItem
+import com.arcana.brain.app.design.heatLevels
+
+import com.idea.ink.ui.ActionItem
 import com.arcana.brain.app.navigation.LibraryFilter
 import com.arcana.brain.app.screens.SlashCommands
 import com.arcana.brain.app.screens.defaultLibraryFilter
@@ -10,25 +12,25 @@ import com.arcana.brain.app.screens.columnCount
 import com.arcana.brain.app.screens.sideBySide
 import com.arcana.brain.app.screens.toolUsage
 import com.arcana.brain.app.screens.unknownCommand
-import com.arcana.brain.app.design.ActionStyle
-import com.arcana.brain.app.design.breakIntoLines
-import com.arcana.brain.app.design.Line
-import com.arcana.brain.app.design.OutputState
-import com.arcana.brain.app.design.Palette
-import com.arcana.brain.app.design.PickerState
-import com.arcana.brain.app.design.markdownLines
-import com.arcana.brain.app.design.parseMarkdown
-import com.arcana.brain.app.design.codeAndTables
-import com.arcana.brain.app.design.scrollThumb
+import com.idea.ink.ui.ActionStyle
+import com.idea.ink.ui.breakIntoLines
+import com.idea.ink.ui.Line
+import com.idea.ink.ui.OutputState
+import com.idea.ink.ui.Palette
+import com.idea.ink.ui.PickerState
+import com.idea.ink.ui.markdownLines
+import com.idea.ink.ui.parseMarkdown
+import com.idea.ink.ui.codeAndTables
+import com.idea.ink.scroll.scrollThumb
 import com.arcana.brain.app.design.replyFooter
-import com.arcana.brain.app.design.unmath
+import com.idea.ink.ui.unmath
 import com.arcana.brain.core.ReplyStats
 import com.arcana.brain.core.ToolRisk
 import com.arcana.brain.app.design.SlashKind
 import com.arcana.brain.app.screens.SlashItem
-import com.arcana.brain.app.design.wrap
+import com.idea.ink.ui.wrapText
 import com.jakewharton.mosaic.ui.TextStyle
-import com.arcana.brain.app.input.Key
+import com.idea.ink.input.Key
 import com.arcana.brain.app.navigation.Screen
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -106,7 +108,7 @@ class DesignTest {
 
     @Test
     fun wrapBreaksAtWordsAndKeepsBlankLines() {
-        assertEquals(listOf("hello", "world", "", "x"), wrap("hello world\n\nx", 6))
+        assertEquals(listOf("hello", "world", "", "x"), wrapText("hello world\n\nx", 6))
     }
 
     @Test
@@ -399,30 +401,30 @@ class DesignTest {
 
     @Test
     fun statusBarsNeverDropASegmentTheyWrapAndFormatValues() {
-        fun seg(text: String, priority: Int) = com.arcana.brain.app.design.statusSegment("", text, com.arcana.brain.app.design.Palette.Text, priority)
-        fun text(s: com.arcana.brain.app.design.StatusSegment) = s.parts.joinToString("") { p -> p.text }
+        fun seg(text: String, priority: Int) = com.idea.ink.ui.statusSegment("", text, com.idea.ink.ui.Palette.Text, priority)
+        fun text(s: com.idea.ink.ui.StatusSegment) = s.parts.joinToString("") { p -> p.text }
         val all = listOf(seg("model", 9), seg("title", 3), seg("ctx", 10), seg("time", 1), seg("price", 7))
-        val wide = com.arcana.brain.app.design.wrapSegments(all, all.sumOf { it.width } + 3 * 4)
+        val wide = com.idea.ink.ui.wrapSegments(all, all.sumOf { it.width } + 3 * 4)
         assertEquals(1, wide.size, "everything fits on one row")
-        val pill = com.arcana.brain.app.design.pillSegment("warn", com.arcana.brain.app.design.Palette.Red, 5)
-        val rows = com.arcana.brain.app.design.wrapSegments(all + pill, 200)
+        val pill = com.idea.ink.ui.pillSegment("warn", com.idea.ink.ui.Palette.Red, 5)
+        val rows = com.idea.ink.ui.wrapSegments(all + pill, 200)
         assertEquals(listOf(listOf("model", "title", "ctx", "time", "price"), listOf(" warn ")), rows.map { r -> r.map { text(it) } }, "the quiet facts on the first row, a pill on the second")
-        val waiting = com.arcana.brain.app.design.statusSegment("", "wait", com.arcana.brain.app.design.Palette.Orange, 10, second = true)
-        assertEquals(listOf(listOf("model", "title"), listOf("wait", " warn ")), com.arcana.brain.app.design.wrapSegments(listOf(seg("model", 9), waiting, seg("title", 3), pill), 200).map { r -> r.map { text(it) } }, "a passing state asks for the second row too")
-        val narrow = com.arcana.brain.app.design.wrapSegments(all, 5 + 3 + 5)
+        val waiting = com.idea.ink.ui.statusSegment("", "wait", com.idea.ink.ui.Palette.Orange, 10, second = true)
+        assertEquals(listOf(listOf("model", "title"), listOf("wait", " warn ")), com.idea.ink.ui.wrapSegments(listOf(seg("model", 9), waiting, seg("title", 3), pill), 200).map { r -> r.map { text(it) } }, "a passing state asks for the second row too")
+        val narrow = com.idea.ink.ui.wrapSegments(all, 5 + 3 + 5)
         assertEquals(listOf("model", "title", "ctx", "time", "price"), narrow.flatten().map { text(it) }, "nothing is dropped, whatever the width, and the order is kept")
         assertTrue(narrow.size > 1 && narrow.all { row -> row.sumOf { it.width } + 3 * (row.size - 1) <= 13 }, "no row is wider than the bar")
-        assertEquals(narrow.size, com.arcana.brain.app.design.statusRowCount(all, 13))
-        val tiny = com.arcana.brain.app.design.wrapSegments(listOf(seg("a-very-long-segment-indeed", 5)), 10)
+        assertEquals(narrow.size, com.idea.ink.ui.statusRowCount(all, 13))
+        val tiny = com.idea.ink.ui.wrapSegments(listOf(seg("a-very-long-segment-indeed", 5)), 10)
         assertEquals(1, tiny.size)
         assertTrue(text(tiny[0][0]).length <= 10 && text(tiny[0][0]).endsWith("…"), "one segment wider than the bar is cut with an ellipsis")
-        val gauge = com.arcana.brain.app.design.gaugeSegment("ctx", 0.11, "15k/131k")
+        val gauge = com.idea.ink.ui.gaugeSegment("ctx", 0.11, "15k/131k")
         assertEquals("ctx █░░░░░░░░░ 11% 15k/131k", gauge.parts.joinToString("") { it.text })
-        assertEquals("ctx ##-------- 25% x", com.arcana.brain.app.design.gaugeSegment("ctx", 0.25, "x", plain = true).parts.joinToString("") { it.text })
-        assertEquals("1h 02m", com.arcana.brain.app.design.spanText(3_720_000))
-        assertEquals("14m", com.arcana.brain.app.design.spanText(14 * 60_000L))
-        assertEquals("<$0.01", com.arcana.brain.app.design.priceText(0.004))
-        assertEquals("$12.40", com.arcana.brain.app.design.priceText(12.4))
+        assertEquals("ctx ##-------- 25% x", com.idea.ink.ui.gaugeSegment("ctx", 0.25, "x", plain = true).parts.joinToString("") { it.text })
+        assertEquals("1h 02m", com.idea.ink.ui.spanText(3_720_000))
+        assertEquals("14m", com.idea.ink.ui.spanText(14 * 60_000L))
+        assertEquals("<$0.01", com.idea.ink.ui.priceText(0.004))
+        assertEquals("$12.40", com.idea.ink.ui.priceText(12.4))
         assertEquals(3.0 + 15.0 * 0.5, com.arcana.brain.core.UsageStats.estimatedCost(listOf(com.arcana.brain.core.UsageRecord(0, "Chat", "m", 1_000_000, 500_000, 1)), 3, 15), 1e-9)
     }
 
@@ -430,7 +432,7 @@ class DesignTest {
     fun codePanesAreClosedBoxesOfTheSameWidthOnEverySide() {
         val code = "```json\n{\"tool_name\": \"search_notes\", \"a\": [1, 2, 3], \"long\": \"" + "x".repeat(70) + "\"}\n```"
         for (plain in listOf(false, true)) {
-            val lines = com.arcana.brain.app.design.markdownLines(code, 48, plainGlyphs = plain).map { it.text }.dropLastWhile { it.isEmpty() }
+            val lines = com.idea.ink.ui.markdownLines(code, 48, plainGlyphs = plain).map { it.text }.dropLastWhile { it.isEmpty() }
             assertTrue(lines.size >= 4, lines.toString())
             assertTrue(lines.all { it.length == 48 }, "every row is 48 wide: " + lines.map { it.length })
             val (tl, tr, bl, br, v) = if (plain) listOf('+', '+', '+', '+', '|') else listOf('╭', '╮', '╰', '╯', '│')
@@ -655,8 +657,8 @@ class DesignTest {
         val parts = com.arcana.brain.core.Oracul.comparisonParts(message)!!
         val titleRuns = com.arcana.brain.app.screens.comparisonTitleRuns("Ψ Comparison · worker vs big, other, judged by judge", parts)
         assertEquals("Ψ Comparison · worker vs big, other, judged by judge", titleRuns.joinToString("") { it.text })
-        assertEquals(listOf("worker", "big", "other", "judge"), titleRuns.filter { it.color != com.arcana.brain.app.design.Palette.Muted }.map { it.text }.drop(1), "each model name has its own colour")
-        assertEquals(com.arcana.brain.app.design.Palette.Orange, titleRuns.last().color)
+        assertEquals(listOf("worker", "big", "other", "judge"), titleRuns.filter { it.color != com.idea.ink.ui.Palette.Muted }.map { it.text }.drop(1), "each model name has its own colour")
+        assertEquals(com.idea.ink.ui.Palette.Orange, titleRuns.last().color)
         val lines = sideBySide(parts, 7, com.arcana.brain.core.AppConfig(), 90)
         val texts = lines.map { it.text }
         assertTrue(texts.any { "worker · main" in it } && texts.any { "big · oracul" in it && "worker" !in it || "big · oracul" in it }, texts.toString())
@@ -696,7 +698,7 @@ class DesignTest {
 
     @Test
     fun aViewThatIsReadFromTheTopStartsOnItsFirstLinesOnceAndThenFollowsTheReader() {
-        val state = com.arcana.brain.app.design.OutputState()
+        val state = com.idea.ink.ui.OutputState()
         state.maxOffset = 40 // the text is 40 lines longer than the window
         assertEquals(0, state.offset, "a stream follows its end by default")
         state.showTop()
@@ -711,15 +713,15 @@ class DesignTest {
 class ChartTest {
     @kotlin.test.Test
     fun sparkScalesToTheLargestAndMarksQuietWeeksWithADot() {
-        kotlin.test.assertEquals("·▁▄█", com.arcana.brain.app.design.Chart.spark(listOf(0, 1, 4, 8)))
-        kotlin.test.assertEquals("···", com.arcana.brain.app.design.Chart.spark(listOf(0, 0, 0)))
-        kotlin.test.assertEquals("", com.arcana.brain.app.design.Chart.spark(emptyList()))
-        kotlin.test.assertEquals("▁█", com.arcana.brain.app.design.Chart.spark(listOf(1, 1000)), "a small value is still a bar")
+        kotlin.test.assertEquals("·▁▄█", com.idea.ink.chart.Chart.spark(listOf(0, 1, 4, 8)))
+        kotlin.test.assertEquals("···", com.idea.ink.chart.Chart.spark(listOf(0, 0, 0)))
+        kotlin.test.assertEquals("", com.idea.ink.chart.Chart.spark(emptyList()))
+        kotlin.test.assertEquals("▁█", com.idea.ink.chart.Chart.spark(listOf(1, 1000)), "a small value is still a bar")
     }
 
     @kotlin.test.Test
     fun barFillsInProportionAndNeverHidesASmallValue() {
-        val bar = { v: Int, m: Int, w: Int -> com.arcana.brain.app.design.Chart.bar(v, m, w) }
+        val bar = { v: Int, m: Int, w: Int -> com.idea.ink.chart.Chart.bar(v, m, w) }
         kotlin.test.assertEquals("█████░░░░░", bar(50, 100, 10))
         kotlin.test.assertEquals("██████████", bar(100, 100, 10))
         kotlin.test.assertEquals("█░░░░░░░░░", bar(1, 100, 10), "above zero shows at least one cell")
@@ -730,7 +732,7 @@ class ChartTest {
 
     @kotlin.test.Test
     fun heatLevelsRunFromNothingToTheBusiestAndTheCalendarHasSevenRows() {
-        val chart = com.arcana.brain.app.design.Chart
+        val chart = com.idea.ink.chart.Chart
         kotlin.test.assertEquals(listOf(0, 1, 2, 4, 4), listOf(0, 1, 5, 8, 10).map { chart.heatLevel(it, 10) })
         kotlin.test.assertEquals('·', chart.heatGlyph(0))
         kotlin.test.assertEquals('█', chart.heatGlyph(4))
@@ -747,9 +749,9 @@ class ChartTest {
 class ChartPartsTest {
     @kotlin.test.Test
     fun aBarSplitsIntoItsFilledAndEmptyCells() {
-        kotlin.test.assertEquals("████" to "░░░░░░", com.arcana.brain.app.design.Chart.barParts(40, 100, 10))
-        kotlin.test.assertEquals("" to "░░░", com.arcana.brain.app.design.Chart.barParts(0, 100, 3))
-        kotlin.test.assertEquals("███" to "", com.arcana.brain.app.design.Chart.barParts(100, 100, 3))
+        kotlin.test.assertEquals("████" to "░░░░░░", com.idea.ink.chart.Chart.barParts(40, 100, 10))
+        kotlin.test.assertEquals("" to "░░░", com.idea.ink.chart.Chart.barParts(0, 100, 3))
+        kotlin.test.assertEquals("███" to "", com.idea.ink.chart.Chart.barParts(100, 100, 3))
     }
 }
 
@@ -768,10 +770,10 @@ class CaptureKindTest {
     }
 }
 
-private typealias Style = com.arcana.brain.app.design.Chart.BarStyle
+private typealias Style = com.idea.ink.chart.Chart.BarStyle
 
 class BarStyleTest {
-    private val chart = com.arcana.brain.app.design.Chart
+    private val chart = com.idea.ink.chart.Chart
 
     @kotlin.test.Test
     fun everyStyleFillsInProportionAndShowsAtLeastOneCellForAnyValue() {

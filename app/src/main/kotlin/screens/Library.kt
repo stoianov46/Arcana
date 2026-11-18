@@ -10,10 +10,12 @@ import com.arcana.brain.app.AppContext
 import com.arcana.brain.core.AppConfig
 import com.arcana.brain.app.SystemOpen
 import com.arcana.brain.app.design.*
-import com.arcana.brain.app.input.Key
-import com.arcana.brain.app.input.TextFieldState
-import com.arcana.brain.app.input.KeyHandler
-import com.arcana.brain.app.input.char
+import com.idea.ink.ui.*
+import com.idea.ink.theme.*
+import com.idea.ink.input.Key
+import com.idea.ink.ui.TextFieldState
+import com.idea.ink.ui.KeyHandler
+import com.idea.ink.ui.char
 import com.arcana.brain.app.navigation.FocusMode
 import com.arcana.brain.app.navigation.Hints
 import com.arcana.brain.app.navigation.LibraryFilter
@@ -557,14 +559,14 @@ private fun NotePreview(app: AppContext, vault: Vault?, index: VaultIndex, note:
         val out = ArrayList<Line>()
         out += Line(note.path, Palette.Muted)
         out += Line("${note.words} words · changed ${relativeTime(note.modified)}", Palette.Muted)
-        if (note.tags.isNotEmpty()) wrap(note.tags.sorted().joinToString("  ") { "#$it" }, width).forEach { out += Line(it, Palette.Blue) }
+        if (note.tags.isNotEmpty()) wrapText(note.tags.sorted().joinToString("  ") { "#$it" }, width).forEach { out += Line(it, Palette.Blue) }
         fun names(label: String, notes: List<NoteInfo>, color: com.jakewharton.mosaic.ui.Color) {
-            if (notes.isNotEmpty()) wrap("$label (${notes.size}): " + notes.take(12).joinToString(", ") { it.title } + if (notes.size > 12) ", …" else "", width).forEach { out += Line(it, color) }
+            if (notes.isNotEmpty()) wrapText("$label (${notes.size}): " + notes.take(12).joinToString(", ") { it.title } + if (notes.size > 12) ", …" else "", width).forEach { out += Line(it, color) }
         }
         names("→ links to", index.linksOf(note.path), Palette.Text)
         names("← linked from", index.backlinksOf(note.path), Palette.Text)
         names("≈ related", index.related(note.path, 6), Palette.Muted)
-        if (note.unresolved.isNotEmpty()) wrap("✕ broken: " + note.unresolved.joinToString(", "), width).forEach { out += Line(it, Palette.Red) }
+        if (note.unresolved.isNotEmpty()) wrapText("✕ broken: " + note.unresolved.joinToString(", "), width).forEach { out += Line(it, Palette.Red) }
         out += Line("─".repeat(width), Palette.Dim)
         val body = vault?.let { v -> runCatching { Vault.splitFrontmatter(v.read(note.path)).second }.getOrNull() }
         out += if (body == null) listOf(Line("The note could not be read.", Palette.Red))

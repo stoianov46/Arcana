@@ -8,9 +8,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.arcana.brain.app.AppContext
 import com.arcana.brain.app.design.*
-import com.arcana.brain.app.input.Key
-import com.arcana.brain.app.input.KeyHandler
-import com.arcana.brain.app.input.char
+import com.idea.ink.ui.*
+import com.idea.ink.theme.*
+import com.idea.ink.input.Key
+import com.idea.ink.ui.KeyHandler
+import com.idea.ink.ui.char
 import com.arcana.brain.app.navigation.FocusMode
 import com.arcana.brain.app.navigation.Hints
 import com.arcana.brain.core.TeamStatsBuilder

@@ -1,13 +1,13 @@
 package com.arcana.brain.app.screens
 
 import androidx.compose.runtime.Composable
-import com.arcana.brain.app.design.Line
-import com.arcana.brain.app.design.OutputState
-import com.arcana.brain.app.design.Palette
-import com.arcana.brain.app.design.Panel
-import com.arcana.brain.app.design.ScrollView
-import com.arcana.brain.app.design.priceText
-import com.arcana.brain.app.design.wrap
+import com.idea.ink.ui.Line
+import com.idea.ink.ui.OutputState
+import com.idea.ink.ui.Palette
+import com.idea.ink.ui.Panel
+import com.idea.ink.ui.ScrollView
+import com.idea.ink.ui.priceText
+import com.idea.ink.ui.wrapText
 import com.arcana.brain.core.TeamStats
 import com.arcana.brain.core.UsageStats
 import com.jakewharton.mosaic.ui.Color
@@ -27,7 +27,7 @@ private fun pct(share: Double) = "%.0f%%".format(share * 100)
 internal fun teamLines(stats: TeamStats, width: Int, plain: Boolean, priceIn: Int, priceOut: Int): List<Line> {
     val out = ArrayList<Line>()
     fun heading(text: String) { if (out.isNotEmpty()) out += Line(""); out += Line(text, Palette.Accent, bold = true) }
-    fun row(text: String, color: Color = Palette.Text) { wrap(text, width.coerceAtLeast(20)).forEach { out += Line(it, color) } }
+    fun row(text: String, color: Color = Palette.Text) { wrapText(text, width.coerceAtLeast(20)).forEach { out += Line(it, color) } }
     fun none(text: String) = row("  $text", Palette.Dim)
 
     val bar = (width - 42).coerceIn(6, 24)

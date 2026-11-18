@@ -66,44 +66,30 @@ Tests: `app/src/test/kotlin/` (`DesignTest`, `InputTest`, `KeyMappingTest`, `Fil
 Each screen composable: publishes `Hints`/`Commands`/`FocusMode`, installs one `KeyHandler { key -> Boolean }`, and draws.
 `KeyHandler` returns `true` when it used the key (stops propagation to the global handler).
 
-## `design/` (the design system; reuse before adding)
+## The design system is Ink (`com.idea:ink`)
+
+Arcana does not own its colours, components or text editing any more: they come from the **Ink** library (the sibling project `../Ink`, shared with CosmoCLI; see [proposal 0005](../proposals/0005-adopt-ink.md)). Reuse before adding; a fix to a generic piece is made **in Ink**, then `make publish-local` there and rebuild here (`mavenLocal()` is declared in `settings.gradle.kts`, the version is `ink` in `gradle/libs.versions.toml`).
+
+| Ink package | Provides (what Arcana's old `design/` and `input/` held) |
+|---|---|
+| `com.idea.ink.theme` | `ThemeSpec`, `Themes.all/byId` (19 themes), `InkColors` (every role and its derivation) |
+| `com.idea.ink.colors`, `.text`, `.chart`, `.scroll`, `.layout`, `.terminal` | colour maths and `ColorSupport`, `sanitizeForTerminal`, `wrapRows`, `Chart` (bars, sparklines, `heatCalendar`), `scrollThumb`, `planDocks`, terminal size |
+| `com.idea.ink.input` | `Key`, `KeyDispatcher` (paste repair), `TextEdit`, `MetaSequence`, `KeyboardLayout`, `Clipboard` |
+| `com.idea.ink.ui` | `Palette`, `Label`, `Stack`, `Panel`, `ScrollColumn`, `ScrollView` + `OutputState` (select mode), `Line`, `renderMarkdown` / `parseMarkdown`, `StatusBar` and its segments, `Picker`, `FilePicker`, `DirectoryPicker`, `TextInput`, `TextFieldState`, `KeyHandler`, `ActionBar`, `ScreenMemory`, charts, notices |
+
+What stays in `app/.../design/` is only what knows Arcana:
 
 | File | Provides |
 |---|---|
-| `Theme.kt` | `ThemeSpec`, `Themes.all/byId`, `Colors`, `Palette` (live theme accessors: `Palette.Text/Accent/Cta/Green/Red/Console*/UserBg…`), `Dimens` |
-| `ScrollColumn.kt` | `ScrollColumn` + `ScrollState`: a window of whole children with a scrollbar column and a `follow` cursor; ↑↓ PgUp/PgDn Home/End |
-| `Layout.kt` | `Stack` (column that shortens or hides what does not fit; `Modifier.flexible()` keeps room for later siblings), `VGap`, `HGap`, `LocalContentWidth/Height/UiScale`, `rememberDensity()` (`inline` mode at small sizes) |
-| `Rainbow.kt` | `RainbowText(text, animate, color)`: the sidebar logo's flowing rainbow (only the logo uses it; the reasoning-effort control is a static colour by level, `thinkColor` in `Chat.kt`) |
-| `Label.kt` | `Label` (single-style, clipped to its width; use instead of `Text`), `HBar`, `TailText`, `WrappedText` (wraps, scrolls with the caret, draws a scrollbar in its last column), `wrap`, `wrapRows` |
-| `Panel.kt` | `Panel(title, accent)`, `Card`, `ScreenHeader(title, subtitle)`, frame glyphs |
-| `Fields.kt` | `TextInput(label, field, focused, placeholder, maxRows, attachments)`, `LabeledField`, `InlineField`, `handleAttachmentKey` |
-| `Actions.kt` | `ActionItem`, `ActionStyle` (`Quiet` default, `Button`), `ActionBar(items, width, style)`, `actionBarRows`, `breakIntoLines(items, width, style)`, `Badge` |
-| `ModelIcon.kt` | `ModelIcon` (`of`, `label`, `user`): the glyph before a model name by family (`◆` gemma, `◈` qwen, `▲` llama…; default `◆`, ASCII `*` in plain mode); the name itself is always Ollama's own. Used by the Chat labels and status bar; add a family to `FAMILIES` |
-| `SlashKind.kt` | `SlashKind` (+ `SlashCategory`: the COMMAND / SKILL / TOOL group and badge of every row): what a "/" menu entry is (Command, Skill, Read, Write, Shell, Danger, Web, Ask) with its `Palette` colour, glyph and badge word; `forTool(name, risk)` classifies a tool |
-| `StatusBar.kt` | **reusable status line**: `StatusSegment`/`StatusPart`, `statusSegment`, `pillSegment`, `gaugeSegment`, `wrapSegments` / `statusRowCount` (wrap onto more rows, never drop), `StatusBar`, `StatusHeader`, `spanText`, `priceText` |
-| `Shortcuts.kt` | `Shortcuts.label(text)`: the one place shortcut labels pass through (Ctrl chords) |
-| `Messages.kt` | `Notice`, `NoticeLine`, `Hint`, `Warning`, `Cta`, `Loading`, `Spinner` |
-| `Picker.kt` | `PickerState` + `Picker<T>`: `/` filters (any order of words), ↑↓, Enter; optional `icon`/`iconColor`/`meta`, and for trees `indent` (two spaces per level), `labelColor` and `total` (the count shown in the search strip) |
-| `ScreenMemory.kt` | `ScreenMemory` (in `AppContext.screenMemory`) and `rememberKept(app, key) { … }`: a screen's state holders that outlive its tab (the shell draws only the current screen, so plain `remember` state is lost on every tab switch). Used by the Library (view, tag, mode, `PickerState`s, preview scroll, show-hidden) and the Brain (selected line, hygiene list). Key = name + `@` + vault path |
-| `FilePicker.kt` | `FilePickerState`/`FilePicker`: folder browser returning files (tick with Space, Tab to attach) |
-| `DirectoryPicker.kt` | folder-only picker (vault path, Working folder, Allowed folders): `f` searches every folder below the one shown (5 levels, background thread, hidden and heavy folders skipped), optional `x` clear and `e` type-a-path keys (`DirectoryPickerState.hints`/`actions`) |
-| `Attachments.kt` | `Attachments` state (pictures, files, notes, plain), `AttachmentLine`, `SentAttachments`, `attachBrowserHints` |
-| `ScrollView.kt` | `Line`, `OutputState` (scroll + select mode + copy), `ScrollView`, `ScrollBar`, `RunsRow` |
-| `Markdown.kt` | `parseMarkdown` (blocks), `renderMarkdown` (styled `Line`s), closed code boxes + highlighter, boxed tables, `unmath`, `plainText`, `codeAndTables` |
-| `ReplyFooter.kt` | `replyFooter(stats, plain, step)`: `✓ Done · 6.4s · ↑ 293 ↓ 820 tokens · 101 tok/s`, or a quiet `· step` for a round that ended in a tool call |
-| `Sanitize.kt` | `sanitizeForTerminal` (wide chars/emoji → one-cell lookalikes) |
-| `TabBar.kt` | `TabBar(tabs, current)` used by Settings |
+| `Attachments.kt` | `Attachments` state (pictures, files, notes, plain), `AttachmentLine`, `attachmentLine(…)` (the slot for `TextInput(above = …)`), `SentAttachments`, `attachBrowserHints` |
+| `AttachmentKeys.kt` | `handleAttachmentKey` |
+| `ModelIcon.kt` | `ModelIcon` (`of`, `label`, `user`): the glyph before a model name by family |
+| `SlashKind.kt` | `SlashKind` (+ `SlashCategory`): what a "/" menu entry is, with its `Palette` colour and badge |
+| `ReplyFooter.kt` | `replyFooter(stats, plain, step)` |
+| `Shortcuts.kt` | `Shortcuts.label(text)` |
+| `ScreenMemory.kt` | `rememberKept(app, key) { … }` over `AppContext.screenMemory` |
+| `Charts.kt` | `Chart.heatLevels(days: List<DayPoint>, weeks)` over Ink's `heatCalendar` |
 
-## `input/`
-
-| File | Provides |
-|---|---|
-| `Key.kt` | `sealed interface Key` (`Up/Down/Enter/Escape/Tab/Backspace…`, `Text(char)`, `PastedNewline` (Alt+Enter and pasted line breaks), plus app keys `Save` Ctrl+S, `Browse` Ctrl+O, `Palette` Ctrl+P, `Capture` Ctrl+N, `Skip` Ctrl+X, `Effort` Ctrl+G (the reasoning-effort picker, same as `/effort`), `Sampling` Ctrl+R (the sampling dialog, same as `/sampling`)); helpers `char`, `isUp/isDown` |
-| `KeyMapping.kt` | Mosaic `KeyEvent` → `Key` (handles lock bits, Kitty-style modifiers) |
-| `KeyDispatcher.kt` | dispatch order overlay → screen → global; **paste repair** (keys <20 ms apart are text; a paste that lost its beginning or its middle is typed back whole from the clipboard); `Meta` sequences |
-| `MetaSequence.kt` | ESC-prefixed sequences (Alt+arrows, word jumps) |
-| `KeyboardLayout.kt` | Cyrillic letters mapped back to the QWERTY key in the same position so shortcuts work on any layout |
-| `TextEdit.kt` / `TextFieldState.kt` | caret, selection, word moves/deletes, line start/end, Ctrl+U; `TextFieldState` + `KeyHandler` composable |
-| `Clipboard.kt` | OS clipboard via `pbcopy` (macOS), `wl-copy` / `xclip` / `xsel` (Linux) writers + readers |
+`input/` is gone: Mosaic key events are mapped by Ink (`KeyEvent.toKey()`), and `com/jakewharton/mosaic/compat.kt` stays in the app (Mosaic calls it by class name).
 
 Rules: never bind `z`/`Z` as a control key (CosmoCLI rule). Printable keys must reach text fields as typed (including Cyrillic).

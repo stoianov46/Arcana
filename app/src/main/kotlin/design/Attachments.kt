@@ -1,11 +1,17 @@
 package com.arcana.brain.app.design
 
+import com.idea.ink.text.sanitizeForTerminal
+
+import com.idea.ink.ui.*
+import com.idea.ink.input.*
+import com.idea.ink.theme.*
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateListOf
-import com.arcana.brain.app.input.Key
+import com.idea.ink.input.Key
 import com.arcana.brain.core.FileAttachment
 import com.arcana.brain.core.ImageAttachment
 import com.arcana.brain.core.ImageFiles
@@ -187,3 +193,6 @@ fun AttachmentLine(attachments: Attachments) {
 fun attachBrowserHints(attachments: Attachments): List<String> =
     if (attachments.filtering) listOf("↑↓  move", "Enter  open", "Esc  clear filter")
     else listOf("Space  tick", "Enter  open / attach", "Tab  attach ticked", "←  up", "Esc  cancel")
+
+/** The attachment line of [attachments] as the slot Ink's `TextInput(above = …)` draws right above the field; null without attachments. */
+fun attachmentLine(attachments: Attachments?): (@androidx.compose.runtime.Composable () -> Unit)? = attachments?.let { a -> { AttachmentLine(a) } }

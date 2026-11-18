@@ -1,9 +1,13 @@
 package com.arcana.brain.app.navigation
 
+import com.arcana.brain.app.design.attachmentLine
+
 import androidx.compose.runtime.Composable
 import com.arcana.brain.app.AppContext
 import com.arcana.brain.app.design.*
-import com.arcana.brain.app.input.Key
+import com.idea.ink.ui.*
+import com.idea.ink.theme.*
+import com.idea.ink.input.Key
 import com.arcana.brain.app.screens.AttachBrowser
 import com.jakewharton.mosaic.modifier.Modifier
 import com.jakewharton.mosaic.ui.Row
@@ -19,7 +23,7 @@ fun paletteCommands(app: AppContext, navigator: Navigator, onQuit: () -> Unit): 
         add(Command("Library: ${f.title}", "Brain") { navigator.openLibrary(f) })
     }
     Screen.sidebar.forEach { s -> add(Command("Go to ${s.title}", "Go to", s.shortcut.toString()) { navigator.navigate(s) }) }
-    Themes.themeList.forEach { t ->
+    Themes.all.forEach { t ->
         add(Command("Theme: ${t.name}", "Appearance", if (t.id == app.config.theme) "current" else "") { app.update(app.config.copy(theme = t.id)) })
     }
     listOf("left" to "left sidebar", "right" to "right sidebar", "top" to "top bar").forEach { (id, name) ->
@@ -149,7 +153,7 @@ fun CaptureOverlay(app: AppContext, navigator: Navigator) {
         ScreenHeader("Capture", "Get it out of your head now, sort it later")
         VGap()
         Panel("Capture a thought", accent = Palette.Cta) {
-            TextInput("Thought", navigator.captureField, true, "e.g. Ask Anna about the Lisbon flights", maxRows = 3, attachments = app.captureAttachments)
+            TextInput("Thought", navigator.captureField, true, "e.g. Ask Anna about the Lisbon flights", maxRows = 3, above = attachmentLine(app.captureAttachments))
             VGap()
             Row {
                 Label("Kind  ", color = Palette.Cta)

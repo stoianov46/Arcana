@@ -1,7 +1,7 @@
 package com.arcana.brain.app
 
-import com.arcana.brain.app.design.FilePickerState
-import com.arcana.brain.app.input.Key
+import com.idea.ink.ui.FilePickerState
+import com.idea.ink.input.Key
 import com.arcana.brain.core.ImageFiles
 import java.nio.file.Files
 import java.nio.file.Path

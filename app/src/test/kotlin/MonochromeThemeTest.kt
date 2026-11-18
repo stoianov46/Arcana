@@ -1,6 +1,6 @@
 package com.arcana.brain.app
 
-import com.arcana.brain.app.design.Themes
+import com.idea.ink.theme.Themes
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.test.Test
@@ -62,8 +62,8 @@ class MonochromeThemeTest {
     fun theTaskListIsARealGreenReadableOnEveryLayer() {
         assertTrue(hue(c.getValue("todo")) in 120.0..160.0, "todo is green")
         for (layer in listOf("background", "surface", "entry", "selected")) assertTrue(contrast(c.getValue("todo"), c.getValue(layer)) >= 4.5, "todo on $layer")
-        assertEquals(c.getValue("todo"), com.arcana.brain.app.design.Themes.MonochromeAccent.colors.getValue("todo"))
-        val d = com.arcana.brain.app.design.Colors(Themes.Dark)
+        assertEquals(c.getValue("todo"), com.idea.ink.theme.Themes.MonochromeAccent.colors.getValue("todo"))
+        val d = com.idea.ink.ui.MosaicColors(com.idea.ink.theme.InkColors(Themes.Dark))
         assertEquals(d.Green, d.Todo, "other themes keep the green role")
     }
 
@@ -76,15 +76,15 @@ class MonochromeThemeTest {
         val amber = changed - setOf("consoleItalic", "consoleLink", "consoleBold")
         for (k in amber) assertTrue(hue(a.colors.getValue(k)) in 30.0..50.0, "$k is amber")
         for (k in changed - "consoleQuote") assertTrue(contrast(a.colors.getValue(k), a.colors.getValue("background")) >= 7.0 && contrast(a.colors.getValue(k), a.colors.getValue("selected")) >= 4.5, "$k reads on black and on the selected row")
-        assertEquals(null, com.arcana.brain.app.design.Colors(Themes.Monochrome).ThinkAccent, "the strict theme sets no accent: the usual scales stay")
-        assertEquals(null, com.arcana.brain.app.design.Colors(Themes.Dark).thinkShade(0.5))
-        val shades = (0..2).map { com.arcana.brain.app.design.Colors(a).thinkShade(it / 2.0)!! }
+        assertEquals(null, com.idea.ink.ui.MosaicColors(com.idea.ink.theme.InkColors(Themes.Monochrome)).ThinkAccent, "the strict theme sets no accent: the usual scales stay")
+        assertEquals(null, com.idea.ink.ui.MosaicColors(com.idea.ink.theme.InkColors(Themes.Dark)).thinkShade(0.5))
+        val shades = (0..2).map { com.idea.ink.ui.MosaicColors(com.idea.ink.theme.InkColors(a)).thinkShade(it / 2.0)!! }
         assertEquals(3, shades.toSet().size, "low, middle and high effort are three different shades")
     }
 
     @Test
     fun theConsoleStepsFallBackToWhatTheConsoleUsedBefore() {
-        val d = com.arcana.brain.app.design.Colors(Themes.Dark)
+        val d = com.idea.ink.ui.MosaicColors(com.idea.ink.theme.InkColors(Themes.Dark))
         assertEquals(d.ConsoleUser, d.ConsoleLink)
         assertEquals(d.Cta, d.ConsoleNumber)
         assertEquals(d.Accent, d.ConsoleHeadingMark)
@@ -93,7 +93,7 @@ class MonochromeThemeTest {
         assertEquals(d.Orange, d.SyntaxNumber)
         assertEquals(null, d.ConsoleBold)
         assertEquals(null, d.ConsoleItalic)
-        val a = com.arcana.brain.app.design.Colors(Themes.MonochromeAccent)
+        val a = com.idea.ink.ui.MosaicColors(com.idea.ink.theme.InkColors(Themes.MonochromeAccent))
         assertTrue(a.ConsoleBold != null && a.ConsoleBold != a.ConsoleText, "bold has its own colour in the accent theme")
     }
 }

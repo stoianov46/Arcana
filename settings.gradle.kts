@@ -7,6 +7,10 @@ dependencyResolutionManagement {
     // Use Maven Central as the default repository (where Gradle will download dependencies) in all subprojects.
     @Suppress("UnstableApiUsage")
     repositories {
+        // Ink, the design system (../Ink): `make publish-local` there puts it here.
+        mavenLocal {
+            content { includeGroup("com.idea") }
+        }
         mavenCentral()
         // Mosaic's Compose runtime depends on androidx artifacts that are only published to Google's Maven repository.
         google {

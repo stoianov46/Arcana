@@ -5,7 +5,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.arcana.brain.app.input.TextFieldState
+import com.idea.ink.ui.TextFieldState
 import com.arcana.brain.core.AppConfig
 import com.arcana.brain.core.STEP_LIMIT_AUTO_ROUNDS
 import com.arcana.brain.core.ChatMessage
@@ -620,7 +620,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         var cursor by androidx.compose.runtime.mutableIntStateOf(0)
 
         /** What is typed on the last row. */
-        val field = com.arcana.brain.app.input.TextFieldState()
+        val field = com.idea.ink.ui.TextFieldState()
 
         /** The cursor is on the text row (an open question has only that row). */
         val typing: Boolean get() = cursor == options.size

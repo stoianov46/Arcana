@@ -1,12 +1,14 @@
 package com.arcana.brain.app.screens
 
+import com.arcana.brain.app.design.heatLevels
+
 import androidx.compose.runtime.Composable
 import com.arcana.brain.app.AppContext
-import com.arcana.brain.app.design.Chart
-import com.arcana.brain.app.design.Label
-import com.arcana.brain.app.design.LocalContentWidth
-import com.arcana.brain.app.design.TabLabel
-import com.arcana.brain.app.design.Palette
+import com.idea.ink.chart.Chart
+import com.idea.ink.ui.Label
+import com.idea.ink.ui.LocalContentWidth
+import com.idea.ink.ui.TabLabel
+import com.idea.ink.ui.Palette
 import com.arcana.brain.core.BrainHealth
 import com.arcana.brain.core.BrainSnapshot
 import com.arcana.brain.core.BrainStats

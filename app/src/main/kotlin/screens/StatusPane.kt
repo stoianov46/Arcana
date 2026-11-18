@@ -1,7 +1,13 @@
 package com.arcana.brain.app.screens
 
+import com.idea.ink.chart.Chart
+
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -9,10 +15,12 @@ import androidx.compose.runtime.setValue
 import com.arcana.brain.app.ChatSession
 import com.arcana.brain.app.AppContext
 import com.arcana.brain.app.Connection
-import com.arcana.brain.app.input.Key
-import com.arcana.brain.app.input.TextFieldState
-import com.arcana.brain.app.input.char
+import com.idea.ink.input.Key
+import com.idea.ink.ui.TextFieldState
+import com.idea.ink.ui.char
 import com.arcana.brain.app.design.*
+import com.idea.ink.ui.*
+import com.idea.ink.theme.*
 import com.arcana.brain.core.Compaction
 import com.arcana.brain.core.Sampling
 import com.arcana.brain.core.UsageStats
@@ -462,7 +470,10 @@ internal fun StatusPane(app: AppContext, chat: ChatSession, d: PaneEditor, focus
             }
         }
         if (chat.compacting) {
-            val secs = ((System.currentTimeMillis() - chat.compactingSince) / 1000).coerceAtLeast(0)
+            // nothing else redraws the pane while the summary is written, so tick once a second or the counter freezes at 0s
+            var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+            LaunchedEffect(Unit) { while (true) { delay(1000); now = System.currentTimeMillis() } }
+            val secs = ((now - chat.compactingSince) / 1000).coerceAtLeast(0)
             Label((if (plain) "" else "◌ ") + "summarizing the chat… ${secs}s" + if (chat.compactingAuto) " (auto)" else "", color = Palette.Orange, textStyle = TextStyle.Bold, wrap = true)
         }
         val ctxSettings = listOf(

@@ -1,5 +1,7 @@
 package com.arcana.brain.app.screens
 
+import com.arcana.brain.app.design.attachmentLine
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -12,10 +14,12 @@ import androidx.compose.runtime.setValue
 import com.arcana.brain.app.AppContext
 import com.arcana.brain.app.GenState
 import com.arcana.brain.app.design.*
-import com.arcana.brain.app.input.Key
-import com.arcana.brain.app.input.KeyHandler
-import com.arcana.brain.app.input.TextFieldState
-import com.arcana.brain.app.input.char
+import com.idea.ink.ui.*
+import com.idea.ink.theme.*
+import com.idea.ink.input.Key
+import com.idea.ink.ui.KeyHandler
+import com.idea.ink.ui.TextFieldState
+import com.idea.ink.ui.char
 import com.arcana.brain.app.navigation.FocusMode
 import com.arcana.brain.app.navigation.Hints
 import com.arcana.brain.app.navigation.LocalNavigator
@@ -509,7 +513,7 @@ private fun NoteComposerContent(app: AppContext, vault: Vault) {
                 VGap()
                 val startHint = "Every result is a draft: refine it with follow-up prompts, then replace the note, add to it, or save a new one."
                 // the hint wraps on a narrow window: the list leaves it exactly the rows it needs
-                val hintRows = wrap(startHint, (panelWidth() - 2).coerceAtLeast(10)).size
+                val hintRows = wrapText(startHint, (panelWidth() - 2).coerceAtLeast(10)).size
                 Panel(presetNote?.let { it.title } ?: "What should AI do?") {
                     Picker(
                         tasks, taskPicker,
@@ -544,7 +548,7 @@ private fun NoteComposerContent(app: AppContext, vault: Vault) {
                         Task.Translate -> "e.g. Ukrainian"
                         else -> "e.g. Turn this into a short email"
                     }
-                    TextInput(task.inputLabel ?: "Prompt", input, typing, placeholder, maxRows = 4, attachments = attachments)
+                    TextInput(task.inputLabel ?: "Prompt", input, typing, placeholder, maxRows = 4, above = attachmentLine(attachments))
                     VGap()
                     Hint(
                         if (task == Task.Write || task == Task.Pictures) {
@@ -589,7 +593,7 @@ private fun NoteComposerContent(app: AppContext, vault: Vault) {
                 ScreenHeader("AI notes › ${followKind.verb}", subject())
                 VGap()
                 Panel(if (followKind == FollowKind.Refine) "Refine the draft" else "Add a section") {
-                    TextInput(if (followKind == FollowKind.Refine) "What should change?" else "What should the new section cover?", followUp, true, "e.g. make it shorter, add a code example, translate to Ukrainian", maxRows = 4, attachments = attachments)
+                    TextInput(if (followKind == FollowKind.Refine) "What should change?" else "What should the new section cover?", followUp, true, "e.g. make it shorter, add a code example, translate to Ukrainian", maxRows = 4, above = attachmentLine(attachments))
                     VGap()
                     Hint(
                         if (followKind == FollowKind.Refine) {

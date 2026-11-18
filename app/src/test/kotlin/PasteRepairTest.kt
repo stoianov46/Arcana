@@ -1,8 +1,8 @@
 package com.arcana.brain.app
 
-import com.arcana.brain.app.input.ClipboardReader
-import com.arcana.brain.app.input.Key
-import com.arcana.brain.app.input.KeyDispatcher
+import com.idea.ink.input.ClipboardReader
+import com.idea.ink.input.Key
+import com.idea.ink.input.KeyDispatcher
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

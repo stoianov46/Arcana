@@ -1,5 +1,9 @@
 package com.arcana.brain.app.design
 
+import com.idea.ink.ui.*
+import com.idea.ink.input.*
+import com.idea.ink.theme.*
+
 /**
  * The glyph that goes in front of a model's name (`◆ qwen3:30b`): one per model family, so a chat that switches models shows who is
  * speaking at a glance. A family that is not listed gets [DEFAULT]; plain-glyph terminals get ASCII.

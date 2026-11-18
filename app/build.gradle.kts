@@ -12,6 +12,7 @@ plugins {
 
 dependencies {
     implementation(project(":core"))
+    implementation(libs.ink)   // the design system: Palette, Label, Panel, scrolling, markdown, text editing… (../Ink)
     implementation(libs.mosaicRuntime)
     implementation(libs.bundles.kotlinxEcosystem)
     testImplementation(kotlin("test"))

@@ -1,5 +1,9 @@
 package com.arcana.brain.app.screens
 
+import com.idea.ink.text.wrapRows
+
+import com.idea.ink.text.sanitizeForTerminal
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
@@ -13,10 +17,12 @@ import com.arcana.brain.app.ChatSession
 import com.arcana.brain.app.GenState
 import com.arcana.brain.app.Generation
 import com.arcana.brain.app.design.*
-import com.arcana.brain.app.input.Key
-import com.arcana.brain.app.input.KeyHandler
-import com.arcana.brain.app.input.TextFieldState
-import com.arcana.brain.app.input.char
+import com.idea.ink.ui.*
+import com.idea.ink.theme.*
+import com.idea.ink.input.Key
+import com.idea.ink.ui.KeyHandler
+import com.idea.ink.ui.TextFieldState
+import com.idea.ink.ui.char
 import com.arcana.brain.app.navigation.Command
 import com.arcana.brain.app.navigation.Commands
 import com.arcana.brain.app.navigation.FocusMode
@@ -565,7 +571,7 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
 
 /** The question and its options as one row each (what the panel shows and what its height is counted from). */
 private fun questionLines(q: ChatSession.Question, width: Int): List<String> {
-    val text = wrap(sanitizeForTerminal(q.text).replace("`", ""), width).take(6)
+    val text = wrapText(sanitizeForTerminal(q.text).replace("`", ""), width).take(6)
     val options = q.options.mapIndexed { i, option ->
         val mark = if (q.multiple) (if (i in q.picked) "[x] " else "[ ] ") else ""
         (if (i == q.cursor) "▸ " else "  ") + "$mark${i + 1}  ${sanitizeForTerminal(option)}".take(width - 2)
@@ -584,7 +590,7 @@ private fun questionActions(q: ChatSession.Question) =
         ActionItem("Esc", "Skip"),
     )
 
-private fun endsWithBackslash(field: com.arcana.brain.app.input.TextFieldState): Boolean {
+private fun endsWithBackslash(field: com.idea.ink.ui.TextFieldState): Boolean {
     val at = if (field.caretAt in 0..field.text.length) field.caretAt else field.text.length
     return at > 0 && field.text[at - 1] == '\\' && field.selection == null
 }
@@ -1682,7 +1688,7 @@ fun ChatScreen(app: AppContext) {
                         Label(fit("  ⏳ queued  " + q.replace('\n', ' '), room.coerceAtLeast(20)) + (if (lastShown) queueHint else ""), color = Palette.Muted)
                     }
                     if (chat.queued.size > QUEUE_SHOWN) Label("  ⏳ … and ${chat.queued.size - QUEUE_SHOWN} more queued", color = Palette.Muted)
-                    TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = maxInputRows(), attachments = chat.attachments, trailing = effort?.let { v -> { EffortInline(v) } })
+                    TextInput("Message", input, !browsing, if (browsing) "Press Enter to type" else "Ask, think, or give an instruction…", maxRows = maxInputRows(), above = attachmentLine(chat.attachments), trailing = effort?.let { v -> { EffortInline(v) } })
                     StatusBar(statusSegments)
                     ActionBar(chatActions(browsing, entries.isNotEmpty(), chat.artifacts.isNotEmpty()))
                 }
@@ -1801,7 +1807,7 @@ internal fun messageLines(app: AppContext, message: ChatMessage, entry: Int, wid
         return buildList {
             val source = Oracul.systemSource(message) ?: "Arcana"
             add(Line(if (app.config.plainGlyphs) "[system] $source -> model" else "⚙ System · $source → model", Palette.ConsoleTool, bold = true))
-            wrap(sanitizeForTerminal(message.content), (width - 2).coerceAtLeast(10)).forEach { add(Line("  $it", Palette.Muted)) }
+            wrapText(sanitizeForTerminal(message.content), (width - 2).coerceAtLeast(10)).forEach { add(Line("  $it", Palette.Muted)) }
             add(Line(""))
         }
     }
@@ -1813,7 +1819,7 @@ internal fun messageLines(app: AppContext, message: ChatMessage, entry: Int, wid
             // Your messages sit on an amber band, so they stand apart from the model's answers.
             val band = Palette.UserBg
             add(Line("${ModelIcon.user(config.plainGlyphs)} You" + if (message.think.isEmpty()) "" else "  ·  ${if (config.plainGlyphs) "" else "✦ "}think ${message.think}", Palette.UserName, bold = true, background = band, entry = entry))
-            wrap(sanitizeForTerminal(message.content), width).forEach { add(Line(it, Palette.UserText, background = band, entry = entry)) }
+            wrapText(sanitizeForTerminal(message.content), width).forEach { add(Line(it, Palette.UserText, background = band, entry = entry)) }
             message.noteNames.forEach { add(Line(Skills.chipLabel(it)?.let { chip -> sanitizeForTerminal(chip) } ?: "▤ ${sanitizeForTerminal(it.removeSuffix(".md"))}", Palette.UserName, background = band, entry = entry)) }
             message.files.forEach { add(Line("❐ ${sanitizeForTerminal(it.name)}", Palette.UserName, background = band, entry = entry)) }
             message.imageNames.forEach { name ->
@@ -1833,7 +1839,7 @@ internal fun messageLines(app: AppContext, message: ChatMessage, entry: Int, wid
             if (message.sources.isNotEmpty()) {
                 addAll(sourceLines(message, config.plainGlyphs, width))
                 // notes longer than Chars per note were shown to the model only in part: the answer may miss what is further down
-                if (message.sourcesCut.isNotEmpty()) wrap("${if (config.plainGlyphs) "!" else "⚠"} Only the start was read of: " + message.sourcesCut.joinToString(", ") { sanitizeForTerminal(it.removeSuffix(".md")) } + " (Settings → Search → Chars per note)", width).forEach { add(Line(it, Palette.Warn)) }
+                if (message.sourcesCut.isNotEmpty()) wrapText("${if (config.plainGlyphs) "!" else "⚠"} Only the start was read of: " + message.sourcesCut.joinToString(", ") { sanitizeForTerminal(it.removeSuffix(".md")) } + " (Settings → Search → Chars per note)", width).forEach { add(Line(it, Palette.Warn)) }
             }
             // the tools the model used for this answer, so it is plain which instruments were at work
             if (message.toolsUsed.isNotEmpty()) add(Line("${if (config.plainGlyphs) "tools" else "⚙ tools"}: ${message.toolsUsed.joinToString(" · ")}".take(width), Palette.ConsoleTool))
@@ -1856,7 +1862,7 @@ internal fun thinkingLines(thinking: String, view: String, plain: Boolean, width
     val mark = if (plain) "..." else "◌"
     val header = "$mark thinking · $words ${if (words == 1) "word" else "words"}"
     if (view != "full") return listOf(Line(header, Palette.ConsoleDim))
-    return listOf(Line(header, Palette.ConsoleDim, bold = true)) + wrap(sanitizeForTerminal(text), (width - 2).coerceAtLeast(10)).map { Line("  $it", Palette.ConsoleDim) } + Line("")
+    return listOf(Line(header, Palette.ConsoleDim, bold = true)) + wrapText(sanitizeForTerminal(text), (width - 2).coerceAtLeast(10)).map { Line("  $it", Palette.ConsoleDim) } + Line("")
 }
 
 /**
@@ -1922,7 +1928,7 @@ private fun summaryLines(message: ChatMessage, entry: Int, plain: Boolean, width
     val rule = if (plain) "-" else "─"
     val title = " ${if (plain) "" else "◌ "}compacted: the model sees this summary instead of the messages above "
     add(Line((rule.repeat(3) + title + rule.repeat(width)).take(width), Palette.ConsoleDim, bold = true, entry = entry))
-    wrap(sanitizeForTerminal(Compaction.summaryText(message)), width).forEach { add(Line(it, Palette.ConsoleDim, entry = entry)) }
+    wrapText(sanitizeForTerminal(Compaction.summaryText(message)), width).forEach { add(Line(it, Palette.ConsoleDim, entry = entry)) }
     add(Line(rule.repeat(width), Palette.ConsoleDim, entry = entry))
     add(Line(""))
 }
@@ -2090,7 +2096,7 @@ internal fun sideBySide(comparison: Oracul.Comparison, entry: Int, config: AppCo
             cells.forEachIndexed { c, cell ->
                 val line = cell.getOrNull(row)
                 val own = if (line == null) emptyList() else runsOf(line)
-                val used = line?.let { l -> if (l.runs != null) l.runs.sumOf { it.text.length } else l.text.length } ?: 0
+                val used = line?.let { l -> l.runs?.sumOf { it.text.length } ?: l.text.length } ?: 0
                 if (c > 0) { runs += Run(" ${if (plain) "|" else "│"} ", Palette.ConsoleDim); text.append(" | ") }
                 runs += own
                 line?.let { text.append(it.text) }

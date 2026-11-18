@@ -80,6 +80,6 @@ Note: the vault note `ARCANA.md` (see [functionality.md](functionality.md)) is p
 | Skill | A runbook in the vault (`.arcana/skills/<name>/<name>.skill.md`, or the older `Skills/…` + `reference/` + `scripts/`) that a model follows step by step; see [skills.md](skills.md) |
 | Skill run / completion gate | One execution of a skill whose `requires:` steps Arcana ticks off; if the model tries to finish early the gate sends it back (badge `◆ name 7/11`) |
 | Skill chip | `◆ skill name` attached to a message (from the `/` menu or `@`): Arcana puts the skill's text into the message |
-| Status bar | The reusable one-line summary (`design/StatusBar.kt`): model, context gauge, tokens, estimated price, time |
+| Status bar | The reusable one-line summary (Ink `StatusBar.kt`): model, context gauge, tokens, estimated price, time |
 | Overlay | Help / palette / capture drawn over the current screen without losing its state |
 | Entry | A selectable unit in select mode (a user message, or one Markdown block of a reply) |
