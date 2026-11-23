@@ -1,10 +1,10 @@
 package com.arcana.brain.app
 
-import com.arcana.brain.app.input.Key
-import com.arcana.brain.app.input.KeyboardLayout
-import com.arcana.brain.app.input.MetaSequence
-import com.arcana.brain.app.input.TextFieldState
-import com.arcana.brain.app.input.toKey
+import com.idea.ink.input.Key
+import com.idea.ink.input.KeyboardLayout
+import com.idea.ink.input.MetaSequence
+import com.idea.ink.ui.TextFieldState
+import com.idea.ink.ui.toKey
 import com.jakewharton.mosaic.layout.KeyEvent
 import kotlin.test.Test
 import kotlin.test.assertEquals

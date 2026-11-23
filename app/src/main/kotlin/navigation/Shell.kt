@@ -14,29 +14,30 @@ import com.arcana.brain.app.CellSize
 import com.arcana.brain.app.Connection
 import com.arcana.brain.app.ResizeSignalGuard
 import com.arcana.brain.app.TerminalSize
-import com.arcana.brain.app.design.Dimens
-import com.arcana.brain.app.design.HGap
+import com.idea.ink.ui.Dimens
+import com.idea.ink.ui.HGap
 import com.arcana.brain.app.design.Shortcuts
 import com.arcana.brain.core.UsageStats
-import com.arcana.brain.app.design.Label
-import com.arcana.brain.app.design.LocalContentHeight
-import com.arcana.brain.app.design.LocalContentWidth
-import com.arcana.brain.app.design.LocalPlainGlyphs
-import com.arcana.brain.app.design.LocalUiScale
-import com.arcana.brain.app.design.Palette
-import com.arcana.brain.app.design.RainbowText
-import com.arcana.brain.app.design.Panel
-import com.arcana.brain.app.design.StatusPart
-import com.arcana.brain.app.design.StatusSegment
-import com.arcana.brain.app.design.statusSegment
-import com.arcana.brain.app.design.Stack
-import com.arcana.brain.app.design.VGap
-import com.arcana.brain.app.input.Clipboard
-import com.arcana.brain.app.input.Key
-import com.arcana.brain.app.input.KeyDispatcher
-import com.arcana.brain.app.input.LocalKeyDispatcher
-import com.arcana.brain.app.input.char
-import com.arcana.brain.app.input.toKey
+import com.idea.ink.ui.Label
+import com.idea.ink.ui.LocalContentHeight
+import com.idea.ink.ui.LocalContentWidth
+import com.idea.ink.ui.LocalPlainGlyphs
+import com.idea.ink.ui.LocalUiScale
+import com.idea.ink.ui.Palette
+import com.idea.ink.ui.RainbowText
+import com.idea.ink.ui.Panel
+import com.idea.ink.ui.StatusPart
+import com.idea.ink.ui.StatusSegment
+import com.idea.ink.ui.statusSegment
+import com.idea.ink.ui.Stack
+import com.idea.ink.ui.VGap
+import com.idea.ink.ui.wrapSegments
+import com.idea.ink.input.Clipboard
+import com.idea.ink.input.Key
+import com.idea.ink.input.KeyDispatcher
+import com.idea.ink.ui.LocalKeyDispatcher
+import com.idea.ink.ui.char
+import com.idea.ink.ui.toKey
 import com.jakewharton.mosaic.LocalTerminalState
 import com.jakewharton.mosaic.layout.KeyEvent
 import com.jakewharton.mosaic.layout.background
@@ -373,7 +374,7 @@ private fun modelTraits(app: AppContext, plain: Boolean): StatusSegment? {
 
 /** The footer's facts laid out in rows that fit [columns] (it wraps like the status bars, nothing is hidden); the hints share the last row. */
 private fun footerRows(app: AppContext, navigator: Navigator, columns: Int): List<List<StatusSegment>> =
-    com.arcana.brain.app.design.wrapSegments(footerSegments(app, navigator), columns - 2, 3)
+    com.idea.ink.ui.wrapSegments(footerSegments(app, navigator), columns - 2, 3)
 
 private fun rowWidth(row: List<StatusSegment>): Int = row.sumOf { it.width } + 3 * (row.size - 1).coerceAtLeast(0) + 1
 

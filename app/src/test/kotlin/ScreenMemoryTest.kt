@@ -1,7 +1,7 @@
 package com.arcana.brain.app
 
-import com.arcana.brain.app.design.PickerState
-import com.arcana.brain.app.design.ScreenMemory
+import com.idea.ink.ui.PickerState
+import com.idea.ink.ui.ScreenMemory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotSame

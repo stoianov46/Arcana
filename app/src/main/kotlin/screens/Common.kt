@@ -10,6 +10,8 @@ import com.arcana.brain.app.AppContext
 import com.arcana.brain.app.GenState
 import com.arcana.brain.app.Generation
 import com.arcana.brain.app.design.*
+import com.idea.ink.ui.*
+import com.idea.ink.theme.*
 import com.arcana.brain.app.navigation.Hints
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.Vault

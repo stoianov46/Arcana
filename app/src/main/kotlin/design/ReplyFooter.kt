@@ -1,5 +1,9 @@
 package com.arcana.brain.app.design
 
+import com.idea.ink.ui.*
+import com.idea.ink.input.*
+import com.idea.ink.theme.*
+
 import com.arcana.brain.core.ReplyStats
 import com.arcana.brain.core.UsageStats
 import com.jakewharton.mosaic.ui.TextStyle

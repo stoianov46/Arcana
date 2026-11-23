@@ -1,7 +1,7 @@
 package com.arcana.brain.app
 
-import com.arcana.brain.app.design.DirectoryPickerState
-import com.arcana.brain.app.input.Key
+import com.idea.ink.ui.DirectoryPickerState
+import com.idea.ink.input.Key
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test

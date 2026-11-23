@@ -7,10 +7,10 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.arcana.brain.app.design.Notice
+import com.idea.ink.ui.Notice
 import com.arcana.brain.app.design.Shortcuts
-import com.arcana.brain.app.design.PickerState
-import com.arcana.brain.app.input.TextFieldState
+import com.idea.ink.ui.PickerState
+import com.idea.ink.ui.TextFieldState
 
 /** The sidebar section a screen belongs to; the heading is drawn where the section changes. */
 enum class ScreenGroup(val heading: String) { Workspace("BRAIN"), Account("SYSTEM") }

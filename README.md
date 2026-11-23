@@ -26,7 +26,7 @@ AI notes, Usage (a dashboard of tokens, speed, estimated price and habits), Sett
 The vault note `ARCANA.md` holds your standing instructions for the assistant; Arcana creates it the first time and adds it to every chat.
 Settings are stored in `~/.config/arcana/config.json` (override with `ARCANA_CONFIG`; `ARCANA_VAULT` sets the default vault path);
 chats and token usage live next to it. The `core` module holds the Ollama client, the vault and its index; `app` holds the
-Mosaic UI: `design/` is the design system, `navigation/` the sidebar shell, overlays (palette, capture) and footer, `screens/` one file per screen.
+Mosaic UI: the design system is the sibling project **Ink** (`../Ink`, run `make publish-local` there first; `design/` keeps only Arcana's own pieces), `navigation/` the sidebar shell, overlays (palette, capture) and footer, `screens/` one file per screen.
 
 Keys (same conventions as CosmoCLI): `1`-`9` and `0` switch screens, `?` shows the key map, `Ctrl+B` folds the sidebar,
 `Ctrl+C` twice quits, `Esc` leaves editing and then goes Home.

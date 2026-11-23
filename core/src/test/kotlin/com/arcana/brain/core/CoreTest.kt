@@ -1,6 +1,10 @@
 package com.arcana.brain.core
 
 import java.nio.file.Files
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -1149,6 +1153,39 @@ class CoreTest {
         assertTrue("$0.0150" in text, text)
         assertTrue("free" in ChatStats.describe(messages, "m", 0, 0, 0, 0) && "size unknown" in ChatStats.describe(emptyList(), "m", 0, 0, 0, 0))
         assertTrue(CHAT_STATS_DEFINITION.toString().contains("chat_stats"))
+    }
+
+    @Test
+    fun chatStatsJsonHasTheSameNumbersInSecondsAndDollars() {
+        val calls = listOf(ToolCall(ToolFunction("read_note", kotlinx.serialization.json.JsonObject(emptyMap()))))
+        val messages = listOf(
+            ChatMessage("user", "hi", at = 1_000_000L),
+            ChatMessage.assistantCalls("", calls, ReplyStats(1000, 100, 4000, 2000)).copy(at = 1_010_000L),
+            ChatMessage.assistant("done", ReplyStats(2000, 300, 6000, 3000)).copy(at = 1_070_000L),
+        )
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(ChatStats.describeJson(messages, "qwen3:30b", 8000, 3, 15, 90_000)).jsonObject
+        fun num(vararg path: String): Double = path.dropLast(1).fold(json) { o, k -> o.getValue(k).jsonObject }.getValue(path.last()).jsonPrimitive.double
+        assertEquals("qwen3:30b", json.getValue("model").jsonPrimitive.content)
+        assertEquals(70.0, num("time", "chat_seconds"), 0.001)   // seconds, not milliseconds
+        assertEquals(70.0, num("time", "active_seconds"), 0.001)
+        assertEquals(10.0, num("time", "generation_seconds"), 0.001)
+        assertEquals(40.0, num("time", "tokens_per_second"), 0.001)
+        assertEquals(3400.0, num("tokens", "total"), 0.001)
+        assertEquals(0.015, num("cost", "estimated_dollars"), 0.0001)
+        assertEquals(1.0, num("tools", "by_tool", "read_note"), 0.001)
+        assertEquals(28.75, num("context", "percent_used"), 0.001)
+        assertEquals(90.0, num("arcana_running_seconds"), 0.001)
+        // same figures as the text version
+        assertTrue("$0.0150" in ChatStats.describe(messages, "qwen3:30b", 8000, 3, 15, 90_000))
+    }
+
+    @Test
+    fun chatStatsJsonCopesWithAnEmptyOrOlderChat() {
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(ChatStats.describeJson(emptyList(), "m", 0, 0, 0)).jsonObject
+        assertTrue(json.getValue("time").jsonObject.getValue("chat_seconds") is kotlinx.serialization.json.JsonNull)   // a chat from before messages had a time
+        assertTrue(json.getValue("context").jsonObject.getValue("last_request_used") is kotlinx.serialization.json.JsonNull)
+        assertEquals(true, json.getValue("cost").jsonObject.getValue("free").jsonPrimitive.boolean)
+        assertTrue(CHAT_STATS_JSON_DEFINITION.toString().contains("chat_stats_json") && CHAT_STATS_JSON != CHAT_STATS)
     }
 
     @Test

@@ -8,12 +8,27 @@ import kotlinx.serialization.json.putJsonArray
 
 /** The pseudo-tool that tells the model how much the current chat has used; the chat answers it (see [ChatStats.describe]). */
 const val CHAT_STATS = "chat_stats"
+/** The same statistics as JSON, for a model that wants to analyse them (see [ChatStats.describeJson]). */
+const val CHAT_STATS_JSON = "chat_stats_json"
 
 val CHAT_STATS_DEFINITION: JsonObject = buildJsonObject {
     put("type", "function")
     putJsonObject("function") {
         put("name", CHAT_STATS)
         put("description", "Get the statistics of this chat so far: the model, tokens in and out, estimated cost, chat time (first to last message), active time (without long pauses), time spent generating, how many tool calls, how full the context window is, and which other models were consulted (the Oracul: second opinions, comparisons, plans, takeovers, and the tokens each model spent). Use it when the user asks how much this chat used or cost, or to decide whether to wrap up.")
+        putJsonObject("parameters") {
+            put("type", "object")
+            putJsonObject("properties") {}
+            putJsonArray("required") {}
+        }
+    }
+}
+
+val CHAT_STATS_JSON_DEFINITION: JsonObject = buildJsonObject {
+    put("type", "function")
+    putJsonObject("function") {
+        put("name", CHAT_STATS_JSON)
+        put("description", "The same statistics as chat_stats, but as JSON with fixed field names (times in seconds, cost in dollars): model, messages, tokens, time, cost, tool calls, context use, Oracul use, and token spend per model. Use it when you need to read, compare or calculate with the numbers (a report property, a table); use chat_stats to tell the user in words.")
         putJsonObject("parameters") {
             put("type", "object")
             putJsonObject("properties") {}
@@ -120,5 +135,102 @@ object ChatStats {
             oraculLines(messages, oraculSetup).forEach { appendLine(it) }
             append("Arcana has been running for ${describeDuration(sessionMillis / 1000)}.")
         }
+    }
+
+    /**
+     * The same numbers as [describe], as JSON for a model that wants to analyse them (the pseudo-tool `chat_stats_json`). Every time is in seconds,
+     * the cost in dollars; the Oracul and the token spend per model are included when they are known.
+     */
+    fun describeJson(messages: List<ChatMessage>, model: String, contextLimit: Int, priceIn: Int, priceOut: Int, sessionMillis: Long = 0, oraculSetup: String = "", sessionUsage: List<UsageRecord> = emptyList(), allUsage: List<UsageRecord> = emptyList()): String {
+        val replies = messages.filter { it.role == "assistant" }
+        val stats = replies.mapNotNull { it.stats }
+        val prompt = stats.sumOf { it.promptTokens.toLong() }
+        val generated = stats.sumOf { it.completionTokens.toLong() }
+        val millis = stats.sumOf { it.totalMillis }
+        val calls = replies.flatMap { it.toolCalls }.groupingBy { it.function.name }.eachCount().entries.sortedByDescending { it.value }
+        val cost = prompt * priceIn / 1_000_000.0 + generated * priceOut / 1_000_000.0
+        val last = stats.lastOrNull { it.promptTokens > 0 }
+        val span = spans(messages)
+        fun seconds(ms: Long) = ms / 1000.0
+        return buildJsonObject {
+            put("model", model)
+            putJsonObject("messages") {
+                put("total", messages.size)
+                put("user", messages.count { it.role == "user" && !Oracul.isOpinion(it) && !Compaction.isSummary(it) })
+                put("replies", replies.size)
+                put("tool_results", messages.count { it.role == "tool" })
+            }
+            putJsonObject("tokens") {
+                put("prompt", prompt)
+                put("completion", generated)
+                put("total", prompt + generated)
+            }
+            putJsonObject("time") {
+                // null when the chat is from before messages carried a time
+                put("chat_seconds", span?.let { seconds(it.first) })
+                put("active_seconds", span?.let { seconds(it.second) })
+                put("pause_limit_seconds", PAUSE_LIMIT_MILLIS / 1000)
+                put("generation_seconds", seconds(millis))
+                put("tokens_per_second", if (generated > 0 && millis > 0) generated * 1000.0 / millis else 0.0)
+            }
+            putJsonObject("cost") {
+                put("estimated_dollars", cost)
+                put("price_in_per_million", priceIn)
+                put("price_out_per_million", priceOut)
+                put("free", priceIn == 0 && priceOut == 0)
+            }
+            putJsonObject("tools") {
+                put("total_calls", calls.sumOf { it.value })
+                putJsonObject("by_tool") { calls.forEach { (name, count) -> put(name, count) } }
+            }
+            putJsonObject("context") {
+                put("limit", contextLimit)
+                if (last != null && contextLimit > 0) {
+                    val used = last.promptTokens + last.completionTokens
+                    put("last_request_used", used)
+                    put("percent_used", used * 100.0 / contextLimit)
+                } else put("last_request_used", null as Int?)
+            }
+            putJsonObject("oracul") {
+                put("setup", oraculSetup)
+                put("second_opinions", messages.count { it.role == "user" && it.content.startsWith(Oracul.MARK) })
+                put("comparisons", messages.count { it.role == "user" && it.content.startsWith(Oracul.MARK_COMPARE) })
+                put("plans", messages.count { Oracul.isPlan(it) })
+                put("analyses", messages.count { Oracul.isAnalysis(it) })
+                put("controller_verdicts", messages.count { Oracul.isControl(it) })
+                put("takeovers", messages.count { it.role == "assistant" && it.content.startsWith(Oracul.TAKEOVER_MARK) })
+            }
+            putJsonObject("spend_since_start") {
+                fun totals(t: UsageTotals, records: List<UsageRecord>, into: kotlinx.serialization.json.JsonObjectBuilder) {
+                    into.put("prompt_tokens", t.promptTokens)
+                    into.put("completion_tokens", t.completionTokens)
+                    into.put("total_tokens", t.totalTokens)
+                    into.put("requests", records.size)
+                    into.put("estimated_dollars", UsageStats.estimatedCost(records, priceIn, priceOut))
+                }
+                putJsonArray("by_model") {
+                    for ((m, records) in sessionUsage.groupBy { it.model }.entries.sortedByDescending { e -> e.value.sumOf { it.totalTokens.toLong() } }) {
+                        add(buildJsonObject {
+                            put("model", m)
+                            totals(UsageStats.totals(records), records, this)
+                            put("used_for", buildJsonObject { records.groupingBy { it.feature }.eachCount().forEach { (f, n) -> put(f, n) } })
+                        })
+                    }
+                }
+                putJsonObject("total") { totals(UsageStats.totals(sessionUsage), sessionUsage, this) }
+            }
+            putJsonObject("other_models_all_time") {
+                for (feature in ORACUL_FEATURES) {
+                    val records = allUsage.filter { it.feature == feature }
+                    if (records.isEmpty()) continue
+                    putJsonObject(feature) {
+                        put("requests", records.size)
+                        put("tokens", UsageStats.totals(records).totalTokens)
+                        put("this_session", sessionUsage.count { it.feature == feature })
+                    }
+                }
+            }
+            put("arcana_running_seconds", seconds(sessionMillis))
+        }.toString()
     }
 }

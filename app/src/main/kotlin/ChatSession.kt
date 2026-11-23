@@ -5,7 +5,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.arcana.brain.app.input.TextFieldState
+import com.idea.ink.ui.TextFieldState
 import com.arcana.brain.core.AppConfig
 import com.arcana.brain.core.STEP_LIMIT_AUTO_ROUNDS
 import com.arcana.brain.core.ChatMessage
@@ -59,6 +59,9 @@ import com.arcana.brain.core.REQUEST_ACCESS_DEFINITION
 import com.arcana.brain.app.screens.contextUsage
 import com.arcana.brain.app.screens.effectiveContext
 import com.arcana.brain.core.CHAT_STATS
+import com.arcana.brain.core.CHAT_STATS_JSON
+import com.arcana.brain.core.CHAT_STATS_DEFINITION
+import com.arcana.brain.core.CHAT_STATS_JSON_DEFINITION
 import com.arcana.brain.core.TODO
 import com.arcana.brain.core.TODO_DEFINITION
 import com.arcana.brain.core.TodoItem
@@ -69,7 +72,6 @@ import com.arcana.brain.core.Origin
 import com.arcana.brain.core.Provenance
 import com.arcana.brain.core.OllamaClient
 import com.arcana.brain.core.UsageStats
-import com.arcana.brain.core.CHAT_STATS_DEFINITION
 import com.arcana.brain.core.ChatStats
 import com.arcana.brain.core.REQUEST_MODE
 import com.arcana.brain.core.REQUEST_MODE_DEFINITION
@@ -620,7 +622,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         var cursor by androidx.compose.runtime.mutableIntStateOf(0)
 
         /** What is typed on the last row. */
-        val field = com.arcana.brain.app.input.TextFieldState()
+        val field = com.idea.ink.ui.TextFieldState()
 
         /** The cursor is on the text row (an open question has only that row). */
         val typing: Boolean get() = cursor == options.size
@@ -941,7 +943,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             }
             // read again for every call: an earlier call of this round may have switched the mode, which rebuilds the toolbox
             val box = toolbox
-            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || call.name == CHAT_STATS || call.name == TODO || call.name == CONSULT || box == null) {
+            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || call.name == CHAT_STATS || call.name == CHAT_STATS_JSON || call.name == TODO || call.name == CONSULT || box == null) {
                 val message = ChatMessage.toolResult(call.name, when {
                     call.name == ASK_USER -> askUser(call, text)
                     call.name == REQUEST_ACCESS -> requestAccess(call)
@@ -949,6 +951,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                     call.name == CONSULT -> consult(call)
                     call.name == TODO -> Todos.describe(Todos.parse((call.arguments["items"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()))
                     call.name == CHAT_STATS -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList())
+                    call.name == CHAT_STATS_JSON -> ChatStats.describeJson(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList())
                     else -> "Error: tools are off. Call request_access to ask the user for them."
                 })
                 add(message)
@@ -1132,7 +1135,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** What the model is offered when it has a toolbox: the tools, a way to ask for another mode, and (in plan mode) a way to ask to leave it. */
     private fun definitionsFor(box: ToolBox): JsonArray =
-        JsonArray(box.definitions() + REQUEST_MODE_DEFINITION + CHAT_STATS_DEFINITION + TODO_DEFINITION + (if (app.config.flowTools && app.config.oraculEnabled) listOf(CONSULT_DEFINITION) else emptyList()) + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
+        JsonArray(box.definitions() + REQUEST_MODE_DEFINITION + CHAT_STATS_DEFINITION + CHAT_STATS_JSON_DEFINITION + TODO_DEFINITION + (if (app.config.flowTools && app.config.oraculEnabled) listOf(CONSULT_DEFINITION) else emptyList()) + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
 
     /** The model asks to switch the tool mode: the user always decides; when they agree the mode, the toolbox and the model's tools change at once. */
     private suspend fun requestMode(call: ToolCall): String {

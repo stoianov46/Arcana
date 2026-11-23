@@ -9,8 +9,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.arcana.brain.app.AppContext
 import com.arcana.brain.app.design.*
-import com.arcana.brain.app.input.Key
-import com.arcana.brain.app.input.KeyHandler
+import com.idea.ink.ui.*
+import com.idea.ink.theme.*
+import com.idea.ink.input.Key
+import com.idea.ink.ui.KeyHandler
 import com.arcana.brain.app.navigation.Hints
 import com.arcana.brain.app.navigation.Screen
 import com.jakewharton.mosaic.ui.Color
@@ -171,6 +173,7 @@ Turn on **Settings → Tools → Tools in Chat** (or `/tools`) and Gemma can use
 - **Usage → Tools** (Tab on the Usage screen) shows what each tool cost: calls, about how many tokens its results added to the conversation, time, failures and denials.
 - **`todo`** lets the model keep a short task list for a job of three or more steps: you see the plan under the call in the chat (in the Monochrome themes it is green, the one colour besides the rose of errors) and a `☑ 2/5` pill in the status bar, so you can follow a long job. It changes nothing and asks nothing.
 - **`chat_stats`** lets the model read this chat's tokens, estimated cost, time (the chat from first to last message, the active part without long pauses, and the time the model spent generating), tool calls, context use, token spend per model and in total, and which other models (the Oracul) were consulted and how often, so it can answer "how much did this cost?" with real numbers.
+- **`chat_stats_json`** gives the model the same numbers as JSON (times in seconds, cost in dollars), so it can calculate with them or write them into a note, for example a report property, without copying figures out of a sentence.
 - **The model can ask for a mode:** with `request_mode` it can propose Auto (before many edits), Plan (to investigate first) or Ask; you always get a "Switch to … mode?" question and can refuse.
 - **More models in a comparison:** *Settings → Helpers → More Oracul models* (Space ticks several) makes `/compare` ask all of them; the judge compares every answer. Each model loads in turn, so it takes longer.
 - **Which model fits:** the model pickers in Settings show whether each installed model fits this machine's memory and mark a `★ suggested` Oracul and judge. A model marked `too big` would swap to disk or run on the CPU. A model you have already chosen that does not suit this memory is flagged under its row and after you save it, with a better installed choice, and the Chat status bar shows an orange `⚠` after the Oracul when it is too big.

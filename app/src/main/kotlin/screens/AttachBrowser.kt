@@ -2,6 +2,8 @@ package com.arcana.brain.app.screens
 
 import androidx.compose.runtime.Composable
 import com.arcana.brain.app.design.*
+import com.idea.ink.ui.*
+import com.idea.ink.theme.*
 
 /** The screen for choosing attachments, the same wherever a field carries them. [where] says what the files are for. */
 @Composable

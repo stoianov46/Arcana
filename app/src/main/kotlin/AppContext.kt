@@ -189,7 +189,7 @@ class AppContext(
     var libraryExpanded by mutableStateOf<Set<String>>(emptySet())
 
     /** State the screens keep while another tab is open: the Library's selection and scroll, the Brain's selected line (see [com.arcana.brain.app.design.ScreenMemory]). */
-    val screenMemory = com.arcana.brain.app.design.ScreenMemory()
+    val screenMemory = com.idea.ink.ui.ScreenMemory()
 
     /** Tokens used since Arcana started (including the reply streaming right now, as an estimate until it ends). */
     val sessionTokens: Long get() = usage.filter { it.time >= sessionStart }.sumOf { it.totalTokens.toLong() } + liveTokens

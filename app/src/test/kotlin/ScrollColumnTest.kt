@@ -1,5 +1,5 @@
-import com.arcana.brain.app.design.ScrollState
-import com.arcana.brain.app.input.Key
+import com.idea.ink.ui.ScrollState
+import com.idea.ink.input.Key
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

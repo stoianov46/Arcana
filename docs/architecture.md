@@ -19,7 +19,7 @@ Arcana (Gradle multi-project)
  terminal (stdin/stdout, pty)
         │ raw bytes
         ▼
- input/        KeyMapping → Key  →  KeyDispatcher (paste repair, overlay → screen → global)
+ Ink input     KeyEvent.toKey() → Key  →  KeyDispatcher (paste repair, overlay → screen → global)
         │
         ▼
  navigation/   Shell (layout, sidebar/top bar, footer, global keys)  Navigator (screens, overlays, guards, toasts)
@@ -28,7 +28,7 @@ Arcana (Gradle multi-project)
  screens/      Home Chat Library Compose Usage Settings Guide Changelog     overlays: help, palette, capture
         │  use                           │ publish Hints / Commands / FocusMode to Navigator
         ▼
- design/       Theme(Palette) Panel Label Stack Picker FilePicker ScrollView Markdown Attachments TextInput StatusBar …
+ Ink (com.idea.ink.ui) Palette Panel Label Stack Picker FilePicker ScrollView Markdown TextInput StatusBar …   +   design/ (Arcana's own: Attachments SlashKind ModelIcon ReplyFooter)
         │
  state holders (app/): AppContext ─ ChatSession ─ Generation ─ AppSession ─ BrainState
         │
@@ -67,7 +67,7 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 | Oracul | `core/Oracul.kt`, `ChatSession.secondOpinion/compare/maybeConsult` | a second (and judge) model advises on the worker's answer; it may use the worker's tools (changes always ask), local Ollama; see [oracul.md](oracul.md) |
 | Compaction | `core/Compaction.kt`, `ChatSession.compact` / `autoCompactDue` | a summary message is inserted into the chat; `Compaction.forModel` decides what the model is sent; nothing is deleted. `ChatSession.compacting` / `compactingSince` / `compactingAuto` drive the "Compacting…" line (`ReplyStatus`) and hold `send()`; `contextTokens` (Chat.kt) estimates the gauge after a compaction (`~`) because the last reply's stats are stale |
 | Context window | `AppContext.loadedContext` (`/api/ps`), `effectiveContext`, `UsageStats.contextSize` | the gauge counts against what Ollama really loaded |
-| Pseudo-tools | `ChatSession.runTools`: `ask_user`, `request_access`, `request_mode`, `chat_stats`, `todo` | answered by the chat, not by `ToolBox` |
+| Pseudo-tools | `ChatSession.runTools`: `ask_user`, `request_access`, `request_mode`, `chat_stats`, `chat_stats_json`, `todo` | answered by the chat, not by `ToolBox` |
 | Previews | `core/Diff.kt`, `ToolSpec.preview` | git-style diff in the approval panel |
 | Project context | `ToolBox(project = …)`, `AppConfig.projectFolder` | allowed root, relative base, instructions in the system prompt |
 | Tool usage | `core/ToolUsage.kt`, `AppContext.recordToolUse`, Usage → Tools | per-tool calls, result size, time |

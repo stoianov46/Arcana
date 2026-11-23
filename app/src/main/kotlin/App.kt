@@ -3,8 +3,8 @@ package com.arcana.brain.app
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import com.arcana.brain.app.design.Palette
-import com.arcana.brain.app.design.Themes
+import com.idea.ink.ui.Palette
+import com.idea.ink.theme.Themes
 import com.arcana.brain.app.navigation.Navigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.app.navigation.Shell

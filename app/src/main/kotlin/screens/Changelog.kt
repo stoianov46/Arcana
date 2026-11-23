@@ -8,8 +8,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.arcana.brain.app.AppContext
 import com.arcana.brain.app.design.*
-import com.arcana.brain.app.input.Key
-import com.arcana.brain.app.input.KeyHandler
+import com.idea.ink.ui.*
+import com.idea.ink.theme.*
+import com.idea.ink.input.Key
+import com.idea.ink.ui.KeyHandler
 import com.arcana.brain.app.navigation.Hints
 
 /** One page of the changelog: a theme of the work, newest page first. */
@@ -24,9 +26,12 @@ private fun changePages() = listOf(
         "Latest", "The latest work",
         """
 # The latest work
-Built on 24–25 October 2026. Last updated 13 November 2026.
+- **`chat_stats_json`:** a second statistics tool for the model: the same numbers as `chat_stats` (tokens, estimated cost, chat, active and generating time, tool calls, context use, the Oracul, token spend per model) as JSON with fixed names, times in seconds, so it can calculate with them or put them in a note. It was first written by the local model itself (gemma4:31b); its time fields were then corrected from milliseconds to seconds and the Oracul and spend parts added.
+Built on 24–25 October 2026. Last updated 23 November 2026.
 
 ## Status has its own column, and you can edit in it
+- **Arcana now runs on the Ink design system:** colours, text editing, scrolling, Markdown, pickers and the status bar come from the shared Ink library, so a fix there reaches Arcana and CosmoCLI alike. The theme list is Ink's, 19 themes (new: High contrast, Cosmo, Colour-blind Dark and Light, Amber and Hacker terminal): Settings → Appearance → Colour theme.
+- **The "summarizing the chat" timer in the status column counts again:** it stayed at `0s` while the chat was being compacted because nothing redrew the column; it now ticks every second.
 - **Templates can attach a skill and notes:** in the Templates tab press `s` on a template and choose from your skills and notes (type to filter): a skill is set, a note is added, or remove both. While you write or edit a template, `Ctrl+O` opens the same list and puts your choice into the properties of the text (`Ctrl+S` saves). Running the template (`Enter`, or `u` for the current chat) attaches the skill and the notes to the chat, as if you had typed `/name` and `@`, so a template can be "this prompt, run by that skill, with this style guide". The list and the preview show `◆ skill` and `▤ notes`; the note's properties are `skill: name` and `notes: [Folder/Note.md]`. If one is gone, you are told and the prompt still runs.
 - **Monochrome Accent: the compaction part of the context bar is blue:** the stretch of the bar between what is used and the auto-compact line (and its line in the key) is blue again, not amber, so it no longer looks like more progress.
 - **Web search: clearer failures and a way on:** HTTP 402 (an account limit or plan used up, as Ollama's hosted search answers) now says so and moves on to the next backend instead of showing a bare `answered HTTP 402`. A long query is cut to Brave's limits (50 words, 400 characters) so Brave no longer answers HTTP 422. When no backend answers, the model is told it can still call `fetch_url` directly on an address it is certain of (one you gave, one in a vault note, or the official docs of the thing asked about), but never on a guessed one.
