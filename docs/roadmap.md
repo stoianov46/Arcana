@@ -38,7 +38,7 @@ Closing review (2026-10-28): #11 stays *needs repro* (skipped until a screenshot
 | 13 | `http_request` does not exist: documented, and a wrong tool name now gets a hint at the right one (`fetch_url` is GET only) | done |
 | 3 | Tags: `add_tags` and `list_tags` tools | done |
 | 4 | Tags added by the agent show in the Library "tags" tab (the index now reads `tag:`, `Tags:`, `a b` and `#a #b`) | done |
-| 24 | Tool for the model to read current chat statistics (`chat_stats`) | done |
+| 24 | Tool for the model to read current chat statistics (`chat_stats`; `chat_stats_json` gives the same numbers as JSON) | done |
 | 24a | A task list for the model (`todo`): the plan and its progress visible in the chat and the status bar | done |
 | 14 | Tool usage statistics: Usage → **Tools** page (calls, ≈ tokens of results put into the context, average time, failures, denials) | done |
 

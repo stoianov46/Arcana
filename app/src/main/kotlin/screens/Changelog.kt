@@ -26,7 +26,8 @@ private fun changePages() = listOf(
         "Latest", "The latest work",
         """
 # The latest work
-Built on 24–25 October 2026. Last updated 16 November 2026.
+- **`chat_stats_json`:** a second statistics tool for the model: the same numbers as `chat_stats` (tokens, estimated cost, chat, active and generating time, tool calls, context use, the Oracul, token spend per model) as JSON with fixed names, times in seconds, so it can calculate with them or put them in a note. It was first written by the local model itself (gemma4:31b); its time fields were then corrected from milliseconds to seconds and the Oracul and spend parts added.
+Built on 24–25 October 2026. Last updated 23 November 2026.
 
 ## Status has its own column, and you can edit in it
 - **Arcana now runs on the Ink design system:** colours, text editing, scrolling, Markdown, pickers and the status bar come from the shared Ink library, so a fix there reaches Arcana and CosmoCLI alike. The theme list is Ink's, 19 themes (new: High contrast, Cosmo, Colour-blind Dark and Light, Amber and Hacker terminal): Settings → Appearance → Colour theme.
