@@ -77,6 +77,9 @@ import com.arcana.brain.core.Provenance
 import com.arcana.brain.core.OllamaClient
 import com.arcana.brain.core.UsageStats
 import com.arcana.brain.core.ChatStats
+import com.arcana.brain.core.ApprovalPolicy
+import com.arcana.brain.core.ApprovalSettings
+import com.arcana.brain.core.Actor
 import com.arcana.brain.core.REQUEST_MODE
 import com.arcana.brain.core.REQUEST_MODE_DEFINITION
 import com.arcana.brain.core.TOOL_MODES
@@ -1027,22 +1030,17 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             // a web page or search result is in this turn: it may try to steer the model, so changes, commands and new addresses ask even in Auto mode (Settings → Tools → Ask after web)
             val tainted = app.config.askAfterWeb && webInTurn && spec != null && spec.risk != ToolRisk.Read &&
                 (spec.risk != ToolRisk.Web || (call.name != "web_search" && WebTaint.newPlace(address, webHosts)))
-            val ask = spec != null && refusal == null && (call.name !in alwaysAllowed || tainted) && (tainted || when (spec.risk) {
-                ToolRisk.Write -> spec.alwaysAsk || app.config.toolMode != "auto" // deleting and moving ask even in Auto mode
-                ToolRisk.Read -> !app.config.toolAutoRead
-                ToolRisk.Shell -> !app.config.toolAutoShell && !(app.config.toolAutoRead && ShellPolicy.isSafe(command)) // never "always": each command is looked at, unless auto-run is on
-                ToolRisk.Web -> !(call.name in AUTO_WEB && app.config.toolAutoSearch) // never "always": the address itself can carry data out; only a search or a page read can be let through (Settings → Tools → Search and fetch without asking); http_request always asks
-            })
+            val ask = spec != null && refusal == null && ApprovalPolicy.mustAsk(spec, Actor.Worker, ApprovalSettings.of(app.config), allowedAlways = call.name in alwaysAllowed, tainted = tainted, command = command)
             var allowed = !folderDenied && refusal == null
             if (ask && allowed) {
                 val shell = spec!!.risk == ToolRisk.Shell
                 // why it asks although Auto mode or an earlier "always" would let it run
                 val preview = spec.preview(call.arguments) + if (tainted) listOf(WebTaint.NOTE) else emptyList()
-                val pending = if (shell) Approval(call.name, "run_command", preview, heading = "Run this command?", icon = "$", yes = "Run", always = false)
-                else if (spec.risk == ToolRisk.Web) Approval(call.name, call.name, preview, heading = webHeading(call.name), icon = "↗", yes = if (call.name == "web_search") "Search" else if (call.name == "http_request") "Send" else "Fetch", always = false)
+                val pending = if (shell) Approval(call.name, "run_command", preview, heading = ApprovalPolicy.heading(spec), icon = "$", yes = "Run", always = false)
+                else if (spec.risk == ToolRisk.Web) Approval(call.name, call.name, preview, heading = ApprovalPolicy.heading(spec), icon = "↗", yes = if (call.name == "web_search") "Search" else if (call.name == "http_request") "Send" else "Fetch", always = false)
                 else Approval(
                     call.name, "${call.name}  ${spec.summary(call.arguments)}", preview,
-                    heading = spec.confirmHeading ?: "Allow this change?", icon = if (spec.alwaysAsk || tainted) "!" else "⚙", always = !spec.alwaysAsk && !tainted,
+                    heading = ApprovalPolicy.heading(spec), icon = if (spec.alwaysAsk || tainted) "!" else "⚙", always = ApprovalPolicy.offersAlways(spec, tainted),
                 )
                 val choice = awaitApproval(pending)
                 if (choice == ApprovalChoice.Always) alwaysAllowed += call.name
@@ -1395,19 +1393,13 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         return "" to used
     }
 
-    private fun webHeading(tool: String) = when (tool) { "web_search" -> "Search the web?"; "http_request" -> "Send this HTTP request?"; else -> "Fetch this web page?" }
-
     /** One tool call of the Oracul: asked about first unless it only reads, then run on the IO thread; recorded like the worker's calls. */
     private suspend fun oraculCall(model: String, box: ToolBox, call: ToolCall): String {
         val spec = box.find(call.name) ?: return "Error: there is no tool called ${call.name}. Available: ${box.specs.joinToString { it.name }}."
-        val ask = if (spec.risk == ToolRisk.Read) !app.config.toolAutoRead else true // changes, commands and web: always, whatever the mode
+        val ask = ApprovalPolicy.mustAsk(spec, Actor.Oracul, ApprovalSettings.of(app.config)) // changes, commands and web: always, whatever the mode
         var allowed = true
         if (ask) {
-            val heading = when (spec.risk) {
-                ToolRisk.Shell -> "Run this command?"
-                ToolRisk.Web -> webHeading(call.name)
-                else -> spec.confirmHeading ?: if (spec.risk == ToolRisk.Read) "Allow this read?" else "Allow this change?"
-            }
+            val heading = ApprovalPolicy.heading(spec)
             val pending = Approval(call.name, "$model (Oracul)  ${call.name}  ${spec.summary(call.arguments)}", spec.preview(call.arguments), heading = "${Oracul.GLYPH} Oracul · $heading", icon = Oracul.GLYPH, always = false)
             allowed = awaitApproval(pending) != ApprovalChoice.Deny
         }
@@ -1955,7 +1947,5 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         /** A result that looks like a failure (including a web service's own refusal) is not remembered. */
         val FAILURE_LOOK = Regex("""(?i)^error:|\bHTTP (4|5)\d\d\b|rate.?limit|too many requests|timed out|temporarily unavailable|try again""")
 
-        /** The web tools that *Search and fetch without asking* lets through; `http_request` is not one of them (it can send a body and headers). */
-        val AUTO_WEB = setOf("web_search", "fetch_url")
     }
 }

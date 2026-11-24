@@ -40,7 +40,7 @@ Do all eight, smallest and safest first, each phase its own commit:
    time tools plus the definitions of the pseudo-tools. Test: a `ToolSettings` test; the tool tests unchanged.
 4. **One list of pseudo-tools.** — done 2026-11-24. A `PseudoTool` registry: name, definition, when it is offered, and its handler; `definitionsFor` and the dispatch in `runTools` read from it.
    Test: every pseudo-tool is offered exactly when it was before (a table test).
-5. **One approval policy.** `ApprovalPolicy.decide(spec, settings, actor)` in `core` says ask, allow or always ask, for the chat model and for the Oracul. Test: a table of
+5. **One approval policy.** — done 2026-11-24. One visible difference, on purpose: a read that asks the chat model's user is titled "Allow this read?" (it said "Allow this change?"), as the Oracul's already was. `ApprovalPolicy.decide(spec, settings, actor)` in `core` says ask, allow or always ask, for the chat model and for the Oracul. Test: a table of
    risk × mode × actor.
 6. **One tool loop.** The Oracul's tool loop uses the same core loop as the worker, so it gets the loop guard and the retries. Test: the loop's existing tests plus an
    Oracul run through it.
