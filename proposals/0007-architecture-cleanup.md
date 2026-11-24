@@ -44,7 +44,7 @@ Do all eight, smallest and safest first, each phase its own commit:
    risk × mode × actor.
 6. **One tool loop.** — done 2026-11-24 (the Oracul runs through a hidden `Generation`; it now gets the worker's retries and loop guard — a gain, not a change of what it may do). The Oracul's tool loop uses the same core loop as the worker, so it gets the loop guard and the retries. Test: the loop's existing tests plus an
    Oracul run through it.
-7. **`ChatSession` split.** `ToolRunner` (running calls, the turn cache, the loop guard, approvals), `OraculCoordinator` (opinions, comparisons, takeovers, flow, roles,
+7. **`ChatSession` split.** — done 2026-11-24, partly as planned: `SemanticService` is a class of its own (it has its own state); the Oracul, flow, tool running, compaction and storage moved into files of their own as extension functions over the session (`ChatOracul.kt`, `ChatFlow.kt`, `ChatToolRunner.kt`, `ChatCompaction.kt`, `ChatStorage.kt`), because they share the conversation, the run, the approval queue and the turn's counters: classes would have had to pass dozens of those back and forth. `ChatSession.kt`: 1,965 → 773 lines. `ToolRunner` (running calls, the turn cache, the loop guard, approvals), `OraculCoordinator` (opinions, comparisons, takeovers, flow, roles,
    goal), `SemanticService` (indexes, reindex, model download), `Compactor` and `ChatPersistence`; `ChatSession` keeps the conversation and wires them.
 8. **`Chat.kt` dialogs.** Each dialog (history, pickers, save, confirmations, artifacts, context inspector, effort, sampling) becomes its own state + keys + view; `Chat.kt` keeps
    the conversation and the message field.

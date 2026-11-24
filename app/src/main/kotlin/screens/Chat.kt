@@ -1,5 +1,18 @@
 package com.arcana.brain.app.screens
 
+import com.arcana.brain.app.cancelOracul
+import com.arcana.brain.app.clearGoal
+import com.arcana.brain.app.compact
+import com.arcana.brain.app.compare
+import com.arcana.brain.app.deleteCurrent
+import com.arcana.brain.app.history
+import com.arcana.brain.app.offerMemory
+import com.arcana.brain.app.open
+import com.arcana.brain.app.revise
+import com.arcana.brain.app.secondOpinion
+import com.arcana.brain.app.startGoal
+import com.arcana.brain.app.startNew
+import com.arcana.brain.app.takeOver
 import com.arcana.brain.core.effectiveContext
 import com.arcana.brain.core.contextTokens
 import com.arcana.brain.core.contextUsage
@@ -466,7 +479,7 @@ internal fun searchModeSegment(app: AppContext, chat: ChatSession, plain: Boolea
     // the same setting (Settings → Search → Search by) decides for /vault answers and for the model's own searches
     val mode = RetrievalMode.of(app.config.searchBy)
     val tag = ""
-    val meaningOn = chat.semanticOn(app.config)
+    val meaningOn = chat.semantic.semanticOn(app.config)
     val glyph = (if (plain) "search " else "⌕ ") + (if (toolOnly) "model: " else "")
     return when {
         mode == RetrievalMode.Keywords -> statusSegment("", "${glyph}words$tag", Palette.Blue, 5, second = true)
@@ -973,7 +986,7 @@ fun ChatScreen(app: AppContext) {
             "/tools" -> toggleTools()
             "/memory" -> when (args.lowercase()) { "" -> openMemory(); "check" -> openMemoryCheck(); else -> toast("/memory takes only “check” after it.", error = true) }
             "/skills" -> toggleSkills()
-            "/reindex" -> chat.reindex { text, error -> toast(text, error = error) }
+            "/reindex" -> chat.semantic.reindex { text, error -> toast(text, error = error) }
             "/thinking" -> toggleThinkingPane()
             "/status" -> toggleStatusPane()
             "/flow" -> setFlow(args)
@@ -1040,7 +1053,7 @@ fun ChatScreen(app: AppContext) {
             Command("Attach a file or picture…", "Chat", "Ctrl+O") { openAttach() },
             Command("Memory file (ARCANA.md): open and edit", "Chat", "/memory") { openMemory() },
             Command(if (app.config.skillsEnabled) "Skills: turn off" else "Skills: turn on (list them)", "Chat", "/skills") { toggleSkills() },
-            Command("Semantic search: build or refresh the index of the vault", "Chat", "/reindex") { chat.reindex { text, error -> toast(text, error = error) } },
+            Command("Semantic search: build or refresh the index of the vault", "Chat", "/reindex") { chat.semantic.reindex { text, error -> toast(text, error = error) } },
             Command("Reasoning effort: choose for the next message (what the model offers)", "Chat", "Ctrl+G") { openThinkPicker() },
             Command("Sampling: temperature, top P, top K, min P, penalties", "Chat", "Ctrl+R") { openSampling() },
             Command(if (app.config.thinkingPane) "Thinking pane: turn off" else "Thinking pane: show the model's thoughts live", "Chat", "/thinking") { toggleThinkingPane() },
@@ -1579,7 +1592,7 @@ fun ChatScreen(app: AppContext) {
                 val actions = if (panelActions != null) null else chatActions(browsing, entries.isNotEmpty(), chat.artifacts.isNotEmpty())
                 val pendingRow = chat.attachments.rows
                 // the reply line (compacting, running, failed…) and, when /reindex runs, one more line with its progress
-                val statusRow = (if (chat.compacting || gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled || chat.consulting != null) 1 else 0) + (if (chat.indexing != null) 1 else 0)
+                val statusRow = (if (chat.compacting || gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled || chat.consulting != null) 1 else 0) + (if (chat.semantic.indexing != null) 1 else 0)
                 // what sits under the conversation: the message field, or the change waiting for an answer
                 val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
                 // while a dialog is open the thinking pane stays (a short strip, or its column): the dialog gives up a few lines for it instead of pushing it out
@@ -1613,7 +1626,7 @@ fun ChatScreen(app: AppContext) {
                         output.copyPlain = app.config.copyAs == "plain"
                         ScrollView(lines, scrollRows, output)
                         ReplyStatus(app, gen, compactingSince = chat.compactingSince.takeIf { chat.compacting }, compactingAuto = chat.compactingAuto, compactingPart = chat.compactingPart, consulting = chat.consulting, consultingSince = chat.consultingSince, consultingStage = chat.consultingStage)
-                        chat.indexing?.let { Label((if (app.config.plainGlyphs) "" else "◌ ") + it, color = Palette.Blue) }
+                        chat.semantic.indexing?.let { Label((if (app.config.plainGlyphs) "" else "◌ ") + it, color = Palette.Blue) }
                     }
                 }
                 // the docks: full-height columns beside the conversation, one panel per side (see Docks). A column needs room, so with too little the conversation takes the whole width.

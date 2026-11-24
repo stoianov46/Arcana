@@ -26,8 +26,8 @@ class ProjectRootsTest {
         val outside = Files.createTempDirectory("outside")
         val vault = Files.createTempDirectory("vault")
         val config = AppConfig(vaultPath = vault.toString(), projectFolder = project.toString(), toolFolders = allowed.toString(), searchIn = "vault; working; $inside; $outside; ${project.resolve("missing")}; $inside")
-        val roots = app(config).chat.projectRoots(config)
+        val roots = app(config).chat.semantic.projectRoots(config)
         assertEquals(listOf(project, inside).map { it.toRealPath() }, roots.map { it.toRealPath() }, "the working folder first, then the allowed one; not the outside one, not a missing one, no repeats")
-        assertEquals(emptyList(), app(AppConfig(vaultPath = vault.toString())).let { it.chat.projectRoots(AppConfig(vaultPath = vault.toString())) }, "no working folder and no search folders: nothing to search")
+        assertEquals(emptyList(), app(AppConfig(vaultPath = vault.toString())).let { it.chat.semantic.projectRoots(AppConfig(vaultPath = vault.toString())) }, "no working folder and no search folders: nothing to search")
     }
 }

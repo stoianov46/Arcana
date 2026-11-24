@@ -76,7 +76,7 @@ class SemanticSetupTest {
             val vault = Files.createTempDirectory("vault").also { Files.writeString(it.resolve("Note.md"), "# Note\nSome text about databases.\n") }
             val app = app(f, vault)
             runBlocking { app.refreshConnection() }
-            assertTrue(!app.chat.semanticOn(), "off before: no embedding model is set")
+            assertTrue(!app.chat.semantic.semanticOn(), "off before: no embedding model is set")
             app.chat.send("find my notes about databases")
             waitFor("the question") { app.chat.approval != null }
             assertEquals("Download a model?", app.chat.approval!!.heading)
@@ -85,11 +85,11 @@ class SemanticSetupTest {
             app.chat.answer(ChatSession.ApprovalChoice.Allow)
             waitFor("the answer") { app.chat.messages.toList().count { it.role == "assistant" && it.toolCalls.isEmpty() } >= 1 }
             assertEquals("nomic-embed-text", app.config.embedModel, "the model is selected")
-            assertTrue(app.chat.semanticOn())
+            assertTrue(app.chat.semantic.semanticOn())
             assertEquals(1, f.calls.count { it == "pull" })
             val result = app.chat.messages.toList().first { it.role == "tool" }.content
             assertTrue(!result.startsWith("Error") && "Note.md" in result, "the same call answered after the setup: $result")
-            assertNull(app.chat.indexing)
+            assertNull(app.chat.semantic.indexing)
         } finally { f.server.stop(0) }
     }
 

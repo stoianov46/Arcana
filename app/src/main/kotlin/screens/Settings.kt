@@ -609,7 +609,7 @@ private fun projectNote(app: AppContext): String {
     projectNoteCache[key]?.let { (at, text) -> if (System.currentTimeMillis() - at < 10_000) return text }
     val scope = com.arcana.brain.core.SearchScope.of(config.searchIn)
     val home = System.getProperty("user.home")
-    val roots = app.chat.projectRoots(config)
+    val roots = app.chat.semantic.projectRoots(config)
     fun tilde(p: java.nio.file.Path) = p.toString().replace(home, "~")
     fun files(root: java.nio.file.Path): String {
         val source = com.arcana.brain.core.FolderSource(root, config.searchMaxFileKb.coerceIn(10, 5000) * 1000L, vaultRoot = app.openVault().getOrNull()?.root?.toAbsolutePath()?.normalize())
@@ -894,7 +894,7 @@ fun SettingsScreen(app: AppContext) {
                             editing = null
                             notice = Notice("Downloading ${com.arcana.brain.core.SemanticSetup.RECOMMENDED}…")
                             app.scope.launch {
-                                val problem = app.chat.installEmbeddingModel(com.arcana.brain.core.SemanticSetup.RECOMMENDED) { notice = Notice(it) }
+                                val problem = app.chat.semantic.installEmbeddingModel(com.arcana.brain.core.SemanticSetup.RECOMMENDED) { notice = Notice(it) }
                                 notice = if (problem == null) Notice("${com.arcana.brain.core.SemanticSetup.RECOMMENDED} is installed and selected. The first semantic search builds the index (or /reindex in Chat).")
                                     else Notice(problem, isError = true)
                             }
