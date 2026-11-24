@@ -1,6 +1,6 @@
 # 0007 · Architecture cleanup
 
-**Status:** accepted (2026-11-24), phases in progress on branch `refactor/architecture-cleanup`
+**Status:** done (2026-11-24), on branch `refactor/architecture-cleanup`
 
 ## Problem
 
@@ -46,7 +46,7 @@ Do all eight, smallest and safest first, each phase its own commit:
    Oracul run through it.
 7. **`ChatSession` split.** — done 2026-11-24, partly as planned: `SemanticService` is a class of its own (it has its own state); the Oracul, flow, tool running, compaction and storage moved into files of their own as extension functions over the session (`ChatOracul.kt`, `ChatFlow.kt`, `ChatToolRunner.kt`, `ChatCompaction.kt`, `ChatStorage.kt`), because they share the conversation, the run, the approval queue and the turn's counters: classes would have had to pass dozens of those back and forth. `ChatSession.kt`: 1,965 → 773 lines. `ToolRunner` (running calls, the turn cache, the loop guard, approvals), `OraculCoordinator` (opinions, comparisons, takeovers, flow, roles,
    goal), `SemanticService` (indexes, reindex, model download), `Compactor` and `ChatPersistence`; `ChatSession` keeps the conversation and wires them.
-8. **`Chat.kt` dialogs.** Each dialog (history, pickers, save, confirmations, artifacts, context inspector, effort, sampling) becomes its own state + keys + view; `Chat.kt` keeps
+8. **`Chat.kt` dialogs.** — done 2026-11-24: the dialogs' views in `ChatDialogs.kt`, the inspector and artifacts lists with their own state and keys (the two inspector modes became one), and the rest of what is not the conversation moved by topic (`ChatSlash`, `ChatThinking`, `ChatStatusBar`, `ChatLines`); `Chat.kt`: 2,208 → 1,138 lines. Each dialog (history, pickers, save, confirmations, artifacts, context inspector, effort, sampling) becomes its own state + keys + view; `Chat.kt` keeps
    the conversation and the message field.
 
 Each phase: build, all tests, a pty run of the Chat against a fake Ollama (send, a tool call, `/context`, a dialog), docs (`core-module.md`, `app-module.md`, `architecture.md`,

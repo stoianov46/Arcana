@@ -12,7 +12,7 @@ One file per proposal, numbered in the order they were written: `NNNN-short-name
 | [0004](0004-steady-status-bars.md) | Steady status bars | proposed | The block under the conversation keeps one height and never wraps: fixed slots and padded numbers, one transient slot, every fact shown in one place, priority-based shrinking on narrow terminals. |
 | [0005](0005-adopt-ink.md) | Adopt Ink | shipped (open questions remain) | Arcana's design and input layers come from the Ink library (`com.idea:ink`): fill Ink's gaps first, publish it locally, then attach it and delete Arcana's copies. |
 | [0006](0006-task-based-tool-sets.md) | Task-based tool sets | proposed | Offer a smaller tool set that fits the task (skill-declared sets, short descriptions for small models, profiles or merged overlaps), judged by a tool-call eval and Usage → Tools → By model; switched-off tools and the duplicate tool list already removed. |
-| [0007](0007-architecture-cleanup.md) | Architecture cleanup | accepted, in progress | Smaller units with one job each and no behaviour change: logic out of screens, `Prompts` out of `Vault.kt`, split tests, `ToolSettings` and split tool files, one pseudo-tool registry, one approval policy, one tool loop, `ChatSession` and `Chat.kt` split. No DI, no engine abstraction. |
+| [0007](0007-architecture-cleanup.md) | Architecture cleanup | done | Smaller units with one job each and no behaviour change: logic out of screens, `Prompts` out of `Vault.kt`, split tests, `ToolSettings` and split tool files, one pseudo-tool registry, one approval policy, one tool loop, `ChatSession` and `Chat.kt` split. No DI, no engine abstraction. |
 
 ## Status values
 
