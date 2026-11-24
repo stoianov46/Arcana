@@ -103,7 +103,12 @@ data class ChatChunk(
     val evalMillis: Long = 0,
     /** Tools the model asked for (usually in the last chunk). */
     val toolCalls: List<ToolCall> = emptyList(),
+    /** On the last chunk, why the reply ended: `stop` (it finished), `length` (it hit the token or context limit and was cut off), `load`, `unload`; blank when not said. */
+    val doneReason: String = "",
 ) {
+    /** The reply was cut off by a limit, not finished by the model. */
+    val cutOff: Boolean get() = done && doneReason == "length"
+
     /** What to show under a finished reply; null when Ollama reported no token counts. */
     fun toStats(): ReplyStats? =
         if (promptTokens > 0 || completionTokens > 0) ReplyStats(promptTokens, completionTokens, totalMillis, evalMillis) else null
@@ -170,6 +175,7 @@ private data class WireChunk(
     @SerialName("eval_count") val evalCount: Int = 0,
     @SerialName("total_duration") val totalDuration: Long = 0,
     @SerialName("eval_duration") val evalDuration: Long = 0,
+    @SerialName("done_reason") val doneReason: String = "",
 )
 
 @Serializable
@@ -223,6 +229,7 @@ object OllamaProtocol {
             totalMillis = chunk.totalDuration / 1_000_000,
             evalMillis = chunk.evalDuration / 1_000_000,
             toolCalls = chunk.message?.toolCalls.orEmpty(),
+            doneReason = chunk.doneReason,
         )
     }
 
@@ -369,6 +376,23 @@ object OllamaProtocol {
     fun parseModels(body: String): List<String> =
         json.decodeFromString<WireTags>(body).models.map { it.name }.sorted()
 
+    /**
+     * True when an HTTP error is worth one more try: Ollama is busy (503, 429: its queue is full) or its model runner stopped and will be started again (a 500 that says
+     * so). Any other error (a bad request, a model that does not exist, a malformed tool call) would only fail again.
+     */
+    fun isTransient(status: Int, error: String): Boolean =
+        status == 503 || status == 429 || status == 502 || status == 504 ||
+            (status == 500 && Regex("""(?i)runner process (has )?(terminated|exited|no longer running)|connection (refused|reset)|EOF|server busy|unexpected server status""").containsMatchIn(error) && !isOutOfMemory(error))
+
+    /** The message when Ollama did not start answering within the Timeout setting. */
+    fun timeoutMessage(model: String, seconds: Int): String =
+        "Ollama did not start answering within $seconds s: $model may still be loading, or it is reading a long conversation. Try again (it may be ready now), " +
+            "raise Settings → Ollama → Timeout, or choose a smaller Context window or model."
+
+    /** The message when a streaming reply went silent for [seconds]. */
+    fun stalledMessage(model: String, seconds: Long): String =
+        "$model stopped sending anything for ${seconds / 60} minutes, so the reply was stopped. Ollama may be stuck: try again, or restart Ollama if it happens again."
+
     /** True when an error from Ollama says the model ran out of memory (Metal's "Insufficient Memory" from the MLX runner, CUDA, llama.cpp allocation failures). */
     fun isOutOfMemory(error: String): Boolean =
         Regex("""(?i)insufficient memory|out ?of ?memory|OutOfMemory|failed to allocate|cudaMalloc failed|unable to allocate|requires more system memory""").containsMatchIn(error)
@@ -416,7 +440,13 @@ class OllamaClient(private val config: () -> AppConfig) {
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()
     private val thinkingValuesCache get() = thinkingValuesByModel
 
-    /** [repeatPenalty] (Ollama's `repeat_penalty`, 1.0 = none) is sent only for a retry after a loop; normally the model's own default stands. */
+    /**
+     * [repeatPenalty] (Ollama's `repeat_penalty`, 1.0 = none) is sent only for a retry after a loop; normally the model's own default stands.
+     *
+     * How the request is guarded: the Timeout setting is how long Ollama may take to START answering (loading the model and reading the prompt come first); once lines
+     * flow, a reply that goes silent for [idleSeconds] is stopped as stalled. A failure before anything streamed (Ollama restarting, busy, its runner stopping) is tried
+     * again up to [RETRIES] times; one during the stream is not (the reply would be doubled). Cancelling the collector closes the stream at once, so Ollama stops too.
+     */
     fun chat(messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, repeatPenalty: Double? = null): Flow<ChatChunk> = flow {
         val cfg = config()
         runCatching { makeRoom(cfg) }
@@ -425,23 +455,27 @@ class OllamaClient(private val config: () -> AppConfig) {
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(OllamaProtocol.chatRequest(cfg, messages, jsonMode, tools, thinkFor(cfg), repeatPenalty).toString()))
             .build()
-        val future = http.sendAsync(request, HttpResponse.BodyHandlers.ofLines())
-        // Cancelling the future closes the connection, which unblocks the line reader below.
-        val handle = currentCoroutineContext().job.invokeOnCompletion { future.cancel(true) }
+        val stream = open(cfg, request)
+        // closing the stream is what really stops the request: the reader below is blocked in a read, and Ollama stops generating when the connection goes
+        val closer = currentCoroutineContext().job.invokeOnCompletion { runCatching { stream.close() } }
+        val lastLine = java.util.concurrent.atomic.AtomicLong(System.nanoTime())
+        val stalled = java.util.concurrent.atomic.AtomicBoolean(false)
+        val idle = idleSeconds(cfg)
+        val watchdog = WATCHDOG.scheduleAtFixedRate({
+            if (System.nanoTime() - lastLine.get() > idle * 1_000_000_000L && stalled.compareAndSet(false, true)) runCatching { stream.close() }
+        }, 1, 1, java.util.concurrent.TimeUnit.SECONDS)
         try {
-            val response = try {
-                future.get()
-            } catch (e: Exception) {
-                throw OllamaException("Cannot reach Ollama at ${cfg.ollamaUrl}: ${e.cause?.message ?: e.message}", e)
-            }
-            if (response.statusCode() != 200) {
-                val body = response.body().use { it.toList().joinToString("\n") }
-                val error = errorText(body)
-                if (OllamaProtocol.isOutOfMemory(error)) throw outOfMemory(cfg, error)
-                throw OllamaException("Ollama returned HTTP ${response.statusCode()}: $error")
-            }
-            response.body().use { lines ->
-                for (line in lines) {
+            var finished = false
+            stream.bufferedReader().use { reader ->
+                while (true) {
+                    val line = try {
+                        reader.readLine()
+                    } catch (e: java.io.IOException) {
+                        currentCoroutineContext().ensureActive()
+                        if (stalled.get()) throw OllamaException(OllamaProtocol.stalledMessage(cfg.model, idle), e)
+                        throw OllamaException("The connection to Ollama broke during the reply (${e.message ?: e.javaClass.simpleName}). Send the message again.", e)
+                    } ?: break
+                    lastLine.set(System.nanoTime())
                     currentCoroutineContext().ensureActive()
                     if (line.isBlank()) continue
                     val chunk = try {
@@ -449,15 +483,54 @@ class OllamaClient(private val config: () -> AppConfig) {
                     } catch (e: OllamaException) {
                         // the runner can also die part-way, once the context cache grows past what the GPU may take
                         if (OllamaProtocol.isOutOfMemory(e.message.orEmpty())) throw outOfMemory(cfg, e.message.orEmpty()) else throw e
+                    } catch (e: kotlinx.serialization.SerializationException) {
+                        throw OllamaException("Ollama sent a line Arcana cannot read: ${line.take(160)}", e)
                     }
                     emit(chunk)
-                    if (chunk.done) break
+                    lastLine.set(System.nanoTime())
+                    if (chunk.done) { finished = true; break }
                 }
             }
+            currentCoroutineContext().ensureActive()
+            if (stalled.get()) throw OllamaException(OllamaProtocol.stalledMessage(cfg.model, idle))
+            // every reply ends with a `done` line: a stream that stops without one was cut (the runner stopped, the server restarted)
+            if (!finished) throw OllamaException("Ollama ended the reply before it was finished (its model runner may have stopped). Send the message again.")
         } finally {
-            handle.dispose()
+            watchdog.cancel(false)
+            closer.dispose()
         }
     }.flowOn(Dispatchers.IO)
+
+    /** How long a streaming reply may stay silent before it counts as stalled: the Timeout setting, but never under 10 minutes (a model writing a long tool call sends nothing until it is done). */
+    private fun idleSeconds(cfg: AppConfig): Long = maxOf(cfg.timeoutSeconds.toLong(), minIdleSeconds)
+
+    /**
+     * Sends [request] and returns the body of a 200 answer to read the stream from. Tries again ([RETRIES] times, waiting a little longer each time) when Ollama cannot be
+     * reached or answers that it is busy or that its runner stopped; never for a time-out (it would only double the wait) or for an out-of-memory error (it would fail again).
+     */
+    private suspend fun open(cfg: AppConfig, request: HttpRequest): java.io.InputStream {
+        var attempt = 0
+        while (true) {
+            val future = http.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream())
+            val handle = currentCoroutineContext().job.invokeOnCompletion { future.cancel(true) }
+            val response = try {
+                future.get()
+            } catch (e: Exception) {
+                currentCoroutineContext().ensureActive()
+                val cause = (e as? java.util.concurrent.ExecutionException)?.cause ?: e
+                if (cause is java.net.http.HttpTimeoutException) throw OllamaException(OllamaProtocol.timeoutMessage(cfg.model, cfg.timeoutSeconds), cause)
+                if (attempt < RETRIES) { kotlinx.coroutines.delay(retryDelaysMs[attempt++]); continue }
+                throw OllamaException("Cannot reach Ollama at ${cfg.ollamaUrl}: ${cause.message ?: cause.javaClass.simpleName}", e)
+            } finally {
+                handle.dispose()
+            }
+            if (response.statusCode() == 200) return response.body()
+            val error = errorText(response.body().use { it.readBytes().decodeToString() })
+            if (OllamaProtocol.isOutOfMemory(error)) throw outOfMemory(cfg, error)
+            if (OllamaProtocol.isTransient(response.statusCode(), error) && attempt < RETRIES) { kotlinx.coroutines.delay(retryDelaysMs[attempt++]); continue }
+            throw OllamaException("Ollama returned HTTP ${response.statusCode()}: $error")
+        }
+    }
 
     /** True when [cfg]'s Ollama runs on this machine, so this machine's memory is the one that counts. */
     private fun local(cfg: AppConfig): Boolean =
@@ -510,6 +583,18 @@ class OllamaClient(private val config: () -> AppConfig) {
     }
 
     companion object {
+        /** How often a request that failed before anything streamed is sent again, and how long to wait before each try. */
+        const val RETRIES = 2
+
+        /** The shortest silence, in seconds, after which a streaming reply counts as stalled (see [idleSeconds]); tests lower it. */
+        @Volatile var minIdleSeconds = 600L
+
+        /** The waits before each retry, in milliseconds; tests shorten them. */
+        @Volatile var retryDelaysMs = longArrayOf(1_500, 4_000)
+
+        /** One daemon thread that checks every streaming reply for a stall once a second. */
+        private val WATCHDOG = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "ollama-stall-watchdog").apply { isDaemon = true } }
+
         /** Told the name of each model Arcana unloads to make room (see [makeRoom]), for the status line; set by the app. */
         @Volatile var unloaded: (String) -> Unit = {}
     }
@@ -701,7 +786,7 @@ class OllamaClient(private val config: () -> AppConfig) {
     }
 
     private fun errorText(body: String): String =
-        runCatching { Json.parseToJsonElement(body).let { (it as JsonObject)["error"].toString().trim('"') } }
+        runCatching { ((Json.parseToJsonElement(body) as JsonObject)["error"] as kotlinx.serialization.json.JsonPrimitive).content }
             .getOrDefault(body.take(200))
 }
 

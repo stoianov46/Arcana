@@ -155,6 +155,8 @@ class Generation(
                     // the last stretch of each kind of text, apart from the capped copy of the thoughts: a loop must be seen however long the round already is
                     val thinkTail = StringBuilder()
                     val textTail = StringBuilder()
+                    // Ollama says the round ended at a limit (`done_reason: length`), not because the model was done
+                    var cut = false
                     try {
                         client.chat(messages, json, offered, repeatPenalty = if (loopRetries > 0) LOOP_RETRY_PENALTY else null).collect { chunk ->
                             if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) {
@@ -169,9 +171,10 @@ class Generation(
                                 if (pieces - liveAdded >= LIVE_BATCH) { onLive(pieces - liveAdded); liveAdded = pieces }
                             }
                             calls += chunk.toolCalls
+                            if (chunk.cutOff) cut = true
                             if (chunk.done) {
-                                // Ollama's own counts when it sent them; otherwise what we measured ourselves
-                                stats = chunk.toStats() ?: ReplyStats(0, streamed, System.currentTimeMillis() - startedAt)
+                                // Ollama's own counts when it sent them; otherwise what we measured ourselves, for this round only
+                                stats = chunk.toStats() ?: ReplyStats(0, pieces, System.currentTimeMillis() - roundStartedAt)
                             }
                             if (chunk.content.isNotEmpty()) {
                                 buffer.append(chunk.content)
@@ -274,6 +277,12 @@ class Generation(
                             continue
                         }
                     }
+                    // it spent the whole limit thinking and wrote nothing: asking again would only do the same
+                    if (cut && buffer.isBlank() && calls.isEmpty()) {
+                        error = CUT_EMPTY
+                        transition(GenState.Failed)
+                        break
+                    }
                     // some models end a round, or a finished skill, with nothing at all: ask once more, out of sight, before calling it a failure
                     if (buffer.isBlank() && calls.isEmpty() && emptyRetries < MAX_EMPTY_RETRIES) {
                         emptyRetries++
@@ -286,8 +295,11 @@ class Generation(
                         error = "The model returned an empty response."
                         transition(GenState.Failed)
                     } else {
+                        // a reply cut off by a limit is kept, but says so: otherwise it reads as a whole answer
+                        val reply = if (cut) buffer.toString().trimEnd() + CUT_NOTE else buffer.toString()
+                        if (cut) text = reply
                         transition(GenState.Done)
-                        onComplete(buffer.toString(), stats)
+                        onComplete(reply, stats)
                     }
                     break
                 }
@@ -365,6 +377,10 @@ private const val MAX_THINKING_CHARS = 20_000
 /** The thoughts the pane shows: the newest [tail], and a first line saying how many earlier characters are not shown when some were dropped. */
 internal fun liveThoughts(tail: CharSequence, dropped: Int): String =
     if (dropped > 0) "… $dropped earlier characters not shown\n\n$tail" else tail.toString()
+
+/** Added under a reply that Ollama ended at a limit (`done_reason: length`). */
+internal const val CUT_NOTE = "\n\n_⚠ This reply was cut off: the model reached its length or context limit. Ask it to continue, or raise Settings → Ollama → Context window._"
+internal const val CUT_EMPTY = "The model used up its length or context limit while thinking and wrote no answer. Raise Settings → Ollama → Context window, lower the thinking effort (Ctrl+G), or ask a narrower question."
 
 /** How often an empty reply is answered with [EMPTY_NUDGE] before it counts as an error. */
 private const val MAX_EMPTY_RETRIES = 1

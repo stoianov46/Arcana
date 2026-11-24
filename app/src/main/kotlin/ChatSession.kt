@@ -968,7 +968,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 val message = ChatMessage.toolResult(call.name, "You already made this exact call earlier in this turn and nothing has changed since, so the result is the same as the one above in this conversation (it began: $earlier). Use that result instead of asking again; if you need something different, change the arguments.")
                 add(message)
                 added += message
-                skillRun?.let { it.observe(call.name, call.arguments.toString(), message.content); skillTick++ }
+                // answered from the earlier call, nothing ran: that call already counted for the skill's steps
+                skillRun?.let { it.observe(call.name, call.arguments.toString(), message.content, ran = false); skillTick++ }
                 continue
             }
             // a folder that is not allowed yet: ask the user, and when they agree remember it for good
@@ -1078,7 +1079,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 if (skill != null && vault != null && skillRun?.name != skill.name) startSkillRun(skill.name, Skills.requirementsOf(vault, skill.path))
                 if (skill != null && runWorker == null && runReviewer == null) applyRoles(skill.path) // a plan is only written at the start of a message, not here
             }
-            skillRun?.let { it.observe(call.name, call.arguments.toString(), result); skillTick++ }
+            skillRun?.let { it.observe(call.name, call.arguments.toString(), result, ran = allowed && spec != null); skillTick++ }
         }
         // the same calls again and again: a warning first, then the tools are taken away so the model has to answer (out of sight, like Generation's own nudges)
         if (loopStep != LoopGuard.Step.None) {

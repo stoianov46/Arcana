@@ -241,7 +241,7 @@ private val declared: List<Setting> = listOf(
         "How long Ollama keeps the chat model in memory after your last message. Ollama's default is 5 minutes: after a longer pause the model is loaded again and the whole conversation is read again (a 26-minute pause cost one turn 7 minutes in a real log). A longer time avoids that but keeps the memory taken; Always holds it until Ollama stops. Sent only with requests to the chat model.",
         listOf("" to "Ollama default (5 min)", "30m" to "30 minutes", "1h" to "1 hour", "-1" to "Always"), { it.keepAlive }, { c, v -> c.copy(keepAlive = v) },
     ),
-    stepper(Group.Ollama, "Timeout", "How long to wait for a reply before giving up. ←/→ step by 15 s.", 5..3600, 15, { it.timeoutSeconds }, { c, n -> c.copy(timeoutSeconds = n) }, " s"),
+    stepper(Group.Ollama, "Timeout", "How long Ollama may take to start a reply (loading the model and reading the conversation come first); a reply already streaming is never cut by it, only one silent for 10 minutes. ←/→ step by 15 s.", 5..3600, 15, { it.timeoutSeconds }, { c, n -> c.copy(timeoutSeconds = n) }, " s"),
 
     Setting(
         Group.Vault, "Vault path", "Your Obsidian vault folder. Enter opens a folder browser.",

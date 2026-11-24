@@ -1699,6 +1699,12 @@ class CoreTest {
         assertEquals("0/3".replace("/", " of "), "${run.done} of ${run.total}")
         assertTrue(run.nudge()!!.let { "step 4: snapshot" in it && "STOP" in it && "0 of 3" in it && "snapshot" in it }, "the first missing step comes first")
         run.observe("run_command", "{command=python3 x.py snapshot --network eth}", "exit code 0")
+        // a failed, denied, timed-out or not-run call is not the step done
+        run.observe("append_to_note", "{path=a}", "Error: no such note a")
+        run.observe("append_to_note", "{path=a}", "The user denied this action. Do not try it again; ask what they want instead.")
+        run.observe("append_to_note", "{path=a}", "Added", ran = false)
+        run.observe("append_to_note", "{path=a}", "Timed out after 60 s")
+        assertEquals(1, run.done, "only the snapshot counts so far")
         run.observe("append_to_note", "{path=a}", "Added")
         assertEquals(1, run.done)
         assertTrue("step 9: parts" in run.nudge()!!, "append x2 is not done after one append")
