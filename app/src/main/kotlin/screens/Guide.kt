@@ -46,7 +46,7 @@ Arcana is a local-first **research AI-agent system**: local models (run by Ollam
 2. Open **Settings → Vault** and choose your vault folder.
 3. Look at the **Brain** screen, then try `Ctrl+N` to capture a thought.
 
-Each start opens with a short **start screen**: the model, the vault, the memory file, the skills, the tools and search, each with ✓ (fine), ⚠ (look at it) or ○ (off). It closes by itself, or press any key. *Settings → Appearance → Start screen* turns it off.
+Each start opens with a short **start screen**, a full screen before the main window with the ARCANA wordmark: the model, the vault, the memory file, the skills, the tools and search, each with ✓ (fine), ⚠ (look at it) or ○ (off). It closes by itself, or press any key. *Settings → Appearance → Start screen* turns it off.
 """.trim(),
     ),
     GuidePage(

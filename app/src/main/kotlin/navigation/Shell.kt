@@ -189,6 +189,15 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
         LocalUiScale provides app.config.uiScale,
         LocalPlainGlyphs provides app.config.plainGlyphs,
     ) {
+        // the start screen is a screen of its own before the main window: nothing of the shell (tabs, sidebar, footer) is drawn around it
+        if (app.splashOpen) {
+            Column(Modifier.size(size.columns, viewRows).background(Palette.Background).onKeyEvent(onKey)) {
+                CompositionLocalProvider(LocalContentHeight provides viewRows, LocalContentWidth provides size.columns) {
+                    com.arcana.brain.app.screens.SplashScreen(app)
+                }
+            }
+            return@CompositionLocalProvider
+        }
         Column(Modifier.size(size.columns, viewRows).background(Palette.Background).onKeyEvent(onKey)) {
             if (topBar) TopBar(navigator, size.columns, busy = app.busy > 0 && app.config.animateLogo, badge = badge)
             Row(Modifier.weight(1f).fillMaxWidth()) {
