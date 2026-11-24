@@ -12,8 +12,6 @@ Facts below that come from reading the code are marked *(checked)*. Everything e
 |---|---|
 | **Roles apply to → Every message**: the planner, worker and reviewer of the role table run for every message, not only skills. A message under 60 characters gets no plan. Default stays *Skills only*. | Settings → Helpers; `rolesScope`; `ChatSession.applyRoles(null)`; test in `OraculTest` |
 
-Known issue, not caused by this work: `CoreTest.webSearchParsesAllThreeBackendsAndAsksBeforeEverySearch` fails with and without these changes.
-
 ## Decisions made
 
 | # | Decision |

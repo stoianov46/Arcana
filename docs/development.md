@@ -42,7 +42,7 @@ A test double for Ollama is a few lines (`/api/tags`, `/api/show`, `/api/ps`, a 
 | add a tool | [tools-and-agent.md](tools-and-agent.md) "How to add a tool"; `ToolBox` in `core/Tools.kt` |
 | add a setting | [conventions.md](conventions.md) recipe; `AppConfig`, `screens/Settings.kt` |
 | add a screen or a key | [conventions.md](conventions.md), [app-module.md](app-module.md) |
-| change what a fresh vault gets | `core/Bootstrap.kt`, `StarterSkills.kt` (+ a test in `CoreTest`) |
+| change what a fresh vault gets | `core/Bootstrap.kt`, `StarterSkills.kt` (+ a test in `SetupAndSkillsTest`) |
 | change the command line | `app/Cli.kt` (+ `SetupTest`) |
 | touch the chat loop | `app/Generation.kt`, `app/ChatSession.kt`; read [oracul.md](oracul.md) first when it touches second opinions or other models |
 

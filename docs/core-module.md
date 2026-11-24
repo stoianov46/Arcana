@@ -1,7 +1,7 @@
 # `core` module reference
 
 Path: `core/src/main/kotlin/com/arcana/brain/core/`. No UI, no Compose. Dependencies: kotlinx (serialization, coroutines,
-datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/CoreTest.kt`.
+datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/`, one class per area (`ToolsTest`, `VaultTest`, `ChatStatsTest`, `SetupAndSkillsTest`… see testing.md).
 
 ## File map
 

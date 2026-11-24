@@ -42,4 +42,4 @@ Developers: [development.md](development.md) (environment, isolated run, release
 
 1. `./gradlew test installDist distZip` is green and `arcana --help` runs from the unpacked zip.
 2. README "First start" paragraph, this page, the Guide's *Setup* bullet, the Changelog and `Arcana Reference Documentation.md` (vault) still say the same thing.
-3. A new thing a fresh vault needs goes into `Bootstrap` (with a test in `CoreTest`), not into a manual step.
+3. A new thing a fresh vault needs goes into `Bootstrap` (with a test in `SetupAndSkillsTest`), not into a manual step.

@@ -191,7 +191,7 @@ Models reach for `curl` whenever they must POST or send a key, and a shell would
 - **What the user sees (`HttpGate.preview`):** "Send this HTTP request?": the method and address (a key-like query value such as `?api_key=…` is shown as `••••`), every header (`Authorization`, cookies, API keys and tokens hidden but named, with "sent to <host>"), the body (first lines), a line saying data is sent to the host, and a warning when credentials go along. Always asked, never "always" (like every `Web` tool); in the Oracul's dialog it is marked Ψ Oracul.
 - **Sending (`httpRequest`):** 20 s timeout, answer read up to 2 MB, text and JSON returned with the status and a few useful headers (`Retry-After`, rate-limit ones, `Location`); a non-2xx answer is returned as text, not an error (an API's error message is what the model needs). Redirects: GET/HEAD follow them hop by hop (each hop re-checked); for the others the redirect is only reported, so a body is never sent on to an address the user did not see.
 - **Not covered, on purpose:** file uploads, cookies kept between calls, proxies, client certificates. Add them only with the same gate and preview.
-- Plan mode has no `Web` tools. `wrongNameHint` sends `http_request`-like names (`curl`, `wget`, `http_get`, `web_get`…) to `fetch_url` / `http_request`. Tests: `CoreTest.httpRequestIsTheGatedWayToPostAndCurlIsRefused` (a real local server proves what goes out).
+- Plan mode has no `Web` tools. `wrongNameHint` sends `http_request`-like names (`curl`, `wget`, `http_get`, `web_get`…) to `fetch_url` / `http_request`. Tests: `WebToolsTest.httpRequestIsTheGatedWayToPostAndCurlIsRefused` (a real local server proves what goes out).
 
 ## Web (`fetch_url`)
 
@@ -226,8 +226,8 @@ named by `output:`). In the tool loop it shows up in four places:
   status bar shows `◆ <skill> 7/11`. Generic: only skills with a non-empty `requires:` get a run; the run ends at the next user message or `/new`.
 - **The "/" menu and `/skills`**: skills are scanned from the folder (never hardcoded) every time the menu opens; `/skills` toggles `skillsEnabled` and lists problems.
 
-Everything a skill then does goes through the normal tools and their approvals. Tests: `CoreTest.skillsAreFoundLoadedAndOfferedToTheModel`,
-`CoreTest.aSkillCanRequireStepsAndTheRunIsTracked`, `SkillGateTest` (the real loop against a fake Ollama server).
+Everything a skill then does goes through the normal tools and their approvals. Tests: `SetupAndSkillsTest.skillsAreFoundLoadedAndOfferedToTheModel`,
+`SetupAndSkillsTest.aSkillCanRequireStepsAndTheRunIsTracked`, `SkillGateTest` (the real loop against a fake Ollama server).
 
 ## Calls written as text
 
@@ -281,7 +281,7 @@ Brain/Library reread the vault.
 2. Keep path handling through `access.resolve(...)` (files) or `Vault` methods (notes); throw `IllegalArgumentException` with a helpful
    message (it becomes `Error: …` for the model). If it takes a folder argument, add it to `folderToGrant`.
 3. A tool that needs UI (like `ask_user`) is intercepted in `ChatSession.runTools`.
-4. Add a test in `CoreTest` (sandbox, backups, error cases; `cheatSheet()` and `definitions()` pick it up automatically). Update the Guide's "Letting it act"
+4. Add a test in `ToolsTest` (or the area's class, e.g. `WebToolsTest`, `ShellAndGitTest`; sandbox, backups, error cases; `cheatSheet()` and `definitions()` pick it up automatically). Update the Guide's "Letting it act"
    section, the Changelog page and this file.
 5. For a risky capability add a risk level and an explicit preview first.
 

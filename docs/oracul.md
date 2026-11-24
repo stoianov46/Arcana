@@ -245,7 +245,7 @@ continues, so a vision answer is not redone by the chat model. A model-based sel
   right model, `/compare` with two, several and failing extra models, `/revise` with a note, tools (read tool, a change asks in Auto
   mode and a denial changes nothing, no capability means text only), `/takeover`, skill worker/reviewer/planner and the role table,
   the second server.
-- `CoreTest`: the message predicates, `comparisonParts`, `due`, `turnFacts`, `ModelFit`, `chat_stats` lines, `SkillRoles`.
+- `OraculCoreTest`: the message predicates, `comparisonParts`, `due`, `turnFacts`; `ModelMemoryTest`: `ModelFit`; `ChatStatsTest`: `chat_stats` lines; `SetupAndSkillsTest`: `SkillRoles`.
 - `DesignTest`: the slash parsing and usage lines, the column layout of the split view.
 - Tests never reach the real network: every model is a local fake.
 
