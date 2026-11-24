@@ -107,7 +107,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-// Running the tools the model asks for: the pseudo-tools, the turn's call cache and loop guard, folders, shell and web gates, approvals, and the questions to the user. Split out of ChatSession.kt (proposal 0007, phase 7): extension functions over the session's state.
+// Running the tools the model asks for: the chat tools, the turn's call cache and loop guard, folders, shell and web gates, approvals, and the questions to the user. Split out of ChatSession.kt (proposal 0007, phase 7): extension functions over the session's state.
 
 /** Remembers a tool call for the line under the answer: which tool, which search method it really used, and which note it read. */
 internal fun ChatSession.noteToolUse(call: ToolCall, result: String) {
@@ -176,8 +176,8 @@ internal suspend fun ChatSession.runTools(text: String, calls: List<ToolCall>, s
         }
         // read again for every call: an earlier call of this round may have switched the mode, which rebuilds the toolbox
         val box = toolbox
-        // a tool the chat answers itself (PseudoTools); with tools off nothing else can run. turn_on_tools needs a toolbox to turn things on in
-        val handler = pseudoHandlers[call.name]?.takeIf { !(call.name == com.arcana.brain.core.TURN_ON_TOOLS && box == null) }
+        // a tool the chat answers itself (ChatTools); with tools off nothing else can run. turn_on_tools needs a toolbox to turn things on in
+        val handler = chatToolHandlers[call.name]?.takeIf { !(call.name == com.arcana.brain.core.TURN_ON_TOOLS && box == null) }
         if (handler != null || box == null) {
             val message = ChatMessage.toolResult(call.name, handler?.invoke(call, text) ?: "Error: tools are off. Call request_access to ask the user for them.")
             add(message)
@@ -392,7 +392,7 @@ internal suspend fun ChatSession.turnOnTools(call: ToolCall): String {
 
 /** What the model is offered when it has a toolbox: the tools, a way to ask for another mode, and (in plan mode) a way to ask to leave it. */
 internal fun ChatSession.definitionsFor(box: ToolBox): JsonArray =
-    JsonArray(box.definitions() + com.arcana.brain.core.PseudoTools.definitions(com.arcana.brain.core.OfferState(box.switchedOff, app.config.toolMode == "plan", app.config.flowTools && app.config.oraculEnabled)))
+    JsonArray(box.definitions() + com.arcana.brain.core.ChatTools.definitions(com.arcana.brain.core.OfferState(box.switchedOff, app.config.toolMode == "plan", app.config.flowTools && app.config.oraculEnabled)))
 
 /** The model asks to switch the tool mode: the user always decides; when they agree the mode, the toolbox and the model's tools change at once. */
 internal suspend fun ChatSession.requestMode(call: ToolCall): String {

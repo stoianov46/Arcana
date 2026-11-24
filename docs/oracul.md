@@ -182,7 +182,7 @@ runs unless *Flow* is set (`AppConfig.flow`).
 ## Specialists as tools (`consult`)
 
 The *subagent* way to use the same stages, as in Claude Code: with **Settings → Flow → Specialists as tools** (`flowTools`, off by default) and tools on, the chat model is offered one
-more pseudo-tool, `consult` (`CONSULT_DEFINITION`, handled by `ChatSession.consult` like `ask_user`, not by the `ToolBox`). It names a `stage` (`analyst`, `planner`, `reviewer`; not the controller
+more chat tool, `consult` (`CONSULT_DEFINITION`, handled by `ChatSession.consult` like `ask_user`, not by the `ToolBox`). It names a `stage` (`analyst`, `planner`, `reviewer`; not the controller
 or the worker) and writes a `brief`; the stage's model (`Flow.careful(config).model(kind)`: *Flow analyst*, *Skill planner*, *Skill reviewer*, else the Oracul model) is asked with the stage's own
 instructions (`Oracul.consultRequest`) and **sees only the brief** (plus the usual earlier-chat header), and its text comes back as the tool's result: `Planner (model) says: …`. So the model
 decides when, and most messages call nobody. Limits: `MAX_CONSULTS` = 3 per message of the user (`consults`, reset by a message), one specialist at a time, no recursion. A stage without a

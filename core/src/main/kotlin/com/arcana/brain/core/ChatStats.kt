@@ -6,7 +6,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import kotlinx.serialization.json.putJsonArray
 
-/** The pseudo-tool that tells the model how much the current chat has used; the chat answers it (see [ChatStats.describe]). */
+/** The chat tool that tells the model how much the current chat has used; the chat answers it (see [ChatStats.describe]). */
 const val CHAT_STATS = "chat_stats"
 /** The same statistics as JSON, for a model that wants to analyse them (see [ChatStats.describeJson]). */
 const val CHAT_STATS_JSON = "chat_stats_json"
@@ -169,7 +169,7 @@ object ChatStats {
     }
 
     /**
-     * The same numbers as [describe], as JSON for a model that wants to analyse them (the pseudo-tool `chat_stats_json`). Every time is in seconds,
+     * The same numbers as [describe], as JSON for a model that wants to analyse them (the chat tool `chat_stats_json`). Every time is in seconds,
      * the cost in dollars; the Oracul and the token spend per model are included when they are known.
      */
     fun describeJson(messages: List<ChatMessage>, model: String, contextLimit: Int, priceIn: Int, priceOut: Int, sessionMillis: Long = 0, oraculSetup: String = "", sessionUsage: List<UsageRecord> = emptyList(), allUsage: List<UsageRecord> = emptyList(), compaction: CompactionState? = null): String {

@@ -168,7 +168,7 @@ class ToolsTest {
         val root = Files.createTempDirectory("arcana-mode")
         val box = ToolBox(Vault(Files.createDirectories(root.resolve("vault"))), emptyList(), root.resolve("b"))
         assertTrue("request_mode" in box.describe())
-        assertTrue(box.find("request_mode") == null, "a pseudo-tool: the chat answers it, the toolbox has no spec")
+        assertTrue(box.find("request_mode") == null, "a chat tool: the chat answers it, the toolbox has no spec")
     }
 
     @Test

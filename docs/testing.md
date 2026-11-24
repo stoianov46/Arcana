@@ -21,8 +21,8 @@
 | `core/.../RealVaultBench.kt` | not a test: the helper `RealPrefixCheck` and `RealModelCheck` share (a temporary copy of the vault, the title / heading / sentence questions, `score`) |
 | `core/.../ToolSettingsTest.kt` | `ToolSettings.of` maps the settings (folders with `~`, plan = read-only, skills off, a missing project folder); a toolbox from settings offers the same tools as one built by hand |
 | `core/.../ApprovalPolicyTest.kt` | whether a call asks: the worker by risk, mode, "always", a web page in the turn and a safe command; the Oracul only reads without asking; the headings and when "always" is offered |
-| `core/.../PseudoToolsTest.kt` | the pseudo-tools are offered in the same order and under the same conditions as before the registry; `names` |
-| `app/.../PseudoToolHandlersTest.kt` | every name in `PseudoTools.names` has a handler in `ChatSession.pseudoHandlers`, and nothing else |
+| `core/.../ChatToolsTest.kt` | the chat tools are offered in the same order and under the same conditions as before the registry; `names` |
+| `app/.../ChatToolHandlersTest.kt` | every name in `ChatTools.names` has a handler in `ChatSession.chatToolHandlers`, and nothing else |
 | `core/.../ContextInspectorTest.kt` | the context inspector: the request split into its parts (system prompt and its pieces, tool definitions, summary, earlier conversation, the message with what you typed and what Arcana added, this turn), estimated tokens, the shared prefix with the previous request marked cached, the `▰▱` bar |
 | `core/.../StartupTest.kt` | the start screen's lines (`Startup`): the vault missing or with its note count, the memory file off, empty or over the 8,000 sent, skills (the first three names and `+ N more`) or none, tools off or counted read against change with shell, web and the mode, search still checking, its embedding model not installed, or off |
 | `app/.../LiveSpeedTest.kt` | `liveSpeed`: no figure before 8 pieces and 1 s, counted from the first piece of the round (the prompt reading left out) |

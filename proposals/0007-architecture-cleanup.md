@@ -11,7 +11,7 @@ Measured on 2026-11-24 (after the context inspector work):
   and stamping the backlog and reports. Every feature lands in the same file.
 - There are **two tool loops**: `Generation` (retries, loop guard, empty-reply nudge, cut-off handling) and `ChatSession.oraculAgent` (a short copy without any of that).
 - **The ask-or-allow decision is made twice**: in `runTools` for the chat model and in `oraculCall` for the Oracul, each with its own rules.
-- **Pseudo-tools have no single list**: `ask_user`, `request_access`, `request_mode`, `turn_on_tools`, `chat_stats`, `chat_stats_json`, `todo`, `consult` are answered through a chain of
+- **Chat tools have no single list**: `ask_user`, `request_access`, `request_mode`, `turn_on_tools`, `chat_stats`, `chat_stats_json`, `todo`, `consult` are answered through a chain of
   `call.name == …` checks, their definitions live in four files (Tools, ChatStats, Flow, Todos), and the list is repeated in `definitionsFor` and in the docs' audit list.
 - **Logic depends on a screen**: `ChatSession` imports `contextTokens`, `contextUsage`, `effectiveContext` and `thinkOptions` from `screens/Chat.kt`; the `Prompts` object lives inside `Vault.kt`.
 - `screens/Chat.kt` is 2,208 lines: 16 dialog modes in one enum and a 245-line key handler.
@@ -37,9 +37,9 @@ Do all eight, smallest and safest first, each phase its own commit:
    next to the thinking levels; move `Prompts` out of `Vault.kt` into `Prompts.kt`. Test: the existing tests, unchanged.
 2. **Tests that say what broke.** — done 2026-11-24 (`CoreTest.kt` split into 15 classes, 142 tests before and after; the web search test reached the real DuckDuckGo through the search fallback and passed only offline: it now puts DuckDuckGo in its cooldown first). Split `CoreTest.kt` by area (tools, chat stats, setup and skills, vault, sounds…); fix or quarantine the failing web search test with its reason.
 3. **Tool settings and tool files.** — done 2026-11-24 (`Tools.kt` 1,306 → 338 lines; the `ToolBox` constructor with every argument stays for the tests). `ToolSettings.of(config)` builds what `ToolBox` needs from the settings in one place; `Tools.kt` splits into vault, file, web, shell, git and
-   time tools plus the definitions of the pseudo-tools. Test: a `ToolSettings` test; the tool tests unchanged.
-4. **One list of pseudo-tools.** — done 2026-11-24. A `PseudoTool` registry: name, definition, when it is offered, and its handler; `definitionsFor` and the dispatch in `runTools` read from it.
-   Test: every pseudo-tool is offered exactly when it was before (a table test).
+   time tools plus the definitions of the chat tools. Test: a `ToolSettings` test; the tool tests unchanged.
+4. **One list of chat tools.** — done 2026-11-24. A `ChatTool` registry: name, definition, when it is offered, and its handler; `definitionsFor` and the dispatch in `runTools` read from it.
+   Test: every chat tool is offered exactly when it was before (a table test).
 5. **One approval policy.** — done 2026-11-24. One visible difference, on purpose: a read that asks the chat model's user is titled "Allow this read?" (it said "Allow this change?"), as the Oracul's already was. `ApprovalPolicy.decide(spec, settings, actor)` in `core` says ask, allow or always ask, for the chat model and for the Oracul. Test: a table of
    risk × mode × actor.
 6. **One tool loop.** — done 2026-11-24 (the Oracul runs through a hidden `Generation`; it now gets the worker's retries and loop guard — a gain, not a change of what it may do). The Oracul's tool loop uses the same core loop as the worker, so it gets the loop guard and the retries. Test: the loop's existing tests plus an

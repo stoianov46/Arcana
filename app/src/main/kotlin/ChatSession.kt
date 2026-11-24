@@ -448,10 +448,10 @@ class ChatSession(internal val app: AppContext, internal val store: ChatStore) {
     internal val webHosts = HashSet<String>()
 
     /**
-     * How the chat answers each of [com.arcana.brain.core.PseudoTools.names]: the call and the text of the reply that made it in, the result for the model.
-     * Internal so a test can check that every pseudo-tool has a handler.
+     * How the chat answers each of [com.arcana.brain.core.ChatTools.names]: the call and the text of the reply that made it in, the result for the model.
+     * Internal so a test can check that every chat tool has a handler.
      */
-    internal val pseudoHandlers: Map<String, suspend (ToolCall, String) -> String> = mapOf(
+    internal val chatToolHandlers: Map<String, suspend (ToolCall, String) -> String> = mapOf(
         ASK_USER to { call, text -> askUser(call, text) },
         com.arcana.brain.core.TURN_ON_TOOLS to { call, _ -> turnOnTools(call) },
         REQUEST_ACCESS to { call, _ -> requestAccess(call) },
@@ -609,7 +609,7 @@ class ChatSession(internal val app: AppContext, internal val store: ChatStore) {
         }
         val canRequest = modelCanUseTools && box == null
         val offered = when {
-            box == null -> com.arcana.brain.core.PseudoTools.withoutToolbox(canRequest)?.let { JsonArray(it) }
+            box == null -> com.arcana.brain.core.ChatTools.withoutToolbox(canRequest)?.let { JsonArray(it) }
             else -> definitionsFor(box)
         }
         gen.start(tools = offered, maxSteps = Skills.stepsFor(history, app.config.toolStepLimit)) {
