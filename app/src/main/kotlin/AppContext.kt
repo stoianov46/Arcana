@@ -204,6 +204,9 @@ class AppContext(
     /** True while the setup wizard is showing: on the first start (no vault chosen and setup not finished), or from the palette. */
     var setupOpen by mutableStateOf(config.vaultPath.isBlank() && !config.setupDone)
 
+    /** The start screen ([com.arcana.brain.app.screens.SplashScreen]) is showing: on start when *Start screen* is on and the setup is not open; closed by any key or once everything is checked. */
+    var splashOpen by mutableStateOf(config.showSplash && !(config.vaultPath.isBlank() && !config.setupDone))
+
     /** The Library folders that are unfolded (vault-relative paths); kept while Arcana runs, so leaving the Library and coming back keeps the tree as it was. */
     var libraryExpanded by mutableStateOf<Set<String>>(emptySet())
 

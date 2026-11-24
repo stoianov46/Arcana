@@ -12,7 +12,7 @@ Requirements on the target machine: a **Java 21 runtime** (the build uses `jvmTo
 
 ## First start
 
-`AppContext.setupOpen` is true while no vault is chosen and `setupDone` is false: `App.kt` then shows `SetupScreen` instead of the screens (step 1 choose the vault with `DirectoryPicker`, step 2 tick what `Bootstrap` creates, then a report). `Bootstrap` (core) only creates what is missing: the memory file (`ARCANA.md` from `Vault.MEMORY_TEMPLATE`, or `AppConfig.memoryPath`), the skills folder, `Skills Guide.md`, the starter skills (`StarterSkills`, today `decompose`) and the output folder. An existing file is never touched. `s` on step 1 skips the setup; the palette command "Set up the vault" opens it again at step 2.
+`AppContext.setupOpen` is true while no vault is chosen and `setupDone` is false: `App.kt` then shows `SetupScreen` instead of the screens (step 1 choose the vault with `DirectoryPicker`, step 2 tick what `Bootstrap` creates, then a report). `Bootstrap` (core) only creates what is missing: the memory file (`ARCANA.md` from `Vault.MEMORY_TEMPLATE`, or `AppConfig.memoryPath`), the skills folder, `Skills Guide.md`, the starter skills (`StarterSkills`, today `obsidian-doctor` and `decompose`) and the output folder. An existing file is never touched. `s` on step 1 skips the setup; the palette command "Set up the vault" opens it again at step 2.
 
 ## Without a screen (scripts, a new machine)
 

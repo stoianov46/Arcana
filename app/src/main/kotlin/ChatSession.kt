@@ -239,6 +239,13 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     var overheadTokens by mutableStateOf(0)
         private set
 
+    /** What the chat model was sent with the latest request of this chat, part by part (`/context`, the context inspector); null until something is sent. */
+    var lastContext by mutableStateOf<com.arcana.brain.core.ContextSnapshot?>(null)
+        private set
+
+    /** The request [lastContext] describes, kept to tell what the next one has in common with it (what Ollama can reuse). */
+    private var lastRequest: List<ChatMessage>? = null
+
     /** The model that answers right now: the one a skill, the flow or the router chose, else the chat model. */
     val workerModel: String get() = runWorker ?: app.config.model
 
@@ -928,6 +935,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 done("Indexing stopped: ${e.message}. What was finished is kept; run /reindex to go on.", true)
             } finally {
                 indexing = null
+                // the embedding model is in memory now: the bottom bar's ◇ embed says so
+                runCatching { app.refreshLoadedContext() }
             }
         }
     }
@@ -961,8 +970,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                     call.name == REQUEST_MODE -> requestMode(call)
                     call.name == CONSULT -> consult(call)
                     call.name == TODO -> Todos.describe(Todos.parse((call.arguments["items"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()))
-                    call.name == CHAT_STATS -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList())
-                    call.name == CHAT_STATS_JSON -> ChatStats.describeJson(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList())
+                    call.name == CHAT_STATS -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList(), compactionState())
+                    call.name == CHAT_STATS_JSON -> ChatStats.describeJson(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList(), compactionState())
                     else -> "Error: tools are off. Call request_access to ask the user for them."
                 })
                 add(message)
@@ -1676,6 +1685,12 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         return effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext) * percent / 100
     }
 
+    /** Where this chat stands with compaction, for `chat_stats`: the context in use now (as the status pane counts it) and the auto-compact setting. */
+    private fun compactionState(): ChatStats.CompactionState {
+        val used = com.arcana.brain.app.screens.contextTokens(messages.toList(), overheadTokens)
+        return ChatStats.CompactionState(app.config.autoCompactPercent, used?.first, used?.second ?: false)
+    }
+
     /** True when [all] fills the context window past the auto-compact threshold and has enough older messages to summarize. */
     private fun autoCompactDue(all: List<ChatMessage>): Boolean {
         val percent = app.config.autoCompactPercent
@@ -1795,6 +1810,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                     .also { request ->
                         promptEstimate = request.sumOf { Compaction.messageTokens(it) }
                         overheadTokens = Compaction.tokens(system) + (offered?.let { Compaction.tokens(it.toString()) } ?: 0)
+                        val typed = messages.getOrNull(at)?.content
+                        lastContext = com.arcana.brain.core.ContextInspector.inspect(request, offered, config.model, effectiveContext(config.contextTokens, app.modelContext, app.loadedContext), parts.memory, parts.toolsNote, parts.goal, typed, lastRequest)
+                        lastRequest = request
                     }
             }
             refreshRequest = ::compose
@@ -1881,7 +1899,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         clearGoal()
         artifacts.clear()
         toolsDeclined = false
-        messages.clear(); wholeNotes.clear(); cutAccepted.clear(); systemFreeze.reset()
+        messages.clear(); wholeNotes.clear(); cutAccepted.clear(); systemFreeze.reset(); lastContext = null; lastRequest = null
         queued.clear()
         input.clear()
         attachments.clear()
@@ -1899,7 +1917,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         run = null
         skillRun = null // a run belongs to the conversation it started in (see docs/skills.md)
         skillTick++
-        messages.clear(); wholeNotes.clear(); cutAccepted.clear(); systemFreeze.reset()
+        messages.clear(); wholeNotes.clear(); cutAccepted.clear(); systemFreeze.reset(); lastContext = null; lastRequest = null
         messages += chat.messages
         attachments.clear()
         id = chat.id

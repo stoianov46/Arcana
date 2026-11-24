@@ -130,6 +130,7 @@ internal val SlashCommands = listOf(
     SlashItem("/flow", "Flow: every message goes analyst, planner, worker, reviewer, controller (toggle)", false, usage = "e.g. /flow careful   or   /flow off   (without a name it switches)"),
     SlashItem("/goal", "Set a goal: Arcana keeps working until a checker says it is met", false, usage = "e.g. /goal all notes in Inbox are tagged   (/goal alone shows it, /goal clear removes it)"),
     SlashItem("/artifacts", "Files and notes the model wrote or changed in this chat", false),
+    SlashItem("/context", "Context inspector: what the model was sent with the last request, part by part (system prompt, memory, tools, excerpts, history)", false),
     SlashItem("/thinking", "Thoughts pane: watch the model's thoughts under the conversation (toggle; not the effort, see /effort)", false),
     SlashItem("/status", "Status pane: model, sampling (editable) and context window in a right-side column (toggle; { wider, } narrower, off at the smallest)", false),
     SlashItem("/append", "Add the last answer to a note", false),
@@ -237,6 +238,7 @@ fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf
         "/append, /replace" to "put the last answer into a note",
         "/note, /image" to "attach a note, a file or picture",
         "/artifacts" to "files and notes written in this chat",
+        "/context" to "what the model was sent, part by part",
     )),
 )
 
@@ -442,6 +444,13 @@ internal fun modelStateSegment(app: AppContext, plain: Boolean): StatusSegment? 
     return statusSegment("", (if (plain) "loaded" else "● loaded") + where, if (mine.cpuPercent >= 10) Palette.Orange else Palette.Green, 6)
 }
 
+/** `◇ embed 0.6 GB`: the semantic search's embedding model is loaded too (it takes memory next to the chat model); null when it is not loaded or none is set. */
+internal fun embedSegment(app: AppContext, plain: Boolean): StatusSegment? {
+    val m = com.arcana.brain.core.ModelStatus.embedLoaded(app.loaded, app.config.embedModel, app.config.model) ?: return null
+    val size = if (m.sizeBytes > 0) " %.1f GB".format(m.sizeBytes / 1e9) else ""
+    return statusSegment("", (if (plain) "embed" else "◇ embed") + size, Palette.Blue, 4)
+}
+
 /**
  * The memory meter of the bottom bar: what every model Arcana has loaded (the chat model, the Oracul, the judge, the flow's stages) takes of this machine's memory, as a quiet bar,
  * with the models' count and, when the model's cache size is known, about how many tokens of context fit next to the chat model's weights (an estimate). Null while nothing is loaded.
@@ -606,7 +615,7 @@ private const val MaxNotes = 5
 /** How many queued messages are listed above the message field; the rest are counted. */
 private const val QUEUE_SHOWN = 3
 
-private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory, Artifacts, Think, Sampling, Status }
+private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory, Artifacts, Think, Sampling, Status, Context, ContextPart }
 
 /** What happens to the last answer when it is sent to an existing note. */
 private enum class Target(val verb: String) { Append("Append"), Replace("Replace") }
@@ -639,6 +648,9 @@ fun ChatScreen(app: AppContext) {
     val input = chat.input
     var mode by remember { mutableStateOf(ChatMode.Chat) }
     var artifactIndex by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    // the context inspector: the part chosen, and the scroll of the part opened with Enter
+    var contextIndex by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val contextOutput = remember { OutputState() }
     // Chat opens with the field NOT focused (browsing): j/k/g/s and the number keys are shortcuts until Enter starts typing; Esc leaves the field again.
     var browsing by remember { mutableStateOf(true) }
     var past by remember { mutableStateOf<List<StoredChat>>(emptyList()) }
@@ -787,6 +799,11 @@ fun ChatScreen(app: AppContext) {
             app.tools == false -> toast("${app.config.model} does not support tools, so it will only answer. Choose another model in Settings → Ollama → Model.", error = true)
             else -> toast("Tools are on: the model may search and read your notes and files, and ask before changing anything. Folders: Settings → Tools.")
         }
+    }
+
+    fun openContext() {
+        if (chat.lastContext == null) toast("Nothing has been sent in this chat yet: send a message, then /context shows exactly what the model was sent.")
+        else { contextIndex = 0; mode = ChatMode.Context }
     }
 
     fun toggleThinkingPane() {
@@ -998,6 +1015,7 @@ fun ChatScreen(app: AppContext) {
             "/flow" -> setFlow(args)
             "/helpers" -> { val on = !app.config.oraculEnabled; app.update(app.config.copy(oraculEnabled = on)); toast(if (on) "Helper models on." else "Helper models off: only ${app.config.model} works (skill roles are separate: /roles).") }
             "/roles" -> { val on = !app.config.skillRolesEnabled; app.update(app.config.copy(skillRolesEnabled = on)); toast(if (on) "Skill roles on: skills use the worker, planner and reviewer they name." else "Skill roles off: a skill is run by ${app.config.model} alone.") }
+            "/context" -> openContext()
             "/artifacts" -> if (chat.artifacts.isEmpty()) toast("Nothing written or changed in this chat yet.") else { artifactIndex = 0; mode = ChatMode.Artifacts }
             "/goal" -> runGoal(args)
             "/mode" -> cycleMode()
@@ -1073,6 +1091,7 @@ fun ChatScreen(app: AppContext) {
             Command(if (app.config.toolsEnabled) "Tools: turn off" else "Tools: turn on (read and write notes and files)", "Chat", "/tools") { toggleTools() },
             Command(if (app.config.chatUseVault) "Answer from my vault: turn off" else "Answer from my vault: turn on", "Chat", "/vault") { toggleVault() },
             Command("Files and notes changed in this chat", "Chat", "Esc then f", chat.artifacts.isNotEmpty()) { artifactIndex = 0; mode = ChatMode.Artifacts },
+            Command("What the model was sent (context inspector)", "Chat", "/context", chat.lastContext != null) { openContext() },
             Command("Select & copy", "Chat", "Esc then s", entries.isNotEmpty()) { browsing = true; output.beginSelect { toast(it.text) } },
             Command("Append the last answer to a note…", "Chat", "/append", lastAnswer != null) { openTargetPick(Target.Append) },
             Command("Replace a note with the last answer…", "Chat", "/replace", lastAnswer != null) { openTargetPick(Target.Replace) },
@@ -1134,6 +1153,8 @@ fun ChatScreen(app: AppContext) {
         ChatMode.Leave -> Hints("w  save to vault", "Esc  leave chat", "any other key  stay")
         ChatMode.ConfirmClear -> Hints("y  erase this chat", "any other key  keep")
         ChatMode.Artifacts -> Hints("↑↓  choose", "Enter  open the note in the Library", "1-9  open that one", "any other key  back")
+        ChatMode.Context -> Hints("↑↓  choose", "Enter  read the part as sent", "c  copy it", "Esc  back")
+        ChatMode.ContextPart -> Hints("↑↓  scroll", "PgUp/PgDn  page", "c  copy it", "Esc  back to the parts")
         ChatMode.ConfirmMemory -> Hints("y  remove the repeated lines", "any other key  leave it as it is")
         ChatMode.ConfirmCancel -> Hints("Enter  cancel it", "y  cancel it", "any other key  keep going")
         ChatMode.ConfirmReplace -> Hints("y  replace", "any other key  keep the note")
@@ -1234,6 +1255,24 @@ fun ChatScreen(app: AppContext) {
                     toast("Chat erased")
                 }
                 mode = ChatMode.Chat
+                true
+            }
+            ChatMode.Context, ChatMode.ContextPart -> {
+                val snap = chat.lastContext
+                val parts = snap?.parts.orEmpty()
+                val part = parts.getOrNull(contextIndex.coerceIn(0, (parts.size - 1).coerceAtLeast(0)))
+                fun copy() { if (part != null) toast(if (com.idea.ink.input.Clipboard.writeText(part.text)) "Copied “${part.title}” (~${part.tokens} tokens)." else "Could not reach the clipboard.", error = false) }
+                if (mode == ChatMode.ContextPart) when {
+                    key == Key.Escape || key == Key.Left -> mode = ChatMode.Context
+                    key.char == 'c' -> copy()
+                    else -> contextOutput.handle(key, letters = false)
+                } else when {
+                    key == Key.Up -> contextIndex = (contextIndex - 1).coerceAtLeast(0)
+                    key == Key.Down -> contextIndex = (contextIndex + 1).coerceAtMost((parts.size - 1).coerceAtLeast(0))
+                    key == Key.Enter || key == Key.Right -> if (part != null) { contextOutput.showTop(); mode = ChatMode.ContextPart }
+                    key.char == 'c' -> copy()
+                    key == Key.Escape -> mode = ChatMode.Chat
+                }
                 true
             }
             ChatMode.Artifacts -> {
@@ -1438,6 +1477,17 @@ fun ChatScreen(app: AppContext) {
                     Warning("“${chat.title}” (${chat.messages.size} messages) is deleted from the history. /new keeps it and starts a fresh chat instead.")
                 }
                 ActionBar(listOf(ActionItem("y", "Erase chat", accent = Palette.Red), ActionItem("any other key", "Keep it", accent = Palette.Cta)), style = ActionStyle.Button)
+            }
+            ChatMode.Context -> ContextInspectorView(chat.lastContext, contextIndex, app.config.plainGlyphs)
+            ChatMode.ContextPart -> {
+                val part = chat.lastContext?.parts?.getOrNull(contextIndex)
+                ScreenHeader("Context", part?.let { "${it.title} · ~${UsageStats.compact(it.tokens.toLong())} tokens · exactly as sent" } ?: "")
+                VGap()
+                // the view's scrollbar and a margin take four columns: wrapping to the full width would cut every long line
+                val width = (LocalContentWidth.current - 4).coerceAtLeast(20)
+                val lines = part?.text.orEmpty().let { sanitizeForTerminal(it) }.split('\n').flatMap { raw -> com.idea.ink.ui.wrapText(raw, width).ifEmpty { listOf("") } }
+                    .map { com.idea.ink.ui.Line(it, color = if (it.startsWith("── ")) Palette.Accent else Palette.Text, bold = it.startsWith("── ")) }
+                ScrollView(lines, outputRows(fixed = 4), contextOutput)
             }
             ChatMode.Artifacts -> {
                 val list = Artifacts.entries(chat.artifacts.toList())
@@ -2113,4 +2163,46 @@ internal fun sideBySide(comparison: Oracul.Comparison, entry: Int, config: AppCo
     val verdictLabel = sanitizeForTerminal("${if (plain) "=" else "⚖"} Verdict · ${comparison.judge}").take(width - 2)
     add(Line(verdictLabel, Palette.Orange, bold = true, entry = entry, runs = listOf(pill(verdictLabel, Palette.Orange))))
     addAll(renderMarkdown(parseMarkdown(comparison.verdict), width, entry = { entry }, rich = config.renderMarkdown, plainGlyphs = plain))
+}
+
+/**
+ * The context inspector (`/context`): what the chat model was sent with the latest request, one row per part with its share of the request, and a mark on the parts Ollama
+ * could take from its cache (the start of the request that is the same as last time). Enter opens a part exactly as it was sent. Debugging a confused or slow answer starts here.
+ */
+@Composable
+private fun ContextInspectorView(snap: com.arcana.brain.core.ContextSnapshot?, selected: Int, plain: Boolean) {
+    ScreenHeader("Context", if (snap == null) "Nothing sent yet" else "What ${snap.model} was sent with the last request · ${relativeTime(snap.at)}")
+    VGap()
+    if (snap == null) { Hint("Send a message first."); return }
+    val compact = UsageStats::compact
+    val window = if (snap.window > 0) " of ${UsageStats.contextSize(snap.window.toLong())} (${"%.0f".format(snap.share * 100)}%)" else ""
+    val cache = if (snap.cachedTokens > 0) " · ~${compact(snap.cachedTokens.toLong())} the same as the request before (Ollama reuses it)" else " · all of it read anew"
+    Label("~${compact(snap.total.toLong())} tokens$window$cache", color = Palette.Muted)
+    VGap()
+    val parts = snap.parts
+    val sel = selected.coerceIn(0, (parts.size - 1).coerceAtLeast(0))
+    val rows = 14
+    val first = (sel - rows + 1).coerceAtLeast(0)
+    val width = LocalContentWidth.current
+    val titleWidth = (width - 34).coerceIn(16, 40)
+    Panel("${parts.size} parts · estimates (Ollama's own count is under each reply)", accent = Palette.Blue) {
+        if (first > 0) Hint("… $first above")
+        parts.drop(first).take(rows).forEachIndexed { j, p ->
+            val i = first + j
+            val indent = if (p.depth > 0) (if (plain) "  - " else "  └ ") else ""
+            val title = (indent + p.title).let { if (it.length > titleWidth) it.take(titleWidth - 1) + "…" else it.padEnd(titleWidth) }
+            val tokens = "~${compact(p.tokens.toLong())}".padStart(7)
+            val bar = com.arcana.brain.core.ContextInspector.bar(p.tokens, snap.total, 8, plain)
+            val mark = if (p.reused) (if (plain) " cached" else " ✓ cached") else ""
+            val color = if (i == sel) Palette.Cta else if (p.depth > 0) Palette.Muted else Palette.Text
+            Row {
+                Label("${if (i == sel) "›" else " "} $title $tokens ", color = color, textStyle = if (i == sel) TextStyle.Bold else TextStyle.Unspecified)
+                Label(bar, color = if (p.depth > 0) Palette.Dim else Palette.Blue)
+                Label(mark, color = Palette.Green)
+            }
+        }
+        if (first + rows < parts.size) Hint("… ${parts.size - first - rows} below")
+    }
+    parts.getOrNull(sel)?.detail?.takeIf { it.isNotEmpty() }?.let { Hint(it) }
+    ActionBar(listOf(ActionItem("↑↓", "Choose"), ActionItem("Enter", "Read it as sent", accent = Palette.Cta), ActionItem("c", "Copy"), ActionItem("Esc", "Back")))
 }

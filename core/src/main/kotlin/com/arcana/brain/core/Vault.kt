@@ -408,6 +408,7 @@ This note is read at the start of every chat (the first 8,000 characters). Edit 
 15. To find notes about a topic call `search_vault` first (words and meaning together), then `read_note` the best hits by the path it gives; for code or documents (PDF, Word) in my folders call `search_files`, then `read_file` near the line or page it gives. Do not guess note names or paths and do not read long index or reference notes to look something up.
 16. For a job with three or more steps, write your plan first with the `todo` tool (one item per line: [ ] to do, [~] doing now, [x] done) and call it again after each step to tick it off. Do not use it for a one-step question.
 17. When I ask what this chat used or cost (tokens, time, context), call `chat_stats` and answer from its numbers. When you need the numbers themselves, for a note or a calculation, call `chat_stats_json` (times in seconds). Never estimate them yourself.
+18. When you need an absolute path (for run_command, a script or a link), call `vault_info`; never guess it.
 
 ## About me
 - (who you are and what you work on)

@@ -11,7 +11,7 @@ for users, the in-app Guide page "Skills".
 
 ## Starter skills
 
-`Bootstrap` (first-run setup, palette "Set up the vault", `arcana --init`) puts `Skills Guide.md` and the starter skills (into `.arcana/skills/`, or the skills folder in use) from `core/StarterSkills.kt` into a vault, never over an existing file: today `decompose` (a todo list becomes a plan: analyze → `ask_user` quiz → plan note → one item at a time; it requires the `ask_user` and `create_note` steps). `CoreTest.theStarterSkillsAreRealSkillsWithoutProblems` keeps them valid (found, described, steps parsed, under 18,000 characters, `needs:` are real tools).
+`Bootstrap` (first-run setup, palette "Set up the vault", `arcana --init`) puts `Skills Guide.md` and the starter skills (into `.arcana/skills/`, or the skills folder in use) from `core/StarterSkills.kt` into a vault, never over an existing file: today `obsidian-doctor` (checks the vault with `vault_health`, asks with `ask_user` (multiple) which kinds of problems to fix, saves `Research/Vault/Reports/Vault Health <date>.md` (`type: report`, `kind: health`, `status: done`), fixes only what was picked with the note tools (`set_properties`, `add_tags`, `append_to_note`; `edit_file` for a link, `move_path` for a rename or move; never deletes without asking), then runs `vault_health` again and appends `## Result`; it requires `vault_health`, `ask_user`, `create_note` and `vault_health x2`) and `decompose` (a todo list becomes a plan: analyze → `ask_user` quiz → plan note → one item at a time; it requires the `ask_user` and `create_note` steps). `CoreTest.theStarterSkillsAreRealSkillsWithoutProblems` keeps both valid (found, described, steps parsed, under 18,000 characters, `needs:` are real tools).
 
 ## 1. Why it is built this way
 

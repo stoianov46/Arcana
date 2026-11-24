@@ -58,7 +58,7 @@ Layout rules that bite: a screen's top-level children go inside `Stack { }` (Mos
 
 ## Opt-in checks against a real Ollama
 
-Some tests need the real Ollama, a real embedding model and real data, so they are skipped in the normal run: `RealOllamaRetrievalCheck`, `RealPassagesCheck`, `RealProjectCheck` (core tests). Run one with `ARCANA_REAL_OLLAMA=1 ARCANA_REAL_VAULT=<folder> (or ARCANA_REAL_PROJECT=<folder>) ARCANA_CHECK_OUT=<file> ./gradlew :core:test --tests '*RealProjectCheck*'` and read the file (`core/build.gradle.kts` makes Gradle run it, because environment variables are not task inputs). They index a **copy** of the folder with a temporary index and never touch your config. Use them after a change to retrieval, and say in the proposal what they showed. Do not point them at folders with personal documents.
+Some tests need the real Ollama, a real embedding model and real data, so they are skipped in the normal run: `RealOllamaRetrievalCheck`, `RealPassagesCheck`, `RealProjectCheck`, `RealPrefixCheck`, `RealModelCheck` (embedding models side by side; `ARCANA_EMBED_MODELS` lists them) (core tests). Run one with `ARCANA_REAL_OLLAMA=1 ARCANA_REAL_VAULT=<folder> (or ARCANA_REAL_PROJECT=<folder>) ARCANA_CHECK_OUT=<file> ./gradlew :core:test --tests '*RealProjectCheck*'` and read the file (`core/build.gradle.kts` makes Gradle run it, because environment variables are not task inputs). They index a **copy** of the folder with a temporary index and never touch your config. Use them after a change to retrieval, and say in the proposal what they showed. Do not point them at folders with personal documents.
 
 ## Release checklist
 

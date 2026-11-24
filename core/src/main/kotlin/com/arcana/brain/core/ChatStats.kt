@@ -15,7 +15,7 @@ val CHAT_STATS_DEFINITION: JsonObject = buildJsonObject {
     put("type", "function")
     putJsonObject("function") {
         put("name", CHAT_STATS)
-        put("description", "Get the statistics of this chat so far: the model, tokens in and out, estimated cost, chat time (first to last message), active time (without long pauses), time spent generating, how many tool calls, how full the context window is, and which other models were consulted (the Oracul: second opinions, comparisons, plans, takeovers, and the tokens each model spent). Use it when the user asks how much this chat used or cost, or to decide whether to wrap up.")
+        put("description", "Get the statistics of this chat so far: the model, tokens in and out, estimated cost, chat time (first to last message), active time (without long pauses), time spent generating, how many tool calls, how full the context window is, compaction (how many times this chat was compacted and how many tokens are left before auto-compact), and which other models were consulted (the Oracul: second opinions, comparisons, plans, takeovers, and the tokens each model spent). Use it when the user asks how much this chat used or cost, or to decide whether to wrap up.")
         putJsonObject("parameters") {
             put("type", "object")
             putJsonObject("properties") {}
@@ -28,7 +28,7 @@ val CHAT_STATS_JSON_DEFINITION: JsonObject = buildJsonObject {
     put("type", "function")
     putJsonObject("function") {
         put("name", CHAT_STATS_JSON)
-        put("description", "The same statistics as chat_stats, but as JSON with fixed field names (times in seconds, cost in dollars): model, messages, tokens, time, cost, tool calls, context use, Oracul use, and token spend per model. Use it when you need to read, compare or calculate with the numbers (a report property, a table); use chat_stats to tell the user in words.")
+        put("description", "The same statistics as chat_stats, but as JSON with fixed field names (times in seconds, cost in dollars): model, messages, tokens, time, cost, tool calls, context use, compaction, Oracul use, and token spend per model. Use it when you need to read, compare or calculate with the numbers (a report property, a table); use chat_stats to tell the user in words.")
         putJsonObject("parameters") {
             put("type", "object")
             putJsonObject("properties") {}
@@ -91,6 +91,36 @@ object ChatStats {
         }
     }
 
+    /**
+     * How this chat stands with compaction, for `chat_stats`: [used] tokens of the context in use now (null before the first reply; [estimated] after a compaction, until the next reply
+     * says), auto-compact at [autoPercent] % of the window (0 = off). The number of compactions and the size of the latest summary come from the messages themselves.
+     */
+    data class CompactionState(val autoPercent: Int, val used: Int?, val estimated: Boolean = false)
+
+    /** The compaction facts in fixed fields: shared by [compactionLine] and the JSON. [window] is the context window (0 = unknown). */
+    class CompactionFacts(val count: Int, val lastSummaryTokens: Int, val autoPercent: Int, val threshold: Int?, val used: Int?, val estimated: Boolean, val left: Int?, val due: Boolean)
+
+    fun compactionFacts(messages: List<ChatMessage>, window: Int, state: CompactionState): CompactionFacts {
+        val summaries = messages.filter { Compaction.isSummary(it) }
+        val lastTokens = summaries.lastOrNull()?.let { Compaction.tokens(Compaction.summaryText(it)) } ?: 0
+        val threshold = if (state.autoPercent > 0 && window > 0) (window.toLong() * state.autoPercent / 100).toInt() else null
+        val left = if (threshold != null && state.used != null) (threshold - state.used).coerceAtLeast(0) else null
+        return CompactionFacts(summaries.size, lastTokens, state.autoPercent, threshold, state.used, state.estimated, left, left == 0)
+    }
+
+    /** `Compaction: compacted 2 times (latest summary ~1.2k tokens); auto-compact at 80% (~105k tokens): ~42k tokens left before it`. */
+    fun compactionLine(f: CompactionFacts): String {
+        val done = if (f.count == 0) "not compacted yet" else "compacted ${f.count} time${if (f.count == 1) "" else "s"} (latest summary ~${UsageStats.compact(f.lastSummaryTokens.toLong())} tokens; the model is sent it instead of the messages above it)"
+        val auto = when {
+            f.autoPercent <= 0 -> "auto-compact off (only /compact does it)"
+            f.threshold == null -> "auto-compact at ${f.autoPercent}% of the window (its size is not known yet)"
+            f.used == null -> "auto-compact at ${f.autoPercent}% (~${UsageStats.compact(f.threshold.toLong())} tokens), no reply measured yet"
+            f.due -> "auto-compact at ${f.autoPercent}% (~${UsageStats.compact(f.threshold.toLong())} tokens): due, the next message compacts first"
+            else -> "auto-compact at ${f.autoPercent}% (~${UsageStats.compact(f.threshold.toLong())} tokens): ${if (f.estimated) "~" else ""}${UsageStats.compact(f.left!!.toLong())} tokens left before it"
+        }
+        return "Compaction: $done; $auto"
+    }
+
     /** A pause between two messages longer than this is left out of the active time (lunch, the night). */
     const val PAUSE_LIMIT_MILLIS = 30 * 60 * 1000L
 
@@ -107,7 +137,7 @@ object ChatStats {
      * [messages] are the whole chat; [contextLimit] the context window in use (0 when unknown); the prices are the estimate per million tokens
      * from the settings; [sessionMillis] how long Arcana has been running.
      */
-    fun describe(messages: List<ChatMessage>, model: String, contextLimit: Int, priceIn: Int, priceOut: Int, sessionMillis: Long, oraculSetup: String = "", sessionUsage: List<UsageRecord> = emptyList(), allUsage: List<UsageRecord> = emptyList()): String {
+    fun describe(messages: List<ChatMessage>, model: String, contextLimit: Int, priceIn: Int, priceOut: Int, sessionMillis: Long, oraculSetup: String = "", sessionUsage: List<UsageRecord> = emptyList(), allUsage: List<UsageRecord> = emptyList(), compaction: CompactionState? = null): String {
         val replies = messages.filter { it.role == "assistant" }
         val stats = replies.mapNotNull { it.stats }
         val prompt = stats.sumOf { it.promptTokens.toLong() }
@@ -131,6 +161,7 @@ object ChatStats {
                 val used = last.promptTokens + last.completionTokens
                 appendLine("Context window: the last request used ${UsageStats.compact(used.toLong())} of ${UsageStats.contextSize(contextLimit.toLong())} tokens (${"%.0f".format(used * 100.0 / contextLimit)}%)")
             } else appendLine("Context window: " + (if (contextLimit > 0) "${UsageStats.contextSize(contextLimit.toLong())} tokens, no reply measured yet" else "size unknown"))
+            compaction?.let { appendLine(compactionLine(compactionFacts(messages, contextLimit, it))) }
             spendLines(sessionUsage, allUsage, priceIn, priceOut).forEach { appendLine(it) }
             oraculLines(messages, oraculSetup).forEach { appendLine(it) }
             append("Arcana has been running for ${describeDuration(sessionMillis / 1000)}.")
@@ -141,7 +172,7 @@ object ChatStats {
      * The same numbers as [describe], as JSON for a model that wants to analyse them (the pseudo-tool `chat_stats_json`). Every time is in seconds,
      * the cost in dollars; the Oracul and the token spend per model are included when they are known.
      */
-    fun describeJson(messages: List<ChatMessage>, model: String, contextLimit: Int, priceIn: Int, priceOut: Int, sessionMillis: Long = 0, oraculSetup: String = "", sessionUsage: List<UsageRecord> = emptyList(), allUsage: List<UsageRecord> = emptyList()): String {
+    fun describeJson(messages: List<ChatMessage>, model: String, contextLimit: Int, priceIn: Int, priceOut: Int, sessionMillis: Long = 0, oraculSetup: String = "", sessionUsage: List<UsageRecord> = emptyList(), allUsage: List<UsageRecord> = emptyList(), compaction: CompactionState? = null): String {
         val replies = messages.filter { it.role == "assistant" }
         val stats = replies.mapNotNull { it.stats }
         val prompt = stats.sumOf { it.promptTokens.toLong() }
@@ -190,6 +221,17 @@ object ChatStats {
                     put("last_request_used", used)
                     put("percent_used", used * 100.0 / contextLimit)
                 } else put("last_request_used", null as Int?)
+            }
+            if (compaction != null) putJsonObject("compaction") {
+                val f = compactionFacts(messages, contextLimit, compaction)
+                put("count", f.count)
+                put("last_summary_tokens", f.lastSummaryTokens)
+                put("auto_percent", f.autoPercent)
+                put("auto_threshold_tokens", f.threshold)
+                put("used_tokens", f.used)
+                put("used_is_estimate", f.estimated)
+                put("tokens_until_auto", f.left)
+                put("due", f.due)
             }
             putJsonObject("oracul") {
                 put("setup", oraculSetup)

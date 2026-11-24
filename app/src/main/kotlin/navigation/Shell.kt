@@ -352,6 +352,7 @@ private fun footerSegments(app: AppContext, navigator: Navigator): List<StatusSe
         if (app.sessionTokens > 0) add(statusSegment("", "⚡ ${UsageStats.compact(app.sessionTokens)} tok", Palette.Blue))
         // the machine: where the model sits and what all loaded models take, the processor, the memory file
         com.arcana.brain.app.screens.modelStateSegment(app, plain)?.let { add(it) }
+        com.arcana.brain.app.screens.embedSegment(app, plain)?.let { add(it) }
         com.arcana.brain.app.screens.memoryMeter(app, plain)?.let { add(it) }
         app.cpuPercent?.let { add(statusSegment("cpu", "$it%", if (it >= 85) Palette.Red else if (it >= 60) Palette.Orange else Palette.Green)) }
         if (app.chat.compacting) add(statusSegment("", if (plain) "compacting" else "◌ compacting…", Palette.Blue))

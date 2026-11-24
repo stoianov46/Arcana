@@ -59,6 +59,27 @@ and a sentence from its middle, meaning only), nomic-embed-text with its prefixe
 Re-run before turning them on for this or another model: `ARCANA_REAL_OLLAMA=1 ARCANA_REAL_VAULT=<folder> ARCANA_CHECK_OUT=<file> ./gradlew :core:test --tests '*RealPrefixCheck*'`
 (`ARCANA_EMBED_MODEL` picks the model; it indexes temporary copies, the real index is not touched).
 
+## Which embedding model (benchmark, results pending)
+
+`RealModelCheck` compares embedding models on the same notes and questions (`RealVaultBench`, shared with `RealPrefixCheck`: a temporary copy of the vault, each note's title, a section heading and a sentence from its middle, meaning only). Per model it gives the passages, how long building the index took, and top 1, top 5 and MRR by kind of question. A name ending in `+q` is the same model with Qwen3-Embedding's query instruction in front of the question (`EmbedPrefixes.QWEN3`; passages stay as they are). `EmbedPrefixes.QWEN3` is not used by the app until it is measured better.
+
+`ARCANA_REAL_OLLAMA=1 ARCANA_REAL_VAULT=<folder> ARCANA_CHECK_OUT=<file> ARCANA_EMBED_MODELS="nomic-embed-text,qwen3-embedding:0.6b,qwen3-embedding:0.6b+q" ./gradlew :core:test --tests '*RealModelCheck*'`
+(the result file is written after each model, so a slow one does not lose the others; the real index is not touched).
+
+Measured on 2026-11-24 on the owner's vault (116 notes, 274 questions: 108 titles, 84 headings, 82 sentences; 1,562 passages for every model), by meaning only:
+
+| Model | Index time | Title top 1 / top 5 / MRR | Heading | Sentence | All |
+|---|---|---|---|---|---|
+| `nomic-embed-text` | 25 s | 87.0% / 95.4% / 0.912 | 21.4% / 46.4% / 0.330 | 65.9% / 86.6% / 0.750 | **60.6% / 77.7% / 0.685** |
+| `qwen3-embedding:0.6b` | 55 s | 75.9% / 88.9% / 0.816 | 7.1% / 20.2% / 0.134 | 57.3% / 86.6% / 0.694 | 49.3% / 67.2% / 0.570 |
+| `qwen3-embedding:0.6b+q` (query instruction) | 51 s | 72.2% / 94.4% / 0.827 | 16.7% / 35.7% / 0.250 | 53.7% / 87.8% / 0.698 | 49.6% / 74.5% / 0.611 |
+
+So `nomic-embed-text` stays the recommended model: it is better on every kind of question and twice as fast to index. Qwen3's instruction helps the 0.6b model (top 5 67.2% → 74.5%) but not enough; `EmbedPrefixes.forModel` stays `NONE` for every model. The 4b and 8b sizes were not measured (they need 2.5 and 4.7 GB); add them to `ARCANA_EMBED_MODELS` to check.
+
+## The bottom bar shows it
+
+When the embedding model is loaded in Ollama next to the chat model (after a search by meaning or `/reindex`), the bottom bar shows a blue `◇ embed 0.6 GB` (plain glyphs: `embed 0.6 GB`): it takes memory of its own (`ModelStatus.embedLoaded`, `embedSegment`). The loaded models are refreshed after each reply and after `/reindex`. The start screen's **Search** line says whether search is by words only or by words + meaning, and warns when the chosen embedding model is not installed.
+
 ## Privacy and limits
 
 - Embeddings are computed by the Ollama server in the settings (`ollamaUrl`; local by default). If you point Arcana at a remote Ollama, the text of your notes goes there. The index is a plain file in the config folder (it contains passages of your notes: treat it like your notes). *Settings → Storage* does not list it yet.

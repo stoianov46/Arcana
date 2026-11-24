@@ -129,7 +129,8 @@ fun ReplyStatus(app: AppContext, gen: Generation, compactingSince: Long? = null,
                 gen.text.isEmpty() -> "Waiting for ${app.chat.workerModel}…"
                 else -> "Generating…"
             }
-            val tokens = if (gen.streamed > 0 && consulting == null && !reading) " · ${if (app.config.plainGlyphs) "" else "↓ "}${gen.streamed} tokens" else ""
+            val speed = com.arcana.brain.app.liveSpeed(gen.roundPieces, gen.roundFirstAt, System.currentTimeMillis())?.let { " · %.0f tok/s".format(it) }.orEmpty()
+            val tokens = if (gen.streamed > 0 && consulting == null && !reading) " · ${if (app.config.plainGlyphs) "" else "↓ "}${gen.streamed} tokens$speed" else ""
             "$what ${seconds}s$tokens${if (why.isEmpty()) "" else " · $why"} · Esc to cancel"
         }
         GenState.Failed -> Label((if (app.config.plainGlyphs) "Error: " else "✕ ") + gen.error, color = Palette.Red, wrap = true)
