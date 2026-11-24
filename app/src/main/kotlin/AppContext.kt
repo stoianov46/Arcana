@@ -1,5 +1,6 @@
 package com.arcana.brain.app
 
+import com.arcana.brain.core.thinkOptions
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -278,7 +279,7 @@ class AppContext(
         kvBytesPerToken = shown?.kvBytesPerToken ?: 0L
         thinkingValues = shown?.thinkingValues.orEmpty()
         modelParameters = shown?.parameters.orEmpty()
-        com.arcana.brain.app.screens.ThinkLevels.options = com.arcana.brain.app.screens.thinkOptions(thinkingValues)
+        com.arcana.brain.app.screens.ThinkLevels.options = thinkOptions(thinkingValues)
         thinkingDefault = shown?.thinkingDefault.orEmpty()
         com.arcana.brain.app.screens.ThinkLevels.onLevel = shown?.onLevel.orEmpty()
         com.arcana.brain.app.screens.ThinkLevels.defaultWord = com.arcana.brain.app.screens.thinkDefaultWord(thinkingDefault)

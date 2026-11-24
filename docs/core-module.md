@@ -10,7 +10,9 @@ datetime) and Apache PDFBox. Tests: `core/src/test/kotlin/com/arcana/brain/core/
 | `AppConfig.kt` | `AppConfig` (all settings, `@Serializable`), `ConfigStore` (load/save JSON) |
 | `OllamaClient.kt` | `OllamaClient`, `OllamaProtocol`, `ChatMessage`, `ChatChunk`, `ReplyStats`, `ModelDetails`, `OllamaException` |
 | `Layout.kt` | `Layout`: where Arcana's own files live (`.arcana/skills`, `.arcana/ARCANA.md`, the global `~/.config/arcana/skills` and `ARCANA.md`), `skillsFolder`/`defaultMemory` (automatic choice), `migrate` (`arcana --migrate`) |
-| `Vault.kt` | `Vault` (incl. `rename` with link rewriting, `memoryFile`/`memory`/`ensureMemory`/`remember` (no duplicates, no dead note paths), `auditMemory`/`cleanMemory` (`MemoryLines.kt`: `similar`, `noteRefs`, `MemoryAudit`) for the memory file (`ARCANA.md` or `AppConfig.memoryPath`), `MEMORY_TEMPLATE`), `Note`, `SearchHit`, `NoteTask`, `Prompts` (every prompt template), `VaultException` |
+| `Vault.kt` | `Vault` (incl. `rename` with link rewriting, `memoryFile`/`memory`/`ensureMemory`/`remember` (no duplicates, no dead note paths), `auditMemory`/`cleanMemory` (`MemoryLines.kt`: `similar`, `noteRefs`, `MemoryAudit`) for the memory file (`ARCANA.md` or `AppConfig.memoryPath`), `MEMORY_TEMPLATE`), `Note`, `SearchHit`, `VaultException` |
+| `Prompts.kt` | `Prompts` (every prompt template: the chat's system prompt, `chatMessages`, `userContent`, `SystemParts`/`changesNote`, the note tasks), `NoteTask`; moved out of `Vault.kt` (proposal 0007) |
+| `ContextMath.kt` | `effectiveContext` (which window the gauges count against), `contextTokens` (counted or estimated tokens in the context, and whether it is an estimate), `contextUsage` (share and `13.6k/131k` text), `thinkOptions` (the `think` values a model lists, as the settings name them); shared by `ChatSession` and the screens, moved out of `screens/Chat.kt` (proposal 0007) |
 | `VaultIndex.kt` | `VaultIndex`, `NoteInfo`, `BrainHealth`, `DailyNotes`, `Vault.capture` |
 | `Frontmatter.kt` | `mergeFrontmatterTags` (the tags of a note's frontmatter, merged) |
 | `ChatStore.kt` | `ChatStore`, `StoredChat` (persistent chats as JSON files) |

@@ -1,5 +1,9 @@
 package com.arcana.brain.app
 
+import com.arcana.brain.core.effectiveContext
+import com.arcana.brain.core.contextTokens
+import com.arcana.brain.core.contextUsage
+import com.arcana.brain.core.thinkOptions
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -58,8 +62,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.sync.withLock
 import com.arcana.brain.core.REQUEST_ACCESS_DEFINITION
-import com.arcana.brain.app.screens.contextUsage
-import com.arcana.brain.app.screens.effectiveContext
 import com.arcana.brain.core.CHAT_STATS
 import com.arcana.brain.core.CHAT_STATS_JSON
 import com.arcana.brain.core.CHAT_STATS_DEFINITION
@@ -1328,7 +1330,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         // an automatic opinion on the previous answer, still being written, is out of date now: the user has moved on (and it must not keep the Oracul pill lit through the new turn)
         autoConsult?.cancel()
         // a level picked with /effort counts for this message only, and only when the model lists it (the model may have been changed since)
-        val level = thinkNext.takeIf { it in com.arcana.brain.app.screens.thinkOptions(app.thinkingValues) }.orEmpty()
+        val level = thinkNext.takeIf { it in thinkOptions(app.thinkingValues) }.orEmpty()
         thinkNext = ""
         add(ChatMessage.user(body, sent.pictures, sent.notes, sent.files).copy(think = level))
         // a job that clearly needs file tools, with tools off: offer them now instead of letting the model say it cannot
@@ -1687,7 +1689,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** Where this chat stands with compaction, for `chat_stats`: the context in use now (as the status pane counts it) and the auto-compact setting. */
     private fun compactionState(): ChatStats.CompactionState {
-        val used = com.arcana.brain.app.screens.contextTokens(messages.toList(), overheadTokens)
+        val used = contextTokens(messages.toList(), overheadTokens)
         return ChatStats.CompactionState(app.config.autoCompactPercent, used?.first, used?.second ?: false)
     }
 

@@ -1,5 +1,9 @@
 package com.arcana.brain.app.screens
 
+import com.arcana.brain.core.effectiveContext
+import com.arcana.brain.core.contextTokens
+import com.arcana.brain.core.contextUsage
+import com.arcana.brain.core.thinkOptions
 import com.idea.ink.text.wrapRows
 
 import com.idea.ink.text.sanitizeForTerminal
@@ -61,15 +65,6 @@ import java.nio.file.Path
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-
-/** The window the gauge counts against: what was asked for, but never more than the model supports (when that is known). */
-internal fun effectiveContext(asked: Int, modelMax: Int, loaded: Int = 0): Int = when {
-    asked > 0 && modelMax > 0 -> minOf(asked, modelMax)
-    asked > 0 -> asked
-    // "Model default": Ollama runs with its own window, usually much smaller than what the model could do; once it has loaded the model it says which
-    loaded > 0 -> loaded
-    else -> modelMax
-}
 
 /** Below this many tokens a long chat, an attached note or a few tool results no longer fit and the oldest text is silently dropped. */
 internal const val COMFORTABLE_CONTEXT = 32_768
@@ -242,10 +237,6 @@ fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf
     )),
 )
 
-/** The values of [model] `think` as the setting names them: `default`, then `off`, `on` and levels, only what the model lists. */
-internal fun thinkOptions(values: List<String>): List<String> =
-    if (values.isEmpty()) listOf("default") else listOf("default") + values.map { when (it) { "false" -> "off"; "true" -> "on"; else -> it } }.distinct()
-
 /** The `/think` choices of the model in use (what [thinkOptions] gives for the values Ollama lists), for the Settings row, which cannot see the app. Set when the model's details are read. */
 internal object ThinkLevels {
     @Volatile var options: List<String> = listOf("default")
@@ -360,33 +351,6 @@ internal fun thinkingSegment(app: AppContext, plain: Boolean): StatusSegment {
     val word = (if (effective == "default") autoWord(thinkDefaultWord(app.thinkingDefault)) else effective) + if (next.isNotEmpty()) " · next message" else if (inUse.isNotEmpty()) " · this message" else ""
     val glyph = if (plain) "" else if (effective == "off") "◌ " else "✦ "
     return statusSegment("", "${glyph}think $word", thinkColor(effective, options, thinkDefaultWord(app.thinkingDefault)), 8, bold = true)
-}
-
-/**
- * Tokens the context holds: the last reply's prompt plus its answer as Ollama counted them, or an estimate of what the model is sent now (every message it reads, as it reads it,
- * plus [overhead]: the system prompt and the tool definitions; see [Compaction.tokens]) when that is larger: after a compaction the counts are stale, and some Ollama versions count
- * only the part of the prompt they did not have in their cache. The flag says it is an estimate.
- */
-internal fun contextTokens(messages: List<ChatMessage>, overhead: Int = 0): Pair<Int, Boolean>? {
-    val statsAt = messages.indexOfLast { (it.stats?.promptTokens ?: 0) > 0 }
-    if (statsAt < 0) return null
-    val estimate = Compaction.forModel(messages).sumOf { Compaction.messageTokens(it) } + overhead
-    // the counts of the last reply are stale when a summary came after it, or was inserted before it while that reply was made from the whole chat (a manual or automatic compaction)
-    val summaryAt = messages.indexOfLast { Compaction.isSummary(it) }
-    if (summaryAt > statsAt || (summaryAt >= 0 && statsAt < messages[summaryAt].contextAt)) return estimate to true
-    val stats = messages[statsAt].stats!!
-    val counted = stats.promptTokens + stats.completionTokens
-    // well above what Ollama counted: its count left part of the prompt out, the estimate is nearer the truth
-    return if (overhead > 0 && estimate > counted * 6 / 5) estimate to true else counted to false
-}
-
-/** How full the model's context was after the last reply (its prompt plus its answer) as a share and a `13.6k/131k` text (`~` after a compaction: an estimate); null before the first reply or when the size is unknown. */
-internal fun contextUsage(messages: List<ChatMessage>, limit: Int, overhead: Int = 0, ahead: Int = 0): Pair<Double, String>? {
-    val (counted, estimated) = contextTokens(messages, overhead) ?: return null
-    // [ahead]: what the next request will add that is not in the chat yet (the excerpts and notes of the message about to be sent)
-    val used = counted + ahead
-    if (limit <= 0) return null
-    return (used.toDouble() / limit).coerceIn(0.0, 1.0) to "${if (estimated) "~" else ""}${UsageStats.compact(used.toLong())}/${UsageStats.contextSize(limit.toLong())}"
 }
 
 /** `ctx ▰▰▱▱▱▱▱▱ 12% 13k/131k`: how full the model's context was after the last reply (its prompt plus its answer); empty before the first reply or when the size is unknown. */

@@ -203,7 +203,7 @@ narrates instead of calling a tool; it rationalizes afterwards.
 | Layout, discovery, problems, catalog, load, chip helpers, `requires:` parser, step budget | `core/Skills.kt` → `Skills`, `Skill` |
 | One required step; the progress and the nudges | `core/Skills.kt` → `Requirement`, `SkillRun` |
 | `use_skill` tool and the SKILLS paragraph | `core/Tools.kt` → `ToolBox.skills`, `useSkillTool`, `describe()` |
-| Injecting an attached skill into the message | `core/Vault.kt` → `Prompts.chatMessages`; `app/ChatSession.kt` → `noteTexts` (`Skills.loadEntry`) |
+| Injecting an attached skill into the message | `core/Prompts.kt` → `Prompts.chatMessages`; `app/ChatSession.kt` → `noteTexts` (`Skills.loadEntry`) |
 | Run state, starting/ending runs, feeding calls | `app/ChatSession.kt` → `skillRun`, `skillTick`, `startSkillRun`, `ask`, `runTools`, `startNew` |
 | The gate in the loop | `app/Generation.kt` → constructor parameter `gate` |
 | Menu entries, `/skills`, chip, status badge | `app/screens/Chat.kt` → `slashItems`, `useSlash`, `toggleSkills`, `chatStatus`; `design/SlashKind.kt`; `design/Attachments.kt` (`AttachmentLine`) |

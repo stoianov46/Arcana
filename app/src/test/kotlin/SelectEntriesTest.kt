@@ -1,5 +1,6 @@
 package com.arcana.brain.app
 
+import com.arcana.brain.core.contextTokens
 import com.arcana.brain.app.screens.entriesOf
 import com.arcana.brain.app.screens.messageLines
 import com.arcana.brain.core.AppConfig
@@ -86,17 +87,17 @@ class SelectEntriesTest {
             ChatMessage.user("a".repeat(4_000)), ChatMessage.assistant("b".repeat(4_000)),
             ChatMessage.user("c".repeat(4_000)), ChatMessage.assistant("d".repeat(4_000), stats = stats),
         )
-        assertEquals((99_300 to false), com.arcana.brain.app.screens.contextTokens(before))
+        assertEquals((99_300 to false), contextTokens(before))
         // compaction inserts the summary BEFORE the latest turn, so the last reply (with its old counts) still comes after it
         val after = before.toMutableList().also {
             it.add(2, ChatMessage.user("${com.arcana.brain.core.Compaction.MARK}\n\n" + "s".repeat(400)).copy(contextAt = 5))
         }
-        val (tokens, estimated) = com.arcana.brain.app.screens.contextTokens(after)!!
+        val (tokens, estimated) = contextTokens(after)!!
         assertTrue(estimated && tokens < 5_000, "after a compaction it is an estimate of what is sent now, not the old 99k: $tokens")
         // the next reply was made with the summary: its counts are real again
         val next = after + ChatMessage.user("more") + ChatMessage.assistant("ok", stats = com.arcana.brain.core.ReplyStats(7_000, 100, 500))
-        assertEquals((7_100 to false), com.arcana.brain.app.screens.contextTokens(next))
+        assertEquals((7_100 to false), contextTokens(next))
         // a summary from before this field existed keeps the old rule (the summary must come after the reply)
-        assertEquals((99_300 to false), com.arcana.brain.app.screens.contextTokens(after.map { if (com.arcana.brain.core.Compaction.isSummary(it)) it.copy(contextAt = 0) else it }))
+        assertEquals((99_300 to false), contextTokens(after.map { if (com.arcana.brain.core.Compaction.isSummary(it)) it.copy(contextAt = 0) else it }))
     }
 }
