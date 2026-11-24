@@ -240,6 +240,25 @@ class OraculTest {
     }
 
     @Test
+    fun theOraculWithToolsRunsThroughTheWorkersLoopAndIsAskedAgainAfterAnEmptyReply() {
+        val f = fake()
+        try {
+            val vault = Files.createDirectories(Files.createTempDirectory("arcana-oracul-empty").resolve("v"))
+            Files.writeString(vault.resolve("facts.md"), "seven is prime")
+            // its first answer is empty: the shared loop asks once more, out of sight (its old loop of its own returned the empty answer)
+            var empties = 0
+            f.script = { model, _ -> if (model == "big" && empties++ == 0) """{"message":{"role":"assistant","content":""},"done":true,"prompt_eval_count":10,"eval_count":0}""" else null }
+            val app = app(f) { copy(oraculModel = "big", toolsEnabled = true, toolAutoRead = true, vaultPath = vault.toString()) }
+            val chat = app.chat
+            chat.add(ChatMessage.user("Is 7 prime?")); chat.add(ChatMessage.assistant("Yes."))
+            runBlocking { chat.secondOpinion() }
+            assertEquals(listOf("big", "big"), f.asked.map { it.first }, "asked again after the empty reply")
+            assertTrue("Your last reply was empty" in f.asked[1].second, "with the worker's nudge")
+            assertTrue("misses the edge case" in chat.messages.last().content, chat.messages.last().content)
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
     fun anIdenticalReadInTheSameTurnIsNotRunAgain() {
         val f = fake()
         try {

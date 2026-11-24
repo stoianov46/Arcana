@@ -42,7 +42,7 @@ Do all eight, smallest and safest first, each phase its own commit:
    Test: every pseudo-tool is offered exactly when it was before (a table test).
 5. **One approval policy.** — done 2026-11-24. One visible difference, on purpose: a read that asks the chat model's user is titled "Allow this read?" (it said "Allow this change?"), as the Oracul's already was. `ApprovalPolicy.decide(spec, settings, actor)` in `core` says ask, allow or always ask, for the chat model and for the Oracul. Test: a table of
    risk × mode × actor.
-6. **One tool loop.** The Oracul's tool loop uses the same core loop as the worker, so it gets the loop guard and the retries. Test: the loop's existing tests plus an
+6. **One tool loop.** — done 2026-11-24 (the Oracul runs through a hidden `Generation`; it now gets the worker's retries and loop guard — a gain, not a change of what it may do). The Oracul's tool loop uses the same core loop as the worker, so it gets the loop guard and the retries. Test: the loop's existing tests plus an
    Oracul run through it.
 7. **`ChatSession` split.** `ToolRunner` (running calls, the turn cache, the loop guard, approvals), `OraculCoordinator` (opinions, comparisons, takeovers, flow, roles,
    goal), `SemanticService` (indexes, reindex, model download), `Compactor` and `ChatPersistence`; `ChatSession` keeps the conversation and wires them.

@@ -1368,29 +1368,48 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * too, in a dialog marked as the Oracul's. It has no `ask_user`, no mode or access requests: it cannot ask for more power.
      */
     private suspend fun oraculAgent(model: String, box: ToolBox, request: List<ChatMessage>): Pair<String, List<String>> {
-        val client = clientFor(model)
-        val definitions = box.definitions()
         val limit = if (app.config.toolSteps <= 0) 10 else app.config.toolSteps.coerceIn(1, 10)
         val used = ArrayList<String>()
-        var messages = request
-        for (step in 0..limit) {
-            val text = StringBuilder()
-            val calls = ArrayList<ToolCall>()
-            // the last round offers no tools, so it has to answer with what it has
-            client.chat(messages, false, if (step < limit) definitions else null).collect { chunk ->
-                text.append(chunk.content)
-                calls += chunk.toolCalls
-                if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) app.recordUsage("Oracul", chunk, model)
-            }
-            if (calls.isEmpty()) return text.toString().trim() to used
-            messages = messages + ChatMessage.assistantCalls(text.toString().trim(), calls)
-            for (call in calls) {
-                // what it did is told twice: live in the reply line while the tool runs (see oraculCall), and in the closing "Checked with" line of its block, with the arguments
-                used += call.name + (box.find(call.name)?.summary(call.arguments)?.trim()?.takeIf { it.isNotEmpty() }?.let { " (" + it.replace(Regex("\\s+"), " ").take(70) + ")" } ?: "")
-                messages = messages + ChatMessage.toolResult(call.name, oraculCall(model, box, call))
-            }
+        // onBusy(false) comes before the final state is set and before onComplete hands over the reply: wait for both, in that order
+        val stopped = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val completed = kotlinx.coroutines.CompletableDeferred<String>()
+        // the same loop as the worker's (proposal 0007, phase 6): the loop guard, the retries after an empty reply or a malformed call, a tool call written as text, the
+        // nudge after an announced step, and the last round without tools. It is not shown: the Oracul's block and its steps in the chat are what the reader sees
+        val loop = Generation(
+            app.scope, clientFor(model),
+            onBusy = { busy -> if (!busy) stopped.complete(Unit) },
+            onUsage = { chunk -> if (chunk.promptTokens > 0 || chunk.completionTokens > 0) app.recordUsage("Oracul", chunk, model) },
+            onComplete = { text, _ -> completed.complete(text.trim()) },
+            onToolRound = { text, calls, _ ->
+                if (calls.isEmpty()) listOfNotNull(text.takeIf { it.isNotBlank() }?.let { ChatMessage.assistant(it) })
+                else buildList {
+                    add(ChatMessage.assistantCalls(text, calls))
+                    for (call in calls) {
+                        // what it did is told twice: live in the reply line while the tool runs (see oraculCall), and in the closing "Checked with" line of its block, with the arguments
+                        used += call.name + (box.find(call.name)?.summary(call.arguments)?.trim()?.takeIf { it.isNotEmpty() }?.let { " (" + it.replace(Regex("\\s+"), " ").take(70) + ")" } ?: "")
+                        add(ChatMessage.toolResult(call.name, oraculCall(model, box, call)))
+                    }
+                }
+            },
+            textCalls = { app.config.textCalls },
+            loopRepeats = { app.config.loopRepeats },
+            onLoop = { app.recordEvent(Events.LOOP, "oracul $it") },
+            onBadCall = { app.recordToolUse(ToolUseRecord(System.currentTimeMillis(), com.arcana.brain.core.MALFORMED, 0, "malformed", 0, model)) },
+        )
+        loop.start(tools = box.definitions(), maxSteps = limit) { request }
+        try {
+            stopped.await()
+            while (loop.state == GenState.Running) kotlinx.coroutines.yield()
+        } finally {
+            // the Oracul was cancelled (Esc, a new message): stop its request too
+            if (loop.state == GenState.Running) loop.cancel()
         }
-        return "" to used
+        return when (loop.state) {
+            GenState.Done -> completed.await() to used
+            // as before: nothing to say is an empty answer, not an error
+            GenState.Failed -> if (loop.error == "The model returned an empty response.") "" to used else throw IllegalStateException(loop.error ?: "The Oracul failed.")
+            else -> throw kotlinx.coroutines.CancellationException("The Oracul was cancelled.")
+        }
     }
 
     /** One tool call of the Oracul: asked about first unless it only reads, then run on the IO thread; recorded like the worker's calls. */
