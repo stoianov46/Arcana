@@ -126,7 +126,7 @@ when a message is sent.
 with its buttons **inside the panel** (`ActionBar(items, panelWidth())`); keys `y` yes, `n`/`Esc` no, `a` always this session (only
 when `always`). Other keys (screen numbers, Ctrl+C) fall through. While one is pending the sidebar's Chat badge shows `!`.
 
-Dialogs used: "Allow this change?" (writes), "Delete this?" / "Move this?" / "Remember this?" (always ask), "Allow this folder?",
+Dialogs used: "Allow this change?" (writes), "Allow this read?" (a read with *Read without asking* off), "Delete this?" / "Move this?" / "Remember this?" (always ask), "Allow this folder?",
 "Run this command?", "Fetch this web page?", "Turn on tools?" / "Leave plan mode?", "Turn on shell commands?", "Turn on web pages?",
 "Step limit reached", "Run this tool call?" (calls written as text, ask mode), "Memory file created".
 
