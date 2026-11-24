@@ -42,6 +42,23 @@ A failure half way (Ollama stops, model missing) keeps the notes that were finis
 
 `~/.config/arcana/embeddings/<hash>/index.bin` (the config folder is `ConfigStore.defaultPath().resolveSibling("embeddings")`, so `ARCANA_CONFIG` moves it). `<hash>` = the first 8 bytes of SHA-256 of `"<vault path>\n<model>"`, so another vault or another model never reads this file. Binary, big-endian (`DataOutputStream`): `int magic 0x41524358 ("ARCX")`, `int version 1`, `UTF model`, `int dim`, `int notes`, then per note `UTF path, long size, long mtime, int passages`, per passage `UTF heading, UTF text, float × dim`. A file with another magic, version or model, or a damaged one, is ignored and rebuilt. Rough size: 768 dimensions × 4 bytes ≈ 3 KB a passage, so 4,000 passages ≈ 12 MB, loaded in well under a second.
 
+## Task prefixes (measured, off)
+
+Some embedding models are trained with a task prefix (nomic-embed-text: `search_document: ` for stored text, `search_query: ` for a question). `EmbeddingIndex` can apply them
+(`EmbedPrefixes`: `document`, `query`, and a `tag` written with the model into the index file, so turning them on or off rebuilds the index instead of mixing vectors), but
+`EmbedPrefixes.forModel` returns none for every model. Measured on 2026-11-24 on the owner's vault (116 notes, 1,562 passages, 274 questions: each note's title, a section heading
+and a sentence from its middle, meaning only), nomic-embed-text with its prefixes did slightly worse:
+
+| Questions | n | plain: top 1 · top 5 · MRR | prefixed |
+|---|---|---|---|
+| title | 108 | 87.0% · 95.4% · 0.912 | 88.0% · 95.4% · 0.917 |
+| heading | 84 | 21.4% · 46.4% · 0.330 | 14.3% · 38.1% · 0.248 |
+| sentence | 82 | 65.9% · 86.6% · 0.750 | 65.9% · 89.0% · 0.757 |
+| all | 274 | 60.6% · 77.7% · 0.685 | 58.8% · 75.9% · 0.664 |
+
+Re-run before turning them on for this or another model: `ARCANA_REAL_OLLAMA=1 ARCANA_REAL_VAULT=<folder> ARCANA_CHECK_OUT=<file> ./gradlew :core:test --tests '*RealPrefixCheck*'`
+(`ARCANA_EMBED_MODEL` picks the model; it indexes temporary copies, the real index is not touched).
+
 ## Privacy and limits
 
 - Embeddings are computed by the Ollama server in the settings (`ollamaUrl`; local by default). If you point Arcana at a remote Ollama, the text of your notes goes there. The index is a plain file in the config folder (it contains passages of your notes: treat it like your notes). *Settings → Storage* does not list it yet.

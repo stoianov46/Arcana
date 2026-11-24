@@ -101,6 +101,24 @@ object Chunker {
     }
 }
 
+/**
+ * What an embedding model wants in front of a text: some are trained with a task prefix (nomic-embed-text: `search_document: ` for what is stored, `search_query: ` for what is
+ * asked) and match better with it. [tag] marks an index built with prefixes, so turning them on rebuilds it once.
+ */
+data class EmbedPrefixes(val document: String, val query: String, val tag: String) {
+    companion object {
+        val NONE = EmbedPrefixes("", "", "")
+        val NOMIC = EmbedPrefixes("search_document: ", "search_query: ", "#nomic-prefix")
+
+        /**
+         * The prefixes used for [model]: none for now. Measured on 2026-11-24 with a real vault (116 notes, 274 questions: titles, headings, sentences; `RealPrefixCheck`), nomic-embed-text
+         * with its prefixes found the right note slightly less often (top 5: 75.9% against 77.7%, MRR 0.664 against 0.685; much worse for short headings), so they stay off.
+         * Run the check again before turning them on for this or another model.
+         */
+        fun forModel(model: String): EmbedPrefixes = NONE
+    }
+}
+
 /** Cosine similarity of two vectors of the same size (0 when either has no length). */
 fun cosine(a: FloatArray, b: FloatArray): Float {
     require(a.size == b.size) { "vectors of different size: ${a.size} and ${b.size}" }
@@ -115,9 +133,12 @@ fun cosine(a: FloatArray, b: FloatArray): Float {
  * time changed and forgets deleted ones. Vectors are stored normalised, so a search is a dot product. Hidden folders (`.arcana`, `.trash`,
  * `.obsidian`) are not indexed ([Vault.notes] leaves them out).
  */
-class EmbeddingIndex(private val file: Path, private val source: PassageSource, val model: String, private val embedder: Embedder, private val batch: Int = BATCH) {
+class EmbeddingIndex(private val file: Path, private val source: PassageSource, val model: String, private val embedder: Embedder, private val batch: Int = BATCH, private val prefixes: EmbedPrefixes = EmbedPrefixes.forModel(model)) {
     /** The index of a vault's notes, as before. */
-    constructor(file: Path, vault: Vault, model: String, embedder: Embedder, batch: Int = BATCH) : this(file, VaultSource(vault), model, embedder, batch)
+    constructor(file: Path, vault: Vault, model: String, embedder: Embedder, batch: Int = BATCH, prefixes: EmbedPrefixes = EmbedPrefixes.forModel(model)) : this(file, VaultSource(vault), model, embedder, batch, prefixes)
+
+    /** What the file records as its model: the model and how its texts were prefixed, so a change of either rebuilds the index instead of mixing vectors. */
+    private val stamp = model + prefixes.tag
 
     private class Entry(val size: Long, val mtime: Long, val chunks: List<Chunk>, val vectors: List<FloatArray>)
 
@@ -174,7 +195,7 @@ class EmbeddingIndex(private val file: Path, private val source: PassageSource, 
             var at = 0
             while (at < items.size) {
                 val part = items.subList(at, minOf(items.size, at + batch))
-                val got = embedder.embed(part.map { it.chunk.embedInput() })
+                val got = embedder.embed(part.map { prefixes.document + it.chunk.embedInput() })
                 if (got.size != part.size) throw IllegalStateException("The embedding model returned ${got.size} vectors for ${part.size} passages.")
                 got.forEach { vectors += normalise(it) }
                 at += part.size
@@ -201,7 +222,7 @@ class EmbeddingIndex(private val file: Path, private val source: PassageSource, 
     @Synchronized
     fun search(query: String, k: Int = 5): List<SemanticHit> {
         if (entries.isEmpty() || query.isBlank()) return emptyList()
-        val q = normalise(embedder.embed(listOf(query)).single())
+        val q = normalise(embedder.embed(listOf(prefixes.query + query)).single())
         val best = ArrayList<SemanticHit>()
         for ((path, e) in entries) {
             var top = -2f; var at = -1
@@ -221,7 +242,7 @@ class EmbeddingIndex(private val file: Path, private val source: PassageSource, 
     @Synchronized
     fun searchPassages(query: String, k: Int): List<Pair<Chunk, Float>> {
         if (entries.isEmpty() || query.isBlank()) return emptyList()
-        val q = normalise(embedder.embed(listOf(query)).single())
+        val q = normalise(embedder.embed(listOf(prefixes.query + query)).single())
         val all = ArrayList<Pair<Chunk, Float>>()
         for (e in entries.values) for (i in e.vectors.indices) {
             val v = e.vectors[i]
@@ -251,7 +272,7 @@ class EmbeddingIndex(private val file: Path, private val source: PassageSource, 
         runCatching {
             DataInputStream(Files.newInputStream(file).buffered(1 shl 16)).use { input ->
                 if (input.readInt() != MAGIC || input.readInt() != VERSION) return out
-                if (input.readUTF() != model) return out
+                if (input.readUTF() != stamp) return out
                 val dim = input.readInt()
                 repeat(input.readInt()) {
                     val path = input.readUTF(); val size = input.readLong(); val mtime = input.readLong()
@@ -273,7 +294,7 @@ class EmbeddingIndex(private val file: Path, private val source: PassageSource, 
         val tmp = file.resolveSibling(file.fileName.toString() + ".tmp")
         val dim = entries.values.firstNotNullOfOrNull { it.vectors.firstOrNull()?.size } ?: 0
         DataOutputStream(Files.newOutputStream(tmp).buffered(1 shl 16)).use { out ->
-            out.writeInt(MAGIC); out.writeInt(VERSION); out.writeUTF(model); out.writeInt(dim)
+            out.writeInt(MAGIC); out.writeInt(VERSION); out.writeUTF(stamp); out.writeInt(dim)
             val saved = entries.filter { (_, e) -> e.vectors.all { it.size == dim } }
             out.writeInt(saved.size)
             for ((path, e) in saved) {

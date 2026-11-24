@@ -1,6 +1,7 @@
 package com.arcana.brain.core
 
 import com.sun.net.httpserver.HttpExchange
+import java.nio.file.Files
 import com.sun.net.httpserver.HttpServer
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -259,5 +260,22 @@ class WebTaintAndToolStatsTest {
         assertEquals(0, by[1].okPercent)
         // an older line without a model still reads
         assertEquals("", kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString<ToolUseRecord>("""{"time":1,"tool":"t","millis":2,"outcome":"ok","resultChars":3}""").model)
+    }
+}
+
+/** Embedding prefixes: applied to stored passages and to questions, recorded in the index file, and a change rebuilds the index. Off for every model (measured, see RealPrefixCheck). */
+class EmbedPrefixTest {
+    @Test
+    fun prefixesGoInFrontAndAChangeRebuilds() {
+        val vault = Vault(Files.createTempDirectory("prefix-unit").also { Files.writeString(it.resolve("A.md"), "# A\n\nSome text about gardens.\n") })
+        val file = Files.createTempDirectory("prefix-idx").resolve("index.bin")
+        val seen = ArrayList<String>()
+        val embedder = Embedder { texts -> seen += texts; texts.map { floatArrayOf(1f, 0f) } }
+        EmbeddingIndex(file, vault, "m", embedder, prefixes = EmbedPrefixes.NOMIC).apply { refresh(); search("gardens") }
+        assertTrue(seen.first().startsWith("search_document: ") && seen.last() == "search_query: gardens", seen.toString())
+        // the same file without prefixes is another index: it starts empty and is rebuilt, the vectors are never mixed
+        assertTrue(EmbeddingIndex(file, vault, "m", embedder, prefixes = EmbedPrefixes.NONE).isEmpty)
+        assertTrue(!EmbeddingIndex(file, vault, "m", embedder, prefixes = EmbedPrefixes.NOMIC).isEmpty)
+        assertEquals(EmbedPrefixes.NONE, EmbedPrefixes.forModel("nomic-embed-text"), "off: on a real vault they found the right note less often")
     }
 }
