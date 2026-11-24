@@ -73,6 +73,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `searchKey` | `""` | Brave Search API key (Settings row *Brave API key*, shown only while the Brave backend is chosen), stored in plain text in `config.json` (keep the file private); the Settings row shows only its last 4 characters |
 | `textCalls` | `auto` | a tool call written as text: `auto` runs it, `ask` shows it first, `off` leaves it |
 | `toolAutoSearch` | false | `web_search` and `fetch_url` run without asking (Settings → Tools → *Search and fetch without asking*; needs `toolWeb`; HTTP requests still ask, the Oracul always asks); the Chat status bar shows an orange `↗ auto-search` |
+| `askAfterWeb` | `true` | after a web result in a turn, changes, shell commands and fetches of a new site (or with a query) ask even in Auto mode (Settings → Tools → *Ask after web*; see tools-and-agent.md) |
 | `toolFolders` | `""` | Settings → Tools → *Allowed folders* (was *Extra folders*): `;`-separated roots the file tools may read and write besides the vault, `~` expanded (the only place a home or hidden folder can be allowed) |
 | `toolAutoRead` | true | read-only tools run without asking |
 | `skillsEnabled` / `skillsFolder` | true / `` (automatic) | the model is told which skills exist and gets `use_skill`; the vault folder with one folder per skill. Blank = `Layout.skillsFolder`: `.arcana/skills`, or an existing `Skills/`; a name set here wins |

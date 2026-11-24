@@ -759,7 +759,7 @@ class CoreTest {
         assertTrue("carries credentials" !in HttpGate.preview("GET", "https://example.com", "", "", 12).joinToString())
         // through the toolbox: a Web tool (always asks), refused for private addresses, and the shell no longer offers curl
         val root = Files.createTempDirectory("arcana-http")
-        val box = ToolBox(Vault(Files.createDirectories(root.resolve("vault"))), emptyList(), root.resolve("b"), shell = true)
+        val box = ToolBox(Vault(Files.createDirectories(root.resolve("vault"))), emptyList(), root.resolve("b"), shell = true, web = true)
         assertTrue(box.find("http_request")!!.risk == ToolRisk.Web && "http_request" in box.describe())
         assertTrue(box.execute(call("http_request", "url" to "http://127.0.0.1:9/x", "method" to "POST")).startsWith("Error:") && "own computer" in box.execute(call("http_request", "url" to "http://127.0.0.1:9/x")))
         val curl = box.execute(call("run_command", "command" to "curl -X POST https://example.com -d x"))
@@ -1531,8 +1531,14 @@ class CoreTest {
             val spec = box.find("web_search")!!
             assertEquals(ToolRisk.Web, spec.risk)
             assertTrue(spec.preview(call("web_search", "query" to "kotlin flow").arguments).any { "SearXNG" in it })
-            assertTrue("No SearXNG address" in ToolBox(null, listOf(root), root.resolve("b"), searchBackend = "searxng").execute(call("web_search", "query" to "x")))
-            assertTrue("No Brave Search API key" in ToolBox(null, listOf(root), root.resolve("b"), searchBackend = "brave").execute(call("web_search", "query" to "x")))
+            assertTrue("No SearXNG address" in ToolBox(null, listOf(root), root.resolve("b"), web = true, searchBackend = "searxng").execute(call("web_search", "query" to "x")))
+            assertTrue("No Brave Search API key" in ToolBox(null, listOf(root), root.resolve("b"), web = true, searchBackend = "brave").execute(call("web_search", "query" to "x")))
+            // switched off: not offered, and a call says how to ask for it
+            val off = ToolBox(null, listOf(root), root.resolve("b"))
+            assertTrue(off.find("web_search") == null && off.find("run_command") == null && off.switchedOff == listOf("shell", "web"))
+            assertTrue(off.execute(call("fetch_url", "url" to "https://x.dev")).let { "switched off" in it && TURN_ON_TOOLS in it && "\"web\"" in it })
+            assertTrue("turn_on_tools" in off.describe() && "\"shell\"" in off.describe())
+            assertTrue(turnOnToolsDefinition(listOf("web")).toString().let { "\"enum\":[\"web\"]" in it })
             assertTrue("- web_search(query, limit?)" in box.cheatSheet())
             assertTrue(ToolBox(null, listOf(root), root.resolve("b"), readOnly = true).find("web_search") == null)
         } finally {
@@ -1904,7 +1910,7 @@ class CoreTest {
         assertTrue("- edit_file(path, old, new)" in sheet && "- read_file(path, start_line?, end_line?)" in sheet && "- request_access(reason)" in sheet, sheet)
         assertTrue("remember(text)" in sheet && "ask_user(question, options?, multiple?)" in sheet)
         assertTrue(box.find("remember")!!.alwaysAsk)
-        assertTrue("exactly these names" in box.describe())
+        assertTrue("exactly these names" !in box.describe() && "- edit_file(" !in box.describe(), "the tools are not listed a second time in the system prompt")
         box.execute(call("remember", "text" to "likes tea"))
         assertTrue("- likes tea" in Files.readString(root.resolve("v/.arcana/ARCANA.md")))
     }

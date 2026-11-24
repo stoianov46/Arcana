@@ -64,6 +64,8 @@ class Generation(
     private val toolsHalted: () -> Boolean = { false },
     /** Told when a round was stopped for repeating itself (`text`), once each time. */
     private val onLoop: (String) -> Unit = {},
+    /** Told each time the model wrote a tool call Ollama could not read (it is asked again, out of sight): counted per model on the Usage screen. */
+    private val onBadCall: () -> Unit = {},
 ) {
     var state by mutableStateOf(GenState.Idle)
         private set
@@ -203,7 +205,9 @@ class Generation(
                         // handled below: the stream is closed, what it wrote so far is still in the buffers
                     } catch (e: OllamaException) {
                         // the model wrote a tool call Ollama could not parse (broken JSON escapes in a long file body): not the user's fault, ask again, out of sight
-                        if (offered == null || !e.message.orEmpty().contains("error parsing tool call") || badCallRetries >= MAX_BAD_CALL_RETRIES) throw e
+                        if (offered == null || !e.message.orEmpty().contains("error parsing tool call")) throw e
+                        onBadCall()
+                        if (badCallRetries >= MAX_BAD_CALL_RETRIES) throw e
                         badCallRetries++
                         messages = messages + ChatMessage.user(BAD_CALL_NUDGE)
                         text = ""

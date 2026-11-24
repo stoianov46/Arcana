@@ -235,3 +235,29 @@ class HelperRequestTest {
             Oracul.judgeLabels("Answer B is best; ANSWER C misses it. Answer A is close.", "worker", others, listOf(2, 0, 1)))
     }
 }
+
+/** Web content marks the turn; tool calls are counted per model. */
+class WebTaintAndToolStatsTest {
+    @Test
+    fun aNewPlaceIsANewHostOrAQuery() {
+        val hosts = setOf("docs.dev")
+        assertTrue(!WebTaint.newPlace("https://docs.dev/page", hosts))
+        assertTrue(WebTaint.newPlace("https://docs.dev/page?q=my+notes", hosts), "a query can carry data out")
+        assertTrue(WebTaint.newPlace("https://evil.dev/x", hosts))
+        assertTrue(WebTaint.newPlace("not a url", hosts))
+        assertEquals("<untrusted source=\"https://a.dev\">\nbody\n</untrusted>", WebTaint.wrap("https://a.dev", "body"))
+        assertTrue("<untrusted" in Prompts.UNTRUSTED_NOTE && "<note" in Prompts.UNTRUSTED_NOTE)
+    }
+
+    @Test
+    fun toolCallsAreCountedPerModel() {
+        fun r(outcome: String, model: String) = ToolUseRecord(0, "t", 0, outcome, 0, model)
+        val by = ToolStats.byModel(listOf(r("ok", "a"), r("ok", "a"), r("error", "a"), r("denied", "a"), r("unknown", "b"), r("malformed", "b"), r("ok", "")))
+        assertEquals(listOf("a", "b"), by.map { it.model }, "records without a model (older ones) are left out")
+        assertEquals(ModelToolTotals("a", 4, 2, 1, 1, 0, 0), by[0])
+        assertEquals(66, by[0].okPercent, "a denial is the user's choice, not the model's mistake")
+        assertEquals(0, by[1].okPercent)
+        // an older line without a model still reads
+        assertEquals("", kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString<ToolUseRecord>("""{"time":1,"tool":"t","millis":2,"outcome":"ok","resultChars":3}""").model)
+    }
+}

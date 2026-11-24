@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import com.idea.ink.ui.TextFieldState
 import com.arcana.brain.core.AppConfig
 import com.arcana.brain.core.SystemFreeze
+import com.arcana.brain.core.WebTaint
 import com.arcana.brain.core.STEP_LIMIT_AUTO_ROUNDS
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ChatStore
@@ -186,6 +187,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             loopRepeats = { app.config.loopRepeats },
             toolsHalted = { loopCalls.halted },
             onLoop = { app.recordEvent(Events.LOOP, it) },
+            onBadCall = { app.recordToolUse(ToolUseRecord(System.currentTimeMillis(), com.arcana.brain.core.MALFORMED, 0, "malformed", 0, runWorker ?: app.config.model)) },
             refresh = { refreshRequest?.takeIf { autoCompactDue(messages.toList()) }?.let { rebuild -> runCatching { compact(auto = true) }.getOrNull()?.let { rebuild() } } },
         )
     }
@@ -951,9 +953,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             }
             // read again for every call: an earlier call of this round may have switched the mode, which rebuilds the toolbox
             val box = toolbox
-            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || call.name == CHAT_STATS || call.name == CHAT_STATS_JSON || call.name == TODO || call.name == CONSULT || box == null) {
+            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || call.name == CHAT_STATS || call.name == CHAT_STATS_JSON || call.name == TODO || call.name == CONSULT || call.name == com.arcana.brain.core.TURN_ON_TOOLS || box == null) {
                 val message = ChatMessage.toolResult(call.name, when {
                     call.name == ASK_USER -> askUser(call, text)
+                    call.name == com.arcana.brain.core.TURN_ON_TOOLS && box != null -> turnOnTools(call)
                     call.name == REQUEST_ACCESS -> requestAccess(call)
                     call.name == REQUEST_MODE -> requestMode(call)
                     call.name == CONSULT -> consult(call)
@@ -1031,20 +1034,25 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                     else app.update(app.config.copy(toolWeb = true))
                 }
             }
-            val ask = spec != null && refusal == null && call.name !in alwaysAllowed && when (spec.risk) {
+            // a web page or search result is in this turn: it may try to steer the model, so changes, commands and new addresses ask even in Auto mode (Settings → Tools → Ask after web)
+            val tainted = app.config.askAfterWeb && webInTurn && spec != null && spec.risk != ToolRisk.Read &&
+                (spec.risk != ToolRisk.Web || (call.name != "web_search" && WebTaint.newPlace(address, webHosts)))
+            val ask = spec != null && refusal == null && (call.name !in alwaysAllowed || tainted) && (tainted || when (spec.risk) {
                 ToolRisk.Write -> spec.alwaysAsk || app.config.toolMode != "auto" // deleting and moving ask even in Auto mode
                 ToolRisk.Read -> !app.config.toolAutoRead
                 ToolRisk.Shell -> !app.config.toolAutoShell && !(app.config.toolAutoRead && ShellPolicy.isSafe(command)) // never "always": each command is looked at, unless auto-run is on
                 ToolRisk.Web -> !(call.name in AUTO_WEB && app.config.toolAutoSearch) // never "always": the address itself can carry data out; only a search or a page read can be let through (Settings → Tools → Search and fetch without asking); http_request always asks
-            }
+            })
             var allowed = !folderDenied && refusal == null
             if (ask && allowed) {
                 val shell = spec!!.risk == ToolRisk.Shell
-                val pending = if (shell) Approval(call.name, "run_command", spec.preview(call.arguments), heading = "Run this command?", icon = "$", yes = "Run", always = false)
-                else if (spec.risk == ToolRisk.Web) Approval(call.name, call.name, spec.preview(call.arguments), heading = webHeading(call.name), icon = "↗", yes = if (call.name == "web_search") "Search" else if (call.name == "http_request") "Send" else "Fetch", always = false)
+                // why it asks although Auto mode or an earlier "always" would let it run
+                val preview = spec.preview(call.arguments) + if (tainted) listOf(WebTaint.NOTE) else emptyList()
+                val pending = if (shell) Approval(call.name, "run_command", preview, heading = "Run this command?", icon = "$", yes = "Run", always = false)
+                else if (spec.risk == ToolRisk.Web) Approval(call.name, call.name, preview, heading = webHeading(call.name), icon = "↗", yes = if (call.name == "web_search") "Search" else if (call.name == "http_request") "Send" else "Fetch", always = false)
                 else Approval(
-                    call.name, "${call.name}  ${spec.summary(call.arguments)}", spec.preview(call.arguments),
-                    heading = spec.confirmHeading ?: "Allow this change?", icon = if (spec.alwaysAsk) "!" else "⚙", always = !spec.alwaysAsk,
+                    call.name, "${call.name}  ${spec.summary(call.arguments)}", preview,
+                    heading = spec.confirmHeading ?: "Allow this change?", icon = if (spec.alwaysAsk || tainted) "!" else "⚙", always = !spec.alwaysAsk && !tainted,
                 )
                 val choice = awaitApproval(pending)
                 if (choice == ApprovalChoice.Always) alwaysAllowed += call.name
@@ -1071,8 +1079,11 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 if (spec.risk != ToolRisk.Read) app.brain.changed()
             }
             // what each tool costs: time, outcome and how much text it put into the context (shown on the Usage screen's Tools page)
-            if (spec != null) app.recordToolUse(ToolUseRecord(startedAt, call.name, System.currentTimeMillis() - startedAt, if (!allowed) "denied" else if (result.startsWith("Error:")) "error" else "ok", result.length))
-            val message = ChatMessage.toolResult(call.name, result)
+            app.recordToolUse(ToolUseRecord(startedAt, call.name, System.currentTimeMillis() - startedAt, if (spec == null) "unknown" else if (!allowed) "denied" else if (result.startsWith("Error:")) "error" else "ok", result.length, workerModel))
+            // what came from the web: marked as material, never instructions, and from now on in this turn changes and new addresses ask (see tainted above)
+            val fromWeb = spec?.risk == ToolRisk.Web && allowed && !result.startsWith("Error:")
+            if (fromWeb) { webInTurn = true; WebTaint.host(address)?.let { webHosts += it } }
+            val message = ChatMessage.toolResult(call.name, if (fromWeb) WebTaint.wrap(if (call.name == "web_search") "web search: $address" else address, result) else result)
             add(message)
             added += message
             noteToolUse(call, result)
@@ -1142,9 +1153,40 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         return "Done: tools are now on (${app.config.toolMode} mode). Carry on with the user's request using the tools. ${box?.describe().orEmpty()}"
     }
 
+    /** A web result is in the turn under way (see [WebTaint]), and the hosts it came from: a later fetch to one of them without a query is not a new place. */
+    private var webInTurn = false
+    private val webHosts = HashSet<String>()
+
+    /**
+     * The model asks to switch on shell commands or the web (`turn_on_tools`): the same question as when it used to call a switched-off tool. When the user agrees, the setting
+     * changes and the model gets the tools at once.
+     */
+    private suspend fun turnOnTools(call: ToolCall): String {
+        val what = (call.arguments["what"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim().lowercase()
+        val reason = (call.arguments["reason"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim()
+        val pending = when (what) {
+            "shell" -> if (app.config.toolShell) return "Shell commands are already on: call run_command." else Approval(
+                "shell-on", reason.ifBlank { "The model wants to run shell commands." },
+                listOf("The model wants to run shell commands (builds, tests, git…).", "You still approve every single command before it runs.", "Turn it off again in Settings → Tools → Shell commands."),
+                heading = "Turn on shell commands?", icon = "$", yes = "Turn on", always = false,
+            )
+            "web" -> if (app.config.toolWeb) return "The web is already on: call web_search or fetch_url." else Approval(
+                "web-on", reason.ifBlank { "The model wants to use the web." },
+                listOf("The model wants to search the web and read web pages.", "You approve every search and address before it is sent; only public pages are reachable.", "Turn it off again in Settings → Tools → Web pages."),
+                heading = "Turn on web pages?", icon = "↗", yes = "Turn on", always = false,
+            )
+            else -> return "Error: what must be \"shell\" or \"web\", not \"$what\"."
+        }
+        if (awaitApproval(pending) == ApprovalChoice.Deny) return "The user did not allow it. Do not ask again; tell them they can turn it on in Settings → Tools."
+        app.update(if (what == "shell") app.config.copy(toolShell = true) else app.config.copy(toolWeb = true))
+        val box = toolboxFor(app.config).also { toolbox = it }
+        gen.useTools(box?.let { definitionsFor(it) })
+        return if (what == "shell") "Done: shell commands are on. Call run_command now; the user approves each command." else "Done: the web is on. Call web_search or fetch_url now; the user approves each search and address."
+    }
+
     /** What the model is offered when it has a toolbox: the tools, a way to ask for another mode, and (in plan mode) a way to ask to leave it. */
     private fun definitionsFor(box: ToolBox): JsonArray =
-        JsonArray(box.definitions() + REQUEST_MODE_DEFINITION + CHAT_STATS_DEFINITION + CHAT_STATS_JSON_DEFINITION + TODO_DEFINITION + (if (app.config.flowTools && app.config.oraculEnabled) listOf(CONSULT_DEFINITION) else emptyList()) + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
+        JsonArray(box.definitions() + (if (box.switchedOff.isEmpty()) emptyList() else listOf(com.arcana.brain.core.turnOnToolsDefinition(box.switchedOff))) + REQUEST_MODE_DEFINITION + CHAT_STATS_DEFINITION + CHAT_STATS_JSON_DEFINITION + TODO_DEFINITION + (if (app.config.flowTools && app.config.oraculEnabled) listOf(CONSULT_DEFINITION) else emptyList()) + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
 
     /** The model asks to switch the tool mode: the user always decides; when they agree the mode, the toolbox and the model's tools change at once. */
     private suspend fun requestMode(call: ToolCall): String {
@@ -1680,6 +1722,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         turnCalls.clear()
         turnTools.clear()
         turnReads.clear()
+        webInTurn = false
+        webHosts.clear()
         loopCalls.reset()
         // ...and a skill chip on it starts a run of that skill (its required steps are then watched)
         history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }?.let { entry ->

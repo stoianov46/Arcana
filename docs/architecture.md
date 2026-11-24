@@ -81,7 +81,7 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 2. `attachments.drain()` → user `ChatMessage` (images, text files, `noteNames`) appended to `messages` and persisted.
 3. `Generation.start(tools, maxSteps) { prepare }` launches a coroutine on `app.scope`:
    - `prepare()` (IO dispatcher): optional vault search (`/vault` mode), reads attached notes and the `ARCANA.md` memory, builds
-     `Prompts.chatMessages(config, history, hits, noteTexts, tools, toolsNote, canRequestTools, memory)` (today's date, the tool cheat sheet).
+     `Prompts.chatMessages(config, history, hits, noteTexts, tools, toolsNote, canRequestTools, memory)` (today's date, the tool notes; frozen per chat, see `SystemFreeze`).
    - `OllamaClient.chat(messages, json, tools)` streams NDJSON `ChatChunk`s; `text` state updates per chunk.
    - If chunks carry `tool_calls` and tools were offered: `ChatSession.runTools(...)` executes them (asking the user for
      writes), appends results, and the loop asks the model again (see [tools-and-agent.md](tools-and-agent.md)).

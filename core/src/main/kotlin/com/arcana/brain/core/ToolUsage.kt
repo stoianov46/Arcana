@@ -12,10 +12,15 @@ data class ToolUseRecord(
     val time: Long,
     val tool: String,
     val millis: Long,
-    /** `ok`, `error` (the tool reported "Error: …") or `denied` (the user said no, or Arcana refused it). */
+    /**
+     * `ok`, `error` (the tool reported "Error: …"), `denied` (the user said no, or Arcana refused it), `unknown` (the model called a tool that does not exist) or `malformed`
+     * (it wrote a call Ollama could not read, [MALFORMED] as the tool).
+     */
     val outcome: String,
     /** Characters of the result that went back to the model: what the call cost the context window. */
     val resultChars: Int,
+    /** The model that made the call (blank in records from before this was kept): how well each model uses the tools. */
+    val model: String = "",
 ) {
     /** About how many tokens the result took in the context (four characters to a token is the usual rule of thumb). */
     val approxTokens: Int get() = (resultChars + 3) / 4
@@ -52,7 +57,22 @@ data class ToolTotals(val tool: String, val calls: Int, val errors: Int, val den
     val approxTokens: Long get() = (resultChars + 3) / 4
 }
 
+/** How one model did with the tools: its calls, how many worked, failed, were denied, named a tool that does not exist, or could not be read at all. */
+data class ModelToolTotals(val model: String, val calls: Int, val ok: Int, val errors: Int, val denied: Int, val unknown: Int, val malformed: Int) {
+    /** The share of calls that worked, of those the model is responsible for (a denial is the user's choice). */
+    val okPercent: Int get() = (calls - denied).let { if (it <= 0) 0 else ok * 100 / it }
+}
+
+/** The tool name of a record for a call the model wrote and Ollama could not read. */
+const val MALFORMED = "(malformed call)"
+
 object ToolStats {
+    /** Totals per model (records with a model only), the one with the most calls first. */
+    fun byModel(records: List<ToolUseRecord>): List<ModelToolTotals> =
+        records.filter { it.model.isNotBlank() }.groupBy { it.model }.map { (model, list) ->
+            ModelToolTotals(model, list.size, list.count { it.outcome == "ok" }, list.count { it.outcome == "error" }, list.count { it.outcome == "denied" }, list.count { it.outcome == "unknown" }, list.count { it.outcome == "malformed" })
+        }.sortedWith(compareByDescending<ModelToolTotals> { it.calls }.thenBy { it.model })
+
     /** Totals per tool, the one that put the most text into the context first. */
     fun by(records: List<ToolUseRecord>): List<ToolTotals> =
         records.groupBy { it.tool }.map { (tool, list) ->

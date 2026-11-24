@@ -11,6 +11,7 @@ One file per proposal, numbered in the order they were written: `NNNN-short-name
 | [0003](0003-strata-and-openai-compatible-providers.md) | Strata and OpenAI-compatible providers | proposed | A client interface, then an OpenAI-compatible client, so Arcana can run Qwen3.8-Flash-Next (125B MoE) through Strata on a 32 GB Mac with real tool calls and thinking; one engine at a time (helpers and semantic search off in Strata mode, pinned v0.2.12); neutral wording and an engine indicator; local only (hosted providers not planned). Phases 0 to 5, 6 not planned. Phase 0 partly measured (tool calls work, about 9 tok/s); waiting for the owner's Ollama comparison. |
 | [0004](0004-steady-status-bars.md) | Steady status bars | proposed | The block under the conversation keeps one height and never wraps: fixed slots and padded numbers, one transient slot, every fact shown in one place, priority-based shrinking on narrow terminals. |
 | [0005](0005-adopt-ink.md) | Adopt Ink | shipped (open questions remain) | Arcana's design and input layers come from the Ink library (`com.idea:ink`): fill Ink's gaps first, publish it locally, then attach it and delete Arcana's copies. |
+| [0006](0006-task-based-tool-sets.md) | Task-based tool sets | proposed | Offer a smaller tool set that fits the task (skill-declared sets, short descriptions for small models, profiles or merged overlaps), judged by a tool-call eval and Usage → Tools → By model; switched-off tools and the duplicate tool list already removed. |
 
 ## Status values
 

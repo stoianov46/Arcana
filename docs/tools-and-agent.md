@@ -86,8 +86,13 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 
 Allowed roots = vault root + the **working folder** (`projectFolder`, Settings label *Working folder*) + `toolFolders` (`;`-separated, `~` expanded). Writes additionally refuse any path containing a `.git`
 or `.obsidian` segment. Backups: `<config dir>/backups/<yyyyMMdd-HHmmss>-<name>` (suffix `.2`, `.3` on collision).
-`ToolBox.cheatSheet()` lists every tool with its exact parameter names (optional ones end in `?`); it goes into the system prompt
-with `ToolBox.describe()` so small models neither forget nor invent tools.
+`ToolBox.cheatSheet()` lists every tool with its exact parameter names (optional ones end in `?`). It is no longer put into the system prompt (since 2026-11-24): the tool definitions
+travel with every request, and a second list cost about a thousand tokens per request; it stays for tests and diagnostics.
+
+**Switched-off tools are not offered.** With shell commands off (`toolShell`) `run_command` is not in `specs`; with the web off (`toolWeb`) `web_search`, `fetch_url` and `http_request` are not.
+`ToolBox.switchedOff` (`shell`, `web`; empty in plan mode) is offered as one tool instead, **`turn_on_tools(what, reason)`** (`turnOnToolsDefinition`, `what` limited to what is off):
+`ChatSession.turnOnTools` shows the same dialog as before ("Turn on shell commands?" / "Turn on web pages?"), and on yes changes the setting and gives the model the tools at once.
+A call to a switched-off tool (`OFF_TOOLS`) answers "is switched off. Call turn_on_tools …".
 
 ## Key types (`core/Tools.kt`)
 
@@ -159,7 +164,7 @@ gets an error telling it to call again. Offered in plan mode and when tools are 
 
 `toolAutoShell` (`/autorun`, Settings → Tools → *Run commands without asking*) skips the approval of every command; blocked ones are refused before the approval step, so they still never run. The Chat status bar shows a red `▶ auto-run` pill while it is on (and not in Plan mode).
 
-`ToolRisk.Shell`, off by default (`toolShell`; the first call asks "Turn on shell commands?"). `ShellPolicy` (core/Shell.kt):
+`ToolRisk.Shell`, off by default (`toolShell`; while off the model asks with `turn_on_tools`, which shows "Turn on shell commands?"). `ShellPolicy` (core/Shell.kt):
 `blockedReason` refuses sudo, `rm -r` on `/ ~ * ..`, disk formatting, fork bombs and download-into-shell; `isSafe` lets only single simple
 commands (pwd, date, whoami, uname, hostname, which, git status/log/diff/show/branch/…) run without a prompt when *Read without asking* is
 on. Everything else shows "Run this command?" with the command, folder and timeout (never "always"). `runShell`: `/bin/sh -c`, stdin
@@ -190,7 +195,13 @@ Models reach for `curl` whenever they must POST or send a key, and a shell would
 
 `fetch_url` only reads (GET). Sending anything (POST, PUT, PATCH, DELETE), headers, keys or a body is `http_request`, below; `curl` and `wget` are refused in `run_command`.
 
-`ToolRisk.Web`, off by default (`toolWeb`; first call asks "Turn on web pages?"). `WebPolicy.refusal` (core/Web.kt): http/https only, no
+`ToolRisk.Web`, off by default (`toolWeb`; while off the model asks with `turn_on_tools`, which shows "Turn on web pages?").
+
+**Web content in a turn (`WebTaint`, `askAfterWeb`, Settings → Tools → *Ask after web*, on by default).** A web tool's result goes to the model wrapped as `<untrusted source="…">…</untrusted>`
+(`WebTaint.wrap`; vault excerpts are wrapped as `<note path="…">`, and `Prompts.UNTRUSTED_NOTE` in the system prompt says both are material, never instructions; notes you attach yourself are
+not wrapped, you attach them to be followed). From the first web result of a turn on (`ChatSession.webInTurn`, the hosts read in `webHosts`), every Write and Shell call and every
+`fetch_url` / `http_request` to a new host or with a query (`WebTaint.newPlace`) asks, even in Auto mode, after "always", with `toolAutoShell` or `toolAutoSearch`; the dialog adds
+`WebTaint.NOTE` and offers no "always". `web_search` itself is not held back. Off: everything runs as the mode says. `WebPolicy.refusal` (core/Web.kt): http/https only, no
 user info, and the host must resolve to public addresses only (loopback, link-local, site-local, 100.64/10, fc00::/7, multicast and
 `0.0.0.0` are refused). `fetchUrl` follows redirects by hand (≤5) re-checking every hop; reads ≤2 MB; HTML → `htmlToText` (title,
 headings `#`, list items `-`, links `text (url)`, scripts/styles dropped), JSON/text as is, PDF through `TextFiles`; 20,000 characters per
@@ -234,7 +245,7 @@ locate…") gets a hidden "continue now" message (≤2 **in a row**: the counter
 ## Memory file
 
 The vault note `ARCANA.md` is added to the system prompt (see [functionality.md](functionality.md)); the `remember` tool appends to it.
-The template holds seventeen rules for using tools. `ToolBox.cheatSheet()` supplies the exact tool list, so the note needs no copy of it.
+The template holds seventeen rules for using tools. The tool definitions sent with every request are the exact tool list, so the note needs no copy of it.
 
 ## Rendering in chat (`screens/Chat.kt`)
 
@@ -268,7 +279,7 @@ Brain/Library reread the vault.
 2. Keep path handling through `access.resolve(...)` (files) or `Vault` methods (notes); throw `IllegalArgumentException` with a helpful
    message (it becomes `Error: …` for the model). If it takes a folder argument, add it to `folderToGrant`.
 3. A tool that needs UI (like `ask_user`) is intercepted in `ChatSession.runTools`.
-4. Add a test in `CoreTest` (sandbox, backups, error cases, the cheat sheet picks it up automatically). Update the Guide's "Letting it act"
+4. Add a test in `CoreTest` (sandbox, backups, error cases; `cheatSheet()` and `definitions()` pick it up automatically). Update the Guide's "Letting it act"
    section, the Changelog page and this file.
 5. For a risky capability add a risk level and an explicit preview first.
 
