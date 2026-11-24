@@ -305,6 +305,22 @@ class PaneEditor {
     }
 }
 
+/**
+ * `gpu 21 GB · ~24k fits`: how much memory the GPU may take on a Mac (`gpu*` when it was raised with sysctl) and about how much context fits next to the model's weights; orange when
+ * the window asked for is larger than that. Null when neither is known.
+ */
+internal fun memoryLine(app: AppContext, plain: Boolean): Pair<String, Color>? {
+    val gpu = app.gpuCap
+    val room = app.tokenRoom
+    if (gpu == null && room == null) return null
+    val parts = buildList {
+        gpu?.let { add("gpu ${com.arcana.brain.core.ModelFit.gb(it.bytes)}${if (it.custom) "*" else ""}") }
+        room?.let { add("~${UsageStats.contextSize(it)} fits") }
+    }
+    val over = room != null && app.config.contextTokens > 0 && app.config.contextTokens > room
+    return ((if (plain) "mem " else "▣ ") + parts.joinToString(" · ")) to (if (over) Palette.Orange else Palette.Dim)
+}
+
 /** A shorter name for an option, for a narrow column. */
 internal fun paneName(p: Sampling.Param): String = when (p.key) {
     "temperature" -> "Temp"
@@ -482,6 +498,10 @@ internal fun StatusPane(app: AppContext, chat: ChatSession, d: PaneEditor, focus
             Triple(PaneRows.KEEP, "Keep", if (c.compactKeepPercent <= 0) "last 2" else "${c.compactKeepPercent} %"),
         )
         ctxSettings.filter { it.first in shown }.forEach { (row, name, value) -> ValueRow(name, value, focused && d.index == row, if (row == PaneRows.AUTO && c.autoCompactPercent <= 0) Palette.Muted else Palette.Text) }
+        // the memory the context has to fit in: the Mac's GPU limit (read only; raising it is a sudo command, see Settings → Ollama → Context window) and about how much context fits
+        if (!tight) memoryLine(app, plain)?.let { (text, tone) -> Label(text, color = tone, wrap = true) }
+        val (freed, freedAt) = app.freed
+        if (!tight && freed.isNotEmpty() && System.currentTimeMillis() - freedAt < 120_000) Label("unloaded ${freed.joinToString(", ")} to make room", color = Palette.Dim, wrap = true)
         val summaries = chat.messages.count { Compaction.isSummary(it) }
         if (summaries > 0 && !tight) Label("compacted ×$summaries · older messages are summarized for the model", color = Palette.Dim, wrap = true)
 

@@ -80,7 +80,16 @@ class AppContext(
         private set
 
     /** About how many tokens of context fit in this machine's memory next to the chat model's weights; null when it cannot be worked out. An estimate (see [com.arcana.brain.core.ModelFit.tokenRoom]). */
-    val tokenRoom: Long? get() = com.arcana.brain.core.ModelFit.tokenRoom(com.arcana.brain.core.ModelFit.physicalMemory(), modelSizes[config.model] ?: 0L, kvBytesPerToken)
+    val tokenRoom: Long? get() = com.arcana.brain.core.ModelFit.physicalMemory().let { ram ->
+        com.arcana.brain.core.ModelFit.tokenRoom(ram, modelSizes[config.model] ?: 0L, kvBytesPerToken, com.arcana.brain.core.ModelFit.usable(ram, gpuCap))
+    }
+
+    /** How much memory the Mac's GPU may take (null = not a Mac with that limit), read with the connection: what [tokenRoom] and the status pane go by. */
+    var gpuCap by mutableStateOf<com.arcana.brain.core.GpuMemory.Cap?>(null)
+        private set
+
+    /** The models Arcana last unloaded to make room for another one (see `OllamaClient.makeRoom`) and when; empty until it happens. Shown in the status pane for a while. */
+    var freed by mutableStateOf<Pair<List<String>, Long>>(emptyList<String>() to 0L)
 
     /** How many experts the model has when it is a mixture of experts (0 = dense or unknown). */
     var experts by mutableStateOf(0)
@@ -138,7 +147,12 @@ class AppContext(
 
     var modelContext by mutableStateOf(0)
         private set
-    val client = OllamaClient { config }
+    val client = OllamaClient { config }.also {
+        OllamaClient.unloaded = { model ->
+            val (names, at) = freed
+            freed = (if (System.currentTimeMillis() - at < 5_000) names + model else listOf(model)) to System.currentTimeMillis()
+        }
+    }
 
     /** The scope replies are generated in: the app's own, so a reply keeps streaming when you switch to another screen. */
     lateinit var scope: kotlinx.coroutines.CoroutineScope
@@ -245,6 +259,7 @@ class AppContext(
         val shown = if (connection is Connection.Online) runCatching { client.show(config.model) }.getOrNull() else null
         modelContext = shown?.contextLength ?: 0
         modelSizes = runCatching { client.modelSizes() }.getOrDefault(emptyMap())
+        gpuCap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.arcana.brain.core.GpuMemory.current() }
         refreshLoadedContext()
         val capabilities = shown?.capabilities?.takeIf { it.isNotEmpty() }
         vision = capabilities?.let { "vision" in it }

@@ -8,6 +8,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -217,6 +218,57 @@ class CoreTest {
         assertTrue(big > ModelFit.tokenRoom(16 * gb, 5 * gb, kv)!!)
         assertEquals(0L, ModelFit.tokenRoom(8 * gb, 9 * gb, kv))
         assertNull(ModelFit.tokenRoom(16 * gb, 5 * gb, 0))
+        // a GPU limit below the rule of thumb leaves less room
+        assertTrue(ModelFit.tokenRoom(32 * gb, 5 * gb, kv, 20 * gb)!! < ModelFit.tokenRoom(32 * gb, 5 * gb, kv)!!)
+    }
+
+    @Test
+    fun gpuLimitFollowsMacDefaultsAndSysctl() {
+        val gib = 1L shl 30
+        assertEquals(GpuMemory.Cap(32 * gib * 2 / 3, false), GpuMemory.cap(32 * gib, 0))
+        assertEquals(GpuMemory.Cap(64 * gib * 3 / 4, false), GpuMemory.cap(64 * gib, 0))
+        assertEquals(GpuMemory.Cap(26624L shl 20, true), GpuMemory.cap(32 * gib, 26624))
+        assertNull(GpuMemory.cap(32 * gib, null))
+        // a fifth (at least 6 GB) is left for macOS
+        assertEquals(32 * 1024L * 4 / 5, GpuMemory.suggestedMb(32 * gib))
+        assertEquals(128 * 1024L * 4 / 5, GpuMemory.suggestedMb(128 * gib))
+        assertEquals(32 * gib, ModelFit.usable(64 * gib, GpuMemory.Cap(32 * gib, true)))
+        assertEquals(ModelFit.budget(64 * gib), ModelFit.usable(64 * gib, null))
+    }
+
+    @Test
+    fun makingRoomUnloadsOnlyWhatMustGo() {
+        val gb = 1_000_000_000L
+        val worker = LoadedModel("qwen3.6:35b-a3b", 23 * gb, 23 * gb, 32768)
+        val embed = LoadedModel("nomic-embed-text:latest", gb / 2, gb / 2, 2048)
+        // both fit: nothing is unloaded (the Oracul and the worker may stay loaded together)
+        assertEquals(emptyList<String>(), ModelFit.toUnload("gemma4:26b", 10 * gb, 0, listOf(embed), 21 * gb))
+        // the big one has to go, the small embedding model can stay
+        assertEquals(listOf(worker.name), ModelFit.toUnload("gemma4:31b", 19 * gb, 8192, listOf(worker, embed), 21 * gb))
+        // already loaded with this context: nothing to do; with another one Ollama reloads it, so the others are weighed again
+        assertEquals(emptyList<String>(), ModelFit.toUnload("qwen3.6:35b-a3b", 30 * gb, 32768, listOf(worker, embed), 21 * gb))
+        assertEquals(listOf(embed.name), ModelFit.toUnload("qwen3.6:35b-a3b", 20_800_000_000, 8192, listOf(worker, embed), 21 * gb))
+        // unknown size: nothing is guessed
+        assertEquals(emptyList<String>(), ModelFit.toUnload("x", 0, 0, listOf(worker), 21 * gb))
+        assertEquals(19 * gb + 1000L * 8192, ModelFit.loadedNeed(19 * gb, 1000, 8192))
+        assertEquals(ModelFit.need(19 * gb), ModelFit.loadedNeed(19 * gb, 0, 8192))
+    }
+
+    @Test
+    fun outOfMemoryErrorsAreExplained() {
+        val metal = "mlx runner failed: panic: mlx: [METAL] Command buffer execution failed: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory). at /Users/runner/work/ollama/ollama/build/darwin-sources/_deps/mlx-c-src/mlx/c/transforms.cpp:73"
+        assertTrue(OllamaProtocol.isOutOfMemory(metal))
+        assertTrue(OllamaProtocol.isOutOfMemory("model requires more system memory (24.1 GiB) than is available (18.2 GiB)"))
+        assertFalse(OllamaProtocol.isOutOfMemory("error parsing tool call"))
+        val gib = 1L shl 30
+        val text = OllamaProtocol.outOfMemoryMessage(metal, "qwen3.6:35b-a3b", 32768, 23_000_000_000, 100_000, 32 * gib, GpuMemory.cap(32 * gib, 0))
+        assertTrue(text.startsWith("Out of memory: qwen3.6:35b-a3b with a 32k context needs about 26 GB"), text)
+        assertTrue("GPU may use" in text && "macOS default" in text && "smaller Context window" in text && "sudo sysctl iogpu.wired_limit_mb=26214" in text, text)
+        assertTrue("(Ollama: mlx runner failed" in text && text.length < 600, text)
+        // the limit already raised: no command suggested
+        assertFalse("sudo" in OllamaProtocol.outOfMemoryMessage(metal, "m", 0, 0, 0, 32 * gib, GpuMemory.cap(32 * gib, 28000)))
+        // a remote server: no local limit claimed
+        assertFalse("GPU may use" in OllamaProtocol.outOfMemoryMessage(metal, "m", 0, 0, 0, 0, null))
     }
 
     @Test

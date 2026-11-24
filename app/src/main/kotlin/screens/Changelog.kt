@@ -26,8 +26,9 @@ private fun changePages() = listOf(
         "Latest", "The latest work",
         """
 # The latest work
+- **Out of memory, explained and avoided:** Ollama's `HTTP 500 … Insufficient Memory` (the MLX runner on a Mac) now reads as one plain sentence: which model and context did not fit, about how much they need, the GPU limit, and what to do (smaller window, smaller model, close apps, or the `sudo sysctl iogpu.wired_limit_mb=…` command for your machine). Before each request to a local Ollama, other loaded models are unloaded when the new one would not fit next to them (biggest first; models that fit together stay). The context estimates now use the Mac's real GPU limit, shown in the status pane (`▣ gpu 23 GB · ~7.7k fits`) and in Settings → Ollama → Context window; Arcana reads the limit but never changes it.
 - **`chat_stats_json`:** a second statistics tool for the model: the same numbers as `chat_stats` (tokens, estimated cost, chat, active and generating time, tool calls, context use, the Oracul, token spend per model) as JSON with fixed names, times in seconds, so it can calculate with them or put them in a note. It was first written by the local model itself (gemma4:31b); its time fields were then corrected from milliseconds to seconds and the Oracul and spend parts added.
-Built on 24–25 October 2026. Last updated 23 November 2026.
+Built on 24–25 October 2026. Last updated 24 November 2026.
 
 ## Status has its own column, and you can edit in it
 - **Arcana now runs on the Ink design system:** colours, text editing, scrolling, Markdown, pickers and the status bar come from the shared Ink library, so a fix there reaches Arcana and CosmoCLI alike. The theme list is Ink's, 19 themes (new: High contrast, Cosmo, Colour-blind Dark and Light, Amber and Hacker terminal): Settings → Appearance → Colour theme.

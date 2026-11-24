@@ -473,7 +473,7 @@ internal fun hardwareWarnings(app: AppContext, plain: Boolean): List<Pair<String
         out += "$mark ctx ${UsageStats.contextSize(config.contextTokens.toLong())} > model ${UsageStats.contextSize(app.modelContext.toLong())}" to Palette.Orange
     val window = effectiveContext(config.contextTokens, app.modelContext, app.loadedContext)
     // the window asked for needs more cache than this machine's memory leaves next to the model's weights
-    app.tokenRoom?.takeIf { config.contextTokens > 0 && config.contextTokens > it && it > 0 }?.let { out += "$mark ctx ${UsageStats.contextSize(config.contextTokens.toLong())} > ~${UsageStats.contextSize(it)} fits in memory" to Palette.Orange }
+    app.tokenRoom?.takeIf { config.contextTokens > 0 && config.contextTokens > it && it > 0 }?.let { out += "$mark ctx ${UsageStats.contextSize(config.contextTokens.toLong())} > ~${UsageStats.contextSize(it)} fits in ${if (app.gpuCap != null) "GPU memory" else "memory"}" to Palette.Orange }
     if (window in 1 until COMFORTABLE_CONTEXT) out += "$mark ctx ${UsageStats.contextSize(window.toLong())} is small" to Palette.Orange
     return out
 }

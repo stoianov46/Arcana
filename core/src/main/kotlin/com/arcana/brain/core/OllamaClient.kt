@@ -369,6 +369,32 @@ object OllamaProtocol {
     fun parseModels(body: String): List<String> =
         json.decodeFromString<WireTags>(body).models.map { it.name }.sorted()
 
+    /** True when an error from Ollama says the model ran out of memory (Metal's "Insufficient Memory" from the MLX runner, CUDA, llama.cpp allocation failures). */
+    fun isOutOfMemory(error: String): Boolean =
+        Regex("""(?i)insufficient memory|out ?of ?memory|OutOfMemory|failed to allocate|cudaMalloc failed|unable to allocate|requires more system memory""").containsMatchIn(error)
+
+    /**
+     * The message for an out-of-memory error: which model and context did not fit, how much the GPU may use ([gpu], on a Mac) and what to do about it, with Ollama's own words,
+     * shortened, at the end. [weightsBytes] and [kvBytesPerToken] (0 = unknown) give the estimate of what was needed.
+     */
+    fun outOfMemoryMessage(error: String, model: String, context: Int, weightsBytes: Long, kvBytesPerToken: Long, ramBytes: Long, gpu: GpuMemory.Cap?): String {
+        val ctx = if (context > 0) " with a ${UsageStats.contextSize(context.toLong())} context" else ""
+        val need = ModelFit.loadedNeed(weightsBytes, kvBytesPerToken, context).takeIf { it > 0 }?.let { " needs about ${ModelFit.gb(it)}" }.orEmpty()
+        val limit = when {
+            gpu != null -> ", more than the ${GpuMemory.describe(gpu)} the GPU may use"
+            ramBytes > 0 -> ", more than this machine's ${ModelFit.gb(ramBytes)} can hold next to everything else"
+            else -> ""
+        }
+        val fixes = buildList {
+            add(if (context > 0) "a smaller Context window (Settings → Ollama, or the status pane)" else "a smaller Context window (Settings → Ollama)")
+            add("a smaller model (Ctrl+O)")
+            add("closing other apps")
+            if (gpu != null && ramBytes > 0 && GpuMemory.suggestedMb(ramBytes) * (1L shl 20) > gpu.bytes) add("raising the GPU limit with `${GpuMemory.raiseCommand(ramBytes)}` (until the next restart)")
+        }
+        val said = error.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().trim().let { if (it.length > 160) it.take(159) + "…" else it }
+        return "Out of memory: $model$ctx$need$limit, so Ollama could not run it. Try ${fixes.dropLast(1).joinToString(", ")} or ${fixes.last()}. (Ollama: $said)"
+    }
+
     /** The body of `/api/embed`: one vector per entry of [inputs], in order. */
     fun embedRequest(model: String, inputs: List<String>): JsonObject = buildJsonObject {
         put("model", model)
@@ -393,6 +419,7 @@ class OllamaClient(private val config: () -> AppConfig) {
     /** [repeatPenalty] (Ollama's `repeat_penalty`, 1.0 = none) is sent only for a retry after a loop; normally the model's own default stands. */
     fun chat(messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, repeatPenalty: Double? = null): Flow<ChatChunk> = flow {
         val cfg = config()
+        runCatching { makeRoom(cfg) }
         val request = HttpRequest.newBuilder(endpoint(cfg, "/api/chat"))
             .timeout(Duration.ofSeconds(cfg.timeoutSeconds.toLong()))
             .header("Content-Type", "application/json")
@@ -409,13 +436,20 @@ class OllamaClient(private val config: () -> AppConfig) {
             }
             if (response.statusCode() != 200) {
                 val body = response.body().use { it.toList().joinToString("\n") }
-                throw OllamaException("Ollama returned HTTP ${response.statusCode()}: ${errorText(body)}")
+                val error = errorText(body)
+                if (OllamaProtocol.isOutOfMemory(error)) throw outOfMemory(cfg, error)
+                throw OllamaException("Ollama returned HTTP ${response.statusCode()}: $error")
             }
             response.body().use { lines ->
                 for (line in lines) {
                     currentCoroutineContext().ensureActive()
                     if (line.isBlank()) continue
-                    val chunk = OllamaProtocol.parseChunk(line)
+                    val chunk = try {
+                        OllamaProtocol.parseChunk(line)
+                    } catch (e: OllamaException) {
+                        // the runner can also die part-way, once the context cache grows past what the GPU may take
+                        if (OllamaProtocol.isOutOfMemory(e.message.orEmpty())) throw outOfMemory(cfg, e.message.orEmpty()) else throw e
+                    }
                     emit(chunk)
                     if (chunk.done) break
                 }
@@ -424,6 +458,61 @@ class OllamaClient(private val config: () -> AppConfig) {
             handle.dispose()
         }
     }.flowOn(Dispatchers.IO)
+
+    /** True when [cfg]'s Ollama runs on this machine, so this machine's memory is the one that counts. */
+    private fun local(cfg: AppConfig): Boolean =
+        runCatching { URI.create(cfg.ollamaUrl.trim()).host?.lowercase()?.trim('[', ']') }.getOrNull() in setOf("localhost", "127.0.0.1", "::1", "0.0.0.0")
+
+    /** What a token of context costs for a model, from `/api/show`, kept per server and model (it does not change). */
+    private val kvCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private suspend fun kvBytes(cfg: AppConfig, model: String): Long =
+        kvCache[cfg.ollamaUrl + " " + model] ?: (runCatching { show(model).kvBytesPerToken }.getOrNull() ?: 0L).also { kvCache[cfg.ollamaUrl + " " + model] = it }
+
+    /**
+     * Before a request to a local Ollama: when [cfg]'s model is not loaded yet (or will be reloaded with another context) and it would not fit next to the models already in memory,
+     * unloads those others, biggest first, until it fits ([ModelFit.toUnload]). Ollama would otherwise try to keep them and its MLX runner can run out of memory and crash.
+     * The limit is the Mac's GPU limit, or ~70% of the memory elsewhere. Never throws; a remote server is left alone (its memory is not this machine's).
+     */
+    private suspend fun makeRoom(cfg: AppConfig) {
+        if (!local(cfg)) return
+        val ram = ModelFit.physicalMemory().takeIf { it > 0 } ?: return
+        val loaded = loadedModels() ?: return
+        // nothing else in memory: nothing to make room from
+        if (loaded.none { !ModelStatus.sameModel(it.name, cfg.model) }) return
+        val mine = loaded.firstOrNull { ModelStatus.sameModel(it.name, cfg.model) }
+        if (mine != null && (cfg.contextTokens <= 0 || mine.context <= 0 || mine.context == cfg.contextTokens)) return
+        val sizes = modelSizes()
+        val weights = sizes[cfg.model] ?: sizes["${cfg.model}:latest"] ?: return
+        val need = ModelFit.loadedNeed(weights, kvBytes(cfg, cfg.model), cfg.contextTokens)
+        ModelFit.toUnload(cfg.model, need, cfg.contextTokens, loaded, ModelFit.usable(ram, GpuMemory.current())).forEach { unload(cfg, it) }
+    }
+
+    /** Asks Ollama to unload [model] now (`keep_alive: 0`, what `ollama stop` does); failures are ignored. */
+    private fun unload(cfg: AppConfig, model: String) {
+        val request = HttpRequest.newBuilder(endpoint(cfg, "/api/generate"))
+            .timeout(Duration.ofSeconds(30))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(buildJsonObject { put("model", model); put("keep_alive", 0) }.toString()))
+            .build()
+        runCatching { http.send(request, HttpResponse.BodyHandlers.discarding()) }
+        unloaded(model)
+    }
+
+    /** The clear message for an out-of-memory [error] from Ollama (see [OllamaProtocol.outOfMemoryMessage]), with the sizes Ollama can still tell. */
+    private suspend fun outOfMemory(cfg: AppConfig, error: String): OllamaException {
+        val ram = ModelFit.physicalMemory()
+        val local = local(cfg)
+        val sizes = if (local) runCatching { modelSizes() }.getOrDefault(emptyMap()) else emptyMap()
+        val weights = sizes[cfg.model] ?: sizes["${cfg.model}:latest"] ?: 0L
+        val kv = if (local && cfg.contextTokens > 0) runCatching { kvBytes(cfg, cfg.model) }.getOrDefault(0L) else 0L
+        return OllamaException(OllamaProtocol.outOfMemoryMessage(error, cfg.model, cfg.contextTokens, weights, kv, if (local) ram else 0L, if (local) GpuMemory.current() else null))
+    }
+
+    companion object {
+        /** Told the name of each model Arcana unloads to make room (see [makeRoom]), for the status line; set by the app. */
+        @Volatile var unloaded: (String) -> Unit = {}
+    }
 
     /** What the model can do, as Ollama reports it ("completion", "vision", "tools", "thinking"…); empty when it does not say. */
     suspend fun capabilities(model: String): List<String> = show(model).capabilities

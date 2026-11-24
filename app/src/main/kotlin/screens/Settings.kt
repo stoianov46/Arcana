@@ -677,7 +677,10 @@ private fun contextNote(app: AppContext): String {
         "\nOllama holds ${gb(m.sizeBytes)} for ${config.model} with this window (weights plus the cache)." +
             if (memory > 0 && m.sizeBytes > memory * 0.8) " ⚠ That is ${m.sizeBytes * 100 / memory}% of this machine's ${gb(memory)}: other programs will swap. A smaller window frees most of it." else ""
     }.orEmpty()
-    val room = app.tokenRoom?.let { "\nMemory: about ${real(it)} of context fit on this machine next to ${config.model}'s weights (an estimate from the model's cache size and ~70% of the memory)." }.orEmpty()
+    val gpu = app.gpuCap
+    val limit = if (gpu != null) "the ${com.arcana.brain.core.GpuMemory.describe(gpu)} the GPU may use" else "~70% of the memory"
+    val room = app.tokenRoom?.let { "\nMemory: about ${real(it)} of context fit on this machine next to ${config.model}'s weights (an estimate from the model's cache size and $limit)." }.orEmpty() +
+        gpu?.let { g -> val ram = com.arcana.brain.core.ModelFit.physicalMemory(); if (ram > 0 && com.arcana.brain.core.GpuMemory.suggestedMb(ram) * (1L shl 20) > g.bytes) "\nTo give the GPU more, run ${com.arcana.brain.core.GpuMemory.raiseCommand(ram)} in a terminal (asks for your password, lasts until the next restart; Arcana does not change it)." else null }.orEmpty()
     return slow + held + room + (if (tooBig) "\n⚠ You ask for ${real(config.contextTokens.toLong())} but ${config.model} is built for ${real(app.modelContext.toLong())}: the rest is wasted memory (the cache for the window is allocated up front) and can make your Mac swap. Choose ${real(app.modelContext.toLong())} or less." else "") + "\nRight now: " + when {
         loaded > 0 -> "Ollama runs ${config.model} with a window of ${real(loaded.toLong())}" +
             (if (config.contextTokens > 0 && loaded != config.contextTokens) " (you asked for ${real(config.contextTokens.toLong())}; Ollama's figure is the one that counts)" else "") +
@@ -778,7 +781,7 @@ fun SettingsScreen(app: AppContext) {
                             if (editor.embed) append(if ("embed" in d.name.lowercase()) " · embedding model" else " · not named like an embedding model (bge-m3 and all-minilm are, despite the name)")
                         }
                     }
-                    val machine = if (ram > 0) "this machine ${com.arcana.brain.core.ModelFit.gb(ram)}, ~${com.arcana.brain.core.ModelFit.gb(com.arcana.brain.core.ModelFit.budget(ram))} for models" else if (editor.oracul && app.config.oraculUrl.isNotBlank()) "the Oracul server's memory is unknown here" else ""
+                    val machine = if (ram > 0) "this machine ${com.arcana.brain.core.ModelFit.gb(ram)}, ~${com.arcana.brain.core.ModelFit.gb(com.arcana.brain.core.ModelFit.budget(ram))} for models" + (app.gpuCap?.let { " (GPU limit ${com.arcana.brain.core.GpuMemory.describe(it)})" }.orEmpty()) else if (editor.oracul && app.config.oraculUrl.isNotBlank()) "the Oracul server's memory is unknown here" else ""
                     editing = Editing.PickModel(editor, models, notes, androidx.compose.runtime.mutableStateListOf<String>().also { t -> if (editor.multi) t += editor.get(app.config).split(',').map { it.trim() }.filter { it.isNotEmpty() } }, machine)
                 } catch (e: Exception) {
                     notice = Notice("${e.message} Type the model name instead.", isError = true)
