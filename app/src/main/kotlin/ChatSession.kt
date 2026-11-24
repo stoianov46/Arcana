@@ -741,8 +741,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     /** The project folder from Settings (a missing or non-folder path counts as none). */
-    fun projectFolder(config: AppConfig): java.nio.file.Path? =
-        config.projectFolder.trim().takeIf { it.isNotEmpty() }?.let { AppContext.expandHome(it) }?.takeIf { java.nio.file.Files.isDirectory(it) }
+    fun projectFolder(config: AppConfig): java.nio.file.Path? = com.arcana.brain.core.ToolSettings.projectFolder(config)
 
     /** The run now going on, or the last one: one request of the user and everything done to answer it. Every note its tools write is recorded against it. */
     var run: Origin? = null
@@ -770,27 +769,15 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** The tools for the current settings, or null when tools are off. */
     fun toolboxFor(config: AppConfig): ToolBox? {
         if (!config.toolsEnabled) return null
-        val folders = config.toolFolders.split(';').map { it.trim() }.filter { it.isNotEmpty() }.map { AppContext.expandHome(it) }
         val vault = app.openVault().getOrNull()
+        val settings = com.arcana.brain.core.ToolSettings.of(config, ConfigStore.defaultPath().resolveSibling("backups"), app.skillsFolder(config), notesSearched(config))
         return ToolBox(
-            vault, folders,
-            backups = ConfigStore.defaultPath().resolveSibling("backups"),
-            outputFolder = config.outputFolder,
-            project = projectFolder(config),
-            model = config.model,
-            readOnly = config.toolMode == "plan",
-            shell = config.toolShell,
-            web = config.toolWeb,
-            searchBackend = config.searchBackend, searchUrl = config.searchUrl, searchKey = config.searchKey, ollamaKey = config.ollamaKey,
-            skillsFolder = if (config.skillsEnabled) app.skillsFolder(config) else "",
+            vault, settings,
             semantic = semanticIndexFor(config, vault)?.let { SemanticSearch(it) },
-            searchTuning = SearchTuning.of(config),
-            notesSearch = notesSearched(config),
-            searchMode = RetrievalMode.of(config.searchBy),
-            origin = run, provenance = vault?.let { provenanceFor(it) },
             projectSearch = projectRoots(config).takeIf { it.isNotEmpty() }?.let { roots ->
                 ProjectSearch(roots, { source -> projectIndexFor(config, source) }, SearchTuning.of(config), config.searchMaxFileKb.coerceIn(10, 5000) * 1000L, vaultRoot = vault?.root?.toAbsolutePath()?.normalize())
             },
+            origin = run, provenance = vault?.let { provenanceFor(it) },
         )
     }
 

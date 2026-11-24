@@ -330,11 +330,6 @@ class AppContext(
     }
 
     companion object {
-        fun expandHome(path: String): Path =
-            if (path == "~" || path.startsWith("~/")) {
-                Path.of(System.getProperty("user.home"), path.removePrefix("~").trimStart('/'))
-            } else {
-                Path.of(path)
-            }
+        fun expandHome(path: String): Path = com.arcana.brain.core.ToolSettings.expandHome(path)
     }
 }

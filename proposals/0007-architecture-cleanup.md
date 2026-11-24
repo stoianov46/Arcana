@@ -33,10 +33,10 @@ Do all eight, smallest and safest first, each phase its own commit:
 
 ## Phases
 
-1. **Code in the right place.** Move `contextTokens`, `contextUsage`, `effectiveContext` (and what they need) out of `screens/Chat.kt` into `core` (`ContextMath`), and `thinkOptions`
+1. **Code in the right place.** — done 2026-11-24. Move `contextTokens`, `contextUsage`, `effectiveContext` (and what they need) out of `screens/Chat.kt` into `core` (`ContextMath`), and `thinkOptions`
    next to the thinking levels; move `Prompts` out of `Vault.kt` into `Prompts.kt`. Test: the existing tests, unchanged.
 2. **Tests that say what broke.** Split `CoreTest.kt` by area (tools, chat stats, setup and skills, vault, sounds…); fix or quarantine the failing web search test with its reason.
-3. **Tool settings and tool files.** `ToolSettings.of(config)` builds what `ToolBox` needs from the settings in one place; `Tools.kt` splits into vault, file, web, shell, git and
+3. **Tool settings and tool files.** — done 2026-11-24 (`Tools.kt` 1,306 → 338 lines; the `ToolBox` constructor with every argument stays for the tests). `ToolSettings.of(config)` builds what `ToolBox` needs from the settings in one place; `Tools.kt` splits into vault, file, web, shell, git and
    time tools plus the definitions of the pseudo-tools. Test: a `ToolSettings` test; the tool tests unchanged.
 4. **One list of pseudo-tools.** A `PseudoTool` registry: name, definition, when it is offered, and its handler; `definitionsFor` and the dispatch in `runTools` read from it.
    Test: every pseudo-tool is offered exactly when it was before (a table test).

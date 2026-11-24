@@ -2,7 +2,7 @@
 
 Opt-in feature (`AppConfig.toolsEnabled`, default **false**). The local model may use tools to search, read and change the vault and
 files, ask the user questions, run shell commands and read web pages. Everything that changes something, runs something or reaches
-the network needs the user's confirmation in a dialog. Code: `core/Tools.kt`, `core/Shell.kt`, `core/Web.kt`,
+the network needs the user's confirmation in a dialog. Code: `core/Tools.kt` (`ToolBox`, `FileAccess`), the tools by area in `core/VaultTools.kt`, `FileTools.kt`, `WebTools.kt`, `ShellTools.kt`, `ClockTools.kt`, their settings in `core/ToolSettings.kt`, `core/Shell.kt`, `core/Web.kt`,
 `core/TextToolCalls.kt` (logic) and `app/ChatSession.kt`, `app/Generation.kt`, `app/screens/Chat.kt` (loop and dialogs).
 
 ## Sequence
@@ -275,7 +275,7 @@ Brain/Library reread the vault.
 
 ## How to add a tool
 
-1. Add a `ToolSpec` in `ToolBox.vaultTools` or `fileTools` (or a dedicated `xxxTool()` like `shellTool`, `webTool`): choose `ToolRisk`,
+1. Add a `ToolSpec` in `vaultTools` (`VaultTools.kt`) or `fileTools` (`FileTools.kt`), or a dedicated `ToolBox.xxxTool()` extension in the file of its area (like `shellTool` in `ShellTools.kt`, `webTool` in `WebTools.kt`): choose `ToolRisk`,
    write a clear `description` and a JSON schema (`schema(...)` helper), `summary`, and for anything that acts a `preview`
    (`alwaysAsk = true` for destructive ones). Add it to `specs`.
 2. Keep path handling through `access.resolve(...)` (files) or `Vault` methods (notes); throw `IllegalArgumentException` with a helpful
