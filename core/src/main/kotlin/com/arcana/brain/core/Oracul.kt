@@ -1,6 +1,7 @@
 package com.arcana.brain.core
 
 import kotlinx.coroutines.flow.collect
+import kotlinx.serialization.json.JsonObject
 
 /**
  * The Oracul: a second model that reads what the worker model answered and says what is wrong or missing (a second opinion), or answers the
@@ -152,8 +153,12 @@ object Oracul {
     const val GOAL_INSTRUCTIONS = "You check whether a goal has been reached. You are given the goal and the assistant's latest answer. Be strict about what the goal says and nothing else. " +
         "Your first line must be exactly `VERDICT: MET` or `VERDICT: NOT MET`. After NOT MET, say in at most 4 short lines what is still missing. After MET you may add one line."
 
-    /** The check's verdict from its text: the first `VERDICT: MET|NOT MET` decides. A text without one is **not** met (the text becomes the notes): unlike the controller, a goal is never assumed reached. */
+    /** The shape a goal check's reply is held to (Ollama's structured outputs): `{"verdict": "MET" | "NOT MET", "notes": "…"}`. */
+    val GOAL_SCHEMA: JsonObject = verdictSchema(listOf("MET", "NOT MET"))
+
+    /** The check's verdict from its text: the first `VERDICT: MET|NOT MET` decides (or the JSON of [GOAL_SCHEMA]). A text without one is **not** met (the text becomes the notes): unlike the controller, a goal is never assumed reached. */
     fun parseGoal(text: String): GoalCheck {
+        jsonVerdict(text, listOf("MET", "NOT MET"))?.let { (v, notes) -> return GoalCheck(v == "MET", notes) }
         val match = Regex("VERDICT:\\s*(NOT MET|MET)", RegexOption.IGNORE_CASE).find(text) ?: return GoalCheck(false, text.trim())
         return GoalCheck(!match.groupValues[1].contains("NOT", ignoreCase = true), text.substring(match.range.last + 1).trimStart('.', ':', ' ').trim())
     }
@@ -179,8 +184,12 @@ object Oracul {
         "that was not checked; do not ask for redoing because of style. Your first line must be exactly `VERDICT: DONE` or `VERDICT: REDO`. After REDO, list in at most 5 short lines what " +
         "must change. After DONE you may add one line. Keep the language of the request."
 
-    /** The controller's verdict from its text: the first `VERDICT: DONE|REDO` decides; a text without one counts as done, so a confused model never starts a loop. */
+    /** The shape a controller's reply is held to: `{"verdict": "DONE" | "REDO", "notes": "…"}`. */
+    val CONTROL_SCHEMA: JsonObject = verdictSchema(listOf("DONE", "REDO"))
+
+    /** The controller's verdict from its text (or the JSON of [CONTROL_SCHEMA]): the first `VERDICT: DONE|REDO` decides; a text without one counts as done, so a confused model never starts a loop. */
     fun parseControl(text: String): Control {
+        jsonVerdict(text, listOf("DONE", "REDO"))?.let { (v, notes) -> return Control(v == "DONE", notes) }
         val match = Regex("VERDICT:\\s*(DONE|REDO)", RegexOption.IGNORE_CASE).find(text) ?: return Control(true, text.trim())
         val notes = text.substring(match.range.last + 1).trimStart('.', ':', ' ').trim()
         return Control(match.groupValues[1].equals("DONE", ignoreCase = true), notes)
@@ -346,12 +355,27 @@ object Oracul {
         ChatMessage.user(if (background.isBlank()) question.trim().take(MAX_PART) else earlier(background) + "QUESTION:\n" + question.trim().take(MAX_PART)),
     )
 
-    /** The judge sees the question and every answer, the worker's first; [others] are the Oracul models' answers. */
-    fun judgeRequest(question: String, worker: String, workerAnswer: String, others: List<Pair<String, String>>, background: String = ""): List<ChatMessage> = listOf(
-        ChatMessage.system(JUDGE_INSTRUCTIONS),
-        ChatMessage.user(earlier(background) + "QUESTION:\n${question.trim().take(MAX_PART)}\n\nANSWER 1 ($worker):\n${workerAnswer.trim().take(MAX_PART)}" +
-            others.withIndex().joinToString("") { (i, o) -> "\n\nANSWER ${i + 2} (${o.first}):\n${o.second.trim().take(MAX_PART)}" }),
-    )
+    /**
+     * The judge sees the question and every answer, without the models' names and in [order] (a shuffle of the answers, the worker's being index 0 and [others] after it), so
+     * neither the first place nor a model's name sways it: `ANSWER A`, `ANSWER B`… [judgeLabels] gives each label its model for the reader.
+     */
+    fun judgeRequest(question: String, worker: String, workerAnswer: String, others: List<Pair<String, String>>, background: String = "", order: List<Int> = (0..others.size).toList()): List<ChatMessage> {
+        val all = listOf(worker to workerAnswer) + others
+        return listOf(
+            ChatMessage.system(JUDGE_INSTRUCTIONS),
+            ChatMessage.user(earlier(background) + "QUESTION:\n${question.trim().take(MAX_PART)}" +
+                order.withIndex().joinToString("") { (i, at) -> "\n\nANSWER ${'A' + i}:\n${all[at].second.trim().take(MAX_PART)}" }),
+        )
+    }
+
+    /** The judge's [verdict] with each `Answer A` (any case) followed by its model, from the same [order] as [judgeRequest], so the reader knows which is which. */
+    fun judgeLabels(verdict: String, worker: String, others: List<Pair<String, String>>, order: List<Int>): String {
+        val names = (listOf(worker) + others.map { it.first })
+        return Regex("""\b(ANSWER|Answer|answer) ([A-Z])\b(?! \()""").replace(verdict) { m ->
+            val at = m.groupValues[2][0] - 'A'
+            order.getOrNull(at)?.let { "${m.value} (${names[it]})" } ?: m.value
+        }
+    }
 
     /** What the worker is told when the user applies a second opinion (`/revise`): the opinion is already in its history. */
     const val REVISE_PROMPT = "Please revise your last answer using what the reviewer said above. Fix what is really wrong (use your tools to check if you need to), " +
@@ -364,6 +388,23 @@ object Oracul {
     }
 
     private const val MAX_PART = 12_000
+
+    private fun verdictSchema(values: List<String>): JsonObject = kotlinx.serialization.json.buildJsonObject {
+        put("type", kotlinx.serialization.json.JsonPrimitive("object"))
+        put("properties", kotlinx.serialization.json.buildJsonObject {
+            put("verdict", kotlinx.serialization.json.buildJsonObject { put("type", kotlinx.serialization.json.JsonPrimitive("string")); put("enum", kotlinx.serialization.json.JsonArray(values.map { kotlinx.serialization.json.JsonPrimitive(it) })) })
+            put("notes", kotlinx.serialization.json.buildJsonObject { put("type", kotlinx.serialization.json.JsonPrimitive("string")) })
+        })
+        put("required", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive("verdict"), kotlinx.serialization.json.JsonPrimitive("notes"))))
+    }
+
+    /** The verdict (one of [values], upper case) and the notes from a reply in the JSON of [verdictSchema]; null when the text is not that JSON (then the text is read as before). */
+    private fun jsonVerdict(text: String, values: List<String>): Pair<String, String>? = runCatching {
+        val o = kotlinx.serialization.json.Json.parseToJsonElement(text.trim()) as JsonObject
+        val verdict = (o["verdict"] as kotlinx.serialization.json.JsonPrimitive).content.trim().uppercase()
+        if (verdict !in values) return null
+        verdict to ((o["notes"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim().orEmpty())
+    }.getOrNull()
 
     /** The most characters of earlier chat the Oracul, the judge and the planner are shown (about 8k tokens), whatever the settings say. */
     const val MAX_BACKGROUND = 30_000
@@ -472,14 +513,26 @@ object Oracul {
     }
 
     /** Sends [request] to [client] (built for the model that should answer) and returns the text; [onUsage] sees the final chunk with the token counts. */
-    suspend fun ask(client: OllamaClient, request: List<ChatMessage>, onUsage: (ChatChunk) -> Unit = {}): String {
+    suspend fun ask(client: OllamaClient, request: List<ChatMessage>, format: kotlinx.serialization.json.JsonElement? = null, onUsage: (ChatChunk) -> Unit = {}): String {
         val text = StringBuilder()
-        client.chat(request).collect { chunk ->
+        client.chat(request, format = format).collect { chunk ->
             text.append(chunk.content)
             if (chunk.done) onUsage(chunk)
         }
         return text.toString().trim()
     }
+
+    /**
+     * [ask] with the reply held to [schema] (a verdict and notes, read by [parseControl] / [parseGoal]). An Ollama too old for a schema answers with an error: then the question
+     * is asked again as plain text, which the same parsers read as before.
+     */
+    suspend fun askVerdict(client: OllamaClient, request: List<ChatMessage>, schema: JsonObject, onUsage: (ChatChunk) -> Unit = {}): String =
+        try {
+            ask(client, request, schema, onUsage)
+        } catch (e: OllamaException) {
+            if (!e.message.orEmpty().contains("format", ignoreCase = true) && !e.message.orEmpty().contains("schema", ignoreCase = true)) throw e
+            ask(client, request, null, onUsage)
+        }
 }
 
 

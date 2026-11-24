@@ -233,6 +233,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     var promptEstimate = 0
         private set
 
+    /** About how many tokens the system prompt and the tool definitions of the last request took (they are in every request, but in no message): for the context meter. */
+    var overheadTokens by mutableStateOf(0)
+        private set
+
     /** The model that answers right now: the one a skill, the flow or the router chose, else the chat model. */
     val workerModel: String get() = runWorker ?: app.config.model
 
@@ -368,7 +372,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         consulting = controller; consultingStage = "checking the answer"
         try {
             val passed = check?.let { "`${it.first}` passed (exit code 0)." + if (it.second.output.isBlank()) "" else "\n" + it.second.output.takeLast(600) }.orEmpty()
-            val text = Oracul.ask(clientFor(controller), Oracul.controlRequest(question, answer, review, analysis, oraculBackground(), passed)) { app.recordUsage("Controller", it, controller) }
+            val text = Oracul.askVerdict(clientFor(controller), Oracul.controlRequest(question, answer, review, analysis, oraculBackground(), passed), Oracul.CONTROL_SCHEMA) { app.recordUsage("Controller", it, controller) }
             if (text.isEmpty()) { roleNote = "$controller returned an empty verdict: the answer stands."; return }
             val verdict = Oracul.parseControl(text)
             add(Oracul.controlMessage(controller, verdict))
@@ -455,7 +459,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         consulting = model; consultingStage = "checking the goal"
         try {
             val client = if (oracul.isEmpty()) app.client else clientFor(model)
-            val text = Oracul.ask(client, Oracul.goalRequest(wanted, answer, oraculBackground())) { app.recordUsage("Controller", it, model) }
+            val text = Oracul.askVerdict(client, Oracul.goalRequest(wanted, answer, oraculBackground()), Oracul.GOAL_SCHEMA) { app.recordUsage("Controller", it, model) }
             if (text.isEmpty()) { roleNote = "$model returned an empty goal check: the goal stays set."; return }
             val check = Oracul.parseGoal(text)
             add(Oracul.goalMessage(model, check))
@@ -1481,7 +1485,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 }
             }
             consulting = judge
-            val verdict = Oracul.ask(clientFor(judge), Oracul.judgeRequest(question, app.config.model, answer, answers, oraculBackground())) { app.recordUsage("Judge", it, judge) }
+            // the answers go to the judge without names and in a random order, so neither the first place nor a model's name sways it; the labels get their models back for the reader
+            val order = (0..answers.size).shuffled()
+            val verdict = Oracul.judgeLabels(Oracul.ask(clientFor(judge), Oracul.judgeRequest(question, app.config.model, answer, answers, oraculBackground(), order)) { app.recordUsage("Judge", it, judge) }, app.config.model, answers, order)
             require(verdict.isNotEmpty()) { "$judge returned an empty verdict; nothing was added." }
             add(Oracul.comparisonMessage(app.config.model, answers, judge, answer, verdict + if (skipped.isEmpty()) "" else "\n\n_Left out: ${skipped.joinToString("; ")}_"))
             return "Comparison added: ${answers.joinToString(", ") { it.first }} against ${app.config.model}, judged by $judge." + if (skipped.isEmpty()) "" else " Left out: ${skipped.joinToString { it.substringBefore(" (") }}."
@@ -1570,6 +1576,9 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     var compactingSince = 0L
         private set
     var compactingAuto = false
+
+    /** While a long chat is summarized in pieces: `2 of 5`; blank otherwise. */
+    var compactingPart by mutableStateOf("")
         private set
 
     /**
@@ -1587,12 +1596,20 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         compacting = true
         app.busy++
         try {
-            val text = StringBuilder()
-            app.client.chat(listOf(ChatMessage.system(Compaction.INSTRUCTIONS), ChatMessage.user(Compaction.transcript(part)))).collect { chunk ->
-                text.append(chunk.content)
-                if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) app.recordUsage("Compact", chunk)
+            // all of it is summarized, piece by piece (each piece with the summary so far), without thinking: a summary needs no reasoning, and thinking only makes it slower
+            var summary = ""
+            val pieces = Compaction.pieces(part)
+            for ((i, piece) in pieces.withIndex()) {
+                compactingPart = if (pieces.size > 1) "${i + 1} of ${pieces.size}" else ""
+                val text = StringBuilder()
+                app.client.chat(Compaction.pieceRequest(piece, summary), think = "off").collect { chunk ->
+                    text.append(chunk.content)
+                    if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) app.recordUsage("Compact", chunk)
+                }
+                summary = text.toString().trim()
+                require(summary.isNotEmpty()) { "The model returned an empty summary; nothing was changed." }
             }
-            val summary = text.toString().trim()
+            compactingPart = ""
             require(summary.isNotEmpty()) { "The model returned an empty summary; nothing was changed." }
             // the chat may have grown while the model wrote (the cut is counted from the start, so it is still the right place)
             val at = cut.coerceAtMost(messages.size)
@@ -1621,8 +1638,22 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     private fun autoCompactDue(all: List<ChatMessage>): Boolean {
         val percent = app.config.autoCompactPercent
         if (percent <= 0 || compacting || Compaction.cutPoint(all, keepTokens()) == null) return false
-        val usage = contextUsage(all, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext)) ?: return false
+        val usage = contextUsage(all, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), overheadTokens, aheadTokens(all)) ?: return false
         return usage.first * 100 >= percent
+    }
+
+    /**
+     * About how many tokens the next request adds that the chat does not hold yet: for a message of yours not sent so far, the notes attached to it and the vault excerpts that
+     * will be found for it (at most *Context notes* × *Chars per note*). Lets a compaction start before a big attachment pushes the request past the window.
+     */
+    private fun aheadTokens(all: List<ChatMessage>): Int {
+        val last = all.lastOrNull { it.role == "user" && !it.displayOnly } ?: return 0
+        if (last.sent.isNotEmpty()) return 0
+        val config = app.config
+        val vault = app.openVault().getOrNull()
+        val notes = if (vault == null) 0L else last.noteNames.sumOf { path -> runCatching { java.nio.file.Files.size(vault.root.resolve(path)) }.getOrDefault(0L).coerceAtMost(MAX_NOTE_CHARS.toLong()) }
+        val excerpts = if (config.chatUseVault && vault != null && notesSearched(config) && !Oracul.isArcanaPrompt(last.content)) config.contextNotes.toLong() * config.contextCharsPerNote else 0L
+        return ((notes + excerpts) / 4).toInt()
     }
 
     /** The run was cut off: the message before the one being answered is not a final answer of the model (it is a tool call or result, or your own message that got no reply). */
@@ -1717,7 +1748,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
                 }
                 val history = Compaction.forModel(messages.toList())
                 return Prompts.chatMessages(config, history, null, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, system = system)
-                    .also { request -> promptEstimate = request.sumOf { it.content.length } / 4 }
+                    .also { request ->
+                        promptEstimate = request.sumOf { Compaction.messageTokens(it) }
+                        overheadTokens = Compaction.tokens(system) + (offered?.let { Compaction.tokens(it.toString()) } ?: 0)
+                    }
             }
             refreshRequest = ::compose
             compose()

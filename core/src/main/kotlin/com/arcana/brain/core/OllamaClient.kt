@@ -206,12 +206,13 @@ object OllamaProtocol {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** [jsonMode] asks Ollama to constrain the reply to valid JSON (used when the app needs to read the answer). */
-    fun chatRequest(config: AppConfig, messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, think: kotlinx.serialization.json.JsonElement? = null, repeatPenalty: Double? = null): JsonObject = buildJsonObject {
+    /** [format] is a JSON schema the reply must follow (Ollama's structured outputs); it wins over [jsonMode]. */
+    fun chatRequest(config: AppConfig, messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, think: kotlinx.serialization.json.JsonElement? = null, repeatPenalty: Double? = null, format: kotlinx.serialization.json.JsonElement? = null): JsonObject = buildJsonObject {
         put("model", config.model)
         put("stream", true)
         if (think != null) put("think", think)
         config.keepAliveValue()?.let { put("keep_alive", it) }
-        if (jsonMode) put("format", "json")
+        if (format != null) put("format", format) else if (jsonMode) put("format", "json")
         if (tools != null && tools.isNotEmpty()) put("tools", tools)
         val sendable = messages.filter { !it.displayOnly }
         // the model's thoughts go back only for its tool calls in the turn under way (from the last real message of the user on): a reasoning model then goes on
@@ -464,19 +465,21 @@ class OllamaClient(private val config: () -> AppConfig) {
     private val thinkingValuesCache get() = thinkingValuesByModel
 
     /**
-     * [repeatPenalty] (Ollama's `repeat_penalty`, 1.0 = none) is sent only for a retry after a loop; normally the model's own default stands.
+     * [repeatPenalty] (Ollama's `repeat_penalty`, 1.0 = none) is sent only for a retry after a loop; normally the model's own default stands. [think] replaces the
+     * thinking setting for this request (`off` for work that needs no reasoning, such as a summary; sent only when the model offers it). [format] is a JSON schema
+     * the reply must follow.
      *
      * How the request is guarded: the Timeout setting is how long Ollama may take to START answering (loading the model and reading the prompt come first); once lines
      * flow, a reply that goes silent for [idleSeconds] is stopped as stalled. A failure before anything streamed (Ollama restarting, busy, its runner stopping) is tried
      * again up to [RETRIES] times; one during the stream is not (the reply would be doubled). Cancelling the collector closes the stream at once, so Ollama stops too.
      */
-    fun chat(messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, repeatPenalty: Double? = null): Flow<ChatChunk> = flow {
+    fun chat(messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, repeatPenalty: Double? = null, think: String? = null, format: kotlinx.serialization.json.JsonElement? = null): Flow<ChatChunk> = flow {
         val cfg = config()
         runCatching { makeRoom(cfg) }
         val request = HttpRequest.newBuilder(endpoint(cfg, "/api/chat"))
             .timeout(Duration.ofSeconds(cfg.timeoutSeconds.toLong()))
             .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(OllamaProtocol.chatRequest(cfg, messages, jsonMode, tools, thinkFor(cfg), repeatPenalty).toString()))
+            .POST(HttpRequest.BodyPublishers.ofString(OllamaProtocol.chatRequest(cfg, messages, jsonMode, tools, thinkFor(cfg, think), repeatPenalty, format).toString()))
             .build()
         val stream = open(cfg, request)
         // closing the stream is what really stops the request: the reader below is blocked in a read, and Ollama stops generating when the connection goes
@@ -630,8 +633,8 @@ class OllamaClient(private val config: () -> AppConfig) {
      * The `think` to send: what the setting asks for, but only when the model lists that value (a model that cannot think answers `does not support
      * thinking` to any `think`, and one with only on/off has no "low"). Null leaves it to the model.
      */
-    private suspend fun thinkFor(cfg: AppConfig): kotlinx.serialization.json.JsonElement? {
-        val wanted = OllamaProtocol.thinkValue(cfg.thinking) ?: return null
+    private suspend fun thinkFor(cfg: AppConfig, setting: String? = null): kotlinx.serialization.json.JsonElement? {
+        val wanted = OllamaProtocol.thinkValue(setting ?: cfg.thinking) ?: return null
         val allowed = thinkingValuesCache[cfg.ollamaUrl + " " + cfg.model] ?: runCatching { show(cfg.model).thinkingValues }.getOrNull()?.also { thinkingValuesCache[cfg.ollamaUrl + " " + cfg.model] = it } ?: return null
         return wanted.takeIf { (it as kotlinx.serialization.json.JsonPrimitive).content in allowed }
     }

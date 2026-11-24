@@ -461,7 +461,7 @@ internal fun StatusPane(app: AppContext, chat: ChatSession, d: PaneEditor, focus
         // Context: the bar, a key to it, and the three settings that decide it
         SectionRule("Context")
         val window = effectiveContext(c.contextTokens, app.modelContext, app.loadedContext)
-        val usage = contextTokens(chat.messages)
+        val usage = contextTokens(chat.messages, chat.overheadTokens)
         val view = compactionView(usage?.first?.toLong(), usage?.second ?: false, window, c.autoCompactPercent)
         val share = if (usage != null && window > 0) (usage.first.toDouble() / window).coerceIn(0.0, 1.0) else 0.0
         val barCells = (width - 6).coerceIn(10, 20)
@@ -490,7 +490,7 @@ internal fun StatusPane(app: AppContext, chat: ChatSession, d: PaneEditor, focus
             var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
             LaunchedEffect(Unit) { while (true) { delay(1000); now = System.currentTimeMillis() } }
             val secs = ((now - chat.compactingSince) / 1000).coerceAtLeast(0)
-            Label((if (plain) "" else "◌ ") + "summarizing the chat… ${secs}s" + if (chat.compactingAuto) " (auto)" else "", color = Palette.Orange, textStyle = TextStyle.Bold, wrap = true)
+            Label((if (plain) "" else "◌ ") + "summarizing the chat${if (chat.compactingPart.isEmpty()) "" else " (part ${chat.compactingPart})"}… ${secs}s" + if (chat.compactingAuto) " (auto)" else "", color = Palette.Orange, textStyle = TextStyle.Bold, wrap = true)
         }
         val ctxSettings = listOf(
             Triple(PaneRows.WINDOW, "Window", windowLabel(c.contextTokens).let { if (it.length + 13 > width) "Default" else it }),

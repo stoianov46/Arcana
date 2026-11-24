@@ -188,3 +188,50 @@ class FrozenRequestTest {
         assertEquals(3, built)
     }
 }
+
+/** Compaction reads everything, the estimates count what is really sent, verdicts come as JSON or text, and the judge's labels get their models back. */
+class HelperRequestTest {
+    @Test
+    fun compactionPiecesCoverTheWholeChatWithTheArgumentsOfEveryCall() {
+        val call = ToolCall(ToolFunction("read_note", kotlinx.serialization.json.buildJsonObject { put("path", kotlinx.serialization.json.JsonPrimitive("Projects/Plan.md")) }))
+        val chat = (1..40).flatMap { i -> listOf(ChatMessage.user("question $i " + "x".repeat(2_000)), ChatMessage.assistantCalls("", listOf(call)), ChatMessage.toolResult("read_note", "r"), ChatMessage.assistant("answer $i")) }
+        val pieces = Compaction.pieces(chat)
+        assertTrue(pieces.size > 1 && pieces.all { it.length <= 30_000 })
+        val all = pieces.joinToString("\n")
+        assertTrue((1..40).all { "question $it " in all && "answer $it" in all }, "nothing in the middle is left out")
+        assertTrue("(called read_note({\"path\":\"Projects/Plan.md\"}))" in all, "the paths a call used are kept")
+        assertTrue(Compaction.pieces(listOf(ChatMessage.user("y".repeat(100_000)))).let { p -> p.size == 4 && p.all { it.length <= 30_000 } })
+        val next = Compaction.pieceRequest("PART TWO", "summary so far")
+        assertTrue("EARLIER SUMMARY" in next.last().content && "summary so far" in next.last().content && next.last().content.endsWith("PART TWO"))
+        assertEquals("PART ONE", Compaction.pieceRequest("PART ONE", "").last().content)
+    }
+
+    @Test
+    fun estimatesCountWhatIsSentAndNonAsciiText() {
+        assertEquals(25, Compaction.tokens("a".repeat(100)))
+        assertEquals(40, Compaction.tokens("я".repeat(100)), "Cyrillic takes more tokens per character")
+        val frozen = ChatMessage.user("hi").copy(sent = "hi" + "e".repeat(4_000))
+        assertTrue(Compaction.messageTokens(frozen) > 1_000, "a frozen message counts with its excerpts")
+    }
+
+    @Test
+    fun verdictsAreReadFromJsonOrText() {
+        assertEquals(Oracul.Control(false, "- fix the path"), Oracul.parseControl("""{"verdict":"REDO","notes":"- fix the path"}"""))
+        assertEquals(Oracul.Control(true, ""), Oracul.parseControl("""{"verdict":"done","notes":""}"""))
+        assertEquals(Oracul.GoalCheck(false, "tags missing"), Oracul.parseGoal("""{"verdict":"NOT MET","notes":"tags missing"}"""))
+        assertEquals(Oracul.GoalCheck(true, ""), Oracul.parseGoal("VERDICT: MET"), "plain text still works")
+        assertTrue(Oracul.parseControl("""{"verdict":"MAYBE"}""").done, "an unknown verdict falls back to the text rules")
+        val request = OllamaProtocol.chatRequest(AppConfig(), listOf(ChatMessage.user("q")), format = Oracul.CONTROL_SCHEMA).toString()
+        assertTrue("\"format\":{\"type\":\"object\"" in request && "\"enum\":[\"DONE\",\"REDO\"]" in request, request)
+    }
+
+    @Test
+    fun theJudgeSeesNoNamesAndTheReaderSeesThem() {
+        val others = listOf("big" to "Answer from big.", "other" to "Answer from other.")
+        val request = Oracul.judgeRequest("Q?", "worker", "Worker's answer.", others, order = listOf(2, 0, 1)).last().content
+        assertTrue(request.indexOf("Answer from other.") < request.indexOf("Worker's answer.") && request.indexOf("Worker's answer.") < request.indexOf("Answer from big."))
+        assertTrue("worker" !in request.replace("Worker's", "") && "(big)" !in request && "ANSWER A:" in request && "ANSWER C:" in request)
+        assertEquals("Answer B (worker) is best; ANSWER C (big) misses it. Answer A (other) is close.",
+            Oracul.judgeLabels("Answer B is best; ANSWER C misses it. Answer A is close.", "worker", others, listOf(2, 0, 1)))
+    }
+}

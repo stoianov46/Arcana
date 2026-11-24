@@ -361,25 +361,28 @@ internal fun thinkingSegment(app: AppContext, plain: Boolean): StatusSegment {
 }
 
 /**
- * Tokens the context held: the last reply's prompt plus its answer, or, when the chat was compacted after that reply, an estimate of
- * what the model is sent now (the summary and the latest messages, about 4 characters a token). The flag says it is an estimate.
+ * Tokens the context holds: the last reply's prompt plus its answer as Ollama counted them, or an estimate of what the model is sent now (every message it reads, as it reads it,
+ * plus [overhead]: the system prompt and the tool definitions; see [Compaction.tokens]) when that is larger: after a compaction the counts are stale, and some Ollama versions count
+ * only the part of the prompt they did not have in their cache. The flag says it is an estimate.
  */
-internal fun contextTokens(messages: List<ChatMessage>): Pair<Int, Boolean>? {
+internal fun contextTokens(messages: List<ChatMessage>, overhead: Int = 0): Pair<Int, Boolean>? {
     val statsAt = messages.indexOfLast { (it.stats?.promptTokens ?: 0) > 0 }
     if (statsAt < 0) return null
+    val estimate = Compaction.forModel(messages).sumOf { Compaction.messageTokens(it) } + overhead
     // the counts of the last reply are stale when a summary came after it, or was inserted before it while that reply was made from the whole chat (a manual or automatic compaction)
     val summaryAt = messages.indexOfLast { Compaction.isSummary(it) }
-    if (summaryAt > statsAt || (summaryAt >= 0 && statsAt < messages[summaryAt].contextAt)) {
-        val chars = Compaction.forModel(messages).sumOf { it.content.length + it.toolCalls.sumOf { c -> c.function.arguments.toString().length } }
-        return (chars / 4) to true
-    }
+    if (summaryAt > statsAt || (summaryAt >= 0 && statsAt < messages[summaryAt].contextAt)) return estimate to true
     val stats = messages[statsAt].stats!!
-    return (stats.promptTokens + stats.completionTokens) to false
+    val counted = stats.promptTokens + stats.completionTokens
+    // well above what Ollama counted: its count left part of the prompt out, the estimate is nearer the truth
+    return if (overhead > 0 && estimate > counted * 6 / 5) estimate to true else counted to false
 }
 
 /** How full the model's context was after the last reply (its prompt plus its answer) as a share and a `13.6k/131k` text (`~` after a compaction: an estimate); null before the first reply or when the size is unknown. */
-internal fun contextUsage(messages: List<ChatMessage>, limit: Int): Pair<Double, String>? {
-    val (used, estimated) = contextTokens(messages) ?: return null
+internal fun contextUsage(messages: List<ChatMessage>, limit: Int, overhead: Int = 0, ahead: Int = 0): Pair<Double, String>? {
+    val (counted, estimated) = contextTokens(messages, overhead) ?: return null
+    // [ahead]: what the next request will add that is not in the chat yet (the excerpts and notes of the message about to be sent)
+    val used = counted + ahead
     if (limit <= 0) return null
     return (used.toDouble() / limit).coerceIn(0.0, 1.0) to "${if (estimated) "~" else ""}${UsageStats.compact(used.toLong())}/${UsageStats.contextSize(limit.toLong())}"
 }
@@ -532,7 +535,7 @@ private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memor
             else add(statusSegment("", "✎ no ARCANA.md", Palette.Muted, 3))
         }
         val window = effectiveContext(config.contextTokens, app.modelContext, app.loadedContext)
-        contextUsage(chat.messages, window)?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
+        contextUsage(chat.messages, window, chat.overheadTokens)?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
         // a small window drops the oldest text without a word: say so before it matters (Settings → Ollama → Context window)
         // ↑ (prompt) is exact and moves when a request ends; ↓ (reply) also counts the pieces streaming right now, until the exact figure replaces them
         if (stats.isNotEmpty() || app.liveTokens > 0) add(StatusSegment(listOf(StatusPart("↑${compact(stats.sumOf { it.promptTokens.toLong() })}", Palette.Blue), StatusPart(" ↓${compact(stats.sumOf { it.completionTokens.toLong() } + app.liveTokens)}", Palette.Green)), 10))
@@ -1595,7 +1598,7 @@ fun ChatScreen(app: AppContext) {
                         }
                         output.copyPlain = app.config.copyAs == "plain"
                         ScrollView(lines, scrollRows, output)
-                        ReplyStatus(app, gen, compactingSince = chat.compactingSince.takeIf { chat.compacting }, compactingAuto = chat.compactingAuto, consulting = chat.consulting, consultingSince = chat.consultingSince, consultingStage = chat.consultingStage)
+                        ReplyStatus(app, gen, compactingSince = chat.compactingSince.takeIf { chat.compacting }, compactingAuto = chat.compactingAuto, compactingPart = chat.compactingPart, consulting = chat.consulting, consultingSince = chat.consultingSince, consultingStage = chat.consultingStage)
                         chat.indexing?.let { Label((if (app.config.plainGlyphs) "" else "◌ ") + it, color = Palette.Blue) }
                     }
                 }

@@ -174,7 +174,8 @@ class OraculTest {
             assertTrue("judged by judge" in told, told)
             assertEquals(listOf("Oracul" to "big", "Judge" to "judge"), app.usage.map { it.feature to it.model }, "the judge is stored under its own name, so its calls can be counted")
             assertEquals(listOf("big", "judge"), f.asked.map { it.first })
-            assertTrue("Yes." in f.asked[1].second && "Another answer" !in f.asked[1].second.substringBefore("ANSWER 2") && "misses the edge case" in f.asked[1].second, "the judge got both answers")
+            assertTrue("Yes." in f.asked[1].second && "misses the edge case" in f.asked[1].second, "the judge got both answers")
+            assertTrue("ANSWER A:" in f.asked[1].second && "ANSWER B:" in f.asked[1].second && "(big)" !in f.asked[1].second && "(worker)" !in f.asked[1].second, "without the models' names")
             val block = chat.messages.last().content
             assertTrue(Oracul.isOpinion(chat.messages.last()) && "Yes." in block && "misses the edge case" in block && "Best answer: use the edge case." in block, block)
         } finally { f.server.stop(0) }
@@ -499,7 +500,8 @@ class OraculTest {
             assertTrue("big, other against worker" in told && "Left out: mute" in told, told)
             assertEquals(listOf("big", "other", "mute", "judge"), f.asked.map { it.first })
             val judged = f.asked.last().second
-            assertTrue("ANSWER 1 (worker)" in judged && "ANSWER 2 (big)" in judged && "ANSWER 3 (other)" in judged && "ANSWER 4" !in judged, "the judge saw every answer that exists")
+            assertTrue("ANSWER A:" in judged && "ANSWER B:" in judged && "ANSWER C:" in judged && "ANSWER D" !in judged, "the judge saw every answer that exists")
+            assertTrue("Yes." in judged && "(worker)" !in judged && "(big)" !in judged, "and no model's name")
             val block = chat.messages.last().content
             assertTrue("## other" in block && "## mute" !in block && "Left out: mute" in block, block)
             // the first Oracul model must answer: otherwise nothing is added

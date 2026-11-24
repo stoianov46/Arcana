@@ -126,7 +126,7 @@ nothing** (`SkillRoles.withDefaults`). Roles apply only to a message that carrie
 `applyRoles` runs in the first round's `prepare` (so the worker applies from round one) for a skill **chip**, and when the model
 loads a skill itself with `use_skill` (worker and reviewer only: **a plan is written once, at the start of a message**). A model that is
 not installed or cannot use tools is skipped with a message (`roleNote`, shown as a toast) and the settings' model is used; nothing is
-ever written to the settings. The judge is only the judge: it sees all answers (`ANSWER 1` is the chat model's) and picks or merges.
+ever written to the settings. The judge is only the judge: it sees all answers without the models' names and in a random order (`ANSWER A`, `ANSWER B`…, `Oracul.judgeRequest(…, order)`), so neither the first place nor a name sways it, and picks or merges; `Oracul.judgeLabels` then writes each label's model after it (`Answer B (qwen3.8:27b)`) for the reader. The controller and the goal check are asked for JSON held to a schema (`CONTROL_SCHEMA`, `GOAL_SCHEMA`: `verdict` from a fixed list, `notes`; `Oracul.askVerdict`, Ollama's structured outputs); `parseControl` / `parseGoal` read that JSON first and the `VERDICT:` line as before, and an Ollama that refuses a schema is asked again in plain text.
 
 ## Flows (orchestration)
 
