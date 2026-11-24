@@ -951,18 +951,10 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             }
             // read again for every call: an earlier call of this round may have switched the mode, which rebuilds the toolbox
             val box = toolbox
-            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || call.name == CHAT_STATS || call.name == CHAT_STATS_JSON || call.name == TODO || call.name == CONSULT || call.name == com.arcana.brain.core.TURN_ON_TOOLS || box == null) {
-                val message = ChatMessage.toolResult(call.name, when {
-                    call.name == ASK_USER -> askUser(call, text)
-                    call.name == com.arcana.brain.core.TURN_ON_TOOLS && box != null -> turnOnTools(call)
-                    call.name == REQUEST_ACCESS -> requestAccess(call)
-                    call.name == REQUEST_MODE -> requestMode(call)
-                    call.name == CONSULT -> consult(call)
-                    call.name == TODO -> Todos.describe(Todos.parse((call.arguments["items"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()))
-                    call.name == CHAT_STATS -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList(), compactionState())
-                    call.name == CHAT_STATS_JSON -> ChatStats.describeJson(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList(), compactionState())
-                    else -> "Error: tools are off. Call request_access to ask the user for them."
-                })
+            // a tool the chat answers itself (PseudoTools); with tools off nothing else can run. turn_on_tools needs a toolbox to turn things on in
+            val handler = pseudoHandlers[call.name]?.takeIf { !(call.name == com.arcana.brain.core.TURN_ON_TOOLS && box == null) }
+            if (handler != null || box == null) {
+                val message = ChatMessage.toolResult(call.name, handler?.invoke(call, text) ?: "Error: tools are off. Call request_access to ask the user for them.")
                 add(message)
                 added += message
                 skillRun?.let { it.observe(call.name, call.arguments.toString(), message.content); skillTick++ }
@@ -1184,7 +1176,22 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** What the model is offered when it has a toolbox: the tools, a way to ask for another mode, and (in plan mode) a way to ask to leave it. */
     private fun definitionsFor(box: ToolBox): JsonArray =
-        JsonArray(box.definitions() + (if (box.switchedOff.isEmpty()) emptyList() else listOf(com.arcana.brain.core.turnOnToolsDefinition(box.switchedOff))) + REQUEST_MODE_DEFINITION + CHAT_STATS_DEFINITION + CHAT_STATS_JSON_DEFINITION + TODO_DEFINITION + (if (app.config.flowTools && app.config.oraculEnabled) listOf(CONSULT_DEFINITION) else emptyList()) + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
+        JsonArray(box.definitions() + com.arcana.brain.core.PseudoTools.definitions(com.arcana.brain.core.OfferState(box.switchedOff, app.config.toolMode == "plan", app.config.flowTools && app.config.oraculEnabled)))
+
+    /**
+     * How the chat answers each of [com.arcana.brain.core.PseudoTools.names]: the call and the text of the reply that made it in, the result for the model.
+     * Internal so a test can check that every pseudo-tool has a handler.
+     */
+    internal val pseudoHandlers: Map<String, suspend (ToolCall, String) -> String> = mapOf(
+        ASK_USER to { call, text -> askUser(call, text) },
+        com.arcana.brain.core.TURN_ON_TOOLS to { call, _ -> turnOnTools(call) },
+        REQUEST_ACCESS to { call, _ -> requestAccess(call) },
+        REQUEST_MODE to { call, _ -> requestMode(call) },
+        CONSULT to { call, _ -> consult(call) },
+        TODO to { call, _ -> Todos.describe(Todos.parse((call.arguments["items"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty())) },
+        CHAT_STATS to { _, _ -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList(), compactionState()) },
+        CHAT_STATS_JSON to { _, _ -> ChatStats.describeJson(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList(), compactionState()) },
+    )
 
     /** The model asks to switch the tool mode: the user always decides; when they agree the mode, the toolbox and the model's tools change at once. */
     private suspend fun requestMode(call: ToolCall): String {
@@ -1736,7 +1743,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }
         val canRequest = modelCanUseTools && box == null
         val offered = when {
-            box == null -> if (canRequest) JsonArray(listOf(REQUEST_ACCESS_DEFINITION, ASK_USER_DEFINITION)) else null
+            box == null -> com.arcana.brain.core.PseudoTools.withoutToolbox(canRequest)?.let { JsonArray(it) }
             else -> definitionsFor(box)
         }
         gen.start(tools = offered, maxSteps = Skills.stepsFor(history, app.config.toolStepLimit)) {
