@@ -377,6 +377,9 @@ object Oracul {
     /** Whether a tool's result text says it failed. */
     fun isFailureText(text: String): Boolean = text.startsWith("Error:") || text.startsWith("Timed out") || text.startsWith("exit code ") && !text.startsWith("exit code 0")
 
+    /** True for a message Arcana sends in the user's place to keep the work going (the controller's redo, a revise after a review, a goal not met yet, open todo steps): not a new question. */
+    fun isArcanaPrompt(text: String): Boolean = text.startsWith(REDO_PROMPT) || text.startsWith(TODO_PROMPT) || text.startsWith(REVISE_PROMPT) || text.startsWith(GOAL_PROMPT)
+
     fun isRealUser(message: ChatMessage) = message.role == "user" && !isOpinion(message) && !Compaction.isSummary(message)
 
     /** The messages from the user's last real message to the end. */

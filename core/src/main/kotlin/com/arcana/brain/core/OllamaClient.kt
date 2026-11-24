@@ -62,6 +62,12 @@ data class ChatMessage(
     val contextAt: Int = 0,
     /** When the message was made, in epoch milliseconds (0 = not known: a chat from before this was kept). `chat_stats` measures the chat's time from these. */
     val at: Long = 0,
+    /**
+     * For a message of yours: exactly what the model was sent for it the first time (its text with the vault excerpts, the attached notes and any note about what changed
+     * since the chat began), blank until it is sent. Every later request sends this again instead of building it anew, so the conversation the model reads never changes
+     * and Ollama can reuse what it already read (a changed earlier message makes it read everything after it again). Never shown; [content] stays what you wrote.
+     */
+    val sent: String = "",
 ) {
     companion object {
         /**
@@ -207,7 +213,11 @@ object OllamaProtocol {
         config.keepAliveValue()?.let { put("keep_alive", it) }
         if (jsonMode) put("format", "json")
         if (tools != null && tools.isNotEmpty()) put("tools", tools)
-        put("messages", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ChatMessage.serializer()), messages.filter { !it.displayOnly }.map { it.withFilesInlined().copy(thinking = "", think = "") }))
+        val sendable = messages.filter { !it.displayOnly }
+        // the model's thoughts go back only for its tool calls in the turn under way (from the last real message of the user on): a reasoning model then goes on
+        // from its plan instead of working it out again each round. Earlier turns' thoughts are never sent.
+        val turnStart = sendable.indexOfLast { Oracul.isRealUser(it) }
+        put("messages", JsonArray(sendable.mapIndexed { i, m -> wire(m.withFilesInlined(), keepThinking = i > turnStart && m.role == "assistant" && m.toolCalls.isNotEmpty()) }))
         put("options", buildJsonObject {
             // custom sampling (Settings → Ollama → Sampling); in model mode nothing is sent and the model's own defaults apply
             Sampling.options(config).forEach { (k, v) -> put(k, v) }
@@ -215,6 +225,19 @@ object OllamaProtocol {
             // the retry after a loop asks for more than whatever is set
             if (repeatPenalty != null) put("repeat_penalty", repeatPenalty)
         })
+    }
+
+    /** The most thinking sent back with one tool-call round (its end, where the plan stands): see [chatRequest]. */
+    const val SENT_THINKING = 4_000
+
+    /** One message as Ollama reads it: role, text, pictures, tool calls, the tool's name, and (when [keepThinking]) the thoughts. Arcana's own fields (stats, sources, [ChatMessage.sent]…) stay home. */
+    private fun wire(m: ChatMessage, keepThinking: Boolean): JsonObject = buildJsonObject {
+        put("role", m.role)
+        put("content", m.content)
+        if (m.images.isNotEmpty()) put("images", JsonArray(m.images.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+        if (m.toolCalls.isNotEmpty()) put("tool_calls", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ToolCall.serializer()), m.toolCalls))
+        m.toolName?.let { put("tool_name", it) }
+        if (keepThinking && m.thinking.isNotBlank()) put("thinking", m.thinking.takeLast(SENT_THINKING))
     }
 
     fun parseChunk(line: String): ChatChunk {
@@ -520,7 +543,8 @@ class OllamaClient(private val config: () -> AppConfig) {
                 val cause = (e as? java.util.concurrent.ExecutionException)?.cause ?: e
                 if (cause is java.net.http.HttpTimeoutException) throw OllamaException(OllamaProtocol.timeoutMessage(cfg.model, cfg.timeoutSeconds), cause)
                 if (attempt < RETRIES) { kotlinx.coroutines.delay(retryDelaysMs[attempt++]); continue }
-                throw OllamaException("Cannot reach Ollama at ${cfg.ollamaUrl}: ${cause.message ?: cause.javaClass.simpleName}", e)
+                throw OllamaException(if (cause is java.net.ConnectException) "Cannot reach Ollama at ${cfg.ollamaUrl}: nothing answers there. Is Ollama running? Start the Ollama app (or `ollama serve`) and send the message again."
+                    else "Cannot reach Ollama at ${cfg.ollamaUrl}: ${cause.message ?: cause.javaClass.simpleName}", e)
             } finally {
                 handle.dispose()
             }

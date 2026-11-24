@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.idea.ink.ui.TextFieldState
 import com.arcana.brain.core.AppConfig
+import com.arcana.brain.core.SystemFreeze
 import com.arcana.brain.core.STEP_LIMIT_AUTO_ROUNDS
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ChatStore
@@ -101,6 +102,9 @@ import kotlinx.coroutines.withContext
  */
 class ChatSession(private val app: AppContext, private val store: ChatStore) {
     val messages = mutableStateListOf<ChatMessage>()
+
+    /** The chat's system prompt, kept the same from message to message (see [SystemFreeze]). */
+    private val systemFreeze = SystemFreeze()
 
     /**
      * Messages typed while the model works. A tool turn picks them up at its next round (they join it as your messages, so a correction or a
@@ -1593,6 +1597,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             // the chat may have grown while the model wrote (the cut is counted from the start, so it is still the right place)
             val at = cut.coerceAtMost(messages.size)
             messages.add(at, Compaction.summaryMessage(summary))
+            // the conversation the model reads starts anew from the summary: a good moment to bring the system prompt up to date too
+            systemFreeze.reset()
             // the last reply's token counts are from before this: the context meter estimates until the next reply says (see contextTokens)
             messages[at] = messages[at].copy(contextAt = messages.size)
             if (savedMessages >= at) savedMessages++
@@ -1683,16 +1689,35 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             if (autoCompactDue(messages.toList())) runCatching { compact(auto = true) }
             // built again after a compaction between tool rounds: a long run of tools fills the window too, not only a long chat
             suspend fun compose(): List<ChatMessage> {
-                val history = Compaction.forModel(messages.toList())
                 val config = app.config
                 val vault = app.openVault().getOrNull()
-                val found = if (config.chatUseVault && vault != null && notesSearched(config)) vaultHits(vault, body, config) else null
-                val hits = found?.hits
-                pendingBy = found?.let { it.label + if (it.leftOut > 0) " · ${it.leftOut} weak left out" else "" }.orEmpty()
-                pendingInfo = found?.info.orEmpty()
-                pendingSources = hits?.map { it.note.path }.orEmpty()
-                pendingCut = if (found?.passages == true) emptyList() else hits?.filter { it.missing > 0 }?.map { it.note.path }.orEmpty()
-                return Prompts.chatMessages(config, history, hits, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, toolsNote = box?.describe().orEmpty(), canRequestTools = canRequest, memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "", goal = goal.orEmpty(), effortNote = if (runWorker == null) Prompts.effortNote(config.model, app.thinkingValues, app.thinkingDefault) else "").also { request -> promptEstimate = request.sumOf { it.content.length } / 4 }
+                val effortNote = if (runWorker == null) Prompts.effortNote(config.model, app.thinkingValues, app.thinkingDefault) else ""
+                val vaultAnswers = config.chatUseVault && vault != null && notesSearched(config)
+                val toolsNote = box?.describe().orEmpty()
+                val parts = Prompts.SystemParts(Prompts.dateLine(java.time.ZonedDateTime.now()), toolsNote, if (config.memoryEnabled) vault?.memory().orEmpty() else "", goal.orEmpty())
+                // the message this turn answers: frozen the first time it is sent (excerpts, attached notes, what changed), then sent the same way every round and every later turn
+                val at = messages.indexOfLast { it.role == "user" && !it.displayOnly }
+                val fresh = at >= 0 && messages[at].sent.isEmpty()
+                val key = listOf(config.systemPrompt, config.model, box != null, canRequest, effortNote, vaultAnswers).joinToString("\u0000")
+                val (system, changed) = systemFreeze.take(key, parts, commit = fresh) { p ->
+                    Prompts.systemPrompt(config, box != null, p.toolsNote, canRequest, p.memory, p.goal, effortNote, p.date, vaultAnswers)
+                }
+                if (fresh) {
+                    val last = messages[at]
+                    // Arcana's own follow-ups (redo, revise, a goal or todo nudge) are not questions: the excerpts of the question they follow are still in the chat
+                    val ownPrompt = Oracul.isArcanaPrompt(body)
+                    val found = if (vaultAnswers && !ownPrompt) vaultHits(vault!!, body, config) else null
+                    val hits = found?.hits
+                    pendingBy = found?.let { it.label + if (it.leftOut > 0) " · ${it.leftOut} weak left out" else "" }.orEmpty()
+                    pendingInfo = found?.info.orEmpty()
+                    pendingSources = hits?.map { it.note.path }.orEmpty()
+                    pendingCut = if (found?.passages == true) emptyList() else hits?.filter { it.missing > 0 }?.map { it.note.path }.orEmpty()
+                    val sent = Prompts.userContent(last, hits, noteTexts(vault, listOf(last)), box != null, changed)
+                    messages[at] = last.copy(sent = sent)
+                }
+                val history = Compaction.forModel(messages.toList())
+                return Prompts.chatMessages(config, history, null, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, system = system)
+                    .also { request -> promptEstimate = request.sumOf { it.content.length } / 4 }
             }
             refreshRequest = ::compose
             compose()
@@ -1778,7 +1803,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         clearGoal()
         artifacts.clear()
         toolsDeclined = false
-        messages.clear(); wholeNotes.clear(); cutAccepted.clear()
+        messages.clear(); wholeNotes.clear(); cutAccepted.clear(); systemFreeze.reset()
         queued.clear()
         input.clear()
         attachments.clear()
@@ -1796,7 +1821,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         run = null
         skillRun = null // a run belongs to the conversation it started in (see docs/skills.md)
         skillTick++
-        messages.clear(); wholeNotes.clear(); cutAccepted.clear()
+        messages.clear(); wholeNotes.clear(); cutAccepted.clear(); systemFreeze.reset()
         messages += chat.messages
         attachments.clear()
         id = chat.id

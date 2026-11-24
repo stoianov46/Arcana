@@ -141,3 +141,50 @@ class OllamaStreamTest {
         assertTrue("cannot read" in assertFailsWith<OllamaException> { runBlocking { garbled.chat(listOf(ChatMessage.user("hi"))).toList() } }.message.orEmpty())
     }
 }
+
+/** What a request carries: only Ollama's fields, the thoughts of the turn under way, and messages frozen as they were first sent. */
+class FrozenRequestTest {
+    private fun wire(messages: List<ChatMessage>) = OllamaProtocol.chatRequest(AppConfig(), messages)["messages"] as kotlinx.serialization.json.JsonArray
+
+    @Test
+    fun theThoughtsOfTheTurnUnderWayGoBackAndNothingOfArcanasOwn() {
+        val call = ToolCall(ToolFunction("read_note", kotlinx.serialization.json.buildJsonObject { put("path", kotlinx.serialization.json.JsonPrimitive("a")) }))
+        val old = ChatMessage.assistantCalls("", listOf(call), thinking = "old plan")
+        val messages = listOf(
+            ChatMessage.user("first"), old, ChatMessage.toolResult("read_note", "x"), ChatMessage.assistant("done", sources = listOf("a.md"), thinking = "old answer thoughts"),
+            ChatMessage.user("second").copy(sent = "second with excerpts"),
+            ChatMessage.assistantCalls("", listOf(call), thinking = "p".repeat(5_000) + "THE PLAN"),
+        )
+        val sent = wire(messages).map { it as kotlinx.serialization.json.JsonObject }
+        assertTrue("thinking" !in sent[1] && "thinking" !in sent[3], "earlier turns' thoughts stay home")
+        val now = (sent[5]["thinking"] as kotlinx.serialization.json.JsonPrimitive).content
+        assertTrue(now.endsWith("THE PLAN") && now.length == OllamaProtocol.SENT_THINKING, "the end of this turn's plan goes back, capped")
+        val text = sent.toString()
+        assertTrue("sources" !in text && "\"at\"" !in text && "\"sent\"" !in text && "stats" !in text, text)
+        // the frozen text is what Prompts sends for that message, never Arcana's field itself
+        val prompt = Prompts.chatMessages(AppConfig(), messages, null, emptyMap())
+        assertEquals("second with excerpts", prompt.first { it.content.startsWith("second") }.content)
+    }
+
+    @Test
+    fun aChangeIsToldOnceWithTheNextMessageAndTheSystemPromptStays() {
+        val freeze = SystemFreeze()
+        val a = Prompts.SystemParts("Today is Monday.", "tools: a", "- Answer briefly.", "")
+        var built = 0
+        val build = { p: Prompts.SystemParts -> built++; "SYSTEM " + p.memory }
+        assertEquals("SYSTEM - Answer briefly." to "", freeze.take("k", a, commit = true, build))
+        val b = a.copy(memory = "- Answer briefly.\n- Use metric units.", goal = "Plan the trip")
+        // between the rounds of a turn nothing is handed out (and nothing is lost)
+        assertEquals("SYSTEM - Answer briefly." to "", freeze.take("k", b, commit = false, build))
+        val (system, note) = freeze.take("k", b, commit = true, build)
+        assertEquals("SYSTEM - Answer briefly.", system)
+        assertTrue("Added:" in note && "Use metric units" in note && "Answer briefly" !in note.substringAfter("Added:") && "goal of this chat is now: Plan the trip" in note, note)
+        assertEquals("", freeze.take("k", b, commit = true, build).second, "told once")
+        // another kind of chat (tools switched on, another model) builds it anew
+        assertEquals("SYSTEM - Answer briefly.\n- Use metric units." to "", freeze.take("other", b, commit = true, build))
+        assertEquals(2, built)
+        freeze.reset()
+        freeze.take("other", a, commit = true, build)
+        assertEquals(3, built)
+    }
+}

@@ -599,37 +599,81 @@ object Prompts {
             "If they ask how to change it, or a task clearly needs more or less reasoning than they use (a hard multi-step problem, or a trivial question), say which of these fits and how to set it. You cannot change it yourself."
     }
 
-    fun chatMessages(config: AppConfig, history: List<ChatMessage>, hits: List<SearchHit>?, noteTexts: Map<String, String>, tools: Boolean = false, toolsNote: String = "", canRequestTools: Boolean = false, memory: String = "", goal: String = "", effortNote: String = "", today: java.time.ZonedDateTime? = java.time.ZonedDateTime.now()): List<ChatMessage> {
-        // only the date, which changes once a day: a changing clock at the start of the prompt would make the model re-read the whole chat every message
-        val date = today?.let { " Today is ${it.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", java.util.Locale.ENGLISH))} (time zone ${it.zone}). For the exact time use the current_time tool if you have it." }.orEmpty()
-        val system = config.systemPrompt + date + (if (tools) TOOLS_PROMPT + toolsNote else if (canRequestTools) REQUEST_ACCESS_PROMPT else NO_TOOLS_PROMPT) + effortNote +
-            (if (memory.isBlank()) "" else "\n\nThe user's memory file (ARCANA.md), standing instructions and facts. Follow them; they outrank your usual habits:\n${memory.trim()}") +
-            (if (goal.isBlank()) "" else "\n\nTHE GOAL OF THIS CHAT (set by the user with /goal; keep it in mind in every answer): ${goal.trim()}\nWork toward it until it is reached. A checker compares your answers with it after each reply and sends you on while it is not met; when you think it is met, say so plainly.") + if (hits == null) "" else {
-            " Answer using the vault excerpts given with the latest question. Cite the notes you used as [[Note title]]. " +
-                "If the excerpts do not contain the answer, say so."
-        }
+    fun chatMessages(config: AppConfig, history: List<ChatMessage>, hits: List<SearchHit>?, noteTexts: Map<String, String>, tools: Boolean = false, toolsNote: String = "", canRequestTools: Boolean = false, memory: String = "", goal: String = "", effortNote: String = "", today: java.time.ZonedDateTime? = java.time.ZonedDateTime.now(), system: String? = null, vaultAnswers: Boolean = hits != null): List<ChatMessage> {
+        val prompt = system ?: systemPrompt(config, tools, toolsNote, canRequestTools, memory, goal, effortNote, dateLine(today), vaultAnswers)
         val window = window(config.chatHistory, history)
         val lastUser = window.indexOfLast { it.role == "user" }
         val converted = window.mapIndexed { i, m ->
             // old tool output is kept whole unless the user chose "shorten" (Settings → Tools → Old tool output): a silent cut made models read the same file again or answer from half of it
             if (m.role == "tool" && i < lastUser && config.oldToolOutput == "shorten") return@mapIndexed if (m.content.length > OLD_TOOL_RESULT) m.copy(content = m.content.take(OLD_TOOL_RESULT) + "\n… (shortened: the first $OLD_TOOL_RESULT of ${m.content.length} characters are kept; call the tool again for the whole result)") else m
-            if (m.role == "tool") return@mapIndexed m
             if (m.role != "user") return@mapIndexed m
-            var content = m.content
-            for (name in m.noteNames) {
-                val title = name.substringAfterLast('/').removeSuffix(".md")
-                content += if (Skills.isEntry(name)) {
-                    "\n\n---\nSKILL “${Skills.nameOfEntry(name)}”: the user attached this skill to the message. It is already loaded, so do not call use_skill for it. Do what the message asks by following the skill step by step and exactly.\n${noteTexts[name] ?: "(this skill could not be read)"}"
-                } else "\n\n---\nAttached note “$title” ($name):\n${noteTexts[name] ?: "(this note could not be read)"}"
-            }
-            if (hits != null && i == lastUser) {
-                val context = if (hits.isEmpty()) "No matching notes were found in the vault." else hits.joinToString("\n\n") { hitText(it, tools) }
-                content = "Vault excerpts:\n\n$context\n\nQuestion: $content"
-            }
-            m.copy(content = content, noteNames = emptyList())
+            // a message already sent goes again exactly as it went the first time (see [ChatMessage.sent])
+            if (m.sent.isNotEmpty()) return@mapIndexed m.copy(content = m.sent, noteNames = emptyList())
+            m.copy(content = userContent(m, if (i == lastUser) hits else null, noteTexts, tools), noteNames = emptyList())
         }
-        return listOf(ChatMessage.system(system)) + converted
+        return listOf(ChatMessage.system(prompt)) + converted
     }
+
+    /** ` Today is Monday 24 November 2026 (time zone …). …`: only the date, which changes once a day (a clock would make the model re-read the whole chat every message); blank for null. */
+    fun dateLine(today: java.time.ZonedDateTime?): String =
+        today?.let { " Today is ${it.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", java.util.Locale.ENGLISH))} (time zone ${it.zone}). For the exact time use the current_time tool if you have it." }.orEmpty()
+
+    /** The system prompt of a chat: the base prompt, the date, what the tools are, the effort note, the memory file and the goal, and (with [vaultAnswers]) how to use the vault excerpts. */
+    fun systemPrompt(config: AppConfig, tools: Boolean, toolsNote: String, canRequestTools: Boolean, memory: String, goal: String, effortNote: String, date: String, vaultAnswers: Boolean): String =
+        config.systemPrompt + date + (if (tools) TOOLS_PROMPT + toolsNote else if (canRequestTools) REQUEST_ACCESS_PROMPT else NO_TOOLS_PROMPT) + effortNote +
+            (if (memory.isBlank()) "" else "\n\nThe user's memory file (ARCANA.md), standing instructions and facts. Follow them; they outrank your usual habits:\n${memory.trim()}") +
+            (if (goal.isBlank()) "" else "\n\nTHE GOAL OF THIS CHAT (set by the user with /goal; keep it in mind in every answer): ${goal.trim()}\nWork toward it until it is reached. A checker compares your answers with it after each reply and sends you on while it is not met; when you think it is met, say so plainly.") +
+            if (!vaultAnswers) "" else {
+                " Answer using the vault excerpts given with the question. Cite the notes you used as [[Note title]]. " +
+                    "If the excerpts do not contain the answer, say so."
+            }
+
+    /**
+     * What the model reads for one message of yours: its text with the attached notes ([noteTexts] by vault path; a skill's entry as its loader gives it), the vault excerpts found
+     * for it ([hits]; null = none searched) in front of it, and [note] (what changed since the chat began, see [SystemFreeze]) at the end.
+     */
+    fun userContent(m: ChatMessage, hits: List<SearchHit>?, noteTexts: Map<String, String>, tools: Boolean, note: String = ""): String {
+        var content = m.content
+        for (name in m.noteNames) {
+            val title = name.substringAfterLast('/').removeSuffix(".md")
+            content += if (Skills.isEntry(name)) {
+                "\n\n---\nSKILL “${Skills.nameOfEntry(name)}”: the user attached this skill to the message. It is already loaded, so do not call use_skill for it. Do what the message asks by following the skill step by step and exactly.\n${noteTexts[name] ?: "(this skill could not be read)"}"
+            } else "\n\n---\nAttached note “$title” ($name):\n${noteTexts[name] ?: "(this note could not be read)"}"
+        }
+        if (hits != null) {
+            val context = if (hits.isEmpty()) "No matching notes were found in the vault." else hits.joinToString("\n\n") { hitText(it, tools) }
+            content = "Vault excerpts:\n\n$context\n\nQuestion: $content"
+        }
+        return content + note
+    }
+
+    /** The parts of the system prompt that may change during a chat without changing what kind of chat it is: they are announced instead (see [SystemFreeze]). */
+    data class SystemParts(val date: String, val toolsNote: String, val memory: String, val goal: String)
+
+    /** The note added to the next message of yours when [old] and [new] differ (blank when they do not): what changed, as lines added and removed, so the frozen system prompt stays true. */
+    fun changesNote(old: SystemParts, new: SystemParts): String {
+        val items = buildList {
+            if (old.date != new.date && new.date.isNotBlank()) add(new.date.trim())
+            if (old.goal != new.goal) add(if (new.goal.isBlank()) "The goal of this chat was cleared." else "The goal of this chat is now: ${new.goal.trim()}")
+            lineDiff(old.memory, new.memory)?.let { add("The memory file (ARCANA.md) changed; follow the new version.\n$it") }
+            lineDiff(old.toolsNote, new.toolsNote)?.let { add("What you were told about your tools, folders, project or skills changed.\n$it") }
+        }
+        if (items.isEmpty()) return ""
+        return "\n\n---\n(From Arcana, not the user: since this chat began the following changed. It replaces what the system prompt says about it.)\n" + items.joinToString("\n") { "- $it" }
+    }
+
+    /** `Added:` and `Removed:` lines between two texts (blank lines and order ignored, at most [MAX_DIFF_LINES] each); null when they have the same lines. */
+    private fun lineDiff(old: String, new: String): String? {
+        val before = old.lines().map { it.trimEnd() }.filter { it.isNotBlank() }
+        val after = new.lines().map { it.trimEnd() }.filter { it.isNotBlank() }
+        val added = after.filter { it !in before.toSet() }
+        val removed = before.filter { it !in after.toSet() }
+        if (added.isEmpty() && removed.isEmpty()) return null
+        fun list(label: String, lines: List<String>) = if (lines.isEmpty()) "" else "  $label\n" + lines.take(MAX_DIFF_LINES).joinToString("\n") { "    $it" } + (if (lines.size > MAX_DIFF_LINES) "\n    … and ${lines.size - MAX_DIFF_LINES} more" else "") + "\n"
+        return (list("Added:", added) + list("Removed:", removed)).trimEnd()
+    }
+
+    private const val MAX_DIFF_LINES = 40
 
     fun compose(config: AppConfig, request: String): List<ChatMessage> = listOf(
         ChatMessage.system(config.systemPrompt + " Write the note body in Markdown, without frontmatter."),
