@@ -427,7 +427,10 @@ object OllamaProtocol {
      */
     fun outOfMemoryMessage(error: String, model: String, context: Int, weightsBytes: Long, kvBytesPerToken: Long, ramBytes: Long, gpu: GpuMemory.Cap?): String {
         val ctx = if (context > 0) " with a ${UsageStats.contextSize(context.toLong())} context" else ""
-        val need = ModelFit.loadedNeed(weightsBytes, kvBytesPerToken, context).takeIf { it > 0 }?.let { " needs about ${ModelFit.gb(it)}" }.orEmpty()
+        // without the cost of a token the context cannot be counted: say what the figure covers instead of letting it read as the whole
+        val need = ModelFit.loadedNeed(weightsBytes, kvBytesPerToken, context).takeIf { it > 0 }?.let {
+            if (kvBytesPerToken > 0 || context <= 0) " needs about ${ModelFit.gb(it)}" else " needs about ${ModelFit.gb(it)} for the model alone, before the cache for its context"
+        }.orEmpty()
         val limit = when {
             gpu != null -> ", more than the ${GpuMemory.describe(gpu)} the GPU may use"
             ramBytes > 0 -> ", more than this machine's ${ModelFit.gb(ramBytes)} can hold next to everything else"
@@ -566,8 +569,20 @@ class OllamaClient(private val config: () -> AppConfig) {
     /** What a token of context costs for a model, from `/api/show`, kept per server and model (it does not change). */
     private val kvCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
-    private suspend fun kvBytes(cfg: AppConfig, model: String): Long =
-        kvCache[cfg.ollamaUrl + " " + model] ?: (runCatching { show(model).kvBytesPerToken }.getOrNull() ?: 0L).also { kvCache[cfg.ollamaUrl + " " + model] = it }
+    private suspend fun kvBytes(cfg: AppConfig, model: String): Long {
+        kvCache[cfg.ollamaUrl + " " + model]?.let { return it }
+        // from the model's description, or else from what the loaded model really takes (an MLX build does not describe its layers); 0 is not kept, so a later look can fill it
+        val known = (runCatching { show(model).kvBytesPerToken }.getOrNull() ?: 0L).takeIf { it > 0 } ?: observedKv(model)
+        if (known > 0) kvCache[cfg.ollamaUrl + " " + model] = known
+        return known
+    }
+
+    /** What a token of context costs for [model], seen while it is loaded ([ModelFit.observedKvPerToken]); 0 when it is not loaded or a size is missing. */
+    suspend fun observedKv(model: String): Long {
+        val loaded = loadedModels()?.firstOrNull { ModelStatus.sameModel(it.name, model) } ?: return 0
+        val sizes = modelSizes()
+        return ModelFit.observedKvPerToken(loaded.sizeBytes, sizes[model] ?: sizes["$model:latest"] ?: return 0, loaded.context)
+    }
 
     /**
      * Before a request to a local Ollama: when [cfg]'s model is not loaded yet (or will be reloaded with another context) and it would not fit next to the models already in memory,

@@ -112,6 +112,11 @@ class AppContext(
         loadedContext = runCatching { client.loadedContext(config.model) }.getOrDefault(0)
         val all = runCatching { client.loadedModels() }.getOrNull()
         loaded = all
+        // a model that does not describe its layers (an MLX build): what a token costs is seen once it is loaded, so the "~N fits" estimates work for it too
+        if (kvBytesPerToken <= 0L) all?.firstOrNull { com.arcana.brain.core.ModelStatus.sameModel(it.name, config.model) }?.let { m ->
+            val weights = modelSizes[config.model] ?: modelSizes["${config.model}:latest"] ?: 0L
+            com.arcana.brain.core.ModelFit.observedKvPerToken(m.sizeBytes, weights, m.context).takeIf { it > 0 }?.let { kvBytesPerToken = it }
+        }
         offloads = all.orEmpty().filter { it.cpuPercent >= 10 }.sortedByDescending { it.cpuPercent }.map { com.arcana.brain.core.Offload(it.name, it.cpuPercent, it.sizeBytes) }
     }
 

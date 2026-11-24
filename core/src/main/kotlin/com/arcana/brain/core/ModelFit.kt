@@ -89,6 +89,13 @@ object ModelFit {
         return ((usableBytes - weightsBytes) / kvBytesPerToken).coerceAtLeast(0)
     }
 
+    /**
+     * What a token of context costs, seen from a loaded model: Ollama reports its whole size with the cache ([loadedBytes]) and the context it was loaded with; take away the
+     * weights ([weightsBytes]) and divide. For models whose description does not say how big the cache is (MLX builds); 0 when it cannot be worked out.
+     */
+    fun observedKvPerToken(loadedBytes: Long, weightsBytes: Long, context: Int): Long =
+        if (context <= 0 || weightsBytes <= 0 || loadedBytes <= weightsBytes) 0 else (loadedBytes - weightsBytes) / context
+
     /** What the models may really use: the Mac's GPU limit when it is known ([GpuMemory]; Metal refuses anything past it), else [budget]. */
     fun usable(ramBytes: Long, gpu: GpuMemory.Cap?): Long = gpu?.bytes ?: budget(ramBytes)
 

@@ -265,6 +265,12 @@ class CoreTest {
         assertTrue(text.startsWith("Out of memory: qwen3.6:35b-a3b with a 32k context needs about 26 GB"), text)
         assertTrue("GPU may use" in text && "macOS default" in text && "smaller Context window" in text && "sudo sysctl iogpu.wired_limit_mb=26214" in text, text)
         assertTrue("(Ollama: mlx runner failed" in text && text.length < 600, text)
+        // the cost of a token unknown (an MLX build): the figure says it is the model alone
+        val alone = OllamaProtocol.outOfMemoryMessage(metal, "inkling-2-mini:latest", 131072, 20_188_097_680, 0, 32 * gib, GpuMemory.cap(32 * gib, 0))
+        assertTrue("needs about 24 GB for the model alone, before the cache for its context" in alone, alone)
+        // ...which a loaded model reveals: 24.1 GB loaded with 128k, 20.2 GB of weights → about 30 KB a token
+        assertEquals(29_807L, ModelFit.observedKvPerToken(24_095_000_000, 20_188_097_680, 131072))
+        assertEquals(0L, ModelFit.observedKvPerToken(19_000_000_000, 20_188_097_680, 131072))
         // the limit already raised: no command suggested
         assertFalse("sudo" in OllamaProtocol.outOfMemoryMessage(metal, "m", 0, 0, 0, 32 * gib, GpuMemory.cap(32 * gib, 28000)))
         // a remote server: no local limit claimed
