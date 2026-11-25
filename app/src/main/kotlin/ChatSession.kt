@@ -468,7 +468,8 @@ class ChatSession(internal val app: AppContext, internal val store: ChatStore) {
     val todos: List<TodoItem> get() = Todos.last(messages)
 
     fun add(message: ChatMessage) {
-        messages += message
+        // a reply keeps the name of the model that wrote it (the chat model now, unless it was stamped already: a takeover names the Oracul)
+        messages += if (message.role == "assistant" && message.model.isEmpty()) message.copy(model = app.config.model) else message
         persist()
     }
 
@@ -527,6 +528,21 @@ class ChatSession(internal val app: AppContext, internal val store: ChatStore) {
                 ask(body)
             }
         } else ask(body)
+    }
+
+    /**
+     * Sends your last task again (`/model … --retry`, `r` in the `/model` list): the last message you wrote, with its notes, pictures and files, as a new message to
+     * the model now set. The earlier attempt stays in the chat, so the new model sees what was tried and what was already written. False when you wrote nothing yet.
+     */
+    fun retryLastTask(): Boolean {
+        val task = com.arcana.brain.core.ModelSwitch.lastTask(messages) ?: return false
+        autoConsult?.cancel()
+        // a level picked with /effort for the next message counts for this one, as for a message you type (when the new model lists it)
+        val level = thinkNext.takeIf { it in thinkOptions(app.thinkingValues) }.orEmpty()
+        thinkNext = ""
+        add(com.arcana.brain.core.ModelSwitch.again(task).copy(think = level))
+        ask(task.content)
+        return true
     }
 
     internal var toolsDeclined = false

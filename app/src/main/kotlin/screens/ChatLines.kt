@@ -134,7 +134,7 @@ internal fun messageLines(app: AppContext, message: ChatMessage, entry: Int, wid
         } else {
             // the header belongs to the reply's first entry (its first block, else its first tool call); a reply with neither has none, so it never borrows the next message's entry
             val blocks = parseMarkdown(message.content).size
-            add(Line(ModelIcon.label(config.model, config.plainGlyphs), Palette.Accent, bold = true, entry = if (blocks > 0 || message.toolCalls.isNotEmpty()) entry else -1))
+            add(Line(ModelIcon.label(message.model.ifEmpty { config.model }, config.plainGlyphs), Palette.Accent, bold = true, entry = if (blocks > 0 || message.toolCalls.isNotEmpty()) entry else -1))
             addAll(thinkingLines(message.thinking, config.thinkingView, config.plainGlyphs, width))
             addAll(renderMarkdown(parseMarkdown(message.content), width, entry = { entry + it }, rich = config.renderMarkdown, plainGlyphs = config.plainGlyphs))
             // the tools it asked for, one line and one select entry each

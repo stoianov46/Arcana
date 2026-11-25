@@ -134,5 +134,5 @@ Adding a field: give it a default (old config files must still load), add a Sett
 ## Data shapes (persisted JSON)
 
 - `StoredChat { id, title, updated, model, messages: [ChatMessage] }`; `ChatMessage` fields as in
-  [core-module.md](core-module.md) (images omitted on disk; `files`, `toolCalls`, `toolName` kept).
+  [core-module.md](core-module.md) (images omitted on disk; `files`, `toolCalls`, `toolName` kept; a reply keeps `model`, the model that wrote it).
 - `UsageRecord { time, feature, model, promptTokens, completionTokens, millis }`; `feature` ∈ `Chat`, `Generate` (AI notes), `Session`

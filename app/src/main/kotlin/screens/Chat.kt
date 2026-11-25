@@ -47,6 +47,7 @@ import com.arcana.brain.app.navigation.Hints
 import com.arcana.brain.app.navigation.LocalNavigator
 import com.arcana.brain.app.navigation.Screen
 import com.arcana.brain.core.ChatMessage
+import com.arcana.brain.core.ModelSwitch
 import com.arcana.brain.core.Compaction
 import com.arcana.brain.core.OraculSteps
 import com.arcana.brain.core.RetrievalMode
@@ -116,7 +117,7 @@ internal const val MaxNotes = 5
 /** How many queued messages are listed above the message field; the rest are counted. */
 internal const val QUEUE_SHOWN = 3
 
-internal enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory, Artifacts, Think, Sampling, Status, Context }
+internal enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory, Artifacts, Think, Sampling, Status, Context, Model }
 
 /** What happens to the last answer when it is sent to an existing note. */
 internal enum class Target(val verb: String) { Append("Append"), Replace("Replace") }
@@ -140,6 +141,7 @@ fun ChatScreen(app: AppContext) {
     val output = remember { OutputState() }
     val historyPicker = remember { PickerState() }
     val thinkPicker = remember { PickerState() }
+    val modelPicker = remember { ModelPickerState() }
     val sampling = remember { SamplingDialog() }
     val paneEditor = remember { PaneEditor() }
     // with the status pane on screen, Ctrl+R edits the sampling in the pane itself instead of opening the full dialog
@@ -450,6 +452,42 @@ fun ChatScreen(app: AppContext) {
         mode = ChatMode.Think
     }
 
+    /**
+     * Makes [model] the chat model (the same setting as Settings → Ollama → Model: saved, and used from the next message; the conversation stays). Not while a reply or
+     * the Oracul is at work. With [retry], once Ollama has said what the new model can do (tools, thinking levels, vision), your last message is sent again to it.
+     */
+    fun switchModel(model: String, retry: Boolean) {
+        if (gen.state == GenState.Running || chat.consulting != null) return toast("Wait for the reply to finish (or Esc to stop it), then switch the model.", error = true)
+        val old = app.config.model
+        if (old != model) app.update(app.config.copy(model = model))
+        app.scope.launch {
+            app.refreshConnection()
+            val toolsNote = if (app.config.toolsEnabled && app.tools == false) " It cannot use tools, so it answers from the chat alone." else ""
+            val same = if (old == model) "$model is already the chat model." else "Chat model: $model (was $old).$toolsNote"
+            if (!retry) return@launch toast(same, error = toolsNote.isNotEmpty())
+            if (chat.retryLastTask()) toast("$same Running your last message again.") else toast("$same Nothing to run again: you have not written a message yet.", error = true)
+        }
+    }
+
+    /**
+     * `/model`: the installed models in a list ([ModelPickerState]); `/model qwen3:30b` switches at once (a part of a name is enough when only one model has it:
+     * `/model inkling`); `--retry` (or `retry`, `again`) after it also sends your last message again to the new model.
+     */
+    fun modelCommand(args: String) {
+        val request = ModelSwitch.parse(args)
+        if (request.retry && ModelSwitch.lastTask(chat.messages.toList()) == null) return toast("Nothing to run again yet: you have not written a message in this chat.", error = true)
+        app.scope.launch {
+            val details = runCatching { app.client.modelDetails() }.getOrElse { return@launch toast("Could not list the models: ${it.message}. Is Ollama running at ${app.config.ollamaUrl}?", error = true) }
+            if (details.isEmpty()) return@launch toast("Ollama has no models installed. Install one with ollama pull, for example ollama pull qwen3:8b.", error = true)
+            if (request.name.isEmpty()) { modelPicker.open(details, app.config.model, request.retry); mode = ChatMode.Model; return@launch }
+            when (val match = ModelSwitch.resolve(request.name, details.map { it.name })) {
+                is ModelSwitch.Match.Found -> switchModel(match.model, request.retry)
+                is ModelSwitch.Match.Ambiguous -> toast("“${match.typed}” fits ${match.candidates.size} models: ${match.candidates.take(5).joinToString(", ")}. Type more of the name, or /model to pick.", error = true)
+                is ModelSwitch.Match.Missing -> toast("${match.typed} is not installed. /model lists what is; ollama pull ${match.typed} installs it.", error = true)
+            }
+        }
+    }
+
     /** `/sampling` (Ctrl+R): the dialog for temperature, top P, top K, min P and the penalties; `/sampling model` sets the model's own defaults, `/sampling custom` switches to your values. */
     fun openSampling(args: String = "") {
         when (args.trim().lowercase()) {
@@ -497,7 +535,7 @@ fun ChatScreen(app: AppContext) {
 
     fun runCommand(command: String, args: String = "") {
         // text after a command is only meaningful for these; anywhere else say so instead of guessing
-        if (args.isNotEmpty() && command !in setOf("/oracul", "/compare", "/revise", "/flow", "/goal", "/memory", "/effort", "/think", "/sampling")) return toast("$command takes no text after it. Type just $command.", error = true)
+        if (args.isNotEmpty() && command !in setOf("/oracul", "/compare", "/revise", "/flow", "/goal", "/memory", "/effort", "/think", "/sampling", "/model")) return toast("$command takes no text after it. Type just $command.", error = true)
         when (command) {
             "/new" -> startNew()
             "/history" -> openHistory()
@@ -522,6 +560,7 @@ fun ChatScreen(app: AppContext) {
             "/autorun" -> toggleAutoRun()
             "/effort", "/think" -> if (args.isBlank()) openThinkPicker() else setEffortFromText(args)
             "/sampling" -> openSampling(args)
+            "/model" -> modelCommand(args)
             "/compact" -> runCompact()
             "/oracul" -> runOracul(compare = false, only = args.ifEmpty { null })
             "/compare" -> runOracul(compare = true, only = args.ifEmpty { null })
@@ -578,6 +617,8 @@ fun ChatScreen(app: AppContext) {
             Command(if (app.config.skillsEnabled) "Skills: turn off" else "Skills: turn on (list them)", "Chat", "/skills") { toggleSkills() },
             Command("Semantic search: build or refresh the index of the vault", "Chat", "/reindex") { chat.semantic.reindex { text, error -> toast(text, error = error) } },
             Command("Reasoning effort: choose for the next message (what the model offers)", "Chat", "Ctrl+G") { openThinkPicker() },
+            Command("Chat model: switch to another installed model", "Chat", "/model") { modelCommand("") },
+            Command("Chat model: switch and run my last message again", "Chat", "/model --retry", ModelSwitch.lastTask(chat.messages.toList()) != null) { modelCommand("--retry") },
             Command("Sampling: temperature, top P, top K, min P, penalties", "Chat", "Ctrl+R") { openSampling() },
             Command(if (app.config.thinkingPane) "Thinking pane: turn off" else "Thinking pane: show the model's thoughts live", "Chat", "/thinking") { toggleThinkingPane() },
             Command(if (app.config.statusPane) "Status pane: turn off (model, sampling, context window)" else "Status pane: show model, sampling and context window", "Chat", "/status") { toggleStatusPane() },
@@ -641,6 +682,7 @@ fun ChatScreen(app: AppContext) {
             ChatMode.Chat -> if (attachments.browsing) attachments.filtering else !browsing && !(gen.state == GenState.Running && input.text.isEmpty())
             ChatMode.History -> historyPicker.filtering
             ChatMode.Think -> thinkPicker.filtering
+            ChatMode.Model -> modelPicker.picker.filtering
             ChatMode.Sampling -> sampling.typing
             ChatMode.Status -> paneEditor.typing
             ChatMode.PickNote, ChatMode.PickTarget -> notePicker.filtering
@@ -659,6 +701,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.ConfirmReplace -> Hints("y  replace", "any other key  keep the note")
         ChatMode.History -> Hints("↑↓  move", "Enter  open", "/  filter", "Esc  back")
         ChatMode.Think -> Hints("↑↓  move", "Enter  use for the next message", "d  make it the Settings value", "Esc  back")
+        ChatMode.Model -> if (modelPicker.retry) Hints("↑↓  move", "Enter  switch and run the last message again", "/  filter", "Esc  back") else Hints("↑↓  move", "Enter  switch", "r  switch and run the last message again", "/  filter", "Esc  back")
         ChatMode.Sampling -> if (sampling.typing) Hints("Enter  save", "blank  the model's own", "Ctrl+U  clear line", "Esc  cancel") else Hints("↑↓  move", "←→  change", "Enter  type a value", "m  mode", "r  model defaults", "Esc  back")
         ChatMode.Status -> if (paneEditor.typing) Hints("Enter  save", "Ctrl+U  clear line", "Esc  cancel") else Hints("↑↓  move", "←→  change", "Enter  type or next", "m  sampling mode", "r  model defaults", "Esc  done")
         ChatMode.PickNote -> Hints("type  search", "↑↓  move", "Enter  attach", "Esc  cancel")
@@ -808,6 +851,7 @@ fun ChatScreen(app: AppContext) {
             }
             ChatMode.Sampling -> sampling.handle(key, app, { toast(it) }) { mode = ChatMode.Chat }
             ChatMode.Status -> paneEditor.handle(key, app) { mode = ChatMode.Chat }
+            ChatMode.Model -> modelPicker.handle(key, ::switchModel) { mode = ChatMode.Chat }
             ChatMode.Think -> when {
                 thinkPicker.handle(key, thinkChoices) { it.label } -> true
                 key == Key.Enter -> {
@@ -928,6 +972,7 @@ fun ChatScreen(app: AppContext) {
             ChatMode.ConfirmReplace -> ConfirmReplaceDialog(replaceTarget, overwriting == null || overwriting?.lastAnswerOnly == true)
             ChatMode.History -> HistoryDialog(past, historyPicker, chat.id)
             ChatMode.Sampling -> SamplingPanel(app, sampling)
+            ChatMode.Model -> ModelPickerView(modelPicker, app.config.model, app.config.ollamaUrl, bodyRows(extra = 4))
             ChatMode.Think -> {
                 ScreenHeader("Reasoning effort", "${app.config.model}: what Ollama lists · Enter next message only · d Settings value")
                 VGap()

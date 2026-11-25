@@ -369,7 +369,7 @@ suspend fun ChatSession.takeOver(): String {
         val request = Prompts.chatMessages(config, history, null, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, toolsNote = box?.describe().orEmpty(), memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "", goal = goal.orEmpty())
         val (text, used) = if (box != null) oraculAgent(model, box, request) else Oracul.ask(clientFor(model), request) { app.recordUsage("Oracul", it, model) } to emptyList()
         require(text.isNotEmpty()) { "$model returned an empty answer; nothing was added." }
-        add(ChatMessage.assistant(Oracul.takeoverHeading(model) + text + Oracul.toolsLine(used)))
+        add(ChatMessage.assistant(Oracul.takeoverHeading(model) + text + Oracul.toolsLine(used)).copy(model = model))
         return "$model took over and answered."
     } finally {
         consulting = null

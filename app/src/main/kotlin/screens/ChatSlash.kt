@@ -125,6 +125,7 @@ internal val SlashCommands = listOf(
     SlashItem("/compact", "Summarize the older part of this chat to free the context window", false),
     SlashItem("/mode", "Tools mode: ask, auto, plan (cycles)", false),
     SlashItem("/autorun", "Run shell commands without asking (toggle)", false),
+    SlashItem("/model", "Switch the chat model: pick from the installed models, or name one (the conversation stays)", false, usage = "/model qwen3:30b   or /model qwen3:30b --retry  (and run your last message again)   or just /model to pick"),
     SlashItem("/effort", "Reasoning effort for the next message: pick from the levels this model offers (Ctrl+G)", false, usage = "/effort xhigh   or just /effort to pick from the list", aliases = listOf("/think")),
     SlashItem("/sampling", "How the model picks its next word: temperature, top P, top K, min P, penalties (Ctrl+R)", false, usage = "/sampling   or /sampling model  (the model's own defaults)  or /sampling custom"),
     SlashItem("/memory", "Open ARCANA.md, your standing instructions", false, usage = "e.g. /memory check   (finds repeated lines and dead note paths, asks before removing)"),
@@ -154,6 +155,7 @@ internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean
     "/mode" -> if (!config.toolsEnabled) "TOOLS OFF" to Palette.Dim else config.toolMode.uppercase() to when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }
     "/oracul" -> if (!config.oraculEnabled) "HELPERS OFF" to Palette.Dim else if (config.oraculModel.isBlank()) "NO MODEL" to Palette.Dim else (if (config.oraculAuto == "off") "MANUAL" else "AUTO ${config.oraculAuto.uppercase()}") to Palette.Green
     "/compact" -> if (config.autoCompactPercent > 0) "AUTO ${config.autoCompactPercent}%" to Palette.Green else "MANUAL" to Palette.Dim
+    "/model" -> config.model.substringBefore(':').uppercase().take(18) to Palette.Accent
     "/effort" -> (if (config.thinking == "default") autoWord(ThinkLevels.defaultWord).uppercase() else thinkText(config.thinking)) to if (config.thinking == "default") Palette.Dim else Palette.Accent
     "/autorun" -> if (!config.toolShell) "SHELL OFF" to Palette.Dim else if (config.toolAutoShell) "ON" to Palette.Red else "OFF" to Palette.Dim
     "/memory" -> if (config.memoryEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
@@ -190,6 +192,7 @@ internal fun slashMatches(items: List<SlashItem>, query: String): List<SlashItem
 /** The Chat key map (`?`): every key and command by what it is for, the ones about the model first. */
 fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf(
     com.arcana.brain.app.navigation.KeySection("The model: thinking, tools, memory", listOf(
+        "/model" to "switch the chat model: pick from the installed ones, /model name switches at once, --retry runs your last message again on it",
         "/effort" to "reasoning effort for the next message: pick from what the model offers (Ctrl+G; /effort xhigh sets it directly)",
         "/sampling" to "temperature, top P, top K, min P and the penalties: model defaults or your values (Ctrl+R)",
         "/thinking" to "thoughts pane under the conversation ([ and ] also switch it on and off and resize it)",
