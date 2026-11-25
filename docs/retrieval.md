@@ -83,13 +83,13 @@ query ─► LexicalIndex.search  (BM25 over passages, top 40)  ┐
 |---|---|
 | Modes, tokenizer, BM25, lexical index, fusion | `core/.../Retrieval.kt` (`RetrievalMode`, `Terms`, `Bm25`, `LexicalIndex`, `HybridSearch`, `Found`, `Retrieved`) |
 | Passages from the vectors | `EmbeddingIndex.searchPassages` (`Embeddings.kt`) |
-| The tool | `Tools.kt`: `searchVaultTool` |
+| The tool | `VaultTools.kt`: `searchVaultTool` |
 | `/vault` answers | `ChatSession.vaultHits`, `compose` (pending sources and method) |
 | Settings | `AppConfig.searchBy`, `searchIn`, `searchAdvanced`, `searchBalance`, `searchGap`, `searchMinWords`, `searchPool`, `searchPassages`; Settings → Search (`Settings.kt`, `noiseNote`) |
 | Tuning | `SearchTuning` (`Retrieval.kt`): weights, the noise filter (`HybridSearch.noiseFilter`), pool, passages per note |
 | Sources line | `ChatMessage.sourcesBy`, `Chat.kt` (`messageLines`) |
 | Real-model check | `core/.../RealOllamaRetrievalCheck.kt`: opt-in (`ARCANA_REAL_OLLAMA=1 ARCANA_REAL_VAULT=<folder> ARCANA_CHECK_OUT=<file> ./gradlew :core:test --tests '*RealOllamaRetrievalCheck*'`), indexes a temporary copy of a real vault with the real embedding model and prints what each mode finds **into the file named by `ARCANA_CHECK_OUT`** (the Gradle log only says `Real Ollama check done: <file>`; read it with `cat <file>`; `core/build.gradle.kts` makes the test always run when `ARCANA_REAL_OLLAMA=1`, because Gradle does not see environment variables as inputs and would otherwise skip it as up-to-date) (checked 2026-11-05 on the owner's vault: 84 notes, 1,070 passages, indexed in 13 s, a search 10–80 ms) |
-| Sources | `core/.../Sources.kt` (`PassageSource`, `VaultSource`, `FolderSource`, `CodeChunker`, `ProjectSearch`), `Tools.kt` (`searchProjectTool`), `ChatSession.projectRoots` / `projectIndexFor`, Settings → Search → Project files (`searchFolders`, `searchMaxFileKb`) |
+| Sources | `core/.../Sources.kt` (`PassageSource`, `VaultSource`, `FolderSource`, `CodeChunker`, `ProjectSearch`), `FileTools.kt` (`searchProjectTool`), `ChatSession.projectRoots` / `projectIndexFor`, Settings → Search → Project files (`searchFolders`, `searchMaxFileKb`) |
 | Tests | `core/.../SourcesTest.kt` (folder rules, code chunker, a meaning index over code with lines, the project search, the tool), `app/.../ProjectRootsTest.kt` (only allowed folders), `core/.../RetrievalTest.kt` (crafted vault: an identifier only words find, a paraphrase only meaning finds, both, the fallback, live changes, the tool), `app/.../VaultAnswersTest.kt` (a `/vault` answer end to end) |
 
 ## Limits

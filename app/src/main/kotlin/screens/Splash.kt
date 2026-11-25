@@ -16,7 +16,18 @@ import com.arcana.brain.core.StartupCheck
 import com.arcana.brain.core.Vault
 import com.idea.ink.theme.*
 import com.idea.ink.ui.*
+import com.jakewharton.mosaic.layout.MeasurePolicy
+import com.jakewharton.mosaic.layout.Measurable
+import com.jakewharton.mosaic.layout.MeasureResult
+import com.jakewharton.mosaic.layout.MeasureScope
+import com.jakewharton.mosaic.layout.drawBehind
+import com.jakewharton.mosaic.layout.fillMaxSize
+import com.jakewharton.mosaic.layout.padding
+import com.jakewharton.mosaic.modifier.Modifier
+import com.jakewharton.mosaic.ui.Box
+import com.jakewharton.mosaic.ui.Layout
 import com.jakewharton.mosaic.ui.Row
+import com.jakewharton.mosaic.ui.unit.Constraints
 import com.jakewharton.mosaic.ui.TextStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -27,8 +38,10 @@ private const val SPLASH_HOLD_MILLIS = 1_500L
 private const val SPLASH_MAX_MILLIS = 6_000L
 
 /**
- * The start screen: what Arcana loaded, one line each (Ollama and the model, the vault, the memory file, the skills, the tools, semantic search), filled in as each is
- * checked. It closes by itself a moment after the last check, or at once on any key (the key is not passed on). Settings → Appearance → Start screen turns it off.
+ * The start screen, a screen of its own before the main window (no sidebar, tabs or footer; the Shell draws it alone, as CosmoCLI does its splash): the
+ * ARCANA wordmark in the theme's logo colours, sweeping while things load, then what Arcana loaded, one line each (Ollama and the model, the vault, the memory
+ * file, the skills, the tools, semantic search), filled in as each is checked. It closes by itself a moment after the last check, or at once on any key (the
+ * key is not passed on). Settings → Appearance → Start screen turns it off.
  */
 @Composable
 fun SplashScreen(app: AppContext) {
@@ -68,12 +81,19 @@ fun SplashScreen(app: AppContext) {
     val installed = (connection as? Connection.Online)?.models?.let { models -> config.embedModel.isNotBlank() && models.any { ModelStatus.sameModel(it, config.embedModel) } }
     val lines = listOf(model) + (checks ?: listOf(StartupCheck("Vault", "reading…", CheckState.Pending))) + Startup.search(config.embedModel, if (connection is Connection.Checking) null else installed ?: false.takeIf { config.embedModel.isNotBlank() })
 
-    Stack {
-        VGap()
-        Label(if (plain) "Arcana" else "◆ Arcana", color = Palette.Accent, textStyle = TextStyle.Bold)
-        Label("the research system of your second brain", color = Palette.Muted)
-        VGap()
-        Panel(if (checks == null || connection is Connection.Checking) "Loading…" else "Ready", accent = if (lines.any { it.state == CheckState.Warn }) Palette.Orange else Palette.Green) {
+    val loading = checks == null || connection is Connection.Checking
+    Box(Modifier.fillMaxSize().padding(horizontal = 4, vertical = 1)) {
+        val density = rememberDensity()
+        Stack {
+            if (density.height >= WORDMARK.size + lines.size + SPLASH_EXTRA_ROWS && density.width >= WORDMARK_WIDTH + 8) {
+                Wordmark(animate = loading && config.animateLogo)
+                VGap()
+                Label("the research system of your second brain · local models through Ollama", color = Palette.Muted)
+            } else {
+                Label(if (plain) "Arcana" else "◆ Arcana", color = Palette.Accent, textStyle = TextStyle.Bold)
+                Label("the research system of your second brain", color = Palette.Muted)
+            }
+            VGap()
             lines.forEach { c ->
                 val (mark, color) = when (c.state) {
                     CheckState.Ok -> (if (plain) "ok" else "✓") to Palette.Green
@@ -87,7 +107,48 @@ fun SplashScreen(app: AppContext) {
                     Label(c.value, color = if (c.state == CheckState.Off) Palette.Dim else Palette.Text)
                 }
             }
+            VGap()
+            if (loading) Spinner("Loading…") else Label("Ready · any key to continue", color = if (lines.any { it.state == CheckState.Warn }) Palette.Orange else Palette.Green, textStyle = TextStyle.Bold)
+            Hint("Settings → Appearance → Start screen turns this screen off")
         }
-        Hint("Any key to continue · Settings → Appearance → Start screen turns this off")
     }
+}
+
+/** Rows the start screen needs besides the wordmark and the check lines: the padding, the tagline, the gaps, the status line and the hint. */
+private const val SPLASH_EXTRA_ROWS = 8
+
+/** The app name in a filled block font with a line-drawn shadow, the same style as CosmoCLI's wordmark. */
+private val WORDMARK = listOf(
+    " █████╗ ██████╗  ██████╗ █████╗ ███╗   ██╗ █████╗ ",
+    "██╔══██╗██╔══██╗██╔════╝██╔══██╗████╗  ██║██╔══██╗",
+    "███████║██████╔╝██║     ███████║██╔██╗ ██║███████║",
+    "██╔══██║██╔══██╗██║     ██╔══██║██║╚██╗██║██╔══██║",
+    "██║  ██║██║  ██║╚██████╗██║  ██║██║ ╚████║██║  ██║",
+    "╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝",
+)
+private val WORDMARK_WIDTH = WORDMARK.maxOf { it.length }
+
+/**
+ * The ARCANA wordmark, shaded left to right with the theme's logo colours ([Palette.logoShade], as the sidebar logo); with [animate] the colours sweep along it
+ * while the checks run. Drawn only when it fits; otherwise it takes no room.
+ */
+@Composable
+private fun Wordmark(animate: Boolean) {
+    var tick by remember { mutableStateOf(0) }
+    LaunchedEffect(animate) { while (animate) { delay(120); tick = (tick + 1) % 40 } }
+    Layout(
+        content = {},
+        modifier = Modifier.drawBehind {
+            WORDMARK.forEachIndexed { row, line ->
+                line.forEachIndexed { col, ch ->
+                    if (ch != ' ') drawText(row, col, ch.toString(), Palette.logoShade(col.toDouble() / (WORDMARK_WIDTH - 1) - tick / 40.0))
+                }
+            }
+        },
+        debugInfo = { "Wordmark" },
+        measurePolicy = object : MeasurePolicy {
+            override fun MeasureScope.measure(measurables: List<Measurable>, constraints: Constraints): MeasureResult =
+                if (constraints.maxWidth < WORDMARK_WIDTH || constraints.maxHeight < WORDMARK.size) layout(0, 0) {} else layout(WORDMARK_WIDTH, WORDMARK.size) {}
+        },
+    )
 }

@@ -1,5 +1,8 @@
 package com.arcana.brain.app.screens
 
+import com.arcana.brain.core.effectiveContext
+import com.arcana.brain.core.contextTokens
+import com.arcana.brain.core.thinkOptions
 import com.idea.ink.chart.Chart
 
 import androidx.compose.runtime.Composable

@@ -64,8 +64,9 @@ trigger ──► model/server resolved ──► request built ──► (tool 
   one**.
 - **With tools:** `oraculToolbox(model)` returns the worker's toolbox (`toolboxFor(config)`: same allowed folders, project, shell
   and web switches, Plan mode) or null when tools are off in Chat, *Oracul may use tools* is off, or the model has no `tools`
-  capability (`/api/show`); then it only talks. `oraculAgent` runs a short loop (at most `toolSteps` rounds, capped at 10; the last
-  round offers no tools so it must answer). `oraculCall` runs one call: reads follow *Read without asking*, everything else asks
+  capability (`/api/show`); then it only talks. `oraculAgent` runs its rounds through a hidden `Generation`, the same loop as the worker's (at most `toolSteps` rounds, capped at 10; the last
+  round offers no tools so it must answer; the loop guard, the retry after an empty reply or a malformed call, a tool call written as text and the nudge after an announced
+  step all apply; an empty final answer is still an empty opinion, not an error). `oraculCall` runs one call, asked about by `ApprovalPolicy` (`Actor.Oracul`): reads follow *Read without asking*, everything else asks
   through the shared approval queue with a heading `Ψ Oracul · …`, no "always" choice.
 - **One dialog at a time:** every dialog goes through `ChatSession.awaitApproval`, a `Mutex` around the single approval slot, so the
   worker's and the Oracul's requests wait for each other in order.
@@ -181,7 +182,7 @@ runs unless *Flow* is set (`AppConfig.flow`).
 ## Specialists as tools (`consult`)
 
 The *subagent* way to use the same stages, as in Claude Code: with **Settings → Flow → Specialists as tools** (`flowTools`, off by default) and tools on, the chat model is offered one
-more pseudo-tool, `consult` (`CONSULT_DEFINITION`, handled by `ChatSession.consult` like `ask_user`, not by the `ToolBox`). It names a `stage` (`analyst`, `planner`, `reviewer`; not the controller
+more chat tool, `consult` (`CONSULT_DEFINITION`, handled by `ChatSession.consult` like `ask_user`, not by the `ToolBox`). It names a `stage` (`analyst`, `planner`, `reviewer`; not the controller
 or the worker) and writes a `brief`; the stage's model (`Flow.careful(config).model(kind)`: *Flow analyst*, *Skill planner*, *Skill reviewer*, else the Oracul model) is asked with the stage's own
 instructions (`Oracul.consultRequest`) and **sees only the brief** (plus the usual earlier-chat header), and its text comes back as the tool's result: `Planner (model) says: …`. So the model
 decides when, and most messages call nobody. Limits: `MAX_CONSULTS` = 3 per message of the user (`consults`, reset by a message), one specialist at a time, no recursion. A stage without a
@@ -245,7 +246,7 @@ continues, so a vision answer is not redone by the chat model. A model-based sel
   right model, `/compare` with two, several and failing extra models, `/revise` with a note, tools (read tool, a change asks in Auto
   mode and a denial changes nothing, no capability means text only), `/takeover`, skill worker/reviewer/planner and the role table,
   the second server.
-- `CoreTest`: the message predicates, `comparisonParts`, `due`, `turnFacts`, `ModelFit`, `chat_stats` lines, `SkillRoles`.
+- `OraculCoreTest`: the message predicates, `comparisonParts`, `due`, `turnFacts`; `ModelMemoryTest`: `ModelFit`; `ChatStatsTest`: `chat_stats` lines; `SetupAndSkillsTest`: `SkillRoles`.
 - `DesignTest`: the slash parsing and usage lines, the column layout of the split view.
 - Tests never reach the real network: every model is a local fake.
 

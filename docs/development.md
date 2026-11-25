@@ -42,7 +42,7 @@ A test double for Ollama is a few lines (`/api/tags`, `/api/show`, `/api/ps`, a 
 | add a tool | [tools-and-agent.md](tools-and-agent.md) "How to add a tool"; `ToolBox` in `core/Tools.kt` |
 | add a setting | [conventions.md](conventions.md) recipe; `AppConfig`, `screens/Settings.kt` |
 | add a screen or a key | [conventions.md](conventions.md), [app-module.md](app-module.md) |
-| change what a fresh vault gets | `core/Bootstrap.kt`, `StarterSkills.kt` (+ a test in `CoreTest`) |
+| change what a fresh vault gets | `core/Bootstrap.kt`, `StarterSkills.kt` (+ a test in `SetupAndSkillsTest`) |
 | change the command line | `app/Cli.kt` (+ `SetupTest`) |
 | touch the chat loop | `app/Generation.kt`, `app/ChatSession.kt`; read [oracul.md](oracul.md) first when it touches second opinions or other models |
 
@@ -54,7 +54,7 @@ Layout rules that bite: a screen's top-level children go inside `Stack { }` (Mos
 2. `./gradlew test installDist` is green; for UI changes, look at the real screen (pty snapshot) at a small and a large terminal size.
 3. **Docs in the same commit:** the matching `docs/*.md`, [roadmap.md](roadmap.md) status, the in-app Guide (`screens/Guide.kt`) and Changelog (`screens/Changelog.kt`, bump "Last updated"), `README.md` when the first-run or install story changes.
 4. **The Arcana vault notes** (`.arcana/reference/Arcana LLM Reference.md` = what the model may do, `Arcana Reference Documentation.md`, `Arcana Distribution and Setup.md`, all three in the hidden `.arcana/reference/` folder, `Skills/Skills Guide.md`) and the memory template (`Vault.MEMORY_TEMPLATE`, plus the user's `ARCANA.md`, whose first 8,000 characters are the only part the model reads).
-5. Audit instead of assuming: list the real tools (`ToolBox.specs` names plus the pseudo-tools `ask_user`, `request_access`, `request_mode`, `chat_stats`, `chat_stats_json`, `todo`) and grep every doc and note for each one.
+5. Audit instead of assuming: list the real tools (`ToolBox.specs` names plus the chat tools in `ChatTools.names`: `ask_user`, `turn_on_tools`, `request_access`, `request_mode`, `chat_stats`, `chat_stats_json`, `todo`, `consult`) and grep every doc and note for each one.
 
 ## Opt-in checks against a real Ollama
 

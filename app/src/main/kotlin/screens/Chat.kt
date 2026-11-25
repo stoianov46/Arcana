@@ -1,5 +1,22 @@
 package com.arcana.brain.app.screens
 
+import com.arcana.brain.app.cancelOracul
+import com.arcana.brain.app.clearGoal
+import com.arcana.brain.app.compact
+import com.arcana.brain.app.compare
+import com.arcana.brain.app.deleteCurrent
+import com.arcana.brain.app.history
+import com.arcana.brain.app.offerMemory
+import com.arcana.brain.app.open
+import com.arcana.brain.app.revise
+import com.arcana.brain.app.secondOpinion
+import com.arcana.brain.app.startGoal
+import com.arcana.brain.app.startNew
+import com.arcana.brain.app.takeOver
+import com.arcana.brain.core.effectiveContext
+import com.arcana.brain.core.contextTokens
+import com.arcana.brain.core.contextUsage
+import com.arcana.brain.core.thinkOptions
 import com.idea.ink.text.wrapRows
 
 import com.idea.ink.text.sanitizeForTerminal
@@ -62,527 +79,11 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
-/** The window the gauge counts against: what was asked for, but never more than the model supports (when that is known). */
-internal fun effectiveContext(asked: Int, modelMax: Int, loaded: Int = 0): Int = when {
-    asked > 0 && modelMax > 0 -> minOf(asked, modelMax)
-    asked > 0 -> asked
-    // "Model default": Ollama runs with its own window, usually much smaller than what the model could do; once it has loaded the model it says which
-    loaded > 0 -> loaded
-    else -> modelMax
-}
-
 /** Below this many tokens a long chat, an attached note or a few tool results no longer fit and the oldest text is silently dropped. */
 internal const val COMFORTABLE_CONTEXT = 32_768
 
-/** One entry of the menu that opens when a message starts with "/": a command, or a tool (which writes the start of a request for it). */
-internal class SlashItem(
-    val name: String, val hint: String, val tool: Boolean, val skill: Boolean = false,
-    val kind: SlashKind = if (skill) SlashKind.Skill else if (tool) SlashKind.Read else SlashKind.Command,
-    /** An example of how to type it with its text (`/revise focus on the typo`), shown under the highlighted entry; blank for a command that takes no text. */
-    val usage: String = "",
-    /** Other names that find it in the menu and run it (`/think` for `/effort`: the old name keeps working). */
-    val aliases: List<String> = emptyList(),
-)
-
-/** What a request for each tool might look like when typed after its name (`/read_note Trip Planner`); blank = it needs nothing. */
-private val ToolExamples = mapOf(
-    "search_notes" to "oracul second opinion", "list_notes" to "Skills", "read_note" to "Trip Planner", "create_note" to "Ideas/Weekend plan with three bullet points",
-    "append_to_note" to "Trip Planner: add a packing list", "set_properties" to "Trip Planner status: done", "add_tags" to "Trip Planner travel, 2026",
-    "remember" to "I prefer short answers", "use_skill" to "coingecko-forecast", "wait" to "5 seconds", "web_search" to "ollama context window size",
-    "fetch_url" to "https://example.com/page", "http_request" to "GET https://api.example.com/status", "run_command" to "ls -la ~/Downloads",
-    "git_status" to "in ~/projects/app", "git_log" to "last 5 commits in ~/projects/app", "git_diff" to "in ~/projects/app", "list_dir" to "~/Downloads",
-    "find_files" to "*.md in ~/Documents", "grep_files" to "TODO in ~/projects/app", "read_file" to "~/projects/app/README.md", "cat" to "~/projects/app/README.md",
-    "write_file" to "~/notes.txt with the text hello", "edit_file" to "README.md: change the title to Arcana", "delete_path" to "~/old/notes.txt", "move_path" to "a.txt to ~/Archive/a.txt",
-)
-
-/**
- * The usage line of a tool in the slash menu: `e.g. /read_note Trip Planner` from [ToolExamples], else its required arguments in angle
- * brackets (`/name <path> <content>`), else a note that it needs no text.
- */
-internal fun toolUsage(name: String, required: List<String>): String = when {
-    name in ToolExamples -> "e.g. /$name ${ToolExamples.getValue(name)}"
-    required.isNotEmpty() -> "usage: /$name ${required.joinToString(" ") { "<$it>" }}"
-    else -> "needs no text: just /$name"
-}
-
-internal val SlashCommands = listOf(
-    SlashItem("/new", "Start a new chat", false),
-    SlashItem("/history", "Reopen an earlier chat", false),
-    SlashItem("/save", "Save this chat to the vault as a note", false),
-    SlashItem("/note", "Attach a note to your next message", false),
-    SlashItem("/image", "Attach a file or picture", false),
-    SlashItem("/vault", "Answer from your vault notes (toggle)", false),
-    SlashItem("/tools", "Let the model use tools (toggle)", false),
-    SlashItem("/oracul", "Ask the Oracul model for a second opinion on the last answer", false, usage = "e.g. /oracul qwen3:30b   (ask that model just this once)"),
-    SlashItem("/revise", "The main model revises its answer using the Oracul's opinion", false, usage = "e.g. /revise focus on the edge case   (your note is added)"),
-    SlashItem("/takeover", "The Oracul model finishes the turn the main model failed", false),
-    SlashItem("/compare", "The Oracul answers too and a judge compares the answers", false, usage = "e.g. /compare qwen3:30b   (answer with that model instead)"),
-    SlashItem("/compact", "Summarize the older part of this chat to free the context window", false),
-    SlashItem("/mode", "Tools mode: ask, auto, plan (cycles)", false),
-    SlashItem("/autorun", "Run shell commands without asking (toggle)", false),
-    SlashItem("/effort", "Reasoning effort for the next message: pick from the levels this model offers (Ctrl+G)", false, usage = "/effort xhigh   or just /effort to pick from the list", aliases = listOf("/think")),
-    SlashItem("/sampling", "How the model picks its next word: temperature, top P, top K, min P, penalties (Ctrl+R)", false, usage = "/sampling   or /sampling model  (the model's own defaults)  or /sampling custom"),
-    SlashItem("/memory", "Open ARCANA.md, your standing instructions", false, usage = "e.g. /memory check   (finds repeated lines and dead note paths, asks before removing)"),
-    SlashItem("/skills", "Skills from your vault: list them, on/off (toggle)", false),
-    SlashItem("/reindex", "Build or refresh the semantic search index of your vault (Settings → Search → Embedding model (for meaning))", false),
-    SlashItem("/helpers", "All helper models on or off: Oracul, judge, flow, specialists, router (toggle). Off = only the chat model works", false),
-    SlashItem("/roles", "Skill roles on or off: the worker, planner and reviewer a skill uses (toggle)", false),
-    SlashItem("/flow", "Flow: every message goes analyst, planner, worker, reviewer, controller (toggle)", false, usage = "e.g. /flow careful   or   /flow off   (without a name it switches)"),
-    SlashItem("/goal", "Set a goal: Arcana keeps working until a checker says it is met", false, usage = "e.g. /goal all notes in Inbox are tagged   (/goal alone shows it, /goal clear removes it)"),
-    SlashItem("/artifacts", "Files and notes the model wrote or changed in this chat", false),
-    SlashItem("/context", "Context inspector: what the model was sent with the last request, part by part (system prompt, memory, tools, excerpts, history)", false),
-    SlashItem("/thinking", "Thoughts pane: watch the model's thoughts under the conversation (toggle; not the effort, see /effort)", false),
-    SlashItem("/status", "Status pane: model, sampling (editable) and context window in a right-side column (toggle; { wider, } narrower, off at the smallest)", false),
-    SlashItem("/append", "Add the last answer to a note", false),
-    SlashItem("/replace", "Replace a note with the last answer", false),
-    SlashItem("/clear", "Erase this chat", false),
-)
-
-/** The current state of a setting-like command, as the badge shown next to it: text and colour; null for a command that is not a setting. */
-internal fun slashState(name: String, config: AppConfig, toolsSupported: Boolean?): Pair<String, com.jakewharton.mosaic.ui.Color>? = when (name) {
-    "/vault" -> if (config.chatUseVault) "ON" to Palette.Green else "OFF" to Palette.Dim
-    "/tools" -> when {
-        !config.toolsEnabled -> "OFF" to Palette.Dim
-        toolsSupported == false -> "NO SUPPORT" to Palette.Red
-        else -> "ON" to Palette.Green
-    }
-    "/mode" -> if (!config.toolsEnabled) "TOOLS OFF" to Palette.Dim else config.toolMode.uppercase() to when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }
-    "/oracul" -> if (!config.oraculEnabled) "HELPERS OFF" to Palette.Dim else if (config.oraculModel.isBlank()) "NO MODEL" to Palette.Dim else (if (config.oraculAuto == "off") "MANUAL" else "AUTO ${config.oraculAuto.uppercase()}") to Palette.Green
-    "/compact" -> if (config.autoCompactPercent > 0) "AUTO ${config.autoCompactPercent}%" to Palette.Green else "MANUAL" to Palette.Dim
-    "/effort" -> (if (config.thinking == "default") autoWord(ThinkLevels.defaultWord).uppercase() else thinkText(config.thinking)) to if (config.thinking == "default") Palette.Dim else Palette.Accent
-    "/autorun" -> if (!config.toolShell) "SHELL OFF" to Palette.Dim else if (config.toolAutoShell) "ON" to Palette.Red else "OFF" to Palette.Dim
-    "/memory" -> if (config.memoryEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
-    "/skills" -> if (config.skillsEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
-    "/thinking" -> if (config.thinkingPane) "ON" to Palette.Green else "OFF" to Palette.Dim
-    "/status" -> if (config.statusPane) "ON" to Palette.Green else "OFF" to Palette.Dim
-    "/helpers" -> if (config.oraculEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
-    "/roles" -> if (config.skillRolesEnabled) "ON" to Palette.Green else "OFF" to Palette.Dim
-    "/flow" -> if (config.flow == Flow.OFF) "OFF" to Palette.Dim else config.flow.uppercase() to Palette.Green
-    else -> null
-}
-
-/** A typed line that starts with a slash, split into the command word (a trailing `:` or `,` dropped, so `/revise:` works) and the text after it. */
-internal fun splitSlash(text: String): Pair<String, String> {
-    val line = text.trim()
-    val word = line.substringBefore(' ').substringBefore('\n').trimEnd(':', ',')
-    return word to line.removePrefix(line.substringBefore(' ').substringBefore('\n')).trim()
-}
-
-/** The message for a slash word that is no command, skill or tool: says what was typed and offers the closest names. */
-internal fun unknownCommand(word: String, items: List<SlashItem>): String {
-    val close = slashMatches(items, word).take(3).map { it.name }
-    return "Unknown command $word." + (if (close.isEmpty()) "" else " Did you mean ${close.joinToString(", ")}?") + " Type / to see the commands and tools."
-}
-
-/** The entries that fit what is typed after the slash, grouped commands, skills, tools; in each group names that start with it first, then names that contain it. */
-internal fun slashMatches(items: List<SlashItem>, query: String): List<SlashItem> {
-    val q = query.trim().lowercase().removePrefix("/")
-    val names = { item: SlashItem -> (listOf(item.name) + item.aliases).map { it.lowercase().removePrefix("/") } }
-    // commands, then skills, then tools (so each kind sits together and is easy to tell apart); inside a kind the names that start with the text come first
-    return (items.filter { n -> names(n).any { it.startsWith(q) } } + items.filter { n -> names(n).none { it.startsWith(q) } && names(n).any { q in it } }).sortedBy { it.kind.category.ordinal }
-}
-
-/** The Chat key map (`?`): every key and command by what it is for, the ones about the model first. */
-fun chatKeySections(): List<com.arcana.brain.app.navigation.KeySection> = listOf(
-    com.arcana.brain.app.navigation.KeySection("The model: thinking, tools, memory", listOf(
-        "/effort" to "reasoning effort for the next message: pick from what the model offers (Ctrl+G; /effort xhigh sets it directly)",
-        "/sampling" to "temperature, top P, top K, min P and the penalties: model defaults or your values (Ctrl+R)",
-        "/thinking" to "thoughts pane under the conversation ([ and ] also switch it on and off and resize it)",
-        "/status" to "status pane: model, sampling options (Ctrl+R edits them in it) and context window in a right-side column ({ wider and on, } narrower and off)",
-        "/mode" to "tools: ask, auto, plan",
-        "/tools" to "tools on or off",
-        "/autorun" to "shell commands without asking",
-        "/vault" to "answer from your vault notes",
-        "/compact" to "summarize old messages, free the context",
-        "/memory" to "ARCANA.md, your standing instructions",
-    )),
-    com.arcana.brain.app.navigation.KeySection("More models: opinion, flow, goal", listOf(
-        "/oracul [model]" to "second opinion on the last answer",
-        "/revise [note]" to "the main model revises with it",
-        "/takeover" to "the Oracul finishes a failed turn",
-        "/compare [model]" to "the Oracul answers, a judge compares",
-        "/flow [name]" to "analyst, planner, worker, reviewer, controller",
-        "/goal [text]" to "keep working until a checker says done",
-        "/helpers, /roles" to "helper models, skill roles on or off",
-        "/skills" to "skills from your vault on or off",
-        "/reindex" to "build or refresh the semantic search index",
-    )),
-    com.arcana.brain.app.navigation.KeySection("The message field", listOf(
-        "Enter" to "send",
-        "Alt+Enter, \\ Enter" to "new line",
-        "/" to "commands and tools (↑↓ Tab Enter)",
-        "@" to "attach a note",
-        Shortcuts.label("Ctrl+O") to "attach a file or picture",
-        Shortcuts.label("Ctrl+S") to "save the chat to the vault",
-        "↑↓ PgUp PgDn" to "scroll the conversation",
-        "Backspace" to "empty field: undo attach, then queued",
-        "Esc" to "browse the conversation",
-    )),
-    com.arcana.brain.app.navigation.KeySection("While the model works", listOf(
-        "Enter" to "queue a message for after the reply",
-        "Esc" to "cancel the reply (asks first)",
-        Shortcuts.label("Ctrl+G") to "reasoning effort: choose what the model offers (off, low, medium, xhigh…) for the next message",
-        Shortcuts.label("Ctrl+R") to "sampling: temperature, top P, top K, min P, penalties (model defaults or your values)",
-        "↑↓" to "scroll while it writes",
-    )),
-    com.arcana.brain.app.navigation.KeySection("Browsing (Esc from the field)", listOf(
-        "Enter" to "back to typing",
-        "↑↓ j k" to "scroll;  Space PgDn: a page;  g G: top, end",
-        "s" to "select & copy (Space tick, c copy, b code)",
-        "f" to "files and notes the model changed",
-    )),
-    com.arcana.brain.app.navigation.KeySection("The chat and its notes", listOf(
-        "/new, /history" to "a new chat, an earlier chat",
-        "/clear" to "erase this chat",
-        "/save" to "save it as a note",
-        "/append, /replace" to "put the last answer into a note",
-        "/note, /image" to "attach a note, a file or picture",
-        "/artifacts" to "files and notes written in this chat",
-        "/context" to "what the model was sent, part by part",
-    )),
-)
-
-/** The values of [model] `think` as the setting names them: `default`, then `off`, `on` and levels, only what the model lists. */
-internal fun thinkOptions(values: List<String>): List<String> =
-    if (values.isEmpty()) listOf("default") else listOf("default") + values.map { when (it) { "false" -> "off"; "true" -> "on"; else -> it } }.distinct()
-
-/** The `/think` choices of the model in use (what [thinkOptions] gives for the values Ollama lists), for the Settings row, which cannot see the app. Set when the model's details are read. */
-internal object ThinkLevels {
-    @Volatile var options: List<String> = listOf("default")
-
-    /** What the model does when nothing is sent, as Ollama reports it (`medium`, `on`, `off`), or blank when it does not say. */
-    @Volatile var defaultWord: String = ""
-
-    /** The level `on` really runs at for a model whose template names it (`xhigh` for a Qwen3.8 GGUF, which Ollama cannot send by name), or blank. */
-    @Volatile var onLevel: String = ""
-}
-
-/** The model's own default as a word: Ollama's `false`/`true` are off/on, a level stays as it is; blank when Ollama does not say. */
-internal fun thinkDefaultWord(raw: String): String = when (raw) { "" -> ""; "false" -> "off"; "true" -> "on"; else -> raw }
-
-/**
- * What a choice does to the work with the model, in plain words. [options] is the model's own list (`thinkOptions`), so a level is described by where it stands in THAT list:
- * the lowest is light, the highest is the deepest, those between are balanced. More reasoning means more thinking tokens, which take time and count against the context window.
- */
-internal fun thinkEffect(value: String, options: List<String>, defaultWord: String): String {
-    val levels = options.filter { it != "default" && it != "off" && it != "on" }
-    return when (value) {
-        "off" -> "No reasoning: the fastest and cheapest, and the whole window is left for the conversation. Right for simple questions and chat; weaker on hard, multi-step or tool-heavy tasks."
-        "on" -> "The model reasons before it answers: slower, and its thinking uses tokens of the context window. Better on hard questions."
-        "default" -> "Nothing is sent: the model decides" + (if (defaultWord.isEmpty()) "." else " ($defaultWord). " + thinkEffect(defaultWord, options, "").takeIf { defaultWord != "default" }.orEmpty())
-        else -> when {
-            levels.size > 1 && value == levels.first() -> "Light reasoning: a short think before the answer. Quicker and cheaper than the higher levels; good for everyday questions."
-            levels.size > 1 && value == levels.last() -> "The deepest reasoning: the most thinking tokens, so the slowest and the most context used, but the best on hard, multi-step or agentic tasks."
-            else -> "Balanced reasoning: a fair amount of thinking before the answer. A good default when you do not know how hard the task is."
-        }
-    }
-}
-
-/**
- * The colour of a reasoning choice, from calm to hot, so the level can be read at a glance (static: no animation): off is blue (no reasoning, fast), the model's lowest level green, its
- * middle levels orange, its highest red; `on` (a model with only on/off) is orange; `auto` takes the colour of what the model does by default, muted when that is not known.
- * Where a level stands is judged in the model's OWN list, so `low · medium · xhigh` and `low · medium · high` both run green, orange, red.
- */
-internal fun thinkColor(value: String, options: List<String>, defaultWord: String): com.jakewharton.mosaic.ui.Color {
-    val levels = options.filter { it != "default" && it != "off" && it != "on" }
-    // a theme with a think accent (Monochrome Accent) shades it from low to high instead of the green / orange / red scale
-    val shaded = Palette.thinkShade(0.5) != null
-    return when (value) {
-        "off" -> Palette.Blue
-        "on" -> if (shaded) Palette.thinkShade(0.5)!! else if (ThinkLevels.onLevel.isNotEmpty()) Palette.Red else Palette.Orange
-        "default" -> if (defaultWord.isEmpty() || defaultWord == "default") Palette.Muted else thinkColor(defaultWord, options, "")
-        else -> {
-            val at = levels.indexOf(value)
-            if (value.isNotEmpty() && value == ThinkLevels.onLevel) Palette.thinkShade(1.0) ?: Palette.Red
-            else if (at < 0) Palette.Muted
-            else {
-                val t = if (levels.size <= 1) 0.5 else at.toDouble() / (levels.size - 1)
-                if (shaded) Palette.thinkShade(t)!! else if (t < 0.34) Palette.Green else if (t < 0.8) Palette.Orange else Palette.Red
-            }
-        }
-    }
-}
-
-/** `auto (medium)`: the model default with what it really is, so "auto" is never a mystery; just `auto` when Ollama does not say. */
-internal fun autoWord(defaultWord: String): String = if (defaultWord.isEmpty()) "auto" else "auto ($defaultWord)"
-
-/** The name of a thinking choice as a person reads it: `Model default`, `Off`, `On`, `Xhigh`. */
-internal fun thinkLabel(value: String): String = when (value) { "default" -> "Model default"; "off" -> "Off"; "on" -> "On" + onSuffix(); else -> value.replaceFirstChar { it.uppercase() } }
-
-private fun onSuffix(): String = ThinkLevels.onLevel.takeIf { it.isNotEmpty() }?.let { " ($it)" }.orEmpty()
-
-internal fun thinkText(setting: String): String = if (setting == "default") "MODEL DEFAULT" else setting.uppercase() + if (setting == "on") onSuffix() else ""
-
-/** What the reasoning-effort control says and how it looks: [text] is `✦ think xhigh`, [width] the columns it takes with its key hint and a gap before it. */
-private class EffortView(val text: String, val color: com.jakewharton.mosaic.ui.Color, val width: Int)
-
-/**
- * The reasoning-effort control at the right end of the message field's first row: `Ctrl+G ✦ think xhigh`. Its colour says the level at a glance, calm to hot ([thinkColor]: off blue,
- * lowest level green, middle orange, highest red), and it does not move. A level picked for the next message says so. Null for a model that cannot think, or when the field is too
- * narrow to share its row.
- */
-private fun effortView(app: AppContext, thinkingNow: Boolean, fieldWidth: Int): EffortView? {
-    // [thinkingNow] only decides, like a running reply does, that the level in use is the one the message was sent with
-    if (app.thinkingValues.isEmpty()) return null
-    val plain = app.config.plainGlyphs
-    val options = thinkOptions(app.thinkingValues)
-    val next = app.chat.thinkNext
-    val inUse = if (next.isEmpty() && thinkingNow || next.isEmpty() && app.chat.gen.state == GenState.Running) app.chat.thinkNow() else ""
-    val setting = next.ifEmpty { inUse.ifEmpty { app.config.thinking } }
-    val effective = if (setting in options) setting else "default"
-    val word = (if (effective == "default") autoWord(thinkDefaultWord(app.thinkingDefault)) else effective) + if (next.isNotEmpty()) " · next" else if (inUse.isNotEmpty()) " · this" else ""
-    val text = "${if (effective == "off") (if (plain) "" else "◌ ") else (if (plain) "" else "✦ ")}think $word"
-    val color = thinkColor(effective, options, thinkDefaultWord(app.thinkingDefault))
-    val width = Shortcuts.label("Ctrl+G").length + 1 + text.length + 2
-    // the typed text keeps at least this much of the row
-    if (fieldWidth < width + 30) return null
-    return EffortView(text, color, width)
-}
-
-@Composable
-private fun EffortInline(view: EffortView) {
-    Row {
-        Label("  " + Shortcuts.label("Ctrl+G") + " ", color = Palette.Hint)
-        Label(view.text, color = view.color, textStyle = com.jakewharton.mosaic.ui.TextStyle.Bold)
-    }
-}
-
-/** `✦ think auto`, `◌ think off` or `✦ think low`: what is sent as `think`; off is blue (fast), the rest accent. */
-internal fun thinkingSegment(app: AppContext, plain: Boolean): StatusSegment {
-    // a level picked for the next message wins until that message is sent
-    val next = app.chat.thinkNext
-    // while a reply runs, the level that message was sent with (a /think pick) is the one in use
-    val inUse = if (next.isEmpty() && app.chat.gen.state == GenState.Running) app.chat.thinkNow() else ""
-    val options = thinkOptions(app.thinkingValues)
-    val setting = next.ifEmpty { inUse.ifEmpty { app.config.thinking } }
-    // a setting the model does not list is not sent: the model decides
-    val effective = if (setting in thinkOptions(app.thinkingValues)) setting else "default"
-    val word = (if (effective == "default") autoWord(thinkDefaultWord(app.thinkingDefault)) else effective) + if (next.isNotEmpty()) " · next message" else if (inUse.isNotEmpty()) " · this message" else ""
-    val glyph = if (plain) "" else if (effective == "off") "◌ " else "✦ "
-    return statusSegment("", "${glyph}think $word", thinkColor(effective, options, thinkDefaultWord(app.thinkingDefault)), 8, bold = true)
-}
-
-/**
- * Tokens the context holds: the last reply's prompt plus its answer as Ollama counted them, or an estimate of what the model is sent now (every message it reads, as it reads it,
- * plus [overhead]: the system prompt and the tool definitions; see [Compaction.tokens]) when that is larger: after a compaction the counts are stale, and some Ollama versions count
- * only the part of the prompt they did not have in their cache. The flag says it is an estimate.
- */
-internal fun contextTokens(messages: List<ChatMessage>, overhead: Int = 0): Pair<Int, Boolean>? {
-    val statsAt = messages.indexOfLast { (it.stats?.promptTokens ?: 0) > 0 }
-    if (statsAt < 0) return null
-    val estimate = Compaction.forModel(messages).sumOf { Compaction.messageTokens(it) } + overhead
-    // the counts of the last reply are stale when a summary came after it, or was inserted before it while that reply was made from the whole chat (a manual or automatic compaction)
-    val summaryAt = messages.indexOfLast { Compaction.isSummary(it) }
-    if (summaryAt > statsAt || (summaryAt >= 0 && statsAt < messages[summaryAt].contextAt)) return estimate to true
-    val stats = messages[statsAt].stats!!
-    val counted = stats.promptTokens + stats.completionTokens
-    // well above what Ollama counted: its count left part of the prompt out, the estimate is nearer the truth
-    return if (overhead > 0 && estimate > counted * 6 / 5) estimate to true else counted to false
-}
-
-/** How full the model's context was after the last reply (its prompt plus its answer) as a share and a `13.6k/131k` text (`~` after a compaction: an estimate); null before the first reply or when the size is unknown. */
-internal fun contextUsage(messages: List<ChatMessage>, limit: Int, overhead: Int = 0, ahead: Int = 0): Pair<Double, String>? {
-    val (counted, estimated) = contextTokens(messages, overhead) ?: return null
-    // [ahead]: what the next request will add that is not in the chat yet (the excerpts and notes of the message about to be sent)
-    val used = counted + ahead
-    if (limit <= 0) return null
-    return (used.toDouble() / limit).coerceIn(0.0, 1.0) to "${if (estimated) "~" else ""}${UsageStats.compact(used.toLong())}/${UsageStats.contextSize(limit.toLong())}"
-}
-
-/** `ctx ▰▰▱▱▱▱▱▱ 12% 13k/131k`: how full the model's context was after the last reply (its prompt plus its answer); empty before the first reply or when the size is unknown. */
-internal fun contextMeter(messages: List<ChatMessage>, limit: Int): String {
-    val (used, estimated) = contextTokens(messages) ?: return ""
-    if (limit <= 0) return ""
-    val share = (used * 100.0 / limit).coerceIn(0.0, 100.0)
-    val filled = (share / 12.5).toInt().coerceIn(0, 8).let { if (it == 0 && used > 0) 1 else it }
-    val full = com.arcana.brain.core.UsageStats::compact
-    return " · ctx " + "▰".repeat(filled) + "▱".repeat(8 - filled) + " ${"%.0f".format(share)}% ${if (estimated) "~" else ""}${full(used.toLong())}/${com.arcana.brain.core.UsageStats.contextSize(limit.toLong())}" +
-        if (share >= 80) " ⚠ nearly full: /new starts fresh" else ""
-}
-
-/**
- * The worker and the Oracul in one segment, so it is clear which model works now: that one is the filled pill (accent for the worker, orange for the Oracul or the judge, with `…`),
- * the other follows it quietly (the Oracul's setup while the worker works, `waiting` for the worker while the Oracul answers). The quiet part is dropped when the bar is narrow.
- */
-internal fun modelsSegment(workerLabel: String, asking: String?, config: AppConfig, plain: Boolean, width: Int, oraculTooBig: Boolean = false): StatusSegment {
-    val setup = Oracul.statusText(config, plain)
-    if (asking != null) {
-        val judging = asking == Oracul.judge(config) && asking != Oracul.model(config)
-        val pill = " ${if (plain) "${if (judging) "judge" else "oracul"} $asking" else "${if (judging) "⚖" else Oracul.GLYPH} $asking…"} "
-        val waiting = " $workerLabel ${if (plain) "waits" else "waiting"}"
-        val parts = mutableListOf(StatusPart(pill, Palette.Ink, bold = true, background = Palette.Orange))
-        parts += StatusPart(waiting, Palette.Muted)
-        return StatusSegment(parts, 10)
-    }
-    // the model is a plain fact (bold accent text); a fill is kept for what needs attention
-    val parts = mutableListOf(StatusPart(workerLabel, Palette.Accent, bold = true))
-    if (setup.isNotEmpty()) {
-        parts += StatusPart(" $setup", Palette.Blue)
-        // the Oracul does not fit this machine's memory: it would swap to disk or run on the CPU (Settings → Helpers says what to choose instead)
-        if (oraculTooBig) parts += StatusPart(if (plain) " !" else " ⚠", Palette.Orange, bold = true)
-    }
-    return StatusSegment(parts, 10)
-}
-
-/** The model-state indicator of the Chat status bar: the reason for a wait (orange), or `● loaded 7.7 GB 100% GPU` when the chat model is loaded, or `○ not loaded` (it loads with the next message); with more than one model in memory, `· 2 models 17.3 GB` is what they take together; null until Ollama has been asked. */
-internal fun modelStateSegment(app: AppContext, plain: Boolean): StatusSegment? {
-    val loaded = app.loaded
-    val mine = loaded?.firstOrNull { com.arcana.brain.core.ModelStatus.sameModel(it.name, app.config.model) }
-    // the memory figure lives in the ram meter; this says only where the model sits
-    val detail = if (mine == null || mine.sizeBytes <= 0) "" else " ${100 - mine.cpuPercent}% GPU"
-    val all = "" // what all the loaded models take together is the memory meter (see memoryMeter)
-    // one indicator, one place: while a wait lasts it says what is going on (orange), after it the state of the model
-    if (app.modelWhy.isNotEmpty()) {
-        val why = app.modelWhy.substringBefore(";").replace("reading about ", "reading ").replace(" tokens of conversation", " tokens")
-        val text = if (mine != null) "loaded$detail$all · " + why.removePrefix("loaded, ") else why // the whole sentence is in the reply line
-        return statusSegment("", (if (plain) "wait: " else "◌ ") + text, Palette.Orange, 10, second = false)
-    }
-    if (loaded == null) return null
-    if (mine == null) return statusSegment("", if (plain) "not loaded" else "○ not loaded", Palette.Muted, 4)
-    // loaded: where it sits is one word (GPU), with the share only when part of it has spilled to the CPU; the memory is the ram meter's business
-    val where = if (mine.sizeBytes <= 0) "" else if (mine.cpuPercent == 0) " GPU" else " ${100 - mine.cpuPercent}% GPU"
-    return statusSegment("", (if (plain) "loaded" else "● loaded") + where, if (mine.cpuPercent >= 10) Palette.Orange else Palette.Green, 6)
-}
-
-/** `◇ embed 0.6 GB`: the semantic search's embedding model is loaded too (it takes memory next to the chat model); null when it is not loaded or none is set. */
-internal fun embedSegment(app: AppContext, plain: Boolean): StatusSegment? {
-    val m = com.arcana.brain.core.ModelStatus.embedLoaded(app.loaded, app.config.embedModel, app.config.model) ?: return null
-    val size = if (m.sizeBytes > 0) " %.1f GB".format(m.sizeBytes / 1e9) else ""
-    return statusSegment("", (if (plain) "embed" else "◇ embed") + size, Palette.Blue, 4)
-}
-
-/**
- * The memory meter of the bottom bar: what every model Arcana has loaded (the chat model, the Oracul, the judge, the flow's stages) takes of this machine's memory, as a quiet bar,
- * with the models' count and, when the model's cache size is known, about how many tokens of context fit next to the chat model's weights (an estimate). Null while nothing is loaded.
- * The processor and where the model sits stay percentages.
- */
-internal fun memoryMeter(app: AppContext, plain: Boolean): StatusSegment? {
-    val loaded = app.loaded.orEmpty()
-    val total = loaded.sumOf { it.sizeBytes }
-    val ram = com.arcana.brain.core.ModelFit.physicalMemory()
-    if (total <= 0 || ram <= 0) return null
-    val gb = { b: Long -> "%.1f".format(b / 1e9).removeSuffix(".0") }
-    // the machine's whole use, never less than what the models take (the reading and the models' report come at different moments)
-    val used = maxOf(app.usedMemory ?: total, total)
-    val detail = buildString {
-        append("models ${gb(total)} · ${if (plain) "all" else "Σ"} ${gb(used)} | ${com.arcana.brain.core.ModelFit.gb(ram)}")
-        if (loaded.size > 1) append(" · ${loaded.size} models")
-        app.tokenRoom?.let { append(" · ~${UsageStats.contextSize(it)} ctx fits") }
-    }
-    return memoryBarSegment(if (plain) "mem" else "ram", total.toDouble() / ram, (used - total).toDouble() / ram, detail, warn = used > com.arcana.brain.core.ModelFit.budget(ram) + total / 2 && total > com.arcana.brain.core.ModelFit.budget(ram), plain = plain)
-}
-
-/**
- * The warnings about the model and the machine, short, for the footer bar (on every screen, next to the model badge): a loaded model that runs partly on the CPU (red), a context window
- * larger than the model is built for, or one so small that notes and tool results get cut (orange). The explanations are in Settings → Ollama → Context window.
- */
-internal fun hardwareWarnings(app: AppContext, plain: Boolean): List<Pair<String, com.jakewharton.mosaic.ui.Color>> {
-    val mark = if (plain) "!" else "⚠"
-    val config = app.config
-    val out = ArrayList<Pair<String, com.jakewharton.mosaic.ui.Color>>()
-    app.offloads.firstOrNull()?.let { out += "$mark ${it.cpuPercent}% on CPU: slow, lower the context" to Palette.Red }
-    if (config.contextTokens > 0 && app.modelContext > 0 && config.contextTokens > app.modelContext)
-        out += "$mark ctx ${UsageStats.contextSize(config.contextTokens.toLong())} > model ${UsageStats.contextSize(app.modelContext.toLong())}" to Palette.Orange
-    val window = effectiveContext(config.contextTokens, app.modelContext, app.loadedContext)
-    // the window asked for needs more cache than this machine's memory leaves next to the model's weights
-    app.tokenRoom?.takeIf { config.contextTokens > 0 && config.contextTokens > it && it > 0 }?.let { out += "$mark ctx ${UsageStats.contextSize(config.contextTokens.toLong())} > ~${UsageStats.contextSize(it)} fits in ${if (app.gpuCap != null) "GPU memory" else "memory"}" to Palette.Orange }
-    if (window in 1 until COMFORTABLE_CONTEXT) out += "$mark ctx ${UsageStats.contextSize(window.toLong())} is small" to Palette.Orange
-    return out
-}
-
-/** The memory pill when the file is longer than what is sent: how much goes to the model of how much there is, in warning colours (the end is not read). */
-internal fun memoryCutText(total: Int, plain: Boolean): String =
-    "${if (plain) "!" else "⚠"} memory ${UsageStats.compact(Vault.MEMORY_LIMIT.toLong())} of ${UsageStats.compact(total.toLong())}: end cut"
-
-/**
- * How the vault is searched right now, next to `◉ vault` (for `/vault` answers) or, with `/vault` off and tools on, on its own (`⌕ model: …`: nothing is searched in advance; the model searches by itself with `search_vault`): `⌕ words+meaning`, `⌕ words` or `⌕ meaning`. It shows what will REALLY run: with Both (or Meaning) and no embedding model set up the
- * words carry on alone, so it says `⌕ words (no model)` in orange, not what the setting asks for.
- */
-internal fun searchModeSegment(app: AppContext, chat: ChatSession, plain: Boolean, toolOnly: Boolean = false): StatusSegment {
-    // the same setting (Settings → Search → Search by) decides for /vault answers and for the model's own searches
-    val mode = RetrievalMode.of(app.config.searchBy)
-    val tag = ""
-    val meaningOn = chat.semanticOn(app.config)
-    val glyph = (if (plain) "search " else "⌕ ") + (if (toolOnly) "model: " else "")
-    return when {
-        mode == RetrievalMode.Keywords -> statusSegment("", "${glyph}words$tag", Palette.Blue, 5, second = true)
-        !meaningOn -> statusSegment("", "${glyph}words (no model)$tag", Palette.Orange, 5, second = true)
-        mode == RetrievalMode.Meaning -> statusSegment("", "${glyph}meaning$tag", Palette.Purple, 5, second = true)
-        else -> statusSegment("", "${glyph}words+meaning$tag", Palette.Green, 5, second = true)
-    }
-}
-
-/** What the Chat status bar says: model, chat, context gauge, tokens, estimated price, session time and the tool state. */
-private fun chatStatus(app: AppContext, chat: ChatSession, plain: Boolean, memoryChars: Int, width: Int): List<StatusSegment> {
-    val config = app.config
-    val stats = chat.messages.mapNotNull { it.stats }
-    val sessionRecords = UsageStats.since(app.usage.toList(), app.sessionStart)
-    val cost = UsageStats.estimatedCost(sessionRecords, config.estPriceIn, config.estPriceOut) + app.liveTokens * config.estPriceOut / 1_000_000.0
-    val compact = UsageStats::compact
-    return buildList {
-        // the models, one segment: whoever works now comes first as a filled pill, the other one after it, quiet
-        add(modelsSegment(ModelIcon.label(config.model, plain), chat.consulting, config, plain, width, app.memoryAdvice(Oracul.model(config), com.arcana.brain.core.ModelFit.Role.Oracul)?.startsWith("⚠") == true))
-        // how the next word is chosen (model defaults or custom): quality-relevant, so it shows the values the model really works with (Ctrl+R changes them)
-        add(samplingSegment(app))
-        // the model's thinking: a core fact of how it answers (off is much faster); shown when the model can think
-        if (app.thinkingValues.isNotEmpty()) add(thinkingSegment(app, plain))
-        if (config.chatUseVault) {
-            add(statusSegment("", "◉ vault", Palette.Cta, 6, bold = true, second = true))
-            add(searchModeSegment(app, chat, plain))
-        } else if (config.toolsEnabled && app.openVault().isSuccess) {
-            // /vault is off, but the model can still search the vault with search_vault (words and meaning by default): the indicator says which search that is
-            add(searchModeSegment(app, chat, plain, toolOnly = true))
-        }
-        // the goal of this chat (/goal): shown so it is clear what the work is for
-        chat.goal?.let { add(pillSegment("◎ goal: ${it.replace('\n', ' ').take(40)}${if (it.length > 40) "…" else ""}", Palette.Cta, 8)) }
-        // what the tools wrote or changed in this chat (/artifacts lists it)
-        Artifacts.pill(chat.artifacts.toList(), plain)?.let { add(pillSegment(it, Palette.Purple, 5)) }
-        // the memory file the assistant reads in every chat: it takes room in the context, so it sits before the gauge (orange when its end is cut)
-        if (config.memoryEnabled) {
-            if (memoryChars > Vault.MEMORY_LIMIT) add(statusSegment("", memoryCutText(memoryChars, plain), Palette.Orange, 9, bold = true))
-            else if (memoryChars > 0) add(statusSegment("", "✎ memory ${UsageStats.compact(memoryChars.toLong())}", Palette.Green, 6))
-            else add(statusSegment("", "✎ no ARCANA.md", Palette.Muted, 3))
-        }
-        val window = effectiveContext(config.contextTokens, app.modelContext, app.loadedContext)
-        contextUsage(chat.messages, window, chat.overheadTokens)?.let { (share, detail) -> add(gaugeSegment("ctx", share, detail, 10, plain)) }
-        // a small window drops the oldest text without a word: say so before it matters (Settings → Ollama → Context window)
-        // ↑ (prompt) is exact and moves when a request ends; ↓ (reply) also counts the pieces streaming right now, until the exact figure replaces them
-        if (stats.isNotEmpty() || app.liveTokens > 0) add(StatusSegment(listOf(StatusPart("↑${compact(stats.sumOf { it.promptTokens.toLong() })}", Palette.Blue), StatusPart(" ↓${compact(stats.sumOf { it.completionTokens.toLong() } + app.liveTokens)}", Palette.Green)), 10))
-        // everything this session spent, every model and feature (the advisors, the flow, compaction): the figure the price below is worked out from; the arrows above are this chat's own model only
-        add(statusSegment("Σ", "${compact(app.sessionTokens)} all models", Palette.Blue, 7))
-        add(statusSegment("est.", priceText(cost), Palette.Orange, 7, bold = true))
-        add(statusSegment("", "◷ ${spanText(System.currentTimeMillis() - app.sessionStart)}", Palette.Accent, 2))
-        // the skill being run: how many of its required steps are done (the gate sends the model back if it tries to finish early)
-        chat.skillTick
-        chat.skillRun?.let { run ->
-            val state = when {
-                run.finished && run.skippedCount > 0 -> Palette.Red
-                run.done == run.total -> Palette.Green
-                else -> Palette.Purple
-            }
-            val text = "◆ ${run.name} ${run.done}/${run.total}" + (if (run.skippedCount > 0) " ✕${run.skippedCount} skipped" else if (run.done == run.total) " ✓" else "")
-            // plain while it runs, filled only when something went wrong (skipped steps)
-            if (run.skippedCount > 0) add(pillSegment(text, state, 7)) else add(statusSegment("", text, state, 7, bold = true, second = true))
-        }
-        // the model's own task list: how many items are done
-        chat.todos.takeIf { it.isNotEmpty() }?.let { list ->
-            val done = com.arcana.brain.core.Todos.doneCount(list)
-            add(statusSegment("", (if (plain) "todo " else "☑ ") + "$done/${list.size}" + (if (done == list.size) " ✓" else ""), if (done == list.size) Palette.Green else Palette.Cta, 7, second = true))
-        }
-        if (config.toolsEnabled) {
-            if (app.tools == false) add(pillSegment("⚠ no tools", Palette.Red, 8))
-            else add(statusSegment("", "⚙ ${config.toolMode}", when (config.toolMode) { "auto" -> Palette.Orange; "plan" -> Palette.Blue; else -> Palette.Green }, 8, bold = true, second = true))
-            // the project the model works in: its folder name, so it is clear where relative paths and commands start
-            if (config.projectFolder.isNotBlank()) add(statusSegment("", (if (plain) "project " else "▣ ") + java.nio.file.Path.of(config.projectFolder.trimEnd('/')).fileName, Palette.Cta, 5, second = true))
-            // commands run without asking: said in the colour of risk, but as bold text, not a filled block that shouts over the bar
-            if (config.toolWeb && config.toolAutoSearch && config.toolMode != "plan") add(statusSegment("", if (plain) "auto-search" else "↗ auto-search", Palette.Orange, 8, bold = true, second = true))
-            if (config.toolShell && config.toolAutoShell && config.toolMode != "plan") add(statusSegment("", if (plain) "! auto-run" else "▶ auto-run", Palette.Red, 9, bold = true, second = true))
-        }
-    }
-}
-
 /** The question and its options as one row each (what the panel shows and what its height is counted from). */
-private fun questionLines(q: ChatSession.Question, width: Int): List<String> {
+internal fun questionLines(q: ChatSession.Question, width: Int): List<String> {
     val text = wrapText(sanitizeForTerminal(q.text).replace("`", ""), width).take(6)
     val options = q.options.mapIndexed { i, option ->
         val mark = if (q.multiple) (if (i in q.picked) "[x] " else "[ ] ") else ""
@@ -591,7 +92,7 @@ private fun questionLines(q: ChatSession.Question, width: Int): List<String> {
     return text + options
 }
 
-private fun questionActions(q: ChatSession.Question) =
+internal fun questionActions(q: ChatSession.Question) =
     if (q.typing) listOfNotNull(ActionItem("Enter", "Send answer", q.field.text.isNotBlank(), Palette.Cta), if (q.options.isNotEmpty()) ActionItem("↑", "Back to options") else null, ActionItem("Esc", "Skip"))
     else listOfNotNull(
         ActionItem("↑↓", "Move"),
@@ -602,29 +103,29 @@ private fun questionActions(q: ChatSession.Question) =
         ActionItem("Esc", "Skip"),
     )
 
-private fun endsWithBackslash(field: com.idea.ink.ui.TextFieldState): Boolean {
+internal fun endsWithBackslash(field: com.idea.ink.ui.TextFieldState): Boolean {
     val at = if (field.caretAt in 0..field.text.length) field.caretAt else field.text.length
     return at > 0 && field.text[at - 1] == '\\' && field.selection == null
 }
 
 /** How tall the message field may grow before it scrolls: a quarter of the screen, between 3 and 8 rows. */
 @Composable
-private fun maxInputRows(): Int = (LocalContentHeight.current / 4).coerceIn(3, 8)
-private const val MaxNotes = 5
+internal fun maxInputRows(): Int = (LocalContentHeight.current / 4).coerceIn(3, 8)
+internal const val MaxNotes = 5
 
 /** How many queued messages are listed above the message field; the rest are counted. */
-private const val QUEUE_SHOWN = 3
+internal const val QUEUE_SHOWN = 3
 
-private enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory, Artifacts, Think, Sampling, Status, Context, ContextPart }
+internal enum class ChatMode { Chat, History, PickNote, PickTarget, ConfirmReplace, Save, Leave, ConfirmClear, ConfirmCancel, ConfirmMemory, Artifacts, Think, Sampling, Status, Context }
 
 /** What happens to the last answer when it is sent to an existing note. */
-private enum class Target(val verb: String) { Append("Append"), Replace("Replace") }
+internal enum class Target(val verb: String) { Append("Append"), Replace("Replace") }
 
 /** One row of the `/think` picker: [value] is what is stored (blank = the Settings value), [label] and [note] are what is shown. */
-private class ThinkChoice(val value: String, val label: String, val note: String)
+internal class ThinkChoice(val value: String, val label: String, val note: String)
 
 /** A note offered in a picker: its vault path and when it last changed. */
-private class NoteChoice(val path: String, val modified: Long)
+internal class NoteChoice(val path: String, val modified: Long)
 
 /**
  * The conversation with the model, and the hub of the app: the message field always has the keyboard. `@` attaches a
@@ -647,10 +148,9 @@ fun ChatScreen(app: AppContext) {
     val notePicker = remember { PickerState() }
     val input = chat.input
     var mode by remember { mutableStateOf(ChatMode.Chat) }
-    var artifactIndex by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val artifactsDialog = remember { ArtifactsState() }
     // the context inspector: the part chosen, and the scroll of the part opened with Enter
-    var contextIndex by remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    val contextOutput = remember { OutputState() }
+    val inspector = remember { ContextInspectorState() }
     // Chat opens with the field NOT focused (browsing): j/k/g/s and the number keys are shortcuts until Enter starts typing; Esc leaves the field again.
     var browsing by remember { mutableStateOf(true) }
     var past by remember { mutableStateOf<List<StoredChat>>(emptyList()) }
@@ -803,7 +303,7 @@ fun ChatScreen(app: AppContext) {
 
     fun openContext() {
         if (chat.lastContext == null) toast("Nothing has been sent in this chat yet: send a message, then /context shows exactly what the model was sent.")
-        else { contextIndex = 0; mode = ChatMode.Context }
+        else { inspector.open(); mode = ChatMode.Context }
     }
 
     fun toggleThinkingPane() {
@@ -1009,14 +509,14 @@ fun ChatScreen(app: AppContext) {
             "/tools" -> toggleTools()
             "/memory" -> when (args.lowercase()) { "" -> openMemory(); "check" -> openMemoryCheck(); else -> toast("/memory takes only “check” after it.", error = true) }
             "/skills" -> toggleSkills()
-            "/reindex" -> chat.reindex { text, error -> toast(text, error = error) }
+            "/reindex" -> chat.semantic.reindex { text, error -> toast(text, error = error) }
             "/thinking" -> toggleThinkingPane()
             "/status" -> toggleStatusPane()
             "/flow" -> setFlow(args)
             "/helpers" -> { val on = !app.config.oraculEnabled; app.update(app.config.copy(oraculEnabled = on)); toast(if (on) "Helper models on." else "Helper models off: only ${app.config.model} works (skill roles are separate: /roles).") }
             "/roles" -> { val on = !app.config.skillRolesEnabled; app.update(app.config.copy(skillRolesEnabled = on)); toast(if (on) "Skill roles on: skills use the worker, planner and reviewer they name." else "Skill roles off: a skill is run by ${app.config.model} alone.") }
             "/context" -> openContext()
-            "/artifacts" -> if (chat.artifacts.isEmpty()) toast("Nothing written or changed in this chat yet.") else { artifactIndex = 0; mode = ChatMode.Artifacts }
+            "/artifacts" -> if (chat.artifacts.isEmpty()) toast("Nothing written or changed in this chat yet.") else { artifactsDialog.index = 0; mode = ChatMode.Artifacts }
             "/goal" -> runGoal(args)
             "/mode" -> cycleMode()
             "/autorun" -> toggleAutoRun()
@@ -1076,7 +576,7 @@ fun ChatScreen(app: AppContext) {
             Command("Attach a file or picture…", "Chat", "Ctrl+O") { openAttach() },
             Command("Memory file (ARCANA.md): open and edit", "Chat", "/memory") { openMemory() },
             Command(if (app.config.skillsEnabled) "Skills: turn off" else "Skills: turn on (list them)", "Chat", "/skills") { toggleSkills() },
-            Command("Semantic search: build or refresh the index of the vault", "Chat", "/reindex") { chat.reindex { text, error -> toast(text, error = error) } },
+            Command("Semantic search: build or refresh the index of the vault", "Chat", "/reindex") { chat.semantic.reindex { text, error -> toast(text, error = error) } },
             Command("Reasoning effort: choose for the next message (what the model offers)", "Chat", "Ctrl+G") { openThinkPicker() },
             Command("Sampling: temperature, top P, top K, min P, penalties", "Chat", "Ctrl+R") { openSampling() },
             Command(if (app.config.thinkingPane) "Thinking pane: turn off" else "Thinking pane: show the model's thoughts live", "Chat", "/thinking") { toggleThinkingPane() },
@@ -1090,7 +590,7 @@ fun ChatScreen(app: AppContext) {
             Command(if (app.config.toolAutoShell) "Shell commands: ask before running again" else "Shell commands: run without asking", "Chat", "/autorun", app.config.toolsEnabled && app.config.toolShell) { toggleAutoRun() },
             Command(if (app.config.toolsEnabled) "Tools: turn off" else "Tools: turn on (read and write notes and files)", "Chat", "/tools") { toggleTools() },
             Command(if (app.config.chatUseVault) "Answer from my vault: turn off" else "Answer from my vault: turn on", "Chat", "/vault") { toggleVault() },
-            Command("Files and notes changed in this chat", "Chat", "Esc then f", chat.artifacts.isNotEmpty()) { artifactIndex = 0; mode = ChatMode.Artifacts },
+            Command("Files and notes changed in this chat", "Chat", "Esc then f", chat.artifacts.isNotEmpty()) { artifactsDialog.index = 0; mode = ChatMode.Artifacts },
             Command("What the model was sent (context inspector)", "Chat", "/context", chat.lastContext != null) { openContext() },
             Command("Select & copy", "Chat", "Esc then s", entries.isNotEmpty()) { browsing = true; output.beginSelect { toast(it.text) } },
             Command("Append the last answer to a note…", "Chat", "/append", lastAnswer != null) { openTargetPick(Target.Append) },
@@ -1153,8 +653,7 @@ fun ChatScreen(app: AppContext) {
         ChatMode.Leave -> Hints("w  save to vault", "Esc  leave chat", "any other key  stay")
         ChatMode.ConfirmClear -> Hints("y  erase this chat", "any other key  keep")
         ChatMode.Artifacts -> Hints("↑↓  choose", "Enter  open the note in the Library", "1-9  open that one", "any other key  back")
-        ChatMode.Context -> Hints("↑↓  choose", "Enter  read the part as sent", "c  copy it", "Esc  back")
-        ChatMode.ContextPart -> Hints("↑↓  scroll", "PgUp/PgDn  page", "c  copy it", "Esc  back to the parts")
+        ChatMode.Context -> if (inspector.reading) Hints("↑↓  scroll", "PgUp/PgDn  page", "c  copy it", "Esc  back to the parts") else Hints("↑↓  choose", "Enter  read the part as sent", "c  copy it", "Esc  back")
         ChatMode.ConfirmMemory -> Hints("y  remove the repeated lines", "any other key  leave it as it is")
         ChatMode.ConfirmCancel -> Hints("Enter  cancel it", "y  cancel it", "any other key  keep going")
         ChatMode.ConfirmReplace -> Hints("y  replace", "any other key  keep the note")
@@ -1257,22 +756,8 @@ fun ChatScreen(app: AppContext) {
                 mode = ChatMode.Chat
                 true
             }
-            ChatMode.Context, ChatMode.ContextPart -> {
-                val snap = chat.lastContext
-                val parts = snap?.parts.orEmpty()
-                val part = parts.getOrNull(contextIndex.coerceIn(0, (parts.size - 1).coerceAtLeast(0)))
-                fun copy() { if (part != null) toast(if (com.idea.ink.input.Clipboard.writeText(part.text)) "Copied “${part.title}” (~${part.tokens} tokens)." else "Could not reach the clipboard.", error = false) }
-                if (mode == ChatMode.ContextPart) when {
-                    key == Key.Escape || key == Key.Left -> mode = ChatMode.Context
-                    key.char == 'c' -> copy()
-                    else -> contextOutput.handle(key, letters = false)
-                } else when {
-                    key == Key.Up -> contextIndex = (contextIndex - 1).coerceAtLeast(0)
-                    key == Key.Down -> contextIndex = (contextIndex + 1).coerceAtMost((parts.size - 1).coerceAtLeast(0))
-                    key == Key.Enter || key == Key.Right -> if (part != null) { contextOutput.showTop(); mode = ChatMode.ContextPart }
-                    key.char == 'c' -> copy()
-                    key == Key.Escape -> mode = ChatMode.Chat
-                }
+            ChatMode.Context -> {
+                if (!inspector.handle(key, chat.lastContext) { part, ok -> toast(if (ok) "Copied “${part.title}” (~${part.tokens} tokens)." else "Could not reach the clipboard.") }) mode = ChatMode.Chat
                 true
             }
             ChatMode.Artifacts -> {
@@ -1284,13 +769,7 @@ fun ChatScreen(app: AppContext) {
                     if (note != null) { mode = ChatMode.Chat; navigator.openLibrary(LibraryFilter.All, note = note) }
                     else toast(if (picked.action == "deleted") "${picked.path} is deleted." else "${picked.path} is not a note the Library can open (only Markdown notes in the vault).", error = picked.action == "deleted")
                 }
-                when {
-                    key == Key.Up -> artifactIndex = (artifactIndex - 1).coerceAtLeast(0)
-                    key == Key.Down -> artifactIndex = (artifactIndex + 1).coerceAtMost((list.size - 1).coerceAtLeast(0))
-                    key == Key.Enter -> open(artifactIndex)
-                    key.char in '1'..'9' -> open(key.char!! - '1')
-                    else -> mode = ChatMode.Chat
-                }
+                if (!artifactsDialog.handle(key, list.size, ::open)) mode = ChatMode.Chat
                 true
             }
             ChatMode.ConfirmMemory -> {
@@ -1413,7 +892,7 @@ fun ChatScreen(app: AppContext) {
                 browsing -> when {
                     key == Key.Enter -> { browsing = false; true }
                     // f: the files and notes the model wrote or changed in this chat (the ✦ pill)
-                    key.char == 'f' && chat.artifacts.isNotEmpty() -> { artifactIndex = 0; mode = ChatMode.Artifacts; true }
+                    key.char == 'f' && chat.artifacts.isNotEmpty() -> { artifactsDialog.index = 0; mode = ChatMode.Artifacts; true }
                     else -> output.handle(key, entries, letters = true, onNotice = { toast(it.text) })
                 }
                 // in a message of several lines Up/Down move the caret between them; on the first / last line they scroll the conversation
@@ -1439,126 +918,15 @@ fun ChatScreen(app: AppContext) {
     }
     Stack {
         when (mode) {
-            ChatMode.Save -> {
-                ScreenHeader("Save chat", "Write this conversation to your vault as a Markdown note")
-                VGap()
-                Panel("Save to vault") {
-                    TextInput("Note title", saveTitle, true)
-                    VGap()
-                    Row {
-                        Label("Save  ", color = Palette.Muted)
-                        Badge(if (request?.lastAnswerOnly == true) "Last answer only" else "Whole chat · ${chat.messages.size} messages")
-                        Label("   in  ${app.config.outputFolder.ifEmpty { "the vault root" }}", color = Palette.Muted)
-                    }
-                }
-                ActionBar(
-                    listOf(
-                        ActionItem("Enter", "Save note", saveTitle.text.isNotBlank()),
-                        ActionItem("Tab", if (request?.lastAnswerOnly == true) "Save the whole chat" else "Save last answer only"),
-                        ActionItem("Ctrl+O", "Overwrite a note…"),
-                        ActionItem("Esc", "Cancel", accent = Palette.Cta),
-                    ),
-                    style = ActionStyle.Button,
-                )
-            }
-            ChatMode.Leave -> {
-                ScreenHeader("Chat", chat.title)
-                VGap()
-                Panel("Leave this chat?", accent = Palette.Warn) {
-                    Warning("This conversation (${chat.messages.size - chat.savedMessages} new messages) is not saved to your vault as a note.")
-                    Hint("Chats are not being kept (Settings → Console → Keep chats), so it is gone once you leave.")
-                }
-                ActionBar(listOf(ActionItem("w", "Save to vault first"), ActionItem("Esc", "Leave chat", accent = Palette.Red), ActionItem("any other key", "Stay", accent = Palette.Cta)), style = ActionStyle.Button)
-            }
-            ChatMode.ConfirmClear -> {
-                ScreenHeader("Chat", chat.title)
-                VGap()
-                Panel("Erase this chat?", accent = Palette.Red) {
-                    Warning("“${chat.title}” (${chat.messages.size} messages) is deleted from the history. /new keeps it and starts a fresh chat instead.")
-                }
-                ActionBar(listOf(ActionItem("y", "Erase chat", accent = Palette.Red), ActionItem("any other key", "Keep it", accent = Palette.Cta)), style = ActionStyle.Button)
-            }
-            ChatMode.Context -> ContextInspectorView(chat.lastContext, contextIndex, app.config.plainGlyphs)
-            ChatMode.ContextPart -> {
-                val part = chat.lastContext?.parts?.getOrNull(contextIndex)
-                ScreenHeader("Context", part?.let { "${it.title} · ~${UsageStats.compact(it.tokens.toLong())} tokens · exactly as sent" } ?: "")
-                VGap()
-                // the view's scrollbar and a margin take four columns: wrapping to the full width would cut every long line
-                val width = (LocalContentWidth.current - 4).coerceAtLeast(20)
-                val lines = part?.text.orEmpty().let { sanitizeForTerminal(it) }.split('\n').flatMap { raw -> com.idea.ink.ui.wrapText(raw, width).ifEmpty { listOf("") } }
-                    .map { com.idea.ink.ui.Line(it, color = if (it.startsWith("── ")) Palette.Accent else Palette.Text, bold = it.startsWith("── ")) }
-                ScrollView(lines, outputRows(fixed = 4), contextOutput)
-            }
-            ChatMode.Artifacts -> {
-                val list = Artifacts.entries(chat.artifacts.toList())
-                val root = app.openVault().getOrNull()?.root
-                val openable = list.map { e -> root?.let { Artifacts.libraryNote(e.artifact, it) } != null }
-                val sel = artifactIndex.coerceIn(0, (list.size - 1).coerceAtLeast(0))
-                val rows = 12
-                val first = (sel - rows + 1).coerceAtLeast(0)
-                ScreenHeader("Chat", "Written or changed in this chat")
-                VGap()
-                Panel("${list.size} files and notes · newest first · ▤ opens in the Library", accent = Palette.Purple) {
-                    if (first > 0) Hint("… $first newer")
-                    list.drop(first).take(rows).forEachIndexed { j, e ->
-                        val i = first + j
-                        val a = e.artifact
-                        val mark = if (app.config.plainGlyphs) (if (openable[i]) "[n]" else "[ ]") else if (openable[i]) "▤" else "❐"
-                        val num = if (i < 9) "${i + 1}" else " "
-                        val times = if (e.times > 1) "  ×${e.times}" else ""
-                        val color = if (a.action == "deleted") Palette.Red else if (openable[i]) Palette.Text else Palette.Muted
-                        Label("${if (i == sel) "›" else " "} $num $mark ${Artifacts.line(a)}$times", color = if (i == sel) Palette.Cta else color)
-                    }
-                    if (first + rows < list.size) Hint("… ${list.size - first - rows} older")
-                }
-                ActionBar(listOf(ActionItem("↑↓", "Choose"), ActionItem("Enter", "Open in the Library", openable.getOrNull(sel) == true, accent = Palette.Cta), ActionItem("1-9", "Open that one"), ActionItem("any other key", "Back")), style = ActionStyle.Button)
-            }
-            ChatMode.ConfirmMemory -> {
-                val audit = memoryAudit
-                ScreenHeader("Chat", "Memory check")
-                VGap()
-                Panel("Repeated lines · ${audit?.duplicates?.size ?: 0}", accent = if (audit?.duplicates.isNullOrEmpty()) Palette.Dim else Palette.Orange) {
-                    if (audit == null || audit.duplicates.isEmpty()) Hint("None.")
-                    audit?.duplicates?.take(8)?.forEach { (dup, kept) -> Label("✕ ${dup.take(70)}", color = Palette.Orange); Label("  same as: ${kept.take(60)}", color = Palette.Dim) }
-                    if ((audit?.duplicates?.size ?: 0) > 8) Hint("… and ${audit!!.duplicates.size - 8} more")
-                }
-                Panel("Notes that are not there · ${audit?.deadPaths?.size ?: 0}", accent = if (audit?.deadPaths.isNullOrEmpty()) Palette.Dim else Palette.Red) {
-                    if (audit == null || audit.deadPaths.isEmpty()) Hint("None.")
-                    audit?.deadPaths?.take(8)?.forEach { (line, ref) -> Label("✕ ${ref.take(70)}", color = Palette.Red); Label("  in: ${line.take(64)}", color = Palette.Dim) }
-                    if (audit?.deadPaths?.isNotEmpty() == true) Hint("These are not removed: fix the path in the memory file (/memory).")
-                }
-                ActionBar(listOf(ActionItem("y", "Remove repeated lines", accent = Palette.Orange), ActionItem("any other key", "Leave it", accent = Palette.Cta)), style = ActionStyle.Button)
-            }
-            ChatMode.ConfirmCancel -> {
-                ScreenHeader("Chat", chat.title)
-                VGap()
-                Panel(if (gen.state == GenState.Running) "Cancel this reply?" else "Cancel the Oracul?", accent = Palette.Orange) {
-                    Warning(if (gen.state == GenState.Running) "The reply stops where it is and what was written so far is kept. It keeps running while you decide." else "The Oracul or the judge stops and nothing is added to the chat. It keeps running while you decide.")
-                }
-                ActionBar(listOf(ActionItem("Enter", "Cancel it", accent = Palette.Orange), ActionItem("any other key", "Keep going", accent = Palette.Cta)), style = ActionStyle.Button)
-            }
-            ChatMode.ConfirmReplace -> {
-                ScreenHeader("Chat", "Replace “${replaceTarget}”")
-                VGap()
-                Panel("Replace this note with ${if (overwriting == null || overwriting?.lastAnswerOnly == true) "the last answer" else "this chat"}?", accent = Palette.Orange) {
-                    Warning("The text of the note is replaced by ${if (overwriting == null || overwriting?.lastAnswerOnly == true) "the answer" else "the chat"}. Its frontmatter is kept, and the old text is saved first in the vault's .trash folder.")
-                }
-                ActionBar(listOf(ActionItem("y", "Replace note", accent = Palette.Orange), ActionItem("any other key", "Keep the note", accent = Palette.Cta)), style = ActionStyle.Button)
-            }
-            ChatMode.History -> {
-                ScreenHeader("Chat history", "Pick a conversation to continue. The current one is saved as it is")
-                VGap()
-                Panel("Saved chats") {
-                    Picker(
-                        past, historyPicker,
-                        label = { it.title },
-                        rows = bodyRows(extra = 4),
-                        icon = { if (it.id == chat.id) "●" else "»" },
-                        iconColor = { if (it.id == chat.id) Palette.Green else Palette.Accent },
-                        meta = { "${it.messages.size} msgs · ${relativeTime(it.updated)}" },
-                    )
-                }
-            }
+            ChatMode.Save -> SaveDialog(saveTitle, request?.lastAnswerOnly == true, chat.messages.size, app.config.outputFolder)
+            ChatMode.Leave -> LeaveDialog(chat.title, chat.messages.size - chat.savedMessages)
+            ChatMode.ConfirmClear -> ConfirmClearDialog(chat.title, chat.messages.size)
+            ChatMode.Context -> if (inspector.reading) ContextPartView(inspector.part(chat.lastContext), inspector.output) else ContextInspectorView(chat.lastContext, inspector.index, app.config.plainGlyphs)
+            ChatMode.Artifacts -> ArtifactsDialog(chat.artifacts.toList(), app.openVault().getOrNull()?.root, artifactsDialog.index, app.config.plainGlyphs)
+            ChatMode.ConfirmMemory -> ConfirmMemoryDialog(memoryAudit)
+            ChatMode.ConfirmCancel -> ConfirmCancelDialog(chat.title, gen.state == GenState.Running)
+            ChatMode.ConfirmReplace -> ConfirmReplaceDialog(replaceTarget, overwriting == null || overwriting?.lastAnswerOnly == true)
+            ChatMode.History -> HistoryDialog(past, historyPicker, chat.id)
             ChatMode.Sampling -> SamplingPanel(app, sampling)
             ChatMode.Think -> {
                 ScreenHeader("Reasoning effort", "${app.config.model}: what Ollama lists · Enter next message only · d Settings value")
@@ -1615,7 +983,7 @@ fun ChatScreen(app: AppContext) {
                 val actions = if (panelActions != null) null else chatActions(browsing, entries.isNotEmpty(), chat.artifacts.isNotEmpty())
                 val pendingRow = chat.attachments.rows
                 // the reply line (compacting, running, failed…) and, when /reindex runs, one more line with its progress
-                val statusRow = (if (chat.compacting || gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled || chat.consulting != null) 1 else 0) + (if (chat.indexing != null) 1 else 0)
+                val statusRow = (if (chat.compacting || gen.state == GenState.Running || gen.state == GenState.Failed || gen.state == GenState.Cancelled || chat.consulting != null) 1 else 0) + (if (chat.semantic.indexing != null) 1 else 0)
                 // what sits under the conversation: the message field, or the change waiting for an answer
                 val typeRows = if (question != null) (if (question.typing) wrapRows(question.field.text, (panelWidth() - 6).coerceAtLeast(10)).size.coerceIn(1, 3) else 1) else 0
                 // while a dialog is open the thinking pane stays (a short strip, or its column): the dialog gives up a few lines for it instead of pushing it out
@@ -1649,7 +1017,7 @@ fun ChatScreen(app: AppContext) {
                         output.copyPlain = app.config.copyAs == "plain"
                         ScrollView(lines, scrollRows, output)
                         ReplyStatus(app, gen, compactingSince = chat.compactingSince.takeIf { chat.compacting }, compactingAuto = chat.compactingAuto, compactingPart = chat.compactingPart, consulting = chat.consulting, consultingSince = chat.consultingSince, consultingStage = chat.consultingStage)
-                        chat.indexing?.let { Label((if (app.config.plainGlyphs) "" else "◌ ") + it, color = Palette.Blue) }
+                        chat.semantic.indexing?.let { Label((if (app.config.plainGlyphs) "" else "◌ ") + it, color = Palette.Blue) }
                     }
                 }
                 // the docks: full-height columns beside the conversation, one panel per side (see Docks). A column needs room, so with too little the conversation takes the whole width.
@@ -1752,323 +1120,11 @@ fun ChatScreen(app: AppContext) {
     }
 }
 
-/** [text] cut into rows of at most [width] characters at spaces (a word longer than a row is cut), a line break starting a new row. */
-internal fun wrapWords(text: String, width: Int): List<String> {
-    val w = width.coerceAtLeast(8)
-    val rows = ArrayList<String>()
-    for (line in text.lines()) {
-        var row = StringBuilder()
-        for (word in line.split(' ').filter { it.isNotEmpty() }) {
-            var rest = word
-            while (rest.length > w) {
-                if (row.isNotEmpty()) { rows += row.toString(); row = StringBuilder() }
-                rows += rest.take(w); rest = rest.drop(w)
-            }
-            if (row.isNotEmpty() && row.length + 1 + rest.length > w) { rows += row.toString(); row = StringBuilder() }
-            if (row.isNotEmpty()) row.append(' ')
-            row.append(rest)
-        }
-        rows += row.toString()
-    }
-    return rows
-}
-
-/** The most rows (frame included) the thinking strip takes while a dialog is open; the dialog gives up as many lines. */
-private const val DIALOG_STRIP_MAX = 6
-
-/** The thinking pane's size range in percent of the main axis (`[` `]` step 5; the same as the Settings stepper). */
-internal const val THINKING_MIN = 10
-internal const val THINKING_MAX = 90
-
-/** One docked column: its [side], its [width] in columns and what it draws. */
-private class DockColumn(val side: String, val width: Int, val content: @Composable () -> Unit)
-
-/** Where the thinking pane goes and how big: [size] is its text rows for "top" and "bottom", its whole width in columns for "left" and "right". */
-internal class ThinkingPaneLayout(val placement: String, val size: Int)
-
-/**
- * The pane's place for a [width] x [height] content area, or null when it does not fit. [blockRows] is the height the conversation has when there is no pane
- * (its frame and status row included): the strip takes [percent] of it, and the conversation keeps at least 5 rows. A column takes [percent] of [width]
- * and leaves the conversation at least 40 columns; a window under 80 columns or 16 rows has no side column, so the pane goes to the bottom there.
- */
-internal fun thinkingPaneLayout(placement: String, percent: Int, width: Int, height: Int, blockRows: Int, dialog: Boolean = false): ThinkingPaneLayout? {
-    val p = percent.coerceIn(10, 90)
-    if ((placement == "left" || placement == "right") && width >= 80 && height >= 16) {
-        return ThinkingPaneLayout(placement, (width * p / 100).coerceIn(24, width - 41))
-    }
-    if (height < 26) return null
-    // a dialog takes most of the window: the strip then stays at a few rows (its text rows are 2 to 4) instead of going away with the conversation's room
-    if (dialog) return ThinkingPaneLayout(if (placement == "top") "top" else "bottom", ((blockRows * p / 100).coerceIn(4, DIALOG_STRIP_MAX)) - 2)
-    val outer = (blockRows * p / 100).coerceAtMost(blockRows - 2 - 5 - 2)
-    return if (outer < 4) null else ThinkingPaneLayout(if (placement == "top") "top" else "bottom", outer - 2)
-}
-
-/**
- * What the thinking pane says while a reply runs and no thoughts have come yet: not a generic "waiting", but what is true for THIS message. The level is the one the message was
- * sent with (`/think` for that message, else the Settings value, as the model lists it); before the first token the model is still reading the prompt, which can take a while.
- */
-private fun thinkingWaitText(app: AppContext, gen: Generation, model: String): String {
-    if (app.thinkingValues.isEmpty()) return "$model has no thinking mode, so no thoughts will appear here; the answer comes directly."
-    val options = thinkOptions(app.thinkingValues)
-    val sent = app.chat.thinkNow().ifEmpty { app.config.thinking }
-    val effective = if (sent in options) sent else "default"
-    if (effective == "off") return "Thinking is off for this message, so no thoughts will appear. Ctrl+G picks a level for the next one."
-    val level = if (effective == "default") autoWord(thinkDefaultWord(app.thinkingDefault)) else effective
-    return if (gen.streamed == 0) "$model is reading the conversation first (think $level). Its thoughts appear here as soon as it starts."
-    else "$model has started answering without thoughts (think $level): a model may skip thinking on an easy question."
-}
-
-/**
- * ` · think xhigh` for the title of the thinking pane: the level of the message whose thoughts it shows (while a reply runs, the one it was sent with; when idle, the last message's),
- * with the model default spelled out (`auto (medium)`); nothing for a model that cannot think.
- */
-private fun thinkTitleWord(app: AppContext, chat: ChatSession, running: Boolean): String {
-    if (app.thinkingValues.isEmpty()) return ""
-    val options = thinkOptions(app.thinkingValues)
-    val own = if (running) chat.thinkNow() else chat.messages.lastOrNull { Oracul.isRealUser(it) }?.think.orEmpty()
-    val setting = own.ifEmpty { app.config.thinking }
-    val effective = if (setting in options) setting else "default"
-    return " · think " + if (effective == "default") autoWord(thinkDefaultWord(app.thinkingDefault)) else effective
-}
-
-/** The split window under the conversation: the model's thoughts as they stream (the end of them, [rows] rows), or the last thoughts it had when it is idle. */
-@Composable
-private fun ThinkingPane(app: AppContext, gen: Generation, chat: ChatSession, rows: Int, model: String, modifier: Modifier = Modifier) {
-    val running = gen.state == GenState.Running
-    val text = (if (running) gen.liveThinking else chat.messages.lastOrNull { it.role == "assistant" && it.thinking.isNotBlank() }?.thinking.orEmpty()).trim()
-    val width = panelWidth()
-    val wrapped = if (text.isEmpty()) emptyList() else wrapWords(sanitizeForTerminal(text), width)
-    val shown = wrapped.takeLast(rows)
-    Panel("Thinking · $model" + thinkTitleWord(app, chat, running) + (if (running) " · live" else "") + (if (text.isEmpty()) "" else " · ${UsageStats.compact((if (running) maxOf(gen.liveThinkingChars, text.length) else text.length).toLong())} characters")) {
-        // nothing to show yet: say so, wrapped to the pane (a side column is narrow)
-        val empty = if (shown.isNotEmpty()) emptyList() else wrapWords(if (running) thinkingWaitText(app, gen, model) else "The thoughts of a reasoning model appear here while it works.", width)
-        for (i in 0 until rows) {
-            if (empty.isNotEmpty()) Label(empty.getOrNull(i) ?: " ", color = Palette.Dim)
-            else if (shown.isNotEmpty()) Label(shown.getOrNull(i)?.takeIf { it.isNotEmpty() } ?: " ", color = Palette.Muted)
-        }
-    }
-}
-
-/** The lines of one message; [entry] is the number of its first select-mode entry (a reply uses one per Markdown block). */
-internal fun messageLines(app: AppContext, message: ChatMessage, entry: Int, width: Int, applyHint: Boolean = false): List<Line> {
-    if (Compaction.isSummary(message)) return summaryLines(message, entry, app.config.plainGlyphs, width)
-    OraculSteps.parse(message)?.let { return oraculStepLines(it, entry, app.config.plainGlyphs, width) }
-    if (Oracul.isOpinion(message)) return opinionLines(message, entry, app.config, width, applyHint)
-    // what Arcana sent in the user's name: marked as a system message (or left out), never shown as "You"
-    if (Oracul.isSystemPrompt(message)) {
-        if (app.config.systemMessages == "hidden") return emptyList()
-        return buildList {
-            val source = Oracul.systemSource(message) ?: "Arcana"
-            add(Line(if (app.config.plainGlyphs) "[system] $source -> model" else "⚙ System · $source → model", Palette.ConsoleTool, bold = true))
-            wrapText(sanitizeForTerminal(message.content), (width - 2).coerceAtLeast(10)).forEach { add(Line("  $it", Palette.Muted)) }
-            add(Line(""))
-        }
-    }
-    val user = message.role == "user"
-    val config = app.config
-    if (message.role == "tool") return toolResultLines(message, config.plainGlyphs, width, entry)
-    return buildList {
-        if (user) {
-            // Your messages sit on an amber band, so they stand apart from the model's answers.
-            val band = Palette.UserBg
-            add(Line("${ModelIcon.user(config.plainGlyphs)} You" + if (message.think.isEmpty()) "" else "  ·  ${if (config.plainGlyphs) "" else "✦ "}think ${message.think}", Palette.UserName, bold = true, background = band, entry = entry))
-            wrapText(sanitizeForTerminal(message.content), width).forEach { add(Line(it, Palette.UserText, background = band, entry = entry)) }
-            message.noteNames.forEach { add(Line(Skills.chipLabel(it)?.let { chip -> sanitizeForTerminal(chip) } ?: "▤ ${sanitizeForTerminal(it.removeSuffix(".md"))}", Palette.UserName, background = band, entry = entry)) }
-            message.files.forEach { add(Line("❐ ${sanitizeForTerminal(it.name)}", Palette.UserName, background = band, entry = entry)) }
-            message.imageNames.forEach { name ->
-                val kept = if (message.images.isEmpty()) " (picture not kept)" else ""
-                add(Line("▣ ${sanitizeForTerminal(name)}$kept", Palette.UserName, background = band, entry = entry))
-            }
-            add(Line("", background = band, entry = entry))
-        } else {
-            // the header belongs to the reply's first entry (its first block, else its first tool call); a reply with neither has none, so it never borrows the next message's entry
-            val blocks = parseMarkdown(message.content).size
-            add(Line(ModelIcon.label(config.model, config.plainGlyphs), Palette.Accent, bold = true, entry = if (blocks > 0 || message.toolCalls.isNotEmpty()) entry else -1))
-            addAll(thinkingLines(message.thinking, config.thinkingView, config.plainGlyphs, width))
-            addAll(renderMarkdown(parseMarkdown(message.content), width, entry = { entry + it }, rich = config.renderMarkdown, plainGlyphs = config.plainGlyphs))
-            // the tools it asked for, one line and one select entry each
-            message.toolCalls.forEachIndexed { i, call -> add(Line("${if (config.plainGlyphs) "[tool]" else "⚙"} ${call.name}  ${sanitizeForTerminal(callSummary(call, config))}".take(width), if (call.name == com.arcana.brain.core.TODO) Palette.Todo else Palette.ConsoleTool, bold = true, entry = entry + blocks + i)) }
-            // the notes the answer was built from, when the vault was searched
-            if (message.sources.isNotEmpty()) {
-                addAll(sourceLines(message, config.plainGlyphs, width))
-                // notes longer than Chars per note were shown to the model only in part: the answer may miss what is further down
-                if (message.sourcesCut.isNotEmpty()) wrapText("${if (config.plainGlyphs) "!" else "⚠"} Only the start was read of: " + message.sourcesCut.joinToString(", ") { sanitizeForTerminal(it.removeSuffix(".md")) } + " (Settings → Search → Chars per note)", width).forEach { add(Line(it, Palette.Warn)) }
-            }
-            // the tools the model used for this answer, so it is plain which instruments were at work
-            if (message.toolsUsed.isNotEmpty()) add(Line("${if (config.plainGlyphs) "tools" else "⚙ tools"}: ${message.toolsUsed.joinToString(" · ")}".take(width), Palette.ConsoleTool))
-            // the closing line of a finished reply: Done, time, tokens, speed
-            message.stats?.let { add(replyFooter(it, config.plainGlyphs, step = message.toolCalls.isNotEmpty())) }
-        }
-        // the gap after a message belongs to no entry, so the cursor never rests on it
-        add(Line(""))
-    }
-}
-
-/**
- * What a reasoning model thought, kept apart from its answer: nothing ([view] "hidden"), one dim line with the length ("summary"), or all of it,
- * dimmed, under a header ("full"). These lines belong to no select entry, so copying takes only the answer.
- */
-internal fun thinkingLines(thinking: String, view: String, plain: Boolean, width: Int): List<Line> {
-    val text = thinking.trim()
-    if (text.isEmpty() || view == "hidden") return emptyList()
-    val words = text.split(Regex("\\s+")).size
-    val mark = if (plain) "..." else "◌"
-    val header = "$mark thinking · $words ${if (words == 1) "word" else "words"}"
-    if (view != "full") return listOf(Line(header, Palette.ConsoleDim))
-    return listOf(Line(header, Palette.ConsoleDim, bold = true)) + wrapText(sanitizeForTerminal(text), (width - 2).coerceAtLeast(10)).map { Line("  $it", Palette.ConsoleDim) } + Line("")
-}
-
-/**
- * The notes an answer is built from, one per line, so the list can be read: `Sources (3) · vault search: keywords + meaning`, then `▤ Title` with, in a dim run, how it came to the answer
- * (`read` = the model opened it, `context` = it was sent with the question; and how it was found, with its evidence: `keywords + meaning · words 3/3 · similarity 0.64`).
- */
-internal fun sourceLines(message: ChatMessage, plain: Boolean, width: Int): List<Line> = buildList {
-    val head = "Sources (${message.sources.size})" + (if (message.sourcesBy.isEmpty()) "" else "  ·  vault search: ${message.sourcesBy}")
-    add(Line(head.take(width), Palette.Accent, bold = true))
-    message.sources.forEachIndexed { i, path ->
-        val title = sanitizeForTerminal(path.removeSuffix(".md").substringAfterLast('/'))
-        val info = message.sourcesInfo.getOrNull(i).orEmpty()
-        val mark = if (plain) "-" else "▤"
-        val text = "  $mark $title" + if (info.isEmpty()) "" else "   $info"
-        add(Line(text.take(width), Palette.Accent, runs = listOf(Run("  $mark $title", Palette.Accent), Run(if (info.isEmpty()) "" else "   $info", Palette.Muted))))
-    }
-}
-
-/** A tool call of the Oracul, quiet and dim like a tool's own lines but in the Oracul's colour: `Ψ model  tool  what it was about`, then `↳ ✓ how it ended`. */
-private fun oraculStepLines(step: OraculSteps.Step, entry: Int, plain: Boolean, width: Int): List<Line> {
-    val failed = step.status != OraculSteps.OK
-    val head = "${if (plain) "*" else Oracul.GLYPH} ${sanitizeForTerminal(step.model)}  ${step.tool}  ${sanitizeForTerminal(step.summary)}".trim()
-    val mark = if (plain) (if (failed) "x" else "ok") else if (failed) "✕" else "✓"
-    val size = if (step.status == OraculSteps.OK && step.size > 80) "  (${step.size} characters)" else ""
-    val said = when (step.status) {
-        OraculSteps.DENIED -> "you did not allow it"
-        else -> sanitizeForTerminal(step.outcome).ifEmpty { "done" }
-    }
-    val result = "  ${if (plain) "->" else "↳"} $mark ${said.take((width - 8 - size.length).coerceAtLeast(10))}$size"
-    return listOf(
-        Line(head.take(width), Palette.Blue, entry = entry),
-        Line(result.take(width), if (failed) Palette.Red else Palette.Muted, entry = entry),
-        Line(""),
-    )
-}
-
-/** What the Oracul said: a header with the model(s), then the text as Markdown, dimmed apart from its own colours. The whole block is one entry for select mode. */
-private fun opinionLines(message: ChatMessage, entry: Int, config: AppConfig, width: Int, applyHint: Boolean): List<Line> = buildList {
-    // a comparison in the window is drawn as columns when the setting says so and every column is wide enough to read
-    val comparison = if (config.comparisonView == "side") Oracul.comparisonParts(message) else null
-    val columns = comparison != null && columnCount(comparison.answers.size, width) >= 2
-    // a verdict is the judge model's own words: it wears that model's family glyph, like a reply does; the other helper blocks keep the Oracul's
-    val glyph = if (Oracul.isVerdict(message)) ModelIcon.of(Oracul.title(message).substringAfter("· ", "").trim(), config.plainGlyphs) else if (config.plainGlyphs) "*" else Oracul.GLYPH
-    val title = "$glyph ${sanitizeForTerminal(Oracul.title(message))}"
-    // over columns the model names in the title wear the colours of their columns
-    if (columns && comparison != null) add(Line(title, Palette.Blue, bold = true, entry = entry, runs = comparisonTitleRuns(title, comparison)))
-    else add(Line(title, Palette.Blue, bold = true, entry = entry))
-    if (comparison != null && columns) {
-        addAll(sideBySide(comparison, entry, config, width))
-        add(Line(""))
-        return@buildList
-    }
-    // the worker's own sentence that introduces a review is for the model, not for the reader
-    val body = Oracul.body(message)
-    addAll(renderMarkdown(parseMarkdown(body), width, entry = { entry }, rich = config.renderMarkdown, plainGlyphs = config.plainGlyphs))
-    // while nobody has answered it: how to act on it (nothing is applied by itself)
-    if (applyHint) add(Line("› /revise: the main model corrects its answer with this  ·  or just carry on".take(width), Palette.Hint, entry = -1))
-    add(Line(""))
-}
-
-/** A compaction summary: a dim divider, the summary, and a line saying the model no longer sees what is above. */
-private fun summaryLines(message: ChatMessage, entry: Int, plain: Boolean, width: Int): List<Line> = buildList {
-    val rule = if (plain) "-" else "─"
-    val title = " ${if (plain) "" else "◌ "}compacted: the model sees this summary instead of the messages above "
-    add(Line((rule.repeat(3) + title + rule.repeat(width)).take(width), Palette.ConsoleDim, bold = true, entry = entry))
-    wrapText(sanitizeForTerminal(Compaction.summaryText(message)), width).forEach { add(Line(it, Palette.ConsoleDim, entry = entry)) }
-    add(Line(rule.repeat(width), Palette.ConsoleDim, entry = entry))
-    add(Line(""))
-}
-
-/** What select mode can pick in [m]: your message as one entry, a reply as its Markdown blocks, tool results as none. */
-internal fun entriesOf(m: ChatMessage): List<String> = when (m.role) {
-    // what the Oracul did with a tool: one entry, so it can be copied
-    OraculSteps.ROLE -> listOf(OraculSteps.parse(m)?.let { OraculSteps.text(it) } ?: m.content)
-    "user" -> listOf(m.content)
-    // a tool result is one entry, so it can be selected and copied like an answer
-    "tool" -> listOf("${m.toolName ?: "tool"} result:\n${m.content.trim()}")
-    // a reply: its Markdown blocks, then one entry per tool call (what it asked for), in the order they are drawn
-    else -> parseMarkdown(m.content).map { it.raw } + m.toolCalls.map { "${it.name}  ${callSummary(it)}".trim() }
-}
-
-/** The one thing a tool call is about, for its line in the chat: its path, query or title. */
-private fun callSummary(call: ToolCall, config: AppConfig? = null): String {
-    val args = call.arguments
-    if (call.name == com.arcana.brain.core.CONSULT && config != null) {
-        val stage = (args["stage"] as? JsonPrimitive)?.contentOrNull.orEmpty().trim().lowercase()
-        val kind = com.arcana.brain.core.Flow.consultKind(stage) ?: return stage
-        val model = com.arcana.brain.core.Flow.consultModel(config, kind)
-        return if (model.isEmpty()) "$stage → no model set" else "$stage → $model (${com.arcana.brain.core.Flow.consultSource(config, kind)})"
-    }
-    if (call.name == com.arcana.brain.core.TODO) {
-        val list = com.arcana.brain.core.Todos.parse((args["items"] as? JsonPrimitive)?.contentOrNull.orEmpty())
-        return if (list.isEmpty()) "clear the list" else "${list.size} items, ${com.arcana.brain.core.Todos.doneCount(list)} done"
-    }
-    val key = listOf("command", "url", "question", "from", "path", "query", "pattern", "name", "glob", "title", "folder", "reason", "seconds").filter { args[it] != null }
-    if (key.isEmpty()) return ""
-    // a search names what it looks for and where; the others have one subject
-    return key.take(2).joinToString("  ") { (args[it] as? JsonPrimitive)?.contentOrNull.orEmpty().replace('\n', ' ') }.trim()
-}
-
-/** The result of a tool, as a quiet line (or two) under the call: ✓ with what happened, ✕ with why not. */
-private fun toolResultLines(message: ChatMessage, plain: Boolean, width: Int, entry: Int = -1): List<Line> {
-    val text = message.content.trim()
-    // the task list is shown whole: it is the plan the user follows along
-    if (message.toolName == com.arcana.brain.core.TODO && !text.startsWith("Error:")) {
-        val items = text.lineSequence().takeWhile { it.firstOrNull()?.isDigit() == true }.map { sanitizeForTerminal(it) }.toList()
-        val summary = text.lineSequence().drop(items.size).firstOrNull().orEmpty()
-        return items.map { l -> Line("    ${if (plain) l else l.replace("[x]", "☑").replace("[~]", "▸").replace("[ ]", "☐")}".take(width), Palette.Todo, bold = "[~]" in l, entry = entry) } +
-            listOf(Line("    ${sanitizeForTerminal(summary)}".take(width), Palette.Todo, entry = entry), Line(""))
-    }
-    val failed = text.startsWith("Error:") || text.startsWith("The user denied") || text.startsWith("The user did not allow") ||
-        text.startsWith("Timed out") || (text.startsWith("exit code ") && !text.startsWith("exit code 0"))
-    val first = sanitizeForTerminal(text.lineSequence().firstOrNull().orEmpty())
-    val size = if (text.length > 80 || '\n' in text) "  (${text.length} characters)" else ""
-    val mark = if (plain) (if (failed) "x" else "ok") else if (failed) "✕" else "✓"
-    val body = "  ${if (plain) "->" else "↳"} $mark ${first.take((width - 8 - size.length).coerceAtLeast(10))}$size"
-    // what the tool left out, said plainly: the model was not given it, and a character count hides that
-    val cut = com.arcana.brain.core.ToolCuts.marker(text)
-    val lines = mutableListOf(Line(body.take(width), if (failed) Palette.Red else Palette.Muted, entry = entry))
-    if (cut != null) lines += Line("    ${if (plain) "[cut]" else "✂"} ${sanitizeForTerminal(cut)}".take(width), Palette.Orange, entry = entry)
-    return lines + Line("")
-}
-
-/** The lines of a change waiting for approval, as many as fit the panel. */
-/** The lines of a change waiting for an answer, cut to [max] (with a note of how many are left out); a long diff is cut short on a small screen. */
-private fun approvalLines(a: ChatSession.Approval, max: Int): List<String> =
-    if (a.lines.size <= max) a.lines else a.lines.take(max - 1) + "… ${a.lines.size - max + 1} more lines"
-
-/** How many lines of a change fit above the buttons: about a third of the screen, at least 8. */
-@Composable
-private fun approvalMax(reserve: Int = 0): Int = (LocalContentHeight.current / 3 - reserve).coerceIn(5, 24)
-
-private fun approvalActions(a: ChatSession.Approval) = listOfNotNull(
-    ActionItem("y", a.yes, accent = Palette.Cta),
-    ActionItem("n", if (a.tool == "access" || a.tool == "steps" || a.tool == "memory" || a.tool == "mode" || a.tool == "pull") "Not now" else "Deny"),
-    if (a.always) ActionItem("a", "Always this session") else null,
-)
-
 /** A request to save the chat: what to save, and where to go afterwards (when it came from the leave question). */
-private data class SaveRequest(val after: Screen?, val lastAnswerOnly: Boolean = false)
-
-/** The whole conversation as Markdown: a heading per speaker. */
-private fun transcript(messages: List<ChatMessage>, model: String): String =
-    messages.filter { it.role != "tool" && !it.displayOnly && !(it.toolCalls.isNotEmpty() && it.content.isBlank()) }.joinToString("\n\n") {
-        val attached = (it.imageNames + it.files.map { f -> f.name } + it.noteNames.map { n -> "[[${n.removeSuffix(".md")}]]" }).let { a -> if (a.isEmpty()) "" else "\n\n_Attached: ${a.joinToString(", ")}_" }
-        val sources = if (it.sources.isEmpty()) "" else "\n\n_Sources: ${it.sources.joinToString(", ") { s -> "[[${s.removeSuffix(".md")}]]" }}_"
-        if (Oracul.isOpinion(it)) "## ${Oracul.title(it)}\n\n${Oracul.body(it)}"
-        else if (Compaction.isSummary(it)) "## Summary of the earlier conversation (compacted)\n\n${Compaction.summaryText(it)}"
-        else "## ${if (it.role == "user") "You" else model}\n\n${it.content.trim()}$attached$sources"
-    }
+internal data class SaveRequest(val after: Screen?, val lastAnswerOnly: Boolean = false)
 
 /** The buttons under the message field. */
-private fun chatActions(browsing: Boolean, hasEntries: Boolean, hasChanges: Boolean = false): List<ActionItem> =
+internal fun chatActions(browsing: Boolean, hasEntries: Boolean, hasChanges: Boolean = false): List<ActionItem> =
     if (browsing) {
         listOf(ActionItem("Enter", "Type a message", accent = Palette.Cta), ActionItem("s", "Select & copy", hasEntries), ActionItem("f", "Files changed", hasChanges), ActionItem("↑↓", "Scroll"))
     } else {
@@ -2080,129 +1136,3 @@ private fun chatActions(browsing: Boolean, hasEntries: Boolean, hasChanges: Bool
             ActionItem("Ctrl+P", "Commands", accent = Palette.Cta),
         )
     }
-
-/** The narrowest an answer column may be before the comparison is stacked instead. */
-internal const val MIN_COLUMN = 38
-
-/** How many answers fit in a row of [width] cells: up to three, each at least [MIN_COLUMN] wide with a 3-cell gutter between them. */
-internal fun columnCount(answers: Int, width: Int): Int = minOf(answers, 3, (width + 3) / (MIN_COLUMN + 3))
-
-/** What a line is made of, as runs (so two lines can be joined into one row), and how many cells it takes. */
-private fun runsOf(line: Line): List<Run> = line.runs ?: listOf(Run(line.text, if (line.color == Color.Unspecified) Palette.ConsoleText else line.color, line.background, if (line.bold) TextStyle.Bold else TextStyle.Unspecified))
-
-/** The colour of the n-th answer of a comparison: the main model's is the accent, the Oracul models' follow the palette. Used by the column pills and the title. */
-private fun partColor(comparison: Oracul.Comparison, index: Int): Color {
-    val palette = listOf(Palette.Blue, Palette.Cta, Palette.Green)
-    return if (comparison.answers[index].main) Palette.Accent else palette[(index - 1).coerceAtLeast(0) % palette.size]
-}
-
-/** The comparison's title with each model name in the colour of its column and the judge's in the verdict's orange; `Ψ Comparison` keeps the title's blue and the words between the names are muted. */
-internal fun comparisonTitleRuns(title: String, comparison: Oracul.Comparison): List<Run> {
-    // `Ψ Comparison` keeps the title's blue; what follows is muted, with the names coloured
-    val head = title.indexOf(" · ").let { if (it < 0) 0 else it }
-    val judgedAt = title.lastIndexOf("judged by ").let { if (it < 0) title.length else it + "judged by ".length }
-    val spans = ArrayList<Triple<Int, Int, Color>>()
-    spans += Triple(0, head, Palette.Blue)
-    var cursor = head
-    comparison.answers.forEachIndexed { i, part ->
-        val at = title.indexOf(part.name, cursor)
-        if (at >= 0 && at + part.name.length <= judgedAt) { spans += Triple(at, at + part.name.length, partColor(comparison, i)); cursor = at + part.name.length }
-    }
-    if (judgedAt < title.length) spans += Triple(judgedAt, minOf(title.length, judgedAt + comparison.judge.length), Palette.Orange)
-    val runs = ArrayList<Run>()
-    var at = 0
-    for ((from, to, color) in spans) {
-        if (to <= from) continue
-        if (from > at) runs += Run(title.substring(at, from), Palette.Muted, Color.Unspecified, TextStyle.Bold)
-        runs += Run(title.substring(from, to), color, Color.Unspecified, TextStyle.Bold)
-        at = to
-    }
-    if (at < title.length) runs += Run(title.substring(at), Palette.Muted, Color.Unspecified, TextStyle.Bold)
-    return runs
-}
-
-/**
- * A comparison as columns: a coloured pill with the model's name over each answer (the main model's, then the Oracul models', each in its
- * own colour), the answers next to each other with a dim bar between them, and the judge's verdict under them across the whole width.
- * More answers than columns continue in further rows of columns.
- */
-internal fun sideBySide(comparison: Oracul.Comparison, entry: Int, config: AppConfig, width: Int): List<Line> = buildList {
-    val plain = config.plainGlyphs
-    val columns = columnCount(comparison.answers.size, width)
-    val gutter = 3
-    val cw = (width - gutter * (columns - 1)) / columns
-    fun pill(text: String, color: Color) = Run(" $text ", Palette.Ink, color, TextStyle.Bold)
-    comparison.answers.chunked(columns).forEach { rowOfParts ->
-        val cells = rowOfParts.map { part ->
-            val index = comparison.answers.indexOf(part)
-            val color = partColor(comparison, index)
-            val glyph = if (plain) "*" else if (part.main) ModelIcon.of(part.name) else Oracul.GLYPH
-            val label = sanitizeForTerminal("$glyph ${part.name} · ${if (part.main) "main" else "oracul"}").take(cw - 2)
-            val rule = Line((if (plain) "-" else "─").repeat(cw), color, entry = entry)
-            val body = renderMarkdown(parseMarkdown(part.text), cw, entry = { entry }, rich = config.renderMarkdown, plainGlyphs = plain)
-                .dropWhile { it.text.isBlank() && it.runs == null }.dropLastWhile { it.text.isBlank() && it.runs == null }
-            listOf(Line(label, color, bold = true, entry = entry, runs = listOf(pill(label, color)))) + rule + body
-        }
-        for (row in 0 until (cells.maxOf { it.size })) {
-            val runs = ArrayList<Run>()
-            val text = StringBuilder()
-            cells.forEachIndexed { c, cell ->
-                val line = cell.getOrNull(row)
-                val own = if (line == null) emptyList() else runsOf(line)
-                val used = line?.let { l -> l.runs?.sumOf { it.text.length } ?: l.text.length } ?: 0
-                if (c > 0) { runs += Run(" ${if (plain) "|" else "│"} ", Palette.ConsoleDim); text.append(" | ") }
-                runs += own
-                line?.let { text.append(it.text) }
-                if (c < cells.size - 1 && used < cw) { runs += Run(" ".repeat(cw - used), Palette.ConsoleText, line?.fill ?: Color.Unspecified); text.append(" ".repeat(cw - used)) }
-            }
-            add(Line(text.toString(), entry = entry, runs = runs))
-        }
-        add(Line("", entry = entry))
-    }
-    // the judge speaks across the whole width, in a colour of its own so it is the thing the eye goes to
-    val verdictLabel = sanitizeForTerminal("${if (plain) "=" else "⚖"} Verdict · ${comparison.judge}").take(width - 2)
-    add(Line(verdictLabel, Palette.Orange, bold = true, entry = entry, runs = listOf(pill(verdictLabel, Palette.Orange))))
-    addAll(renderMarkdown(parseMarkdown(comparison.verdict), width, entry = { entry }, rich = config.renderMarkdown, plainGlyphs = plain))
-}
-
-/**
- * The context inspector (`/context`): what the chat model was sent with the latest request, one row per part with its share of the request, and a mark on the parts Ollama
- * could take from its cache (the start of the request that is the same as last time). Enter opens a part exactly as it was sent. Debugging a confused or slow answer starts here.
- */
-@Composable
-private fun ContextInspectorView(snap: com.arcana.brain.core.ContextSnapshot?, selected: Int, plain: Boolean) {
-    ScreenHeader("Context", if (snap == null) "Nothing sent yet" else "What ${snap.model} was sent with the last request · ${relativeTime(snap.at)}")
-    VGap()
-    if (snap == null) { Hint("Send a message first."); return }
-    val compact = UsageStats::compact
-    val window = if (snap.window > 0) " of ${UsageStats.contextSize(snap.window.toLong())} (${"%.0f".format(snap.share * 100)}%)" else ""
-    val cache = if (snap.cachedTokens > 0) " · ~${compact(snap.cachedTokens.toLong())} the same as the request before (Ollama reuses it)" else " · all of it read anew"
-    Label("~${compact(snap.total.toLong())} tokens$window$cache", color = Palette.Muted)
-    VGap()
-    val parts = snap.parts
-    val sel = selected.coerceIn(0, (parts.size - 1).coerceAtLeast(0))
-    val rows = 14
-    val first = (sel - rows + 1).coerceAtLeast(0)
-    val width = LocalContentWidth.current
-    val titleWidth = (width - 34).coerceIn(16, 40)
-    Panel("${parts.size} parts · estimates (Ollama's own count is under each reply)", accent = Palette.Blue) {
-        if (first > 0) Hint("… $first above")
-        parts.drop(first).take(rows).forEachIndexed { j, p ->
-            val i = first + j
-            val indent = if (p.depth > 0) (if (plain) "  - " else "  └ ") else ""
-            val title = (indent + p.title).let { if (it.length > titleWidth) it.take(titleWidth - 1) + "…" else it.padEnd(titleWidth) }
-            val tokens = "~${compact(p.tokens.toLong())}".padStart(7)
-            val bar = com.arcana.brain.core.ContextInspector.bar(p.tokens, snap.total, 8, plain)
-            val mark = if (p.reused) (if (plain) " cached" else " ✓ cached") else ""
-            val color = if (i == sel) Palette.Cta else if (p.depth > 0) Palette.Muted else Palette.Text
-            Row {
-                Label("${if (i == sel) "›" else " "} $title $tokens ", color = color, textStyle = if (i == sel) TextStyle.Bold else TextStyle.Unspecified)
-                Label(bar, color = if (p.depth > 0) Palette.Dim else Palette.Blue)
-                Label(mark, color = Palette.Green)
-            }
-        }
-        if (first + rows < parts.size) Hint("… ${parts.size - first - rows} below")
-    }
-    parts.getOrNull(sel)?.detail?.takeIf { it.isNotEmpty() }?.let { Hint(it) }
-    ActionBar(listOf(ActionItem("↑↓", "Choose"), ActionItem("Enter", "Read it as sent", accent = Palette.Cta), ActionItem("c", "Copy"), ActionItem("Esc", "Back")))
-}

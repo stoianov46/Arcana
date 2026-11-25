@@ -1,5 +1,6 @@
 package com.arcana.brain.app.screens
 
+import com.arcana.brain.app.startNew
 import com.idea.ink.text.sanitizeForTerminal
 
 import androidx.compose.runtime.Composable

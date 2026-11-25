@@ -16,7 +16,7 @@
 |---|---|
 | Embedding call | `OllamaClient.embedBlocking(model, inputs)` (blocking, because a tool runs outside coroutines) and `embed(...)` (suspend, same call); `OllamaProtocol.embedRequest` / `parseEmbeddings` (`/api/embed`: `{model, input:[…]}` → `{embeddings:[[…]]}`; an older single `embedding` is read too). Errors are `OllamaException` with the server's text and the hint `ollama pull nomic-embed-text` |
 | Chunks, vectors, index | `core/Embeddings.kt`: `Embedder` (fun interface), `Chunk`, `Chunker`, `cosine`, `EmbeddingIndex`, `SemanticSearch` (the tool's side), `SemanticHit`, `RefreshResult` |
-| Tool | `Tools.kt`: `ToolBox(semantic = SemanticSearch?)`, `semanticTool()` (only added with a vault and a `SemanticSearch`) |
+| Tool | `Tools.kt`: `ToolBox(semantic = SemanticSearch?)`, `semanticTool()` in `VaultTools.kt` (only added with a vault and a `SemanticSearch`) |
 | Wiring | `ChatSession.semanticIndexFor(config, vault)` (model set and in the server's installed list, via `ModelStatus.sameModel`; one cached index per vault and model), `toolboxFor` passes it, `ChatSession.reindex(done)` + `indexing` (progress text) |
 | UI | `Chat.kt`: `/reindex` (`SlashCommands`, `runCommand`, palette, key map), the progress line under the conversation (`chat.indexing`, counted in `statusRow`); `Settings.kt`: `EmbedModel` (`Editor.Model(embed = true)`), section *Search* of the Vault group |
 | Setup | `ChatSession.ensureSemanticModel` (called by `runTools` before the first `semantic_search` without a model: ask → `OllamaClient.pull(model)` → `app.update(embedModel)` → `refreshConnection`, then the toolbox is rebuilt), `semanticOn`; `SemanticSetup` (model, size, progress text) and `PullProgress` in core |

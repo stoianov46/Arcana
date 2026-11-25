@@ -2,8 +2,13 @@
 
 Opt-in feature (`AppConfig.toolsEnabled`, default **false**). The local model may use tools to search, read and change the vault and
 files, ask the user questions, run shell commands and read web pages. Everything that changes something, runs something or reaches
-the network needs the user's confirmation in a dialog. Code: `core/Tools.kt`, `core/Shell.kt`, `core/Web.kt`,
+the network needs the user's confirmation in a dialog. Code: `core/Tools.kt` (`ToolBox`, `FileAccess`), the tools by area in `core/VaultTools.kt`, `FileTools.kt`, `WebTools.kt`, `ShellTools.kt`, `ClockTools.kt`, their settings in `core/ToolSettings.kt`, `core/Shell.kt`, `core/Web.kt`,
 `core/TextToolCalls.kt` (logic) and `app/ChatSession.kt`, `app/Generation.kt`, `app/screens/Chat.kt` (loop and dialogs).
+
+**Two kinds of tools, offered the same way** (the model cannot tell them apart):
+
+- **Toolbox tools**: `ToolBox.specs`, each a `ToolSpec` (`read_note`, `create_note`, `run_command`, `web_search`…). They work on the vault, files, the shell and the web, from their arguments alone.
+- **Chat tools**: `ChatTools` (`core/ChatTools.kt`): `ask_user`, `chat_stats`, `chat_stats_json`, `todo`, `request_mode`, `request_access`, `turn_on_tools`, `consult`. The chat answers them itself from what only it knows (the conversation, its dialogs, its settings); the handlers are `ChatSession.chatToolHandlers`. They used to be called pseudo-tools.
 
 ## Sequence
 
@@ -60,7 +65,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `list_tags` | Read | `limit?` (≤200) | `VaultIndex.build(vault).tagCounts`: `#tag  (n)` lines, most used first, so the model reuses tags |
 | `vault_info` | Read | none | `ToolBox.vaultInfo`: absolute paths of the vault (with its note count), where new notes go (`outputFolder`), the skills folder (with its skill count), the memory file, the research backlog, the Todos and Questions notes, the project folder and the other allowed folders, one `label: path` line each; a place that does not exist says `(not created yet)`. For a model that needs an absolute path (for `run_command`, a script, a link) instead of guessing one. Allowed in plan mode |
 | `vault_health` | Read | `kind?`, `limit?` (default 10, ≤50 per kind) | `ToolBox.vaultHealth`: the Brain screen's eight hygiene checks (`VaultHygiene`, see [vault-hygiene.md](vault-hygiene.md)) plus dead links (`VaultIndex` unresolved links), each problem with the note's path and its fix; first line = notes, words, links and the problem total. `kind` = one of `missingtype`, `symbolname`, `genericname`, `duplicatename`, `looseroot`, `reportnotdone`, `stalereport`, `island`, `dead_links` (default: all); an unknown kind is an error that lists them. Changes nothing; the `obsidian-doctor` starter skill is built on it |
-| `consult` | pseudo-tool, answered by the chat (only with *Specialists as tools*) | `stage`, `brief` | asks the analyst, planner or reviewer model and returns its text; at most 3 per message |
+| `consult` | chat tool, answered by the chat (only with *Specialists as tools*) | `stage`, `brief` | asks the analyst, planner or reviewer model and returns its text; at most 3 per message |
 | `remember` | Write, always asks | `text` | appends a line under "Remembered" in `ARCANA.md`; skips a fact that is already there, refuses a `[[link]]` / `.md` path that does not exist (`Vault.remember`) |
 | `write_file` | Write | `path`, `content` | create or replace; **backup** of the old file; creates parent dirs |
 | `edit_file` | Write | `path`, `old`, `new` | `old` must occur exactly once; backup first |
@@ -70,9 +75,9 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `elapsed_time` | Read | `from`, `to?` | time between two moments (default: until now): `total_work_time=5 min 12 s`, `seconds=312`, `from=`, `to=` (local ISO, so the model can copy them into properties); `from`/`to` accept ISO with an offset or `Z`, a local date-time (`T` or space; this computer's zone) or Unix seconds/ms (`parseMoment`, `describeDuration`, `describeElapsed`); error when the end is before the start; pairs with `current_time` for "how long did this take" (models cannot subtract clock times reliably) |
 | `wait` | Read | `seconds`, `reason?` | sleeps 1–`MAX_WAIT_SECONDS` (120) seconds on the IO thread, then returns "Waited N s." and the time (`describeNow`); for rate limits (CoinGecko allows only ~5–7 requests a minute): wait, then retry; longer waits = call again; `Esc` interrupts it; no approval |
 | `use_skill` | Read | `name` | (see [skills.md](skills.md)) **only offered when the vault has at least one skill** (`ToolBox.skills`, folder `AppConfig.skillsFolder`, switch `skillsEnabled`); returns `Skills.load`: folder, file list, entry-note text without properties, cut at 20,000 characters; allowed in plan mode; see "Skills" |
-| `todo` | pseudo-tool (answered by the chat) | `items` (the whole list, one `[ ]` / `[~]` / `[x]` item per line) | offered with the toolbox (`definitionsFor`); `Todos.describe` returns the list with "N of M done" and what to do next; the Chat status bar shows `☑ 2/5` (green `✓` when all are done) and the chat shows the list under the call. A **Read** kind of tool in effect: it changes and asks nothing. Meant for jobs of three or more steps; replaces the list each time (at most 20 items). The list is read back from the latest call (`Todos.last`), so it survives reopening a chat; skills may use it in `requires:` like any tool (`todo`) |
-| `chat_stats` | pseudo-tool (answered by the chat) | none | offered with the toolbox (`definitionsFor`); `ChatStats.describe` (core/ChatStats.kt): model, messages, tokens in/out (sums of the replies' `ReplyStats`), **chat time** (first to last message, pauses included) and **active time** (the gaps between messages, a gap over 30 min left out: `ChatStats.spans`, `PAUSE_LIMIT_MILLIS`; from `ChatMessage.at`, so an older chat without times shows neither line), time generating (the replies' own `total_duration`: no tools, no waiting), estimated cost (settings prices), tool calls by name, context use after the last request, token spend per model and in total since Arcana started (from the Usage records) with what each model was used for, which other models were consulted (the Oracul's setup, second opinions, comparisons, plans, takeovers with their models) and how often the Oracul, judge and planner were called in all the history, **compaction** (`ChatStats.compactionLine`, from `ChatSession.compactionState()`: how many times the chat was compacted and the latest summary's size, and the auto-compact threshold with the tokens left before it, `due` when the next message compacts first, or "auto-compact off (only /compact does it)"), how long Arcana has run; `chat_stats_json` gives the same numbers as JSON (its `compaction` object: `count`, `last_summary_tokens`, `auto_percent`, `auto_threshold_tokens`, `used_tokens`, `used_is_estimate`, `tokens_until_auto`, `due`) |
-| `request_mode` | pseudo-tool (answered by the chat) | `mode` (`ask`/`auto`/`plan`), `reason` | offered whenever the model has a toolbox (`ChatSession.definitionsFor`); always asks "Switch to X mode?"; on yes `toolMode` changes, the toolbox is rebuilt and `Generation.useTools` gets the new definitions (later calls of the same round use the new toolbox); a refusal tells the model to stay put; `request_access` stays for leaving plan mode / turning tools on |
+| `todo` | chat tool (answered by the chat) | `items` (the whole list, one `[ ]` / `[~]` / `[x]` item per line) | offered with the toolbox (`definitionsFor`); `Todos.describe` returns the list with "N of M done" and what to do next; the Chat status bar shows `☑ 2/5` (green `✓` when all are done) and the chat shows the list under the call. A **Read** kind of tool in effect: it changes and asks nothing. Meant for jobs of three or more steps; replaces the list each time (at most 20 items). The list is read back from the latest call (`Todos.last`), so it survives reopening a chat; skills may use it in `requires:` like any tool (`todo`) |
+| `chat_stats` | chat tool (answered by the chat) | none | offered with the toolbox (`definitionsFor`); `ChatStats.describe` (core/ChatStats.kt): model, messages, tokens in/out (sums of the replies' `ReplyStats`), **chat time** (first to last message, pauses included) and **active time** (the gaps between messages, a gap over 30 min left out: `ChatStats.spans`, `PAUSE_LIMIT_MILLIS`; from `ChatMessage.at`, so an older chat without times shows neither line), time generating (the replies' own `total_duration`: no tools, no waiting), estimated cost (settings prices), tool calls by name, context use after the last request, token spend per model and in total since Arcana started (from the Usage records) with what each model was used for, which other models were consulted (the Oracul's setup, second opinions, comparisons, plans, takeovers with their models) and how often the Oracul, judge and planner were called in all the history, **compaction** (`ChatStats.compactionLine`, from `ChatSession.compactionState()`: how many times the chat was compacted and the latest summary's size, and the auto-compact threshold with the tokens left before it, `due` when the next message compacts first, or "auto-compact off (only /compact does it)"), how long Arcana has run; `chat_stats_json` gives the same numbers as JSON (its `compaction` object: `count`, `last_summary_tokens`, `auto_percent`, `auto_threshold_tokens`, `used_tokens`, `used_is_estimate`, `tokens_until_auto`, `due`) |
+| `request_mode` | chat tool (answered by the chat) | `mode` (`ask`/`auto`/`plan`), `reason` | offered whenever the model has a toolbox (`ChatSession.definitionsFor`); always asks "Switch to X mode?"; on yes `toolMode` changes, the toolbox is rebuilt and `Generation.useTools` gets the new definitions (later calls of the same round use the new toolbox); a refusal tells the model to stay put; `request_access` stays for leaving plan mode / turning tools on |
 | `ask_user` | Read (answered by the chat) | `question`, `options?`, `multiple?` | see "Questions" below; offered even when tools are off |
 | `cat` | Read | `path` | `read_file` with `start_line=1` (numbered lines like `cat -n`, ≤`RANGE_LINES`, with a "continue with start_line=N" note); both use `ToolBox.readFile` |
 | `git_status` | Read | `cwd?` | `git status --short --branch` (via `ToolBox.inRepo`, 30 s) |
@@ -82,7 +87,7 @@ user message ──► ChatSession.send ──► (maybe offerTools) ──► a
 | `http_request` | Web | `url`, `method?` (GET default, POST, PUT, PATCH, DELETE, HEAD), `headers?` (`Name: value` lines), `body?` (≤200,000 characters) | the gated way to send anything but a plain page read; see "HTTP requests (`http_request`)"; same switch as `fetch_url` (`toolWeb`), always asks, never "always" |
 | `fetch_url` | Web | `url`, `offset?` | off by default (`toolWeb`); see "Web" |
 | `web_search` | Web | `query`, `limit?` | same switch as `fetch_url`; see "Web"; returns title, address and snippet per result (≤10) |
-| `request_access` | pseudo-tool | `reason` | the only tool a model has when tools are off (plus `ask_user`); asks the user to turn tools on or leave plan mode |
+| `request_access` | chat tool | `reason` | the only tool a model has when tools are off (plus `ask_user`); asks the user to turn tools on or leave plan mode |
 
 **Web access always asks, by design:** `ToolRisk.Web` is never allowed "always" and Auto mode does not cover it, because the address or query itself can carry data out. The one exception the user can switch on is `toolAutoSearch` (Settings → Tools → *Search and fetch without asking*): `web_search` and `fetch_url` (`ChatSession.AUTO_WEB`) then run without a dialog (the `ask` rule); private addresses are still refused first (`WebPolicy`), `http_request` still asks for every request, and the Oracul's own calls (`oraculCall`) always ask.
 
@@ -126,7 +131,7 @@ when a message is sent.
 with its buttons **inside the panel** (`ActionBar(items, panelWidth())`); keys `y` yes, `n`/`Esc` no, `a` always this session (only
 when `always`). Other keys (screen numbers, Ctrl+C) fall through. While one is pending the sidebar's Chat badge shows `!`.
 
-Dialogs used: "Allow this change?" (writes), "Delete this?" / "Move this?" / "Remember this?" (always ask), "Allow this folder?",
+Dialogs used: "Allow this change?" (writes), "Allow this read?" (a read with *Read without asking* off), "Delete this?" / "Move this?" / "Remember this?" (always ask), "Allow this folder?",
 "Run this command?", "Fetch this web page?", "Turn on tools?" / "Leave plan mode?", "Turn on shell commands?", "Turn on web pages?",
 "Step limit reached", "Run this tool call?" (calls written as text, ask mode), "Memory file created".
 
@@ -191,7 +196,7 @@ Models reach for `curl` whenever they must POST or send a key, and a shell would
 - **What the user sees (`HttpGate.preview`):** "Send this HTTP request?": the method and address (a key-like query value such as `?api_key=…` is shown as `••••`), every header (`Authorization`, cookies, API keys and tokens hidden but named, with "sent to <host>"), the body (first lines), a line saying data is sent to the host, and a warning when credentials go along. Always asked, never "always" (like every `Web` tool); in the Oracul's dialog it is marked Ψ Oracul.
 - **Sending (`httpRequest`):** 20 s timeout, answer read up to 2 MB, text and JSON returned with the status and a few useful headers (`Retry-After`, rate-limit ones, `Location`); a non-2xx answer is returned as text, not an error (an API's error message is what the model needs). Redirects: GET/HEAD follow them hop by hop (each hop re-checked); for the others the redirect is only reported, so a body is never sent on to an address the user did not see.
 - **Not covered, on purpose:** file uploads, cookies kept between calls, proxies, client certificates. Add them only with the same gate and preview.
-- Plan mode has no `Web` tools. `wrongNameHint` sends `http_request`-like names (`curl`, `wget`, `http_get`, `web_get`…) to `fetch_url` / `http_request`. Tests: `CoreTest.httpRequestIsTheGatedWayToPostAndCurlIsRefused` (a real local server proves what goes out).
+- Plan mode has no `Web` tools. `wrongNameHint` sends `http_request`-like names (`curl`, `wget`, `http_get`, `web_get`…) to `fetch_url` / `http_request`. Tests: `WebToolsTest.httpRequestIsTheGatedWayToPostAndCurlIsRefused` (a real local server proves what goes out).
 
 ## Web (`fetch_url`)
 
@@ -226,8 +231,8 @@ named by `output:`). In the tool loop it shows up in four places:
   status bar shows `◆ <skill> 7/11`. Generic: only skills with a non-empty `requires:` get a run; the run ends at the next user message or `/new`.
 - **The "/" menu and `/skills`**: skills are scanned from the folder (never hardcoded) every time the menu opens; `/skills` toggles `skillsEnabled` and lists problems.
 
-Everything a skill then does goes through the normal tools and their approvals. Tests: `CoreTest.skillsAreFoundLoadedAndOfferedToTheModel`,
-`CoreTest.aSkillCanRequireStepsAndTheRunIsTracked`, `SkillGateTest` (the real loop against a fake Ollama server).
+Everything a skill then does goes through the normal tools and their approvals. Tests: `SetupAndSkillsTest.skillsAreFoundLoadedAndOfferedToTheModel`,
+`SetupAndSkillsTest.aSkillCanRequireStepsAndTheRunIsTracked`, `SkillGateTest` (the real loop against a fake Ollama server).
 
 ## Calls written as text
 
@@ -275,13 +280,13 @@ Brain/Library reread the vault.
 
 ## How to add a tool
 
-1. Add a `ToolSpec` in `ToolBox.vaultTools` or `fileTools` (or a dedicated `xxxTool()` like `shellTool`, `webTool`): choose `ToolRisk`,
+1. Add a `ToolSpec` in `vaultTools` (`VaultTools.kt`) or `fileTools` (`FileTools.kt`), or a dedicated `ToolBox.xxxTool()` extension in the file of its area (like `shellTool` in `ShellTools.kt`, `webTool` in `WebTools.kt`): choose `ToolRisk`,
    write a clear `description` and a JSON schema (`schema(...)` helper), `summary`, and for anything that acts a `preview`
    (`alwaysAsk = true` for destructive ones). Add it to `specs`.
 2. Keep path handling through `access.resolve(...)` (files) or `Vault` methods (notes); throw `IllegalArgumentException` with a helpful
    message (it becomes `Error: …` for the model). If it takes a folder argument, add it to `folderToGrant`.
 3. A tool that needs UI (like `ask_user`) is intercepted in `ChatSession.runTools`.
-4. Add a test in `CoreTest` (sandbox, backups, error cases; `cheatSheet()` and `definitions()` pick it up automatically). Update the Guide's "Letting it act"
+4. Add a test in `ToolsTest` (or the area's class, e.g. `WebToolsTest`, `ShellAndGitTest`; sandbox, backups, error cases; `cheatSheet()` and `definitions()` pick it up automatically). Update the Guide's "Letting it act"
    section, the Changelog page and this file.
 5. For a risky capability add a risk level and an explicit preview first.
 

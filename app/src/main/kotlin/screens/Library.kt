@@ -1,5 +1,6 @@
 package com.arcana.brain.app.screens
 
+import com.arcana.brain.app.startNew
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
