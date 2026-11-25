@@ -62,7 +62,7 @@ private fun ArcanaApp(onQuit: () -> Unit) {
     LaunchedEffect(app.config.vaultPath, app.brain.revision) { app.brain.refresh() }
 
     Shell(app, navigator, onQuit = onQuit) { screen ->
-        if (app.setupOpen) SetupScreen(app) else when (screen) {
+        if (app.setupOpen) SetupScreen(app) else if (app.splashOpen) com.arcana.brain.app.screens.SplashScreen(app) else when (screen) {
             Screen.Home -> HomeScreen(app)
             Screen.Chat -> ChatScreen(app)
             Screen.Library -> LibraryScreen(app)

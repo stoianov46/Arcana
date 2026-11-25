@@ -37,6 +37,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `sidebarCollapsed` | false | icon rail |
 | `tabOrder` | `[]` | screen names in the user's order (first = start screen) |
 | `animateLogo` | true | colour sweep while generating |
+| `showSplash` | true | the start screen: on start, one line each for the model, vault, memory file, skills, tools and semantic search; closes by itself or on any key (Settings → Appearance → *Start screen*) |
 | `thinking` | default | `default`, `off`, `on`, or any level the model lists (`low`, `medium`, `high`, `xhigh`…): sent as Ollama's `think` when the model lists that value (`/api/show` → `thinking.values`); the Settings row offers only what the current model lists |
 | `keepAlive` | `` | Ollama's `keep_alive` for the chat model: blank = not sent (Ollama's 5 min default), `30m`, `1h`, `-1` (until Ollama stops). Sent only with requests to the chat model (`AppConfig.forModel`: the Oracul or judge when they are the same model, since every request restarts the timer; never to another model or server) |
 | `showModelTraits` | true | `vision · thinking · tools`, `♪ audio`, `MoE n` or `dense` next to the model name in the bottom bar |

@@ -465,6 +465,18 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
             else "${counts.size} tags:\n" + counts.take((a.int("limit") ?: 50).coerceIn(1, 200)).joinToString("\n") { (tag, n) -> "#$tag  ($n)" }
         },
         ToolSpec(
+            VAULT_INFO, "Where the vault and Arcana's own files are: the vault's absolute path and size, the folder new notes go to, the skills folder, the memory file, the research backlog, the todo and question notes, the project folder and every allowed folder. Call it when you need an absolute path (for run_command, a script, a link outside Obsidian) instead of guessing one.",
+            schema(), ToolRisk.Read, { "" },
+        ) { _ -> vaultInfo(vault) },
+        ToolSpec(
+            VAULT_HEALTH, "Check the health of the vault, the same checks as the Brain screen's Vault hygiene, plus dead links: notes without a type property, names that start with an emoji or symbol, generic names (Index, Untitled), duplicate names, loose notes in the vault root, reports not finished, stale reports, notes linked to nothing, and links to notes that do not exist. Each problem comes with the note's path and how to fix it. Read-only: it changes nothing.",
+            schema(
+                "kind" to ("string" to "Only one kind: ${HygieneKind.entries.joinToString { it.name.lowercase() }} or dead_links (default: all)"),
+                "limit" to ("integer" to "How many notes to list per kind (default 10, at most 50)"),
+            ),
+            ToolRisk.Read, { it.str("kind").ifEmpty { "all checks" } },
+        ) { a -> vaultHealth(vault, a.str("kind").trim().lowercase(), (a.int("limit") ?: 10).coerceIn(1, 50)) },
+        ToolSpec(
             "remember", "Add one line to the user's memory file (ARCANA.md): a lasting fact or preference that every future chat should know. Use it only when the user asks you to remember something. The user confirms each line. A line that names a note must use its exact path (find_files); an unknown path is refused, and a fact that is already there is not added twice.",
             schema("text" to ("string" to "One short sentence to remember"), required = listOf("text")),
             ToolRisk.Write, { it.str("text") },
@@ -491,6 +503,57 @@ class ToolBox(private val vault: Vault?, folders: List<Path>, private val backup
             "Added to ${a.str("path")}"
         },
     )
+
+    /**
+     * What `vault_info` answers: absolute paths, so a script or a shell command gets them right, and whether each place exists yet (a backlog is made by the first question).
+     * Plain `key: value` lines, one per place, easy for a small model to read and to quote.
+     */
+    internal fun vaultInfo(vault: Vault): String {
+        val root = vault.root
+        fun place(label: String, path: Path) = "$label: $path" + if (Files.exists(path)) "" else " (not created yet)"
+        val notes = vault.notes()
+        return buildList {
+            add("Vault: $root (${notes.size} notes)")
+            add(place("New notes go to", if (outputFolder.isBlank()) root else root.resolve(outputFolder)))
+            if (skillsFolder.isNotBlank()) add(place("Skills folder", root.resolve(skillsFolder)) + " (${skills.size} skill${if (skills.size == 1) "" else "s"})")
+            add(place("Memory file", vault.memoryFile()))
+            add(place("Research backlog", root.resolve(ResearchBacklog.PATH)))
+            WorkNotes.paths.forEach { (kind, path) -> add(place("${kind.title} note", root.resolve(path))) }
+            project?.let { add("Project folder: $it") }
+            val extra = access.roots.filter { it != root && it != project?.toAbsolutePath()?.normalize() }
+            if (extra.isNotEmpty()) add("Other allowed folders: ${extra.joinToString(", ")}")
+            add("A relative path in the note tools means inside the vault.")
+        }.joinToString("\n")
+    }
+
+    /**
+     * What `vault_health` answers: the vault in figures, then each kind of problem with its count and up to [limit] notes, each with its fix (the hygiene checks of the Brain
+     * screen, [VaultHygiene], and the dead links of [VaultIndex]); [kind] blank = every kind, else one kind's name or `dead_links`.
+     */
+    internal fun vaultHealth(vault: Vault, kind: String, limit: Int): String {
+        val kinds = HygieneKind.entries.associateBy { it.name.lowercase() }
+        require(kind.isEmpty() || kind in kinds || kind == "dead_links") { "Unknown kind \"$kind\". Use one of: ${kinds.keys.joinToString()}, dead_links, or leave it empty for all." }
+        val index = VaultIndex.build(vault)
+        val report = VaultHygiene.check(vault, index = index)
+        val dead = index.notes.flatMap { n -> n.unresolved.sorted().map { n.path to it } }
+        return buildString {
+            appendLine("Vault health: ${index.notes.size} notes, ${index.totalWords} words, ${index.totalLinks} links. Problems: ${report.total + dead.size}.")
+            for (k in HygieneKind.entries) {
+                if (kind.isNotEmpty() && kind != k.name.lowercase()) continue
+                val issues = report.byKind.getValue(k)
+                appendLine()
+                appendLine("${k.icon} ${k.counted(issues.size)} (kind: ${k.name.lowercase()})")
+                issues.take(limit).forEach { appendLine("- ${it.path}: ${it.message}. Fix: ${it.fix}") }
+                if (issues.size > limit) appendLine("… and ${issues.size - limit} more (ask for this kind alone with a higher limit)")
+            }
+            if (kind.isEmpty() || kind == "dead_links") {
+                appendLine()
+                appendLine("✕ ${dead.size} dead link${if (dead.size == 1) "" else "s"} (kind: dead_links)")
+                dead.take(limit).forEach { (from, to) -> appendLine("- $from links to [[$to]], which matches no note. Fix: link the right note (find it with search_notes) or remove the link") }
+                if (dead.size > limit) appendLine("… and ${dead.size - limit} more")
+            }
+        }.trimEnd()
+    }
 
     /**
      * The vault-relative path of a note from what a model wrote. Models usually know a note by its title or wikilink (that is how
@@ -1136,6 +1199,12 @@ private val FILE_WORDS = Regex("""\b(files?|folders?|directory|directories|proje
 fun looksLikeToolTask(message: String): Boolean = PATH_LIKE.containsMatchIn(message) || FILE_WORDS.containsMatchIn(message)
 
 /** The one tool a model has when tools are off or read-only: it asks the user, on the spot, for what it is missing. */
+/** The tool that says where the vault and Arcana's files are ([ToolBox.vaultInfo]). */
+const val VAULT_INFO = "vault_info"
+
+/** The tool that runs the vault hygiene checks and lists dead links ([ToolBox.vaultHealth]); the obsidian-doctor skill is built on it. */
+const val VAULT_HEALTH = "vault_health"
+
 const val ASK_USER = "ask_user"
 
 private val OPTION_LABEL = Regex("""^\s*(\(\s*[A-Za-z0-9]{1,2}\s*\)|[A-Za-z0-9]{1,2}\s*[).:])\s+""")

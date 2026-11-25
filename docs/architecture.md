@@ -49,7 +49,7 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 | `client: OllamaClient` | reads `config` lazily (URL/model/sampling/timeout changes apply at once) |
 | `connection: Connection` | `Checking / Online(models) / ModelMissing(models) / Offline(error)`; refreshed by `refreshConnection()` |
 | `vision`, `tools: Boolean?`, `modelContext` | model capabilities and maximum context from `/api/show` (`null`/0 = unknown) |
-| `loadedContext` | the window Ollama really loaded the model with, from `/api/ps` `context_length` (0 until the model has run, or on an older Ollama); refreshed after every reply and with the connection (`refreshLoadedContext`) |
+| `loadedContext` | the window Ollama really loaded the model with, from `/api/ps` `context_length` (0 until the model has run, or on an older Ollama); refreshed after every reply, after `/reindex` and with the connection (`refreshLoadedContext`, which also refreshes the loaded models behind the bottom bar's `◇ embed` segment) |
 | `usage`, `recordUsage(feature, chunk)` | token accounting (`UsageStore`, `usage.jsonl`) |
 | `brain: BrainState` | background-built `VaultIndex` + `BrainHealth`; `refresh()` / `changed()` |
 | `chat: ChatSession` | the one persistent chat (survives screen switches) |

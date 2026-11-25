@@ -40,7 +40,7 @@ no marketing. Read this page, then open only the file you need.
 | [testing.md](testing.md) | run/add tests, drive the real app in a pty |
 | [conventions.md](conventions.md) | follow project rules; recipes for "add a screen / setting / key / tool" |
 | [research-reports.md](research-reports.md) | the Library's *Reports* view: how reports (`type: report`) are found, marks, stale rules, `s` to run a report's skill again |
-| [vault-hygiene.md](vault-hygiene.md) | the Brain screen's hygiene checks: each rule, the list, open-in-Library and chat-to-fix |
+| [vault-hygiene.md](vault-hygiene.md) | the Brain screen's hygiene checks: each rule, the list, open-in-Library and chat-to-fix, and the same checks for the model (`vault_health`, the `obsidian-doctor` skill) |
 | [brain.md](brain.md) | the Brain screen: four pages (Overview, Work, Health, Activity), the charts, how the numbers and the bottlenecks are made |
 | [research-backlog.md](research-backlog.md) | the research backlog: `? ` in Capture, `Research/Research Backlog.md`, the Brain list, auto-tick |
 | [report-lifecycle.md](report-lifecycle.md) | what happens to a report after it is written: tokens, work time and rating, refreshing a stale report, the reviewer pass |

@@ -109,6 +109,8 @@ data class EmbedPrefixes(val document: String, val query: String, val tag: Strin
     companion object {
         val NONE = EmbedPrefixes("", "", "")
         val NOMIC = EmbedPrefixes("search_document: ", "search_query: ", "#nomic-prefix")
+        /** Qwen3-Embedding's own way: passages as they are, a question with an instruction in front (its model card); measured with `RealModelCheck` before it is used. */
+        val QWEN3 = EmbedPrefixes("", "Instruct: Given a question or a phrase, retrieve the note passages that answer it or are about it\nQuery: ", "#qwen3-instruct")
 
         /**
          * The prefixes used for [model]: none for now. Measured on 2026-11-24 with a real vault (116 notes, 274 questions: titles, headings, sentences; `RealPrefixCheck`), nomic-embed-text

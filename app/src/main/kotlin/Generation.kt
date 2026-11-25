@@ -105,6 +105,9 @@ class Generation(
         private set
     var roundPieces by mutableIntStateOf(0)
         private set
+    /** When the first piece of the current round came in (0 = none yet): the live speed counts from it, so the time spent reading the prompt does not lower it. */
+    var roundFirstAt = 0L
+        private set
     private var job: Job? = null
     /** The tools offered each round; a tool round may replace them (the user just turned tools on). */
     private var activeTools: JsonArray? = null
@@ -151,6 +154,7 @@ class Generation(
                     var pieces = 0
                     var liveAdded = 0
                     roundPieces = 0
+                    roundFirstAt = 0L
                     roundStartedAt = System.currentTimeMillis()
                     var looped = false
                     var sinceCheck = 0
@@ -169,6 +173,7 @@ class Generation(
                             if (chunk.content.isNotEmpty() || chunk.thinking.isNotEmpty()) {
                                 streamed++
                                 pieces++
+                                if (pieces == 1) roundFirstAt = System.currentTimeMillis()
                                 roundPieces = pieces
                                 if (pieces - liveAdded >= LIVE_BATCH) { onLive(pieces - liveAdded); liveAdded = pieces }
                             }
@@ -393,6 +398,21 @@ private const val MAX_EMPTY_RETRIES = 1
 private const val MAX_BAD_CALL_RETRIES = 2
 private const val BAD_CALL_NUDGE = "Your last tool call was malformed (invalid JSON) and was not run. Make it again with plain, correctly escaped arguments; for a long file, write a shorter first version and extend it afterwards."
 
+
+/** Fewer pieces than this, or less time since the first one than [LIVE_SPEED_MIN_MILLIS], and the live speed is not shown yet (a figure from two pieces jumps about). */
+internal const val LIVE_SPEED_MIN_PIECES = 8
+internal const val LIVE_SPEED_MIN_MILLIS = 1_000L
+
+/**
+ * Tokens per second of the round being streamed: [pieces] (about one token each) since the first one came in at [firstAt]; null until there are enough to say.
+ * Ollama gives the exact speed only when the round ends (it is under the reply then); this is the speedometer while it runs.
+ */
+internal fun liveSpeed(pieces: Int, firstAt: Long, now: Long): Double? {
+    val millis = now - firstAt
+    if (firstAt <= 0L || pieces < LIVE_SPEED_MIN_PIECES || millis < LIVE_SPEED_MIN_MILLIS) return null
+    // the first piece starts the clock, so it is not counted in the rate
+    return (pieces - 1) * 1000.0 / millis
+}
 
 /** The live token counters move in steps of this many streamed pieces (one recomposition per piece would be wasteful). */
 private const val LIVE_BATCH = 4

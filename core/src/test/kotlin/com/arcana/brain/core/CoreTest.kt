@@ -849,7 +849,7 @@ class CoreTest {
         Files.writeString(vaultDir.resolve("ARCANA.md"), "my own rules")
         val made = Bootstrap.create(vault, config, Bootstrap.items(vault, config).map { it.id }.toSet())
         assertEquals("my own rules", Files.readString(vaultDir.resolve("ARCANA.md")))
-        assertEquals(listOf(".arcana/skills/", ".arcana/skills/Skills Guide.md", ".arcana/skills/decompose/decompose.skill.md", "Arcana/"), made)
+        assertEquals(listOf(".arcana/skills/", ".arcana/skills/Skills Guide.md", ".arcana/skills/obsidian-doctor/obsidian-doctor.skill.md", ".arcana/skills/decompose/decompose.skill.md", "Arcana/"), made)
         assertTrue(Bootstrap.items(vault, config).all { it.done })
         assertEquals(emptyList(), Bootstrap.create(vault, config, Bootstrap.items(vault, config).map { it.id }.toSet()), "a second run creates nothing")
         // only what was asked for
@@ -1024,17 +1024,37 @@ class CoreTest {
         val root = Files.createTempDirectory("arcana-starter")
         val vault = Vault(Files.createDirectories(root.resolve("vault")))
         Bootstrap.create(vault, AppConfig(), setOf(Bootstrap.SKILLS_GUIDE, Bootstrap.STARTER_SKILLS))
-        val found = Skills.discover(vault, ".arcana/skills")
-        assertEquals(listOf("decompose"), found.map { it.name }, "the guide is a note, not a skill")
-        val skill = found.single()
-        assertTrue(skill.description.isNotBlank() && skill.problems.isEmpty(), skill.problems.toString())
-        val steps = Skills.requirementsOf(vault, skill.path)
-        assertEquals(listOf("ask_user", "create_note"), steps.map { it.tool })
-        assertTrue(Files.readString(vault.root.resolve(skill.path)).length < 18_000)
-        // the tools the skill names are real ones
+        val found = Skills.discover(vault, ".arcana/skills").sortedBy { it.name }
+        assertEquals(listOf("decompose", "obsidian-doctor"), found.map { it.name }, "the guide is a note, not a skill")
+        found.forEach { skill -> assertTrue(skill.description.isNotBlank() && skill.problems.isEmpty(), "${skill.name}: ${skill.problems}") }
+        assertEquals(listOf("ask_user", "create_note"), Skills.requirementsOf(vault, found[0].path).map { it.tool })
+        assertEquals(listOf("vault_health", "ask_user", "create_note", "vault_health"), Skills.requirementsOf(vault, found[1].path).map { it.tool })
+        found.forEach { assertTrue(Files.readString(vault.root.resolve(it.path)).length < 18_000) }
+        // the tools each skill names are real ones
         val box = ToolBox(vault, emptyList(), root.resolve("b"))
         val real = box.specs.map { it.name } + listOf("ask_user")
-        assertTrue(StarterSkills.all.single().text.substringAfter("needs: [").substringBefore("]").split(",").map { it.trim() }.all { it in real })
+        StarterSkills.all.forEach { starter ->
+            val needs = starter.text.substringAfter("needs: [").substringBefore("]").split(",").map { it.trim() }
+            assertTrue(needs.all { it in real }, "${starter.name} needs a tool that does not exist: ${needs - real.toSet()}")
+        }
+    }
+
+    @Test
+    fun vaultHealthListsHygieneProblemsAndDeadLinksWithTheirFix() {
+        val root = Files.createTempDirectory("arcana-health")
+        val vault = Vault(Files.createDirectories(root.resolve("vault")))
+        vault.create("Research", "Typed", "---\ntype: reference\n---\nSee [[Nowhere]] and [[Untyped]].", "m")
+        vault.create("Research", "Untyped", "plain text", "m")
+        val box = ToolBox(vault, emptyList(), root.resolve("b"))
+        assertEquals(ToolRisk.Read, box.find(VAULT_HEALTH)!!.risk)
+        val all = box.execute(call(VAULT_HEALTH))
+        assertTrue(all.startsWith("Vault health: 2 notes"), all)
+        assertTrue("(kind: missingtype)" in all && "Research/Untyped.md" in all, all)
+        assertTrue("✕ 1 dead link (kind: dead_links)" in all && "Research/Typed.md links to [[Nowhere]]" in all, all)
+        // one kind alone, and a wrong kind is an error that lists the right ones
+        val dead = box.execute(call(VAULT_HEALTH, "kind" to "dead_links"))
+        assertTrue("dead_links" in dead && "missingtype" !in dead, dead)
+        assertTrue(box.execute(call(VAULT_HEALTH, "kind" to "nope")).startsWith("Error: Unknown kind"))
     }
 
     @Test
@@ -1289,6 +1309,50 @@ class CoreTest {
         assertTrue(listed.startsWith("7 tags") && "#ai  (1)" in listed, listed)
         assertTrue(box.execute(call("add_tags", "path" to bare.path, "tags" to " , ")).startsWith("Error:"))
         assertTrue(box.find("list_tags")!!.risk == ToolRisk.Read && box.find("add_tags")!!.risk == ToolRisk.Write)
+    }
+
+    @Test
+    fun chatStatsSaysHowOftenTheChatWasCompactedAndHowMuchRoomIsLeft() {
+        val messages = listOf(ChatMessage.user("a"), Compaction.summaryMessage("x".repeat(400)), ChatMessage.user("b"))
+        fun line(state: ChatStats.CompactionState, window: Int = 100_000) = ChatStats.compactionLine(ChatStats.compactionFacts(messages, window, state))
+        assertTrue(line(ChatStats.CompactionState(80, 30_000)).let { "compacted 1 time" in it && "~100 tokens" in it && "~80k tokens): 50k tokens left before it" in it }, line(ChatStats.CompactionState(80, 30_000)))
+        assertTrue("due, the next message compacts first" in line(ChatStats.CompactionState(80, 90_000)))
+        assertTrue("auto-compact off" in line(ChatStats.CompactionState(0, 10)))
+        assertTrue("no reply measured yet" in line(ChatStats.CompactionState(80, null)))
+        assertTrue("not compacted yet" in ChatStats.compactionLine(ChatStats.compactionFacts(listOf(ChatMessage.user("a")), 1000, ChatStats.CompactionState(80, 10))))
+        // the same facts in the JSON, and the line in the text
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(ChatStats.describeJson(messages, "m", 100_000, 0, 0, compaction = ChatStats.CompactionState(80, 30_000))).jsonObject["compaction"]!!.jsonObject
+        assertEquals("1", json["count"].toString()); assertEquals("50000", json["tokens_until_auto"].toString()); assertEquals("false", json["due"].toString())
+        assertTrue("Compaction: compacted 1 time" in ChatStats.describe(messages, "m", 100_000, 0, 0, 0, compaction = ChatStats.CompactionState(80, 30_000)))
+    }
+
+    @Test
+    fun theEmbeddingModelIsNamedOnlyWhenItIsLoadedNextToTheChatModel() {
+        val loaded = listOf(LoadedModel("gemma4:26b", 16_000_000_000, 16_000_000_000, 32_000), LoadedModel("nomic-embed-text:latest", 600_000_000, 600_000_000, 2048))
+        assertEquals("nomic-embed-text:latest", ModelStatus.embedLoaded(loaded, "nomic-embed-text", "gemma4:26b")?.name)
+        assertEquals(null, ModelStatus.embedLoaded(loaded.take(1), "nomic-embed-text", "gemma4:26b"))
+        assertEquals(null, ModelStatus.embedLoaded(loaded, "", "gemma4:26b"))
+        assertEquals(null, ModelStatus.embedLoaded(loaded, "gemma4:26b", "gemma4:26b"), "the chat model itself is not a second model")
+        assertEquals(null, ModelStatus.embedLoaded(null, "nomic-embed-text", "gemma4:26b"))
+    }
+
+    @Test
+    fun vaultInfoGivesAbsolutePathsAndSaysWhatIsNotCreatedYet() {
+        val root = Files.createTempDirectory("arcana-info")
+        val vault = Vault(Files.createDirectories(root.resolve("vault")))
+        vault.create("Research", "One", "text", "m")
+        val project = Files.createDirectories(root.resolve("proj"))
+        val box = ToolBox(vault, emptyList(), root.resolve("b"), outputFolder = "Research", project = project)
+        val spec = box.find(VAULT_INFO)!!
+        assertEquals(ToolRisk.Read, spec.risk)
+        val info = box.execute(call(VAULT_INFO))
+        assertTrue(info.startsWith("Vault: ${vault.root} (1 notes)"), info)
+        assertTrue("New notes go to: ${vault.root.resolve("Research")}\n" in info, "the output folder exists, so no note after it: $info")
+        assertTrue("Research backlog: ${vault.root.resolve(ResearchBacklog.PATH)} (not created yet)" in info, info)
+        assertTrue("Todos note: ${vault.root.resolve("Tasks/Todos.md")} (not created yet)" in info, info)
+        assertTrue("Project folder: $project" in info, info)
+        // plan mode keeps it: it only reads
+        assertTrue(ToolBox(vault, emptyList(), root.resolve("b"), readOnly = true).find(VAULT_INFO) != null)
     }
 
     @Test

@@ -65,6 +65,8 @@ data class AppConfig(
     val navPosition: String = "left",
     /** The sidebar logo's colours sweep while the model is generating. */
     val animateLogo: Boolean = true,
+    /** On start, a short screen says what Arcana loaded (model, vault, memory file, skills, tools, semantic search); it closes by itself or on any key. */
+    val showSplash: Boolean = true,
     val showModelTraits: Boolean = true,
     /** The `think` of a request: "default" (the model decides), "off", "on", or a level ("low", "medium", "high") for a model that lists it. */
     val thinking: String = "default",
