@@ -68,6 +68,11 @@ data class ChatMessage(
      * and Ollama can reuse what it already read (a changed earlier message makes it read everything after it again). Never shown; [content] stays what you wrote.
      */
     val sent: String = "",
+    /**
+     * For a reply: the model that wrote it, stamped when it joins the chat, so a reply keeps its author's name after the chat model is changed (`/model`, Settings, the
+     * status pane). Blank = not known (a chat from before this was kept): the chat model is named instead. Never sent to a model.
+     */
+    val model: String = "",
 ) {
     companion object {
         /**
