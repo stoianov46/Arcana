@@ -37,6 +37,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `sidebarCollapsed` | false | icon rail |
 | `tabOrder` | `[]` | screen names in the user's order (first = start screen) |
 | `animateLogo` | true | colour sweep while generating |
+| `showSplash` | true | the start screen: on start, one line each for the model, vault, memory file, skills, tools and semantic search; closes by itself or on any key (Settings → Appearance → *Start screen*) |
 | `thinking` | default | `default`, `off`, `on`, or any level the model lists (`low`, `medium`, `high`, `xhigh`…): sent as Ollama's `think` when the model lists that value (`/api/show` → `thinking.values`); the Settings row offers only what the current model lists |
 | `keepAlive` | `` | Ollama's `keep_alive` for the chat model: blank = not sent (Ollama's 5 min default), `30m`, `1h`, `-1` (until Ollama stops). Sent only with requests to the chat model (`AppConfig.forModel`: the Oracul or judge when they are the same model, since every request restarts the timer; never to another model or server) |
 | `showModelTraits` | true | `vision · thinking · tools`, `♪ audio`, `MoE n` or `dense` next to the model name in the bottom bar |
@@ -73,6 +74,7 @@ The config directory is derived from `ConfigStore.defaultPath().parent`; tests a
 | `searchKey` | `""` | Brave Search API key (Settings row *Brave API key*, shown only while the Brave backend is chosen), stored in plain text in `config.json` (keep the file private); the Settings row shows only its last 4 characters |
 | `textCalls` | `auto` | a tool call written as text: `auto` runs it, `ask` shows it first, `off` leaves it |
 | `toolAutoSearch` | false | `web_search` and `fetch_url` run without asking (Settings → Tools → *Search and fetch without asking*; needs `toolWeb`; HTTP requests still ask, the Oracul always asks); the Chat status bar shows an orange `↗ auto-search` |
+| `askAfterWeb` | `true` | after a web result in a turn, changes, shell commands and fetches of a new site (or with a query) ask even in Auto mode (Settings → Tools → *Ask after web*; see tools-and-agent.md) |
 | `toolFolders` | `""` | Settings → Tools → *Allowed folders* (was *Extra folders*): `;`-separated roots the file tools may read and write besides the vault, `~` expanded (the only place a home or hidden folder can be allowed) |
 | `toolAutoRead` | true | read-only tools run without asking |
 | `skillsEnabled` / `skillsFolder` | true / `` (automatic) | the model is told which skills exist and gets `use_skill`; the vault folder with one folder per skill. Blank = `Layout.skillsFolder`: `.arcana/skills`, or an existing `Skills/`; a name set here wins |
@@ -132,5 +134,5 @@ Adding a field: give it a default (old config files must still load), add a Sett
 ## Data shapes (persisted JSON)
 
 - `StoredChat { id, title, updated, model, messages: [ChatMessage] }`; `ChatMessage` fields as in
-  [core-module.md](core-module.md) (images omitted on disk; `files`, `toolCalls`, `toolName` kept).
+  [core-module.md](core-module.md) (images omitted on disk; `files`, `toolCalls`, `toolName` kept; a reply keeps `model`, the model that wrote it).
 - `UsageRecord { time, feature, model, promptTokens, completionTokens, millis }`; `feature` ∈ `Chat`, `Generate` (AI notes), `Session`

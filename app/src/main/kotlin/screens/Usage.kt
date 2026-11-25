@@ -494,7 +494,24 @@ private fun ToolsPanel(records: List<ToolUseRecord>, scroll: ScrollState) {
                 if (t.denied > 0) Label(" ⊘${t.denied}", color = Palette.Warn)
             }
         } }
-        Hint("≈ tokens: what the results added to the conversation (4 characters ≈ 1 token). ×calls · average time · ✕ failed · ⊘ denied.")
+        // how well each model uses the tools: the share of its calls that worked, and the kinds of mistakes it makes
+        val models = ToolStats.byModel(records)
+        if (models.isNotEmpty()) {
+            Label("By model", color = Palette.Muted, textStyle = TextStyle.Bold)
+            val width = (models.maxOf { it.model.length }).coerceIn(8, 28)
+            models.forEach { m ->
+                Row {
+                    Label(fit(m.model, width), color = Palette.FieldLabel)
+                    Label(" ${m.okPercent}% ok", color = if (m.okPercent >= 90) Palette.Green else if (m.okPercent >= 70) Palette.Warn else Palette.Red, textStyle = TextStyle.Bold)
+                    Label(" ×${m.calls}", color = Palette.Muted)
+                    if (m.errors > 0) Label(" ✕${m.errors}", color = Palette.Red)
+                    if (m.unknown > 0) Label(" ?${m.unknown} unknown tool", color = Palette.Warn)
+                    if (m.malformed > 0) Label(" ⚠${m.malformed} malformed", color = Palette.Warn)
+                    if (m.denied > 0) Label(" ⊘${m.denied}", color = Palette.Muted)
+                }
+            }
+        }
+        Hint("≈ tokens: what the results added to the conversation (4 characters ≈ 1 token). ×calls · average time · ✕ failed · ⊘ denied. By model: the share of its calls that worked (denials not counted) · ? a tool that does not exist · ⚠ a call Ollama could not read.")
     }
 }
 

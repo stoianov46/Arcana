@@ -268,8 +268,13 @@ class SkillRun(val name: String, val requirements: List<Requirement>) {
 
     private fun satisfied(i: Int) = counts[i] >= requirements[i].count
 
-    /** A tool call (its arguments as JSON text) and its result: counts for every step it matches. */
-    fun observe(tool: String, arguments: String, result: String) {
+    /**
+     * A tool call (its arguments as JSON text) and its result: counts for every step it matches. A call that did not run ([ran] false: the user denied it, it was refused,
+     * or it was answered from an earlier identical call) or that failed (an `Error:` or a time-out) counts for nothing: the step is still to do. A command that ran and
+     * exited with an error code did run, so it counts unless the step expects some output ([Requirement.expect]).
+     */
+    fun observe(tool: String, arguments: String, result: String, ran: Boolean = true) {
+        if (!ran || failed(result)) return
         for ((i, r) in requirements.withIndex()) {
             if (satisfied(i) || tool != r.tool) continue
             if (r.contains.isNotEmpty() && !arguments.contains(r.contains, ignoreCase = true)) continue
@@ -277,6 +282,8 @@ class SkillRun(val name: String, val requirements: List<Requirement>) {
             counts[i]++
         }
     }
+
+    private fun failed(result: String) = result.startsWith("Error:") || result.startsWith("Timed out") || result.startsWith("The user denied")
 
     /** The message to send instead of letting the model finish, or null when the run may end. Each call counts one strike against the step it names. */
     fun nudge(): String? {

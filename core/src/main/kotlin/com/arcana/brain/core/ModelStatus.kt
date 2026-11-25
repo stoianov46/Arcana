@@ -82,4 +82,13 @@ object ModelStatus {
 
     /** Ollama lists a model as `name:tag`; a name typed without `:latest` is the same model. */
     fun sameModel(loadedName: String, model: String) = loadedName == model || loadedName == "$model:latest" || loadedName == model.removeSuffix(":latest")
+
+    /**
+     * The embedding model of semantic search ([embedModel], Settings → Search) when Ollama holds it in memory next to the chat model, else null (none set, or not loaded).
+     * It is loaded by a search by meaning or a reindex and takes memory of its own, which is why the bottom bar names it.
+     */
+    fun embedLoaded(loaded: List<LoadedModel>?, embedModel: String, chatModel: String): LoadedModel? {
+        if (embedModel.isBlank() || sameModel(embedModel, chatModel) || sameModel(chatModel, embedModel)) return null
+        return loaded?.firstOrNull { sameModel(it.name, embedModel) }
+    }
 }

@@ -12,7 +12,8 @@ Models: chat `gemma4:e4b`, helpers `qwen3.5:9b`, judge `gemma4:12b`, code `qwen2
    ``` ````
    You get a toast `Routed to qwen2.5-coder:7b`.
 5. **Verdict:** Settings → Opinions → Automatic second opinion = Always; ask `Is 91 a prime number?`; after the reply a Verdict block (AGREE / PARTLY / DISAGREE).
-6. **Context:** ask 4-5 short questions, then `/compact`; Settings → Console shows Chat history = everything, Keep after compacting = 30 %.
+6. **Context:** ask 4-5 short questions, then `/compact`; Settings → Console shows Chat history = everything, Keep after compacting = 30 %. Then `/context`: the parts the model was sent (the summary is one of them), `Enter` reads one as sent, `c` copies it. Ask `How much room is left before auto-compact?`: the model calls `chat_stats`.
 7. **Memory:** `/memory check`. **Files:** ask `Create a note "Test" in my vault with three bullet points about sorting`, then `/artifacts`.
 8. **Library:** `3` opens on All; Settings → Library has the options.
-9. **Usage:** `7` → Breakdown: Oracul, Analyst, Planner, Controller, Judge.
+9. **Vault health:** ask `Check my vault with obsidian-doctor` (tools on): it runs `vault_health`, asks which problems to fix, saves `Research/Vault/Reports/Vault Health <date>.md` and fixes only what you picked (each change asks).
+10. **Usage:** `7` → Breakdown: Oracul, Analyst, Planner, Controller, Judge.

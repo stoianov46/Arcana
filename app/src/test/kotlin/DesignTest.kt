@@ -1,5 +1,6 @@
 package com.arcana.brain.app
 
+import com.arcana.brain.core.effectiveContext
 import com.arcana.brain.app.design.heatLevels
 
 import com.idea.ink.ui.ActionItem
@@ -389,7 +390,7 @@ class DesignTest {
 
     @Test
     fun theContextWindowIsTheOneOllamaRunsWithAndIsWrittenTheSameEverywhere() {
-        val effective = { asked: Int, max: Int, loaded: Int -> com.arcana.brain.app.screens.effectiveContext(asked, max, loaded) }
+        val effective = { asked: Int, max: Int, loaded: Int -> effectiveContext(asked, max, loaded) }
         assertEquals(32_768, effective(32_768, 262_144, 4_096), "an explicit window is what is sent, whatever is loaded")
         assertEquals(65_536, effective(131_072, 65_536, 0), "never more than the model supports")
         assertEquals(4_096, effective(0, 262_144, 4_096), "Model default: the window Ollama really loaded, not the model's maximum")
@@ -444,11 +445,11 @@ class DesignTest {
 
     @Test
     fun theContextGaugeNeverCountsAgainstMoreThanTheModelSupports() {
-        assertEquals(262_144, com.arcana.brain.app.screens.effectiveContext(0, 262_144))
-        assertEquals(32_768, com.arcana.brain.app.screens.effectiveContext(32_768, 262_144))
-        assertEquals(131_072, com.arcana.brain.app.screens.effectiveContext(1_048_576, 131_072))
-        assertEquals(65_536, com.arcana.brain.app.screens.effectiveContext(65_536, 0))
-        assertEquals(0, com.arcana.brain.app.screens.effectiveContext(0, 0))
+        assertEquals(262_144, effectiveContext(0, 262_144))
+        assertEquals(32_768, effectiveContext(32_768, 262_144))
+        assertEquals(131_072, effectiveContext(1_048_576, 131_072))
+        assertEquals(65_536, effectiveContext(65_536, 0))
+        assertEquals(0, effectiveContext(0, 0))
     }
 
     @Test
@@ -642,7 +643,7 @@ class DesignTest {
         assertEquals("usage: /some_new_tool <path> <content>", toolUsage("some_new_tool", listOf("path", "content")), "a tool without a curated example shows its required arguments")
         assertEquals("needs no text: just /another", toolUsage("another", emptyList()))
         val withText = SlashCommands.filter { it.usage.isNotEmpty() }.map { it.name }
-        assertEquals(listOf("/oracul", "/revise", "/compare", "/effort", "/sampling", "/memory", "/flow", "/goal"), withText, "exactly the commands that accept text carry an example")
+        assertEquals(listOf("/oracul", "/revise", "/compare", "/model", "/effort", "/sampling", "/memory", "/flow", "/goal"), withText, "exactly the commands that accept text carry an example")
         assertTrue(SlashCommands.filter { it.usage.isEmpty() }.none { it.name in setOf("/oracul", "/revise", "/compare", "/flow", "/goal", "/memory") })
     }
 

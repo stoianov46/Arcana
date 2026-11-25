@@ -30,6 +30,8 @@ Hidden folders (`.arcana/`, `.trash`, …) are never read: `Vault.notes()` leave
   `↑↓` / `j k` choose, `Enter` opens the note in the Library, `c` starts a new Chat with the note attached and the field holding
   `Fix this vault issue: <message>. Suggested fix: <fix>` (press `Enter` to type, `Enter` to send; nothing is sent by itself), `Esc` goes back to the Brain.
 
+- **The model, `vault_health`** (a Read tool, `ToolBox.vaultHealth`): the same eight checks plus **dead links** (links to notes that do not exist, `VaultIndex` unresolved links), each problem with the note's path and its fix, up to `limit` (default 10, at most 50) notes per kind; `kind` asks for one kind only (`missingtype`, `symbolname`, `genericname`, `duplicatename`, `looseroot`, `reportnotdone`, `stalereport`, `island`, `dead_links`). It changes nothing. The starter skill **`obsidian-doctor`** is built on it: it checks, asks which kinds to fix, writes `Research/Vault/Reports/Vault Health <date>.md`, fixes only what was picked and checks again. See [tools-and-agent.md](tools-and-agent.md) and [skills.md](skills.md).
+
 ## How it runs
 
 - The check reads every note once (frontmatter and name only matter) in a background coroutine (`Dispatchers.IO`) whenever the Brain's `VaultIndex` is rebuilt (`r`, or after any change Arcana makes). The last result stays on screen while a new one is computed.

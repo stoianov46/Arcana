@@ -49,7 +49,7 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 | `client: OllamaClient` | reads `config` lazily (URL/model/sampling/timeout changes apply at once) |
 | `connection: Connection` | `Checking / Online(models) / ModelMissing(models) / Offline(error)`; refreshed by `refreshConnection()` |
 | `vision`, `tools: Boolean?`, `modelContext` | model capabilities and maximum context from `/api/show` (`null`/0 = unknown) |
-| `loadedContext` | the window Ollama really loaded the model with, from `/api/ps` `context_length` (0 until the model has run, or on an older Ollama); refreshed after every reply and with the connection (`refreshLoadedContext`) |
+| `loadedContext` | the window Ollama really loaded the model with, from `/api/ps` `context_length` (0 until the model has run, or on an older Ollama); refreshed after every reply, after `/reindex` and with the connection (`refreshLoadedContext`, which also refreshes the loaded models behind the bottom bar's `◇ embed` segment) |
 | `usage`, `recordUsage(feature, chunk)` | token accounting (`UsageStore`, `usage.jsonl`) |
 | `brain: BrainState` | background-built `VaultIndex` + `BrainHealth`; `refresh()` / `changed()` |
 | `chat: ChatSession` | the one persistent chat (survives screen switches) |
@@ -64,10 +64,10 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 
 | Subsystem | Where | One line |
 |---|---|---|
-| Oracul | `core/Oracul.kt`, `ChatSession.secondOpinion/compare/maybeConsult` | a second (and judge) model advises on the worker's answer; it may use the worker's tools (changes always ask), local Ollama; see [oracul.md](oracul.md) |
-| Compaction | `core/Compaction.kt`, `ChatSession.compact` / `autoCompactDue` | a summary message is inserted into the chat; `Compaction.forModel` decides what the model is sent; nothing is deleted. `ChatSession.compacting` / `compactingSince` / `compactingAuto` drive the "Compacting…" line (`ReplyStatus`) and hold `send()`; `contextTokens` (Chat.kt) estimates the gauge after a compaction (`~`) because the last reply's stats are stale |
-| Context window | `AppContext.loadedContext` (`/api/ps`), `effectiveContext`, `UsageStats.contextSize` | the gauge counts against what Ollama really loaded |
-| Pseudo-tools | `ChatSession.runTools`: `ask_user`, `request_access`, `request_mode`, `chat_stats`, `chat_stats_json`, `todo` | answered by the chat, not by `ToolBox` |
+| Oracul | `core/Oracul.kt`, `ChatSession.secondOpinion/compare/maybeConsult` (`app/ChatOracul.kt`) | a second (and judge) model advises on the worker's answer; it may use the worker's tools (changes always ask), local Ollama; see [oracul.md](oracul.md) |
+| Compaction | `core/Compaction.kt`, `ChatSession.compact` / `autoCompactDue` (`app/ChatCompaction.kt`) | a summary message is inserted into the chat; `Compaction.forModel` decides what the model is sent; nothing is deleted. `ChatSession.compacting` / `compactingSince` / `compactingAuto` drive the "Compacting…" line (`ReplyStatus`) and hold `send()`; `contextTokens` (Chat.kt) estimates the gauge after a compaction (`~`) because the last reply's stats are stale |
+| Context window | `AppContext.loadedContext` (`/api/ps`), `effectiveContext` (core `ContextMath.kt`), `UsageStats.contextSize` | the gauge counts against what Ollama really loaded |
+| Chat tools | `core/ChatTools.kt` (the one list: name, definition, when offered; `ChatTools.names`), handlers in `ChatSession.chatToolHandlers`: `ask_user`, `turn_on_tools`, `request_access`, `request_mode`, `chat_stats`, `chat_stats_json`, `todo`, `consult` | answered by the chat, not by `ToolBox`; `ChatToolHandlersTest` checks every name has a handler |
 | Previews | `core/Diff.kt`, `ToolSpec.preview` | git-style diff in the approval panel |
 | Project context | `ToolBox(project = …)`, `AppConfig.projectFolder` | allowed root, relative base, instructions in the system prompt |
 | Tool usage | `core/ToolUsage.kt`, `AppContext.recordToolUse`, Usage → Tools | per-tool calls, result size, time |
@@ -81,9 +81,9 @@ One instance, created in `ArcanaApp` with `remember { AppContext() }`. It owns:
 2. `attachments.drain()` → user `ChatMessage` (images, text files, `noteNames`) appended to `messages` and persisted.
 3. `Generation.start(tools, maxSteps) { prepare }` launches a coroutine on `app.scope`:
    - `prepare()` (IO dispatcher): optional vault search (`/vault` mode), reads attached notes and the `ARCANA.md` memory, builds
-     `Prompts.chatMessages(config, history, hits, noteTexts, tools, toolsNote, canRequestTools, memory)` (today's date, the tool cheat sheet).
+     `Prompts.chatMessages(config, history, hits, noteTexts, tools, toolsNote, canRequestTools, memory)` (today's date, the tool notes; frozen per chat, see `SystemFreeze`).
    - `OllamaClient.chat(messages, json, tools)` streams NDJSON `ChatChunk`s; `text` state updates per chunk.
-   - If chunks carry `tool_calls` and tools were offered: `ChatSession.runTools(...)` executes them (asking the user for
+   - If chunks carry `tool_calls` and tools were offered: `ChatSession.runTools(...)` (`app/ChatToolRunner.kt`) executes them (asking the user for
      writes), appends results, and the loop asks the model again (see [tools-and-agent.md](tools-and-agent.md)).
    - On the final text: `onComplete` → `ChatSession.finishReply` appends the assistant message (with `ReplyStats` and `sources`).
 4. UI recomposes from `gen.text`, `gen.state`, `chat.messages`, `chat.approval`.

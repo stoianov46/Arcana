@@ -108,6 +108,9 @@ Arcana as a local-first research AI-agent system (positioning of 2026-11-03: mod
 | Oracul concept review: mapped to standard agent patterns, caveats written down (not measured on real tasks yet) | [oracul.md](oracul.md) | done |
 | Context fixes found in a real chat: the Oracul, judge and planner see the recent conversation (`Oracul.background`; Settings → Helpers → Chat context: messages and characters each, no fixed cap); the worker's window never cuts into the current turn (`Prompts.window`); a reviewer block tells the worker it saw only part of the chat | [oracul.md](oracul.md) | done |
 | `search_notes` explains a miss and searches short or common words as written | [tools-and-agent.md](tools-and-agent.md) | done |
+| Context inspector `/context` (what the model was sent, part by part, with tokens and what Ollama reused), live `tok/s` while a reply streams, `◇ embed` in the bottom bar | [functionality.md](functionality.md) | done |
+| Start screen (model, vault, memory, skills, tools, search; Settings → Appearance → *Start screen*) | [functionality.md](functionality.md) | done |
+| `vault_info` and `vault_health` tools; starter skill `obsidian-doctor`; `chat_stats` reports compaction | [tools-and-agent.md](tools-and-agent.md), [skills.md](skills.md) | done |
 
 ## Directions (proposals)
 

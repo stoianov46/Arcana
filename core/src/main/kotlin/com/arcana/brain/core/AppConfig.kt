@@ -65,6 +65,8 @@ data class AppConfig(
     val navPosition: String = "left",
     /** The sidebar logo's colours sweep while the model is generating. */
     val animateLogo: Boolean = true,
+    /** On start, a short screen says what Arcana loaded (model, vault, memory file, skills, tools, semantic search); it closes by itself or on any key. */
+    val showSplash: Boolean = true,
     val showModelTraits: Boolean = true,
     /** The `think` of a request: "default" (the model decides), "off", "on", or a level ("low", "medium", "high") for a model that lists it. */
     val thinking: String = "default",
@@ -212,6 +214,11 @@ data class AppConfig(
     val toolWeb: Boolean = false,
     /** web_search and fetch_url run without asking (the search words or the page address leave the computer). HTTP requests still ask; the Oracul always asks. Off by default. */
     val toolAutoSearch: Boolean = false,
+    /**
+     * After the model has read a web page or a search result in a turn, changes, shell commands and fetches to a new site (or an address with a query) ask first, even in Auto
+     * mode or after "always": a page can try to steer the model. On by default.
+     */
+    val askAfterWeb: Boolean = true,
     /** The model may ask to run shell commands (every one needs approval). Off by default. */
     val toolShell: Boolean = false,
     /** Shell commands run without asking (those [ShellPolicy] refuses never run). Off by default; the Chat status bar shows `▶ auto-run` while it is on. */

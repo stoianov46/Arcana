@@ -64,6 +64,8 @@ class Generation(
     private val toolsHalted: () -> Boolean = { false },
     /** Told when a round was stopped for repeating itself (`text`), once each time. */
     private val onLoop: (String) -> Unit = {},
+    /** Told each time the model wrote a tool call Ollama could not read (it is asked again, out of sight): counted per model on the Usage screen. */
+    private val onBadCall: () -> Unit = {},
 ) {
     var state by mutableStateOf(GenState.Idle)
         private set
@@ -102,6 +104,9 @@ class Generation(
     var roundStartedAt = 0L
         private set
     var roundPieces by mutableIntStateOf(0)
+        private set
+    /** When the first piece of the current round came in (0 = none yet): the live speed counts from it, so the time spent reading the prompt does not lower it. */
+    var roundFirstAt = 0L
         private set
     private var job: Job? = null
     /** The tools offered each round; a tool round may replace them (the user just turned tools on). */
@@ -149,12 +154,15 @@ class Generation(
                     var pieces = 0
                     var liveAdded = 0
                     roundPieces = 0
+                    roundFirstAt = 0L
                     roundStartedAt = System.currentTimeMillis()
                     var looped = false
                     var sinceCheck = 0
                     // the last stretch of each kind of text, apart from the capped copy of the thoughts: a loop must be seen however long the round already is
                     val thinkTail = StringBuilder()
                     val textTail = StringBuilder()
+                    // Ollama says the round ended at a limit (`done_reason: length`), not because the model was done
+                    var cut = false
                     try {
                         client.chat(messages, json, offered, repeatPenalty = if (loopRetries > 0) LOOP_RETRY_PENALTY else null).collect { chunk ->
                             if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) {
@@ -165,13 +173,15 @@ class Generation(
                             if (chunk.content.isNotEmpty() || chunk.thinking.isNotEmpty()) {
                                 streamed++
                                 pieces++
+                                if (pieces == 1) roundFirstAt = System.currentTimeMillis()
                                 roundPieces = pieces
                                 if (pieces - liveAdded >= LIVE_BATCH) { onLive(pieces - liveAdded); liveAdded = pieces }
                             }
                             calls += chunk.toolCalls
+                            if (chunk.cutOff) cut = true
                             if (chunk.done) {
-                                // Ollama's own counts when it sent them; otherwise what we measured ourselves
-                                stats = chunk.toStats() ?: ReplyStats(0, streamed, System.currentTimeMillis() - startedAt)
+                                // Ollama's own counts when it sent them; otherwise what we measured ourselves, for this round only
+                                stats = chunk.toStats() ?: ReplyStats(0, pieces, System.currentTimeMillis() - roundStartedAt)
                             }
                             if (chunk.content.isNotEmpty()) {
                                 buffer.append(chunk.content)
@@ -200,7 +210,9 @@ class Generation(
                         // handled below: the stream is closed, what it wrote so far is still in the buffers
                     } catch (e: OllamaException) {
                         // the model wrote a tool call Ollama could not parse (broken JSON escapes in a long file body): not the user's fault, ask again, out of sight
-                        if (offered == null || !e.message.orEmpty().contains("error parsing tool call") || badCallRetries >= MAX_BAD_CALL_RETRIES) throw e
+                        if (offered == null || !e.message.orEmpty().contains("error parsing tool call")) throw e
+                        onBadCall()
+                        if (badCallRetries >= MAX_BAD_CALL_RETRIES) throw e
                         badCallRetries++
                         messages = messages + ChatMessage.user(BAD_CALL_NUDGE)
                         text = ""
@@ -274,6 +286,12 @@ class Generation(
                             continue
                         }
                     }
+                    // it spent the whole limit thinking and wrote nothing: asking again would only do the same
+                    if (cut && buffer.isBlank() && calls.isEmpty()) {
+                        error = CUT_EMPTY
+                        transition(GenState.Failed)
+                        break
+                    }
                     // some models end a round, or a finished skill, with nothing at all: ask once more, out of sight, before calling it a failure
                     if (buffer.isBlank() && calls.isEmpty() && emptyRetries < MAX_EMPTY_RETRIES) {
                         emptyRetries++
@@ -286,8 +304,11 @@ class Generation(
                         error = "The model returned an empty response."
                         transition(GenState.Failed)
                     } else {
+                        // a reply cut off by a limit is kept, but says so: otherwise it reads as a whole answer
+                        val reply = if (cut) buffer.toString().trimEnd() + CUT_NOTE else buffer.toString()
+                        if (cut) text = reply
                         transition(GenState.Done)
-                        onComplete(buffer.toString(), stats)
+                        onComplete(reply, stats)
                     }
                     break
                 }
@@ -366,6 +387,10 @@ private const val MAX_THINKING_CHARS = 20_000
 internal fun liveThoughts(tail: CharSequence, dropped: Int): String =
     if (dropped > 0) "… $dropped earlier characters not shown\n\n$tail" else tail.toString()
 
+/** Added under a reply that Ollama ended at a limit (`done_reason: length`). */
+internal const val CUT_NOTE = "\n\n_⚠ This reply was cut off: the model reached its length or context limit. Ask it to continue, or raise Settings → Ollama → Context window._"
+internal const val CUT_EMPTY = "The model used up its length or context limit while thinking and wrote no answer. Raise Settings → Ollama → Context window, lower the thinking effort (Ctrl+G), or ask a narrower question."
+
 /** How often an empty reply is answered with [EMPTY_NUDGE] before it counts as an error. */
 private const val MAX_EMPTY_RETRIES = 1
 
@@ -373,6 +398,21 @@ private const val MAX_EMPTY_RETRIES = 1
 private const val MAX_BAD_CALL_RETRIES = 2
 private const val BAD_CALL_NUDGE = "Your last tool call was malformed (invalid JSON) and was not run. Make it again with plain, correctly escaped arguments; for a long file, write a shorter first version and extend it afterwards."
 
+
+/** Fewer pieces than this, or less time since the first one than [LIVE_SPEED_MIN_MILLIS], and the live speed is not shown yet (a figure from two pieces jumps about). */
+internal const val LIVE_SPEED_MIN_PIECES = 8
+internal const val LIVE_SPEED_MIN_MILLIS = 1_000L
+
+/**
+ * Tokens per second of the round being streamed: [pieces] (about one token each) since the first one came in at [firstAt]; null until there are enough to say.
+ * Ollama gives the exact speed only when the round ends (it is under the reply then); this is the speedometer while it runs.
+ */
+internal fun liveSpeed(pieces: Int, firstAt: Long, now: Long): Double? {
+    val millis = now - firstAt
+    if (firstAt <= 0L || pieces < LIVE_SPEED_MIN_PIECES || millis < LIVE_SPEED_MIN_MILLIS) return null
+    // the first piece starts the clock, so it is not counted in the rate
+    return (pieces - 1) * 1000.0 / millis
+}
 
 /** The live token counters move in steps of this many streamed pieces (one recomposition per piece would be wasteful). */
 private const val LIVE_BATCH = 4

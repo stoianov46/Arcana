@@ -174,7 +174,8 @@ class OraculTest {
             assertTrue("judged by judge" in told, told)
             assertEquals(listOf("Oracul" to "big", "Judge" to "judge"), app.usage.map { it.feature to it.model }, "the judge is stored under its own name, so its calls can be counted")
             assertEquals(listOf("big", "judge"), f.asked.map { it.first })
-            assertTrue("Yes." in f.asked[1].second && "Another answer" !in f.asked[1].second.substringBefore("ANSWER 2") && "misses the edge case" in f.asked[1].second, "the judge got both answers")
+            assertTrue("Yes." in f.asked[1].second && "misses the edge case" in f.asked[1].second, "the judge got both answers")
+            assertTrue("ANSWER A:" in f.asked[1].second && "ANSWER B:" in f.asked[1].second && "(big)" !in f.asked[1].second && "(worker)" !in f.asked[1].second, "without the models' names")
             val block = chat.messages.last().content
             assertTrue(Oracul.isOpinion(chat.messages.last()) && "Yes." in block && "misses the edge case" in block && "Best answer: use the edge case." in block, block)
         } finally { f.server.stop(0) }
@@ -235,6 +236,25 @@ class OraculTest {
             assertTrue(steps[0].model == "big" && steps[0].tool == "read_note" && "facts.md" in steps[0].summary && steps[0].status == "ok", steps[0].toString())
             assertTrue(chat.messages.indexOfFirst { it.displayOnly } < chat.messages.lastIndex, "the call comes before the opinion block")
             assertTrue(com.arcana.brain.core.Compaction.forModel(chat.messages.toList()).none { it.displayOnly }, "the model's history has none")
+        } finally { f.server.stop(0) }
+    }
+
+    @Test
+    fun theOraculWithToolsRunsThroughTheWorkersLoopAndIsAskedAgainAfterAnEmptyReply() {
+        val f = fake()
+        try {
+            val vault = Files.createDirectories(Files.createTempDirectory("arcana-oracul-empty").resolve("v"))
+            Files.writeString(vault.resolve("facts.md"), "seven is prime")
+            // its first answer is empty: the shared loop asks once more, out of sight (its old loop of its own returned the empty answer)
+            var empties = 0
+            f.script = { model, _ -> if (model == "big" && empties++ == 0) """{"message":{"role":"assistant","content":""},"done":true,"prompt_eval_count":10,"eval_count":0}""" else null }
+            val app = app(f) { copy(oraculModel = "big", toolsEnabled = true, toolAutoRead = true, vaultPath = vault.toString()) }
+            val chat = app.chat
+            chat.add(ChatMessage.user("Is 7 prime?")); chat.add(ChatMessage.assistant("Yes."))
+            runBlocking { chat.secondOpinion() }
+            assertEquals(listOf("big", "big"), f.asked.map { it.first }, "asked again after the empty reply")
+            assertTrue("Your last reply was empty" in f.asked[1].second, "with the worker's nudge")
+            assertTrue("misses the edge case" in chat.messages.last().content, chat.messages.last().content)
         } finally { f.server.stop(0) }
     }
 
@@ -499,7 +519,8 @@ class OraculTest {
             assertTrue("big, other against worker" in told && "Left out: mute" in told, told)
             assertEquals(listOf("big", "other", "mute", "judge"), f.asked.map { it.first })
             val judged = f.asked.last().second
-            assertTrue("ANSWER 1 (worker)" in judged && "ANSWER 2 (big)" in judged && "ANSWER 3 (other)" in judged && "ANSWER 4" !in judged, "the judge saw every answer that exists")
+            assertTrue("ANSWER A:" in judged && "ANSWER B:" in judged && "ANSWER C:" in judged && "ANSWER D" !in judged, "the judge saw every answer that exists")
+            assertTrue("Yes." in judged && "(worker)" !in judged && "(big)" !in judged, "and no model's name")
             val block = chat.messages.last().content
             assertTrue("## other" in block && "## mute" !in block && "Left out: mute" in block, block)
             // the first Oracul model must answer: otherwise nothing is added

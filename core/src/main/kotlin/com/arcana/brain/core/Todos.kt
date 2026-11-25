@@ -7,7 +7,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
-/** The pseudo-tool for a model's own task list; the chat answers it (see [Todos]) and shows the list's progress in the status bar. */
+/** The chat tool for a model's own task list; the chat answers it (see [Todos]) and shows the list's progress in the status bar. */
 const val TODO = "todo"
 
 val TODO_DEFINITION: JsonObject = buildJsonObject {

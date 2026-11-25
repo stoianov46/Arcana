@@ -16,7 +16,7 @@
 |---|---|
 | Embedding call | `OllamaClient.embedBlocking(model, inputs)` (blocking, because a tool runs outside coroutines) and `embed(...)` (suspend, same call); `OllamaProtocol.embedRequest` / `parseEmbeddings` (`/api/embed`: `{model, input:[…]}` → `{embeddings:[[…]]}`; an older single `embedding` is read too). Errors are `OllamaException` with the server's text and the hint `ollama pull nomic-embed-text` |
 | Chunks, vectors, index | `core/Embeddings.kt`: `Embedder` (fun interface), `Chunk`, `Chunker`, `cosine`, `EmbeddingIndex`, `SemanticSearch` (the tool's side), `SemanticHit`, `RefreshResult` |
-| Tool | `Tools.kt`: `ToolBox(semantic = SemanticSearch?)`, `semanticTool()` (only added with a vault and a `SemanticSearch`) |
+| Tool | `Tools.kt`: `ToolBox(semantic = SemanticSearch?)`, `semanticTool()` in `VaultTools.kt` (only added with a vault and a `SemanticSearch`) |
 | Wiring | `ChatSession.semanticIndexFor(config, vault)` (model set and in the server's installed list, via `ModelStatus.sameModel`; one cached index per vault and model), `toolboxFor` passes it, `ChatSession.reindex(done)` + `indexing` (progress text) |
 | UI | `Chat.kt`: `/reindex` (`SlashCommands`, `runCommand`, palette, key map), the progress line under the conversation (`chat.indexing`, counted in `statusRow`); `Settings.kt`: `EmbedModel` (`Editor.Model(embed = true)`), section *Search* of the Vault group |
 | Setup | `ChatSession.ensureSemanticModel` (called by `runTools` before the first `semantic_search` without a model: ask → `OllamaClient.pull(model)` → `app.update(embedModel)` → `refreshConnection`, then the toolbox is rebuilt), `semanticOn`; `SemanticSetup` (model, size, progress text) and `PullProgress` in core |
@@ -41,6 +41,44 @@ A failure half way (Ollama stops, model missing) keeps the notes that were finis
 ## The index file
 
 `~/.config/arcana/embeddings/<hash>/index.bin` (the config folder is `ConfigStore.defaultPath().resolveSibling("embeddings")`, so `ARCANA_CONFIG` moves it). `<hash>` = the first 8 bytes of SHA-256 of `"<vault path>\n<model>"`, so another vault or another model never reads this file. Binary, big-endian (`DataOutputStream`): `int magic 0x41524358 ("ARCX")`, `int version 1`, `UTF model`, `int dim`, `int notes`, then per note `UTF path, long size, long mtime, int passages`, per passage `UTF heading, UTF text, float × dim`. A file with another magic, version or model, or a damaged one, is ignored and rebuilt. Rough size: 768 dimensions × 4 bytes ≈ 3 KB a passage, so 4,000 passages ≈ 12 MB, loaded in well under a second.
+
+## Task prefixes (measured, off)
+
+Some embedding models are trained with a task prefix (nomic-embed-text: `search_document: ` for stored text, `search_query: ` for a question). `EmbeddingIndex` can apply them
+(`EmbedPrefixes`: `document`, `query`, and a `tag` written with the model into the index file, so turning them on or off rebuilds the index instead of mixing vectors), but
+`EmbedPrefixes.forModel` returns none for every model. Measured on 2026-11-24 on the owner's vault (116 notes, 1,562 passages, 274 questions: each note's title, a section heading
+and a sentence from its middle, meaning only), nomic-embed-text with its prefixes did slightly worse:
+
+| Questions | n | plain: top 1 · top 5 · MRR | prefixed |
+|---|---|---|---|
+| title | 108 | 87.0% · 95.4% · 0.912 | 88.0% · 95.4% · 0.917 |
+| heading | 84 | 21.4% · 46.4% · 0.330 | 14.3% · 38.1% · 0.248 |
+| sentence | 82 | 65.9% · 86.6% · 0.750 | 65.9% · 89.0% · 0.757 |
+| all | 274 | 60.6% · 77.7% · 0.685 | 58.8% · 75.9% · 0.664 |
+
+Re-run before turning them on for this or another model: `ARCANA_REAL_OLLAMA=1 ARCANA_REAL_VAULT=<folder> ARCANA_CHECK_OUT=<file> ./gradlew :core:test --tests '*RealPrefixCheck*'`
+(`ARCANA_EMBED_MODEL` picks the model; it indexes temporary copies, the real index is not touched).
+
+## Which embedding model (benchmark, results pending)
+
+`RealModelCheck` compares embedding models on the same notes and questions (`RealVaultBench`, shared with `RealPrefixCheck`: a temporary copy of the vault, each note's title, a section heading and a sentence from its middle, meaning only). Per model it gives the passages, how long building the index took, and top 1, top 5 and MRR by kind of question. A name ending in `+q` is the same model with Qwen3-Embedding's query instruction in front of the question (`EmbedPrefixes.QWEN3`; passages stay as they are). `EmbedPrefixes.QWEN3` is not used by the app until it is measured better.
+
+`ARCANA_REAL_OLLAMA=1 ARCANA_REAL_VAULT=<folder> ARCANA_CHECK_OUT=<file> ARCANA_EMBED_MODELS="nomic-embed-text,qwen3-embedding:0.6b,qwen3-embedding:0.6b+q" ./gradlew :core:test --tests '*RealModelCheck*'`
+(the result file is written after each model, so a slow one does not lose the others; the real index is not touched).
+
+Measured on 2026-11-24 on the owner's vault (116 notes, 274 questions: 108 titles, 84 headings, 82 sentences; 1,562 passages for every model), by meaning only:
+
+| Model | Index time | Title top 1 / top 5 / MRR | Heading | Sentence | All |
+|---|---|---|---|---|---|
+| `nomic-embed-text` | 25 s | 87.0% / 95.4% / 0.912 | 21.4% / 46.4% / 0.330 | 65.9% / 86.6% / 0.750 | **60.6% / 77.7% / 0.685** |
+| `qwen3-embedding:0.6b` | 55 s | 75.9% / 88.9% / 0.816 | 7.1% / 20.2% / 0.134 | 57.3% / 86.6% / 0.694 | 49.3% / 67.2% / 0.570 |
+| `qwen3-embedding:0.6b+q` (query instruction) | 51 s | 72.2% / 94.4% / 0.827 | 16.7% / 35.7% / 0.250 | 53.7% / 87.8% / 0.698 | 49.6% / 74.5% / 0.611 |
+
+So `nomic-embed-text` stays the recommended model: it is better on every kind of question and twice as fast to index. Qwen3's instruction helps the 0.6b model (top 5 67.2% → 74.5%) but not enough; `EmbedPrefixes.forModel` stays `NONE` for every model. The 4b and 8b sizes were not measured (they need 2.5 and 4.7 GB); add them to `ARCANA_EMBED_MODELS` to check.
+
+## The bottom bar shows it
+
+When the embedding model is loaded in Ollama next to the chat model (after a search by meaning or `/reindex`), the bottom bar shows a blue `◇ embed 0.6 GB` (plain glyphs: `embed 0.6 GB`): it takes memory of its own (`ModelStatus.embedLoaded`, `embedSegment`). The loaded models are refreshed after each reply and after `/reindex`. The start screen's **Search** line says whether search is by words only or by words + meaning, and warns when the chosen embedding model is not installed.
 
 ## Privacy and limits
 

@@ -86,7 +86,7 @@ data class Flow(val name: String, val stages: List<FlowStage>, val redos: Int = 
     }
 }
 
-/** The pseudo-tool with which the main model calls a stage as a specialist (subagent style); the chat answers it (`ChatSession.consult`). Offered when [AppConfig.flowTools] is on. */
+/** The chat tool with which the main model calls a stage as a specialist (subagent style); the chat answers it (`ChatSession.consult`). Offered when [AppConfig.flowTools] is on. */
 const val CONSULT = "consult"
 
 /** How many times the model may consult in one message of the user. */

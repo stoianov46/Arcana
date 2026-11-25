@@ -11,7 +11,7 @@ for users, the in-app Guide page "Skills".
 
 ## Starter skills
 
-`Bootstrap` (first-run setup, palette "Set up the vault", `arcana --init`) puts `Skills Guide.md` and the starter skills (into `.arcana/skills/`, or the skills folder in use) from `core/StarterSkills.kt` into a vault, never over an existing file: today `decompose` (a todo list becomes a plan: analyze → `ask_user` quiz → plan note → one item at a time; it requires the `ask_user` and `create_note` steps). `CoreTest.theStarterSkillsAreRealSkillsWithoutProblems` keeps them valid (found, described, steps parsed, under 18,000 characters, `needs:` are real tools).
+`Bootstrap` (first-run setup, palette "Set up the vault", `arcana --init`) puts `Skills Guide.md` and the starter skills (into `.arcana/skills/`, or the skills folder in use) from `core/StarterSkills.kt` into a vault, never over an existing file: today `obsidian-doctor` (checks the vault with `vault_health`, asks with `ask_user` (multiple) which kinds of problems to fix, saves `Research/Vault/Reports/Vault Health <date>.md` (`type: report`, `kind: health`, `status: done`), fixes only what was picked with the note tools (`set_properties`, `add_tags`, `append_to_note`; `edit_file` for a link, `move_path` for a rename or move; never deletes without asking), then runs `vault_health` again and appends `## Result`; it requires `vault_health`, `ask_user`, `create_note` and `vault_health x2`) and `decompose` (a todo list becomes a plan: analyze → `ask_user` quiz → plan note → one item at a time; it requires the `ask_user` and `create_note` steps). `SetupAndSkillsTest.theStarterSkillsAreRealSkillsWithoutProblems` keeps both valid (found, described, steps parsed, under 18,000 characters, `needs:` are real tools).
 
 ## 1. Why it is built this way
 
@@ -203,12 +203,12 @@ narrates instead of calling a tool; it rationalizes afterwards.
 | Layout, discovery, problems, catalog, load, chip helpers, `requires:` parser, step budget | `core/Skills.kt` → `Skills`, `Skill` |
 | One required step; the progress and the nudges | `core/Skills.kt` → `Requirement`, `SkillRun` |
 | `use_skill` tool and the SKILLS paragraph | `core/Tools.kt` → `ToolBox.skills`, `useSkillTool`, `describe()` |
-| Injecting an attached skill into the message | `core/Vault.kt` → `Prompts.chatMessages`; `app/ChatSession.kt` → `noteTexts` (`Skills.loadEntry`) |
+| Injecting an attached skill into the message | `core/Prompts.kt` → `Prompts.chatMessages`; `app/ChatSession.kt` → `noteTexts` (`Skills.loadEntry`) |
 | Run state, starting/ending runs, feeding calls | `app/ChatSession.kt` → `skillRun`, `skillTick`, `startSkillRun`, `ask`, `runTools`, `startNew` |
 | The gate in the loop | `app/Generation.kt` → constructor parameter `gate` |
 | Menu entries, `/skills`, chip, status badge | `app/screens/Chat.kt` → `slashItems`, `useSlash`, `toggleSkills`, `chatStatus`; `design/SlashKind.kt`; `design/Attachments.kt` (`AttachmentLine`) |
 | Settings | `AppConfig.skillsEnabled`, `skillsFolder` → `screens/Settings.kt` (Tools group) |
-| Tests | `CoreTest`: `skillsAreFoundLoadedAndOfferedToTheModel`, `aSkillCanRequireStepsAndTheRunIsTracked`; `SkillGateTest` (real loop against a fake Ollama server) |
+| Tests | `SetupAndSkillsTest`: `skillsAreFoundLoadedAndOfferedToTheModel`, `aSkillCanRequireStepsAndTheRunIsTracked`; `SkillGateTest` (real loop against a fake Ollama server) |
 
 ## 9. The reference skill: `coingecko-forecast`
 

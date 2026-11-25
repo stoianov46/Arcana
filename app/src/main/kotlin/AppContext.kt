@@ -1,5 +1,6 @@
 package com.arcana.brain.app
 
+import com.arcana.brain.core.thinkOptions
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -80,7 +81,16 @@ class AppContext(
         private set
 
     /** About how many tokens of context fit in this machine's memory next to the chat model's weights; null when it cannot be worked out. An estimate (see [com.arcana.brain.core.ModelFit.tokenRoom]). */
-    val tokenRoom: Long? get() = com.arcana.brain.core.ModelFit.tokenRoom(com.arcana.brain.core.ModelFit.physicalMemory(), modelSizes[config.model] ?: 0L, kvBytesPerToken)
+    val tokenRoom: Long? get() = com.arcana.brain.core.ModelFit.physicalMemory().let { ram ->
+        com.arcana.brain.core.ModelFit.tokenRoom(ram, modelSizes[config.model] ?: 0L, kvBytesPerToken, com.arcana.brain.core.ModelFit.usable(ram, gpuCap))
+    }
+
+    /** How much memory the Mac's GPU may take (null = not a Mac with that limit), read with the connection: what [tokenRoom] and the status pane go by. */
+    var gpuCap by mutableStateOf<com.arcana.brain.core.GpuMemory.Cap?>(null)
+        private set
+
+    /** The models Arcana last unloaded to make room for another one (see `OllamaClient.makeRoom`) and when; empty until it happens. Shown in the status pane for a while. */
+    var freed by mutableStateOf<Pair<List<String>, Long>>(emptyList<String>() to 0L)
 
     /** How many experts the model has when it is a mixture of experts (0 = dense or unknown). */
     var experts by mutableStateOf(0)
@@ -103,6 +113,11 @@ class AppContext(
         loadedContext = runCatching { client.loadedContext(config.model) }.getOrDefault(0)
         val all = runCatching { client.loadedModels() }.getOrNull()
         loaded = all
+        // a model that does not describe its layers (an MLX build): what a token costs is seen once it is loaded, so the "~N fits" estimates work for it too
+        if (kvBytesPerToken <= 0L) all?.firstOrNull { com.arcana.brain.core.ModelStatus.sameModel(it.name, config.model) }?.let { m ->
+            val weights = modelSizes[config.model] ?: modelSizes["${config.model}:latest"] ?: 0L
+            com.arcana.brain.core.ModelFit.observedKvPerToken(m.sizeBytes, weights, m.context).takeIf { it > 0 }?.let { kvBytesPerToken = it }
+        }
         offloads = all.orEmpty().filter { it.cpuPercent >= 10 }.sortedByDescending { it.cpuPercent }.map { com.arcana.brain.core.Offload(it.name, it.cpuPercent, it.sizeBytes) }
     }
 
@@ -138,7 +153,12 @@ class AppContext(
 
     var modelContext by mutableStateOf(0)
         private set
-    val client = OllamaClient { config }
+    val client = OllamaClient { config }.also {
+        OllamaClient.unloaded = { model ->
+            val (names, at) = freed
+            freed = (if (System.currentTimeMillis() - at < 5_000) names + model else listOf(model)) to System.currentTimeMillis()
+        }
+    }
 
     /** The scope replies are generated in: the app's own, so a reply keeps streaming when you switch to another screen. */
     lateinit var scope: kotlinx.coroutines.CoroutineScope
@@ -184,6 +204,9 @@ class AppContext(
 
     /** True while the setup wizard is showing: on the first start (no vault chosen and setup not finished), or from the palette. */
     var setupOpen by mutableStateOf(config.vaultPath.isBlank() && !config.setupDone)
+
+    /** The start screen ([com.arcana.brain.app.screens.SplashScreen]) is showing: on start when *Start screen* is on and the setup is not open; closed by any key or once everything is checked. */
+    var splashOpen by mutableStateOf(config.showSplash && !(config.vaultPath.isBlank() && !config.setupDone))
 
     /** The Library folders that are unfolded (vault-relative paths); kept while Arcana runs, so leaving the Library and coming back keeps the tree as it was. */
     var libraryExpanded by mutableStateOf<Set<String>>(emptySet())
@@ -245,6 +268,7 @@ class AppContext(
         val shown = if (connection is Connection.Online) runCatching { client.show(config.model) }.getOrNull() else null
         modelContext = shown?.contextLength ?: 0
         modelSizes = runCatching { client.modelSizes() }.getOrDefault(emptyMap())
+        gpuCap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.arcana.brain.core.GpuMemory.current() }
         refreshLoadedContext()
         val capabilities = shown?.capabilities?.takeIf { it.isNotEmpty() }
         vision = capabilities?.let { "vision" in it }
@@ -255,7 +279,7 @@ class AppContext(
         kvBytesPerToken = shown?.kvBytesPerToken ?: 0L
         thinkingValues = shown?.thinkingValues.orEmpty()
         modelParameters = shown?.parameters.orEmpty()
-        com.arcana.brain.app.screens.ThinkLevels.options = com.arcana.brain.app.screens.thinkOptions(thinkingValues)
+        com.arcana.brain.app.screens.ThinkLevels.options = thinkOptions(thinkingValues)
         thinkingDefault = shown?.thinkingDefault.orEmpty()
         com.arcana.brain.app.screens.ThinkLevels.onLevel = shown?.onLevel.orEmpty()
         com.arcana.brain.app.screens.ThinkLevels.defaultWord = com.arcana.brain.app.screens.thinkDefaultWord(thinkingDefault)
@@ -306,11 +330,6 @@ class AppContext(
     }
 
     companion object {
-        fun expandHome(path: String): Path =
-            if (path == "~" || path.startsWith("~/")) {
-                Path.of(System.getProperty("user.home"), path.removePrefix("~").trimStart('/'))
-            } else {
-                Path.of(path)
-            }
+        fun expandHome(path: String): Path = com.arcana.brain.core.ToolSettings.expandHome(path)
     }
 }

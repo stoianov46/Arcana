@@ -82,7 +82,7 @@ fun GenerationView(app: AppContext, gen: Generation, output: OutputState, rows: 
 
 /** The line under a reply: a spinner while generating, or why it stopped. */
 @Composable
-fun ReplyStatus(app: AppContext, gen: Generation, compactingSince: Long? = null, compactingAuto: Boolean = false, consulting: String? = null, consultingSince: Long = 0L, consultingStage: String? = null) {
+fun ReplyStatus(app: AppContext, gen: Generation, compactingSince: Long? = null, compactingAuto: Boolean = false, compactingPart: String = "", consulting: String? = null, consultingSince: Long = 0L, consultingStage: String? = null) {
     // why nothing has come yet: asked of Ollama and the machine every few seconds while we wait for a model (loading, reading the prompt, memory tight)
     val target = consulting ?: app.chat.workerModel
     val waiting = consulting != null || (gen.state == GenState.Running && gen.text.isEmpty() && !(gen.thinking && app.config.showThinking))
@@ -109,7 +109,7 @@ fun ReplyStatus(app: AppContext, gen: Generation, compactingSince: Long? = null,
         // the chat is being summarized: say what is going on and what to do, so nobody wonders whether to type
         Spinner {
             val seconds = (System.currentTimeMillis() - compactingSince) / 1000
-            "Compacting the chat: ${app.config.model} is summarizing the older messages… ${seconds}s · " + if (compactingAuto) "your message is sent right after" else "wait, then send your message"
+            "Compacting the chat: ${app.config.model} is summarizing the older messages${if (compactingPart.isEmpty()) "" else " (part $compactingPart)"}… ${seconds}s · " + if (compactingAuto) "your message is sent right after" else "wait, then send your message"
         }
         return
     }
@@ -129,7 +129,8 @@ fun ReplyStatus(app: AppContext, gen: Generation, compactingSince: Long? = null,
                 gen.text.isEmpty() -> "Waiting for ${app.chat.workerModel}…"
                 else -> "Generating…"
             }
-            val tokens = if (gen.streamed > 0 && consulting == null && !reading) " · ${if (app.config.plainGlyphs) "" else "↓ "}${gen.streamed} tokens" else ""
+            val speed = com.arcana.brain.app.liveSpeed(gen.roundPieces, gen.roundFirstAt, System.currentTimeMillis())?.let { " · %.0f tok/s".format(it) }.orEmpty()
+            val tokens = if (gen.streamed > 0 && consulting == null && !reading) " · ${if (app.config.plainGlyphs) "" else "↓ "}${gen.streamed} tokens$speed" else ""
             "$what ${seconds}s$tokens${if (why.isEmpty()) "" else " · $why"} · Esc to cancel"
         }
         GenState.Failed -> Label((if (app.config.plainGlyphs) "Error: " else "✕ ") + gen.error, color = Palette.Red, wrap = true)

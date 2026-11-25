@@ -189,6 +189,15 @@ fun Shell(app: AppContext, navigator: Navigator, onQuit: () -> Unit, screen: @Co
         LocalUiScale provides app.config.uiScale,
         LocalPlainGlyphs provides app.config.plainGlyphs,
     ) {
+        // the start screen is a screen of its own before the main window: nothing of the shell (tabs, sidebar, footer) is drawn around it
+        if (app.splashOpen) {
+            Column(Modifier.size(size.columns, viewRows).background(Palette.Background).onKeyEvent(onKey)) {
+                CompositionLocalProvider(LocalContentHeight provides viewRows, LocalContentWidth provides size.columns) {
+                    com.arcana.brain.app.screens.SplashScreen(app)
+                }
+            }
+            return@CompositionLocalProvider
+        }
         Column(Modifier.size(size.columns, viewRows).background(Palette.Background).onKeyEvent(onKey)) {
             if (topBar) TopBar(navigator, size.columns, busy = app.busy > 0 && app.config.animateLogo, badge = badge)
             Row(Modifier.weight(1f).fillMaxWidth()) {
@@ -352,6 +361,7 @@ private fun footerSegments(app: AppContext, navigator: Navigator): List<StatusSe
         if (app.sessionTokens > 0) add(statusSegment("", "⚡ ${UsageStats.compact(app.sessionTokens)} tok", Palette.Blue))
         // the machine: where the model sits and what all loaded models take, the processor, the memory file
         com.arcana.brain.app.screens.modelStateSegment(app, plain)?.let { add(it) }
+        com.arcana.brain.app.screens.embedSegment(app, plain)?.let { add(it) }
         com.arcana.brain.app.screens.memoryMeter(app, plain)?.let { add(it) }
         app.cpuPercent?.let { add(statusSegment("cpu", "$it%", if (it >= 85) Palette.Red else if (it >= 60) Palette.Orange else Palette.Green)) }
         if (app.chat.compacting) add(statusSegment("", if (plain) "compacting" else "◌ compacting…", Palette.Blue))

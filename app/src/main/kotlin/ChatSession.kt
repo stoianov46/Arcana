@@ -1,5 +1,9 @@
 package com.arcana.brain.app
 
+import com.arcana.brain.core.effectiveContext
+import com.arcana.brain.core.contextTokens
+import com.arcana.brain.core.contextUsage
+import com.arcana.brain.core.thinkOptions
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -7,6 +11,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.idea.ink.ui.TextFieldState
 import com.arcana.brain.core.AppConfig
+import com.arcana.brain.core.SystemFreeze
+import com.arcana.brain.core.WebTaint
 import com.arcana.brain.core.STEP_LIMIT_AUTO_ROUNDS
 import com.arcana.brain.core.ChatMessage
 import com.arcana.brain.core.ChatStore
@@ -56,8 +62,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.sync.withLock
 import com.arcana.brain.core.REQUEST_ACCESS_DEFINITION
-import com.arcana.brain.app.screens.contextUsage
-import com.arcana.brain.app.screens.effectiveContext
 import com.arcana.brain.core.CHAT_STATS
 import com.arcana.brain.core.CHAT_STATS_JSON
 import com.arcana.brain.core.CHAT_STATS_DEFINITION
@@ -73,6 +77,9 @@ import com.arcana.brain.core.Provenance
 import com.arcana.brain.core.OllamaClient
 import com.arcana.brain.core.UsageStats
 import com.arcana.brain.core.ChatStats
+import com.arcana.brain.core.ApprovalPolicy
+import com.arcana.brain.core.ApprovalSettings
+import com.arcana.brain.core.Actor
 import com.arcana.brain.core.REQUEST_MODE
 import com.arcana.brain.core.REQUEST_MODE_DEFINITION
 import com.arcana.brain.core.TOOL_MODES
@@ -99,8 +106,11 @@ import kotlinx.coroutines.withContext
  * A message can carry pictures and notes from the vault (their text is read when the message is sent), and with
  * [AppConfig.chatUseVault] on, the vault is searched for each question and the answer cites the notes it used.
  */
-class ChatSession(private val app: AppContext, private val store: ChatStore) {
+class ChatSession(internal val app: AppContext, internal val store: ChatStore) {
     val messages = mutableStateListOf<ChatMessage>()
+
+    /** The chat's system prompt, kept the same from message to message (see [SystemFreeze]). */
+    internal val systemFreeze = SystemFreeze()
 
     /**
      * Messages typed while the model works. A tool turn picks them up at its next round (they join it as your messages, so a correction or a
@@ -124,7 +134,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** What is typed in the message field but not sent yet: kept too, so leaving the screen does not lose it. */
     val input = TextFieldState(multiline = true)
     var id by mutableStateOf(newId())
-        private set
+        internal set
 
     /** Pictures, files and notes chosen for the next message; they go out with it and are cleared. */
     val attachments = app.attachments()
@@ -135,37 +145,21 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** Messages that exist only in the chat history, not in a vault note. */
     val unsaved: Boolean get() = messages.size > savedMessages
 
-    private var pendingSources: List<String> = emptyList()
-    private var pendingBy: String = ""
-    private var pendingInfo: Map<String, String> = emptyMap()
+    internal var pendingSources: List<String> = emptyList()
+    internal var pendingBy: String = ""
+    internal var pendingInfo: Map<String, String> = emptyMap()
 
     /** What this message's answer is built from besides the notes sent with the question: the tools the model used (`search_vault (keywords + meaning)`) and the notes it opened with `read_note`. Cleared by the next message. */
-    private val turnTools = ArrayList<String>()
-    private val turnReads = LinkedHashSet<String>()
-
-    /** Remembers a tool call for the line under the answer: which tool, which search method it really used, and which note it read. */
-    private fun noteToolUse(call: ToolCall, result: String) {
-        val failed = result.startsWith("Error:")
-        val method = when (call.name) {
-            "search_vault" -> Regex("by (keywords \\+ meaning|keywords|meaning)").find(result)?.groupValues?.get(1)
-            "semantic_search" -> "meaning"
-            "search_notes" -> "keywords"
-            else -> null
-        }
-        turnTools += call.name + (if (failed) " ✕" else method?.let { " ($it)" }.orEmpty())
-        if (call.name == "read_note" && !failed) {
-            val path = Regex("^\\(found at ([^)]+)\\)").find(result)?.groupValues?.get(1) ?: (call.arguments["path"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-            path?.trim()?.takeIf { it.isNotEmpty() }?.let { turnReads += it }
-        }
-    }
-    private var pendingCut: List<String> = emptyList()
+    internal val turnTools = ArrayList<String>()
+    internal val turnReads = LinkedHashSet<String>()
+    internal var pendingCut: List<String> = emptyList()
 
     /** Notes the user chose to send whole, and notes they accepted cut, for this chat (the history is re-read on every turn, so the choice must stay). */
-    private val wholeNotes = mutableSetOf<String>()
-    private val cutAccepted = mutableSetOf<String>()
+    internal val wholeNotes = mutableSetOf<String>()
+    internal val cutAccepted = mutableSetOf<String>()
 
     /** Builds the request for the reply being written from the chat as it is now; set while a reply runs, so a compaction between tool rounds can rebuild it. */
-    private var refreshRequest: (suspend () -> List<ChatMessage>)? = null
+    internal var refreshRequest: (suspend () -> List<ChatMessage>)? = null
 
     /** The reply being written. It lives as long as the app does. */
     val gen: Generation by lazy {
@@ -182,6 +176,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             loopRepeats = { app.config.loopRepeats },
             toolsHalted = { loopCalls.halted },
             onLoop = { app.recordEvent(Events.LOOP, it) },
+            onBadCall = { app.recordToolUse(ToolUseRecord(System.currentTimeMillis(), com.arcana.brain.core.MALFORMED, 0, "malformed", 0, runWorker ?: app.config.model)) },
             refresh = { refreshRequest?.takeIf { autoCompactDue(messages.toList()) }?.let { rebuild -> runCatching { compact(auto = true) }.getOrNull()?.let { rebuild() } } },
         )
     }
@@ -191,7 +186,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * started by a skill chip on a message or by the model's `use_skill` call; the Chat status bar shows its progress (see [skillTick]).
      */
     var skillRun by androidx.compose.runtime.mutableStateOf<SkillRun?>(null)
-        private set
+        internal set
 
     /**
      * The reasoning level picked for the next message only (`/effort`: a value of the model's own list, such as `xhigh`, `off` or `default`); blank = the Settings value. It
@@ -216,18 +211,29 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** Changes whenever [skillRun] makes progress, so the status bar redraws. */
     var skillTick by androidx.compose.runtime.mutableIntStateOf(0)
-        private set
+        internal set
 
     /** The model the running skill asked for instead of the chat model (`worker:`), and the one that reviews its answer (`reviewer:`); null = the settings decide. Cleared by the next message. */
-    private var runWorker: String? = null
-    private var runReviewer: String? = null
+    internal var runWorker: String? = null
+    internal var runReviewer: String? = null
 
     /** True while the selected flow handles this message and ends with the controller's check; false for a short message that goes straight to the worker. */
-    private var flowControl = false
+    internal var flowControl = false
 
     /** About how many tokens the request being written is (characters / 4): for the waiting line, since Ollama does not say how far it has read. */
     var promptEstimate = 0
-        private set
+        internal set
+
+    /** About how many tokens the system prompt and the tool definitions of the last request took (they are in every request, but in no message): for the context meter. */
+    var overheadTokens by mutableStateOf(0)
+        internal set
+
+    /** What the chat model was sent with the latest request of this chat, part by part (`/context`, the context inspector); null until something is sent. */
+    var lastContext by mutableStateOf<com.arcana.brain.core.ContextSnapshot?>(null)
+        internal set
+
+    /** The request [lastContext] describes, kept to tell what the next one has in common with it (what Ollama can reuse). */
+    internal var lastRequest: List<ChatMessage>? = null
 
     /** The model that answers right now: the one a skill, the flow or the router chose, else the chat model. */
     val workerModel: String get() = runWorker ?: app.config.model
@@ -240,327 +246,29 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** What the model in [consulting] is doing for a flow ("analysing the request", "planning", "reviewing the answer", "checking the answer"); null = just answering. */
     var consultingStage by androidx.compose.runtime.mutableStateOf<String?>(null)
-        private set
+        internal set
 
     /** How many times the controller has sent the worker back for the message being worked on; reset by a message of the user. */
-    private var flowRedos = 0
+    internal var flowRedos = 0
 
     /** How many times a verdict has sent the chat model to revise, and how many times it was sent back to its open todo steps, for the message being worked on (one each at most). */
-    private var autoRevises = 0
-    private var todoNudges = 0
+    internal var autoRevises = 0
+    internal var todoNudges = 0
 
     /** The `/goal` of this chat: after every finished reply a checker compares the answer with it and, while it is not met, the work goes on by itself; null = no goal. */
     var goal by androidx.compose.runtime.mutableStateOf<String?>(null)
-        private set
-    private var goalTurns = 0
+        internal set
+    internal var goalTurns = 0
 
     /** What the skill's roles did that the user should know (a model that is not installed, or cannot call tools); the Chat shows it once. */
     var roleNote by androidx.compose.runtime.mutableStateOf<String?>(null)
 
-    /**
-     * Applies the roles of the skill whose entry note is [entry]: an installed model replaces the chat model for the rest of this message
-     * (it must be able to call tools when tools are on), the reviewer is asked when the answer is done. A model that is not usable is
-     * skipped with a note, and the settings' model is used. Nothing is changed in the settings. A null [entry] is a message without a skill
-     * ([AppConfig.rolesScope] = "all"): only the role table in the settings applies.
-     */
-    private suspend fun applyRoles(entry: String?): String? {
-        val roles = when {
-            // skill roles switched off: a skill is run by the chat model alone; only a selected flow still names its models
-            !app.config.skillRolesEnabled -> Flow.of(app.config)?.roles() ?: return null
-            entry == null -> SkillRoles().withDefaults(app.config)
-            else -> {
-                val vault = app.openVault().getOrNull() ?: return null
-                runCatching { Skills.roles(vault.read(entry)).withDefaults(app.config) }.getOrNull() ?: return null
-            }
-        }.takeIf { it.any } ?: return null
-        val installed = runCatching { app.client.listModels() }.getOrNull() ?: return null
-        val onOracul = if (app.config.oraculUrl.isBlank()) installed else runCatching { clientFor("").listModels() }.getOrDefault(emptyList())
-        fun has(m: String, among: List<String> = installed) = among.any { it == m || it == "$m:latest" }
-        val skill = if (entry == null) "roles" else "Skill ${Skills.nameOfEntry(entry)}"
-        if (roles.worker.isNotEmpty()) when {
-            !has(roles.worker) -> roleNote = "$skill asks for the worker model ${roles.worker}, which is not installed: ${app.config.model} is used."
-            app.config.toolsEnabled && "tools" !in runCatching { app.client.capabilities(roles.worker) }.getOrDefault(listOf("tools")) -> roleNote = "$skill asks for ${roles.worker}, which cannot use tools: ${app.config.model} is used."
-            else -> runWorker = roles.worker.takeIf { it != app.config.model }
-        }
-        if (roles.reviewer.isNotEmpty()) {
-            if (has(roles.reviewer, onOracul)) runReviewer = roles.reviewer else roleNote = "$skill asks ${roles.reviewer} to review, which is not installed: no review."
-        }
-        // the planner is returned, not remembered: a plan is written once, when the run starts
-        if (roles.planner.isEmpty()) return null
-        if (has(roles.planner, onOracul)) return roles.planner
-        roleNote = "$skill asks ${roles.planner} to plan, which is not installed: no plan."
-        return null
-    }
-
-    /** The planner model writes a short plan for [question] from the skill's instructions; it is added to the chat as a block the worker then sees. A failure is only a note. */
-    private suspend fun plan(planner: String, entry: String?, question: String, analysis: String = "") {
-        val vault = app.openVault().getOrNull()
-        if (entry != null && vault == null) return
-        consulting = planner; consultingStage = "planning"
-        try {
-            val skillText = if (entry == null || vault == null) "" else Skills.loadEntry(vault, entry).orEmpty()
-            val text = Oracul.ask(clientFor(planner), Oracul.planRequest(question, skillText, oraculBackground(), analysis)) { app.recordUsage("Planner", it, planner) }
-            if (text.isEmpty()) roleNote = "$planner returned an empty plan: the worker starts without one." else add(Oracul.planMessage(planner, text))
-        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            roleNote = "The planner $planner failed (${e.message}): the worker starts without a plan."
-        } finally {
-            consulting = null
-        }
-    }
-
-    /**
-     * The analyst stage of the selected [Flow]: its model reads [question] and writes what is really asked, what is unclear and what a good result looks like.
-     * The text is added to the chat as an analysis block (the later stages and the worker see it) and returned for the planner. A model that is not installed,
-     * an empty text or a failure is only a note: the flow goes on without it.
-     */
-    private suspend fun analyse(flow: Flow, question: String): String {
-        val analyst = flow.model(StageKind.Analyst).ifEmpty { return "" }
-        if (missingOnOracul(analyst)) { roleNote = "The analyst $analyst is not installed: the flow goes on without an analysis."; return "" }
-        consulting = analyst; consultingStage = "analysing the request"
-        try {
-            val text = Oracul.ask(clientFor(analyst), Oracul.analysisRequest(question, oraculBackground())) { app.recordUsage("Analyst", it, analyst) }
-            if (text.isEmpty()) { roleNote = "$analyst returned an empty analysis: the flow goes on without one."; return "" }
-            add(Oracul.analysisMessage(analyst, text))
-            return text
-        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            roleNote = "The analyst $analyst failed (${e.message}): the flow goes on without an analysis."
-            return ""
-        } finally {
-            consulting = null
-        }
-    }
-
-    /** True when [model] is known not to be installed on the server the Oracul's models run on; false when it is, or when the list cannot be read. */
-    private suspend fun missingOnOracul(model: String): Boolean {
-        val installed = runCatching { (if (app.config.oraculUrl.isBlank()) app.client else clientFor("")).listModels() }.getOrNull() ?: return false
-        return installed.none { it == model || it == "$model:latest" }
-    }
-
-    /**
-     * The controller stage of the selected [Flow], after the reviewer: its model reads the request, the analysis, the answer and the review and says `done` or
-     * `redo`. The verdict is added to the chat as a block. On `redo` the worker is sent back with [Oracul.REDO_PROMPT] (the verdict is in its history), at most
-     * [Flow.redos] times per message of the user; an answer that is still refused then stands, with a note. A failure, an empty text or an unreadable verdict never starts a loop.
-     */
-    private suspend fun control(flow: Flow) {
-        val (question, answer) = Oracul.lastExchange(messages.toList()) ?: return
-        val check = runCheckCommand()
-        // an objective failure needs no second opinion: the output is the verdict
-        if (check != null) app.recordEvent(Events.CHECK, if (check.second.passed) "pass" else "fail")
-        if (check != null && !check.second.passed) {
-            val run = check.second
-            add(Oracul.controlMessage(check.first, Oracul.Control(false, "The check command failed (" + (run.code?.let { "exit code $it" } ?: "timed out") + "):\n" + run.output.takeLast(1_500))))
-            requestRedo(flow)
-            return
-        }
-        val controller = flow.model(StageKind.Controller).ifEmpty { return }
-        if (missingOnOracul(controller)) { roleNote = "The controller $controller is not installed: the answer stands without a check."; return }
-        val all = messages.toList()
-        val review = all.lastOrNull { Oracul.isReview(it) }?.let { Oracul.body(it) }.orEmpty()
-        val analysis = all.lastOrNull { Oracul.isAnalysis(it) }?.let { Oracul.body(it) }.orEmpty()
-        consulting = controller; consultingStage = "checking the answer"
-        try {
-            val passed = check?.let { "`${it.first}` passed (exit code 0)." + if (it.second.output.isBlank()) "" else "\n" + it.second.output.takeLast(600) }.orEmpty()
-            val text = Oracul.ask(clientFor(controller), Oracul.controlRequest(question, answer, review, analysis, oraculBackground(), passed)) { app.recordUsage("Controller", it, controller) }
-            if (text.isEmpty()) { roleNote = "$controller returned an empty verdict: the answer stands."; return }
-            val verdict = Oracul.parseControl(text)
-            add(Oracul.controlMessage(controller, verdict))
-            app.recordEvent(Events.CONTROL, if (verdict.done) "done" else "redo", controller)
-            if (verdict.done) return
-            requestRedo(flow)
-        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            roleNote = "The controller $controller failed (${e.message}): the answer stands."
-        } finally {
-            consulting = null
-        }
-    }
-
-    /**
-     * After an automatic opinion: the judge model ([AppConfig.judgeModel], when it is set and [AppConfig.oraculVerdict] is on) says whether the opinion is right
-     * (`AGREE`, `PARTLY`, `DISAGREE` and why). Advisory, shown as a block under the opinion; the worker sees it if the user goes on. A failure is ignored.
-     */
-    private suspend fun verdictOnOpinion() {
-        val judge = app.config.judgeModel.trim().takeIf { it.isNotEmpty() && app.config.oraculVerdict && app.config.oraculEnabled } ?: return
-        val all = messages.toList()
-        val opinion = all.lastOrNull { Oracul.isReview(it) } ?: return
-        val (question, answer) = Oracul.lastExchange(all) ?: return
-        if (missingOnOracul(judge)) return
-        consulting = judge; consultingStage = "judging the opinion"
-        try {
-            val text = Oracul.ask(clientFor(judge), Oracul.verdictRequest(question, answer, Oracul.body(opinion), oraculBackground())) { app.recordUsage("Judge", it, judge) }
-            if (text.isNotEmpty()) {
-                add(Oracul.verdictMessage(judge, text))
-                val said = Regex("^\\W*(AGREE|PARTLY|DISAGREE)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.lowercase() ?: "unclear"
-                app.recordEvent(Events.VERDICT, said, judge)
-                // the judge says the opinion is right: by the setting, a dialog with choices, a revision by itself (once per message), or nothing
-                if ((said == "agree" || said == "partly") && autoRevises < 1 && Oracul.hasOpenOpinion(messages.toList())) when (app.config.verdictAction) {
-                    "auto" -> { autoRevises++; app.recordEvent(Events.REVISE, "auto", judge); app.scope.launch { yield(); runCatching { revise("The judge agreed with the reviewer: fix what it names.") } } }
-                    "ask" -> { autoRevises++; app.scope.launch { askWhatNow(judge, said) } }
-                }
-            }
-        } finally {
-            consulting = null
-        }
-    }
-
-    /**
-     * The explicit alternative to typing `/revise`: after the judge agrees with an opinion, a dialog says what was found and offers the choices. Pick one (↑↓ Enter, or its digit), or type
-     * a note of your own on the last row and the chat model revises with it. Nothing is asked while a reply is being written or another dialog is open.
-     */
-    private suspend fun askWhatNow(judge: String, verdict: String) {
-        if (question != null || approval != null || gen.state == GenState.Running) return
-        val options = listOf(Oracul.CHOICE_REVISE, Oracul.CHOICE_LEAVE, Oracul.CHOICE_ALWAYS)
-        val q = Question("The reviewer found problems with the last answer and the judge ($judge) ${if (verdict == "agree") "agrees" else "partly agrees"}. What now? You can also type a note of your own below: the model then revises with it.", options, false, fromArcana = true)
-        question = q
-        val answer = try { q.answer.await() } finally { question = null }
-        when {
-            answer == null || answer == Oracul.CHOICE_LEAVE -> Unit
-            answer == Oracul.CHOICE_REVISE -> { app.recordEvent(Events.REVISE, "chosen", judge); runCatching { revise("") } }
-            answer == Oracul.CHOICE_ALWAYS -> { app.update(app.config.copy(verdictAction = "auto")); app.recordEvent(Events.REVISE, "chosen", judge); runCatching { revise("") } }
-            else -> { app.recordEvent(Events.REVISE, "note", judge); runCatching { revise(answer) } }
-        }
-    }
-
-    /** `/goal text`: sets the goal and starts the work toward it; the checker runs after every reply. */
-    fun startGoal(text: String) {
-        goal = text.trim().ifEmpty { return }
-        goalTurns = 0
-        app.recordEvent(Events.GOAL, "set")
-        send("Goal: ${goal}\nWork toward it until it is reached; tell me when you think it is.")
-    }
-
-    fun clearGoal() { goal = null; goalTurns = 0 }
-
-    /**
-     * The `/goal` check, after a finished reply: the Oracul model (else the chat model) compares the answer with the goal. Met: the goal is cleared. Not met: the notes are added
-     * and the worker is sent on with [Oracul.goalContinue], at most [AppConfig.goalTurns] times for one goal (a message of yours resets the count); then it stops with a note.
-     * Nothing runs while a reply is being written, so a redo or a queued message is never talked over.
-     */
-    private suspend fun checkGoal() {
-        val wanted = goal ?: return
-        if (gen.state == GenState.Running || consulting != null) return
-        val answer = Oracul.lastExchange(messages.toList())?.second ?: return
-        val oracul = Oracul.model(app.config)
-        val model = oracul.ifEmpty { app.config.model }
-        if (oracul.isNotEmpty() && missingOnOracul(model)) { roleNote = "The goal checker $model is not installed: the goal is not checked."; return }
-        consulting = model; consultingStage = "checking the goal"
-        try {
-            val client = if (oracul.isEmpty()) app.client else clientFor(model)
-            val text = Oracul.ask(client, Oracul.goalRequest(wanted, answer, oraculBackground())) { app.recordUsage("Controller", it, model) }
-            if (text.isEmpty()) { roleNote = "$model returned an empty goal check: the goal stays set."; return }
-            val check = Oracul.parseGoal(text)
-            add(Oracul.goalMessage(model, check))
-            if (check.met) { clearGoal(); app.recordEvent(Events.GOAL, "met", model); return }
-            if (goalTurns >= app.config.goalTurns) { clearGoal(); app.recordEvent(Events.GOAL, "stopped", model); roleNote = "The goal was not met after ${app.config.goalTurns} automatic turns: stopped. Set it again with /goal, or carry on yourself."; return }
-            goalTurns++
-            app.scope.launch { yield(); send(Oracul.goalContinue(wanted)) }
-        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            roleNote = "The goal check failed (${e.message}): the goal stays set."
-        } finally {
-            consulting = null
-        }
-    }
-
-    /**
-     * The router: a message with an image goes to the vision model, one with code to the code model (Settings → Helpers → *Route*), unless a skill or the flow already named the
-     * worker. The model must be installed, have the `vision` capability for an image and be able to use tools when tools are on; otherwise the chat model answers, with a note.
-     * Only the first round of a message routes, and a redo or a goal turn looks at the message it continues.
-     */
-    private suspend fun route(history: List<ChatMessage>) {
-        if (runWorker != null || !app.config.oraculEnabled) return
-        val last = history.lastOrNull { it.role == "user" && !Oracul.isOpinion(it) && !Compaction.isSummary(it) && !it.content.startsWith(Oracul.REDO_PROMPT) && !it.content.startsWith(Oracul.TODO_PROMPT) && !it.content.startsWith(Oracul.GOAL_PROMPT) && !it.content.startsWith(Oracul.REVISE_PROMPT) } ?: return
-        val kind = Router.kindOf(last.content, last.images.isNotEmpty()) ?: return
-        val model = Router.modelFor(app.config, kind).ifEmpty { return }
-        if (model == app.config.model) return
-        val installed = runCatching { app.client.listModels() }.getOrNull() ?: return
-        if (installed.none { it == model || it == "$model:latest" }) { roleNote = "The ${kind.label} model $model is not installed: ${app.config.model} answers."; return }
-        val capabilities = runCatching { app.client.capabilities(model) }.getOrNull()
-        when {
-            kind == Route.Vision && capabilities != null && "vision" !in capabilities -> { roleNote = "$model cannot read images: ${app.config.model} answers."; return }
-            app.config.toolsEnabled && capabilities != null && "tools" !in capabilities -> { roleNote = "$model cannot use tools: ${app.config.model} answers."; return }
-        }
-        runWorker = model
-        app.recordEvent(Events.ROUTE, if (kind == Route.Vision) "image" else "code", model)
-        routeNote = "Routed to $model: the message has ${kind.label}."
-    }
-
-    /** Sends the worker back (the verdict is already in the chat), unless [Flow.redos] are used up: then the last answer stands, with a note. */
-    private fun requestRedo(flow: Flow) {
-        if (flowRedos >= flow.redos) { if (flow.redos > 0) { roleNote = "The controller still wanted a redo after ${flow.redos} tries: the last answer stands."; app.recordEvent(Events.REDO_LIMIT) }; return }
-        flowRedos++
-        app.recordEvent(Events.REDO)
-        app.scope.launch { yield(); send(Oracul.REDO_PROMPT) }
-    }
-
-    /**
-     * The flow's objective check ([AppConfig.flowCheckCommand]): runs the command in the project folder and returns the command with what it did, or null when there is none or it
-     * may not run. It runs without asking, so it needs the shell tools **and** auto-run to be on (the same trust), and a command [ShellPolicy] refuses never runs.
-     */
-    private suspend fun runCheckCommand(): Pair<String, CheckRun>? {
-        val config = app.config
-        val command = config.flowCheckCommand.trim().ifEmpty { return null }
-        if (!config.toolShell || !config.toolAutoShell) { roleNote = "The flow's check command is not run: it needs Settings → Tools → shell commands and auto-run."; return null }
-        CheckCommand.refusal(command)?.let { roleNote = "The flow's check command is not run: $it"; return null }
-        val dir = projectFolder(config) ?: app.openVault().getOrNull()?.root ?: run { roleNote = "The flow's check command is not run: there is no project folder or vault to run it in."; return null }
-        consulting = command; consultingStage = "running the check command"
-        try {
-            return command to withContext(Dispatchers.IO) { CheckCommand.run(command, dir) }
-        } finally {
-            consulting = null
-        }
-    }
-
     /** How many times the model has consulted a specialist in this message; reset by a message of the user. */
-    private var consults = 0
-
-    /**
-     * The model calls a stage as a specialist (`consult`): the stage's model gets only the brief the model wrote, with the stage's own instructions, and its text is the tool's
-     * answer. Nothing is added to the chat besides the tool call. Not installed, no model for the stage or too many calls are errors the model can read.
-     */
-    private suspend fun consult(call: ToolCall): String {
-        fun arg(name: String) = (call.arguments[name] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim()
-        if (!app.config.oraculEnabled) return "Error: the helper models are switched off; work without a specialist."
-        val kind = Flow.consultKind(arg("stage")) ?: return "Error: stage must be analyst, planner or reviewer."
-        val brief = arg("brief").ifEmpty { return "Error: give a brief: everything the specialist needs." }
-        if (consults >= MAX_CONSULTS) return "Error: you have already consulted $MAX_CONSULTS times in this message; carry on with what you have."
-        val model = Flow.consultModel(app.config, kind).ifEmpty { return "Error: no model is set for the ${kind.label.lowercase()} and no Oracul model to fall back on (Settings → Helpers → Model, or the ${Flow.consultSource(app.config, kind).takeIf { it != "the Oracul model" } ?: "stage"} setting); work without it." }
-        if (consulting != null) return "Error: another model is working right now; try again in a moment."
-        if (missingOnOracul(model)) return "Error: the model $model is not installed; work without the ${kind.label.lowercase()}."
-        consults++
-        consulting = model; consultingStage = "advising as the ${kind.label.lowercase()}"
-        try {
-            val feature = when (kind) { StageKind.Analyst -> "Analyst"; StageKind.Planner -> "Planner"; else -> "Oracul" }
-            val text = Oracul.ask(clientFor(model), Oracul.consultRequest(kind, brief, oraculBackground())) { app.recordUsage(feature, it, model) }
-            if (text.isNotEmpty()) app.recordEvent(Events.CONSULT, kind.label.lowercase(), model)
-            return if (text.isEmpty()) "Error: $model returned nothing." else "${kind.label} ($model) says:\n$text"
-        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return "Error: the ${kind.label.lowercase()} failed (${e.message})."
-        } finally {
-            consulting = null
-        }
-    }
-
-    private fun clearRoles() { runWorker = null; runReviewer = null; flowControl = false }
-
-    private fun startSkillRun(name: String, requirements: List<Requirement>) {
-        skillRun = if (requirements.isEmpty()) null else SkillRun(name, requirements)
-        skillRunStart = System.currentTimeMillis()
-        stampedReports.clear()
-        skillTick++
-    }
+    internal var consults = 0
 
     /** When the current skill run started (what the report's `tokens` and `work_time` are measured from) and the reports of this run already stamped. */
-    private var skillRunStart = 0L
-    private val stampedReports = HashSet<String>()
+    internal var skillRunStart = 0L
+    internal val stampedReports = HashSet<String>()
 
     /**
      * Report metadata (R7, see [ReportMeta]): when the skill run has all its steps done (or given up on), the notes it created that are `type: report` get `tokens`
@@ -569,7 +277,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      */
     /** The notes this chat created get the backlog line they answer (see [backlogQuestion]); for every finished reply, so it does not depend on the skill run ending cleanly. */
     /** The notes this chat created are linked to its work item: a report for research, an answer for a question, a draft for the rest. */
-    private fun linkWorkItem() {
+    internal fun linkWorkItem() {
         if (workItemId.isBlank()) return
         val vault = app.openVault().getOrNull() ?: return
         runCatching {
@@ -583,14 +291,14 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }
     }
 
-    private fun stampBacklog() {
+    internal fun stampBacklog() {
         linkWorkItem()
         if (backlogQuestion.isBlank()) return
         val vault = app.openVault().getOrNull() ?: return
         for (a in artifacts.toList()) if (a.tool == "create_note" && a.action == "created") ReportMeta.stampBacklog(vault, a.path, backlogQuestion, backlogId.ifBlank { null })
     }
 
-    private fun stampReports() {
+    internal fun stampReports() {
         val run = skillRun ?: return
         if (!run.finished || skillRunStart == 0L) return
         val vault = app.openVault().getOrNull() ?: return
@@ -629,7 +337,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     var question by mutableStateOf<Question?>(null)
-        private set
+        internal set
 
     fun answerQuestion(text: String?) { question?.answer?.complete(text) }
 
@@ -668,74 +376,43 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         if (q.picked.isNotEmpty()) answerQuestion(q.picked.sorted().joinToString("; ") { q.options[it] })
     }
 
-    /** The question text, whatever the model called it, or what it wrote next to the call; empty when it gave none. */
-    private fun questionText(call: ToolCall, beside: String): String {
-        val args = call.arguments
-        val named = listOf("question", "prompt", "text", "message", "title", "query", "ask").firstNotNullOfOrNull { key ->
-            (args[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()?.takeIf { it.isNotEmpty() }
-        }
-        return named ?: beside.trim().lines().lastOrNull { it.isNotBlank() }?.trim()?.take(300).orEmpty()
-    }
-
-    private val bouncedQuestions = mutableSetOf<String>()
-    private val ChoiceWords = Regex("""choose (one|an? |from)|select (one|an? )|pick (one|an? )|which of (these|the following)""", RegexOption.IGNORE_CASE)
-
-    private suspend fun askUser(call: ToolCall, beside: String): String {
-        val args = call.arguments
-        val text = questionText(call, beside).ifEmpty { return "Error: ask_user needs the question itself. Call it again with question set to the text you want to ask, and options (2 to 5 short answers)." }
-        val options = (args["options"] as? JsonArray)?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.let(::cleanOption)?.takeIf { s -> s.isNotEmpty() } }.orEmpty().take(9)
-        val asksMultiple = (args["multiple"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
-        // a question that says "choose one" (or multiple=true) but came without options would show only a text field: a small model forgets the options, so it is sent back once
-        if (options.size < 2 && (asksMultiple || ChoiceWords.containsMatchIn(text)) && bouncedQuestions.add(text)) {
-            return "Error: this question asks the user to choose, but options is missing. Call ask_user again with the same question and options: 2 to 5 short answers (an array of strings)" +
-                (if (asksMultiple) " and multiple=true." else ".")
-        }
-        val multiple = asksMultiple && options.size > 1
-        val q = Question(text, options, multiple)
-        question = q
-        val answer = try { q.answer.await() } finally { question = null }
-        return when {
-            answer == null -> "The user skipped the question. Carry on with your best judgement, or ask again in plain words."
-            options.isNotEmpty() && (answer in options || multiple) -> "The user chose: $answer"
-            else -> "The user answered: $answer"
-        }
-    }
+    internal val bouncedQuestions = mutableSetOf<String>()
+    internal val ChoiceWords = Regex("""choose (one|an? |from)|select (one|an? )|pick (one|an? )|which of (these|the following)""", RegexOption.IGNORE_CASE)
 
     /** The tool call waiting for an answer (shown by Chat), or null. */
     var approval by mutableStateOf<Approval?>(null)
-        private set
+        internal set
 
     /** Only one dialog is on screen at a time: the worker's and the Oracul's wait for each other here, in the order they ask. */
-    private val approvalLock = kotlinx.coroutines.sync.Mutex()
+    internal val approvalLock = kotlinx.coroutines.sync.Mutex()
 
-    private suspend fun awaitApproval(pending: Approval): ApprovalChoice = approvalLock.withLock {
+    internal suspend fun awaitApproval(pending: Approval): ApprovalChoice = approvalLock.withLock {
         approval = pending
         try { pending.answer.await() } finally { approval = null }
     }
 
     /** Tools the user allowed "always" for this session. */
-    private val alwaysAllowed = mutableSetOf<String>()
-    private var toolbox: ToolBox? = null
+    internal val alwaysAllowed = mutableSetOf<String>()
+    internal var toolbox: ToolBox? = null
 
     fun answer(choice: ApprovalChoice) {
         approval?.answer?.complete(choice)
     }
 
     /** The project folder from Settings (a missing or non-folder path counts as none). */
-    fun projectFolder(config: AppConfig): java.nio.file.Path? =
-        config.projectFolder.trim().takeIf { it.isNotEmpty() }?.let { AppContext.expandHome(it) }?.takeIf { java.nio.file.Files.isDirectory(it) }
+    fun projectFolder(config: AppConfig): java.nio.file.Path? = com.arcana.brain.core.ToolSettings.projectFolder(config)
 
     /** The run now going on, or the last one: one request of the user and everything done to answer it. Every note its tools write is recorded against it. */
     var run: Origin? = null
-        private set
+        internal set
 
-    private var provenance: Pair<java.nio.file.Path, Provenance>? = null
+    internal var provenance: Pair<java.nio.file.Path, Provenance>? = null
 
     /** The record of runs of [vault], kept for as long as the vault is the same (its de-duplication lives in the instance). */
-    private fun provenanceFor(vault: Vault): Provenance =
+    internal fun provenanceFor(vault: Vault): Provenance =
         provenance?.takeIf { it.first == vault.root }?.second ?: Provenance(vault).also { provenance = vault.root to it }
 
-    private fun beginRun(request: String) {
+    internal fun beginRun(request: String) {
         val origin = Origin.newRun(id)
         run = origin
         app.openVault().getOrNull()?.let { v ->
@@ -751,467 +428,39 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** The tools for the current settings, or null when tools are off. */
     fun toolboxFor(config: AppConfig): ToolBox? {
         if (!config.toolsEnabled) return null
-        val folders = config.toolFolders.split(';').map { it.trim() }.filter { it.isNotEmpty() }.map { AppContext.expandHome(it) }
         val vault = app.openVault().getOrNull()
+        val settings = com.arcana.brain.core.ToolSettings.of(config, ConfigStore.defaultPath().resolveSibling("backups"), app.skillsFolder(config), semantic.notesSearched(config))
         return ToolBox(
-            vault, folders,
-            backups = ConfigStore.defaultPath().resolveSibling("backups"),
-            outputFolder = config.outputFolder,
-            project = projectFolder(config),
-            model = config.model,
-            readOnly = config.toolMode == "plan",
-            shell = config.toolShell,
-            web = config.toolWeb,
-            searchBackend = config.searchBackend, searchUrl = config.searchUrl, searchKey = config.searchKey, ollamaKey = config.ollamaKey,
-            skillsFolder = if (config.skillsEnabled) app.skillsFolder(config) else "",
-            semantic = semanticIndexFor(config, vault)?.let { SemanticSearch(it) },
-            searchTuning = SearchTuning.of(config),
-            notesSearch = notesSearched(config),
-            searchMode = RetrievalMode.of(config.searchBy),
-            origin = run, provenance = vault?.let { provenanceFor(it) },
-            projectSearch = projectRoots(config).takeIf { it.isNotEmpty() }?.let { roots ->
-                ProjectSearch(roots, { source -> projectIndexFor(config, source) }, SearchTuning.of(config), config.searchMaxFileKb.coerceIn(10, 5000) * 1000L, vaultRoot = vault?.root?.toAbsolutePath()?.normalize())
+            vault, settings,
+            semantic = semantic.semanticIndexFor(config, vault)?.let { SemanticSearch(it) },
+            projectSearch = semantic.projectRoots(config).takeIf { it.isNotEmpty() }?.let { roots ->
+                ProjectSearch(roots, { source -> semantic.projectIndexFor(config, source) }, SearchTuning.of(config), config.searchMaxFileKb.coerceIn(10, 5000) * 1000L, vaultRoot = vault?.root?.toAbsolutePath()?.normalize())
             },
+            origin = run, provenance = vault?.let { provenanceFor(it) },
         )
     }
 
-    // ---- semantic search (docs/semantic-search.md)
+    /** Semantic search: the indexes, `/reindex` and the embedding model's download (proposal 0007, phase 7). */
+    val semantic = SemanticService(app, { pending -> awaitApproval(pending) }, { config -> projectFolder(config) })
 
-    /** The text of a running `/reindex` ("Indexing 120 notes… 40/120"), null when none runs: shown under the conversation. */
-    var indexing by mutableStateOf<String?>(null)
-        private set
-
-    private var semanticIndex: Triple<String, String, EmbeddingIndex>? = null
-
-    /**
-     * The folders `search_files` looks in: the working folder (Settings → Tools) and the folders of Settings → Search → Search in, each only when it exists and lies inside a folder the tools may
-     * use (the vault, the working folder or the allowed folders): the search must never reach a place the model could not read.
-     */
-    fun projectRoots(config: AppConfig): List<java.nio.file.Path> {
-        val scope = SearchScope.of(config.searchIn)
-        val allowed = listOfNotNull(app.openVault().getOrNull()?.root, projectFolder(config)) + config.toolFolders.split(';').map { it.trim() }.filter { it.isNotEmpty() }.map { AppContext.expandHome(it) }
-        val allowedNormal = allowed.map { it.toAbsolutePath().normalize() }
-        val listed = scope.folders.map { AppContext.expandHome(it).toAbsolutePath().normalize() }
-        return (listOfNotNull(projectFolder(config)?.toAbsolutePath()?.normalize().takeIf { scope.working }) + listed)
-            .filter { dir -> java.nio.file.Files.isDirectory(dir) && allowedNormal.any { dir.startsWith(it) } }
-            .distinct()
-    }
-
-    /** The notes of the vault are searched: `vault` is in Settings → Search → Search in. */
-    fun notesSearched(config: AppConfig): Boolean = SearchScope.of(config.searchIn).notes
-
-    private val projectIndexes = java.util.concurrent.ConcurrentHashMap<String, EmbeddingIndex>()
-
-    /** The meaning index of a project folder, or null when no embedding model is set up and installed (then only words are used). One per folder, model and size limit; its file is apart from the vault's. */
-    fun projectIndexFor(config: AppConfig, source: PassageSource): EmbeddingIndex? {
-        val model = config.embedModel.trim().ifEmpty { return null }
-        val installed = when (val c = app.connection) { is Connection.Online -> c.models; is Connection.ModelMissing -> c.models; else -> return null }
-        val name = installed.firstOrNull { ModelStatus.sameModel(it, model) } ?: return null
-        return projectIndexes.getOrPut(source.key + "\n" + name) {
-            EmbeddingIndex(EmbeddingIndex.fileFor(source, name), source, name, embedder = Embedder { texts -> app.client.embedBlocking(name, texts) })
-        }
-    }
-
-    /** The semantic search is on: an embedding model is set and installed on the server (what [semanticIndexFor] needs besides a vault). */
-    fun semanticOn(config: AppConfig = app.config): Boolean {
-        val model = config.embedModel.trim().ifEmpty { return false }
-        val installed = when (val c = app.connection) { is Connection.Online -> c.models; is Connection.ModelMissing -> c.models; else -> return false }
-        return installed.any { ModelStatus.sameModel(it, model) }
-    }
+    /** A web result is in the turn under way (see [WebTaint]), and the hosts it came from: a later fetch to one of them without a query is not a new place. */
+    internal var webInTurn = false
+    internal val webHosts = HashSet<String>()
 
     /**
-     * Makes sure the embedding model for `semantic_search` is installed and chosen, for the first call of the tool: when it is not, **asks the user once** (a dialog "Download a model?"
-     * with the model, its size and where it comes from), downloads it through Ollama's `/api/pull` with progress under the conversation, and selects it in the settings. The first search
-     * then builds the index by itself. Returns null when it is ready, else the reason, as the tool's error: the user said no, Ollama could not be reached, the download failed.
+     * How the chat answers each of [com.arcana.brain.core.ChatTools.names]: the call and the text of the reply that made it in, the result for the model.
+     * Internal so a test can check that every chat tool has a handler.
      */
-    private suspend fun ensureSemanticModel(): String? {
-        if (semanticOn()) return null
-        val model = app.config.embedModel.trim().ifEmpty { SemanticSetup.RECOMMENDED }
-        val have = try { app.client.listModels().any { ModelStatus.sameModel(it, model) } } catch (e: kotlin.coroutines.cancellation.CancellationException) { throw e } catch (e: Exception) {
-            return "semantic search could not be set up: ${e.message}. Use search_notes or grep_files instead."
-        }
-        if (!have) {
-            val choice = awaitApproval(Approval(
-                "pull", "ollama pull $model",
-                listOf(
-                    "The model wants to search your notes by meaning (semantic_search), which needs an embedding model, and none is installed.",
-                    "Download $model (${if (model == SemanticSetup.RECOMMENDED) SemanticSetup.APPROX_SIZE else "size depends on the model"}) into Ollama at ${app.config.ollamaUrl}? Only the model file is downloaded, from the Ollama library; your notes stay on this machine.",
-                    "Esc stops the download; Ollama keeps what it fetched. This is asked once.",
-                ),
-                heading = "Download a model?", icon = "⇩", yes = "Download", always = false,
-            ))
-            if (choice == ApprovalChoice.Deny) return "the user declined to download the embedding model $model. Use search_notes or grep_files instead."
-        }
-        return installEmbeddingModel(model) {}?.let { "$it Use search_notes or grep_files instead." }
-    }
-
-    /**
-     * Downloads [model] through Ollama's `/api/pull` when it is not installed (progress to [onProgress] and under the conversation), selects it as the semantic search model in the
-     * settings and reads the server's model list again. Returns null when it is ready, else why not (Ollama cannot be reached, the download failed, the model is not there afterwards).
-     * It asks nothing: the callers are a dialog (the model called `semantic_search`) and the Settings row the user chose on purpose (Settings → Search → Embedding model (for meaning)).
-     */
-    suspend fun installEmbeddingModel(model: String, onProgress: (String) -> Unit): String? {
-        try {
-            val have = app.client.listModels().any { ModelStatus.sameModel(it, model) }
-            if (!have) {
-                indexing = "Downloading $model…"
-                try {
-                    var shown = 0L
-                    app.client.pull(model).collect { p ->
-                        val now = System.currentTimeMillis()
-                        if (now - shown > 150 || p.done) { shown = now; SemanticSetup.progressText(model, p).let { indexing = it; onProgress(it) } }
-                    }
-                } finally {
-                    indexing = null
-                }
-            }
-            app.update(app.config.copy(embedModel = model))
-            app.refreshConnection()
-            return if (semanticOn()) null else "the embedding model $model is not available on the Ollama server after the download."
-        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return "semantic search could not be set up: ${e.message}."
-        }
-    }
-
-    /**
-     * The semantic index of [vault] for the embedding model of [config], when one is set and installed on the Ollama server; null otherwise (then the
-     * `semantic_search` tool is not offered). One index object per vault and model is kept, so it is not read from disk for every message.
-     */
-    fun semanticIndexFor(config: AppConfig, vault: Vault?): EmbeddingIndex? {
-        val model = config.embedModel.trim()
-        if (vault == null || model.isEmpty()) return null
-        val installed = when (val c = app.connection) { is Connection.Online -> c.models; is Connection.ModelMissing -> c.models; else -> return null }
-        val name = installed.firstOrNull { ModelStatus.sameModel(it, model) } ?: return null
-        semanticIndex?.let { (root, m, index) -> if (root == vault.root.toString() && m == name) return index }
-        val index = EmbeddingIndex(EmbeddingIndex.fileFor(vault, name), vault, name, embedder = Embedder { texts -> app.client.embedBlocking(name, texts) })
-        semanticIndex = Triple(vault.root.toString(), name, index)
-        return index
-    }
-
-    /**
-     * `/reindex`: builds or refreshes the semantic index off the UI thread, with progress in [indexing]. [done] gets the closing text (a count and the
-     * time) and whether it failed; what was finished before a failure is kept.
-     */
-    fun reindex(done: (String, Boolean) -> Unit) {
-        if (indexing != null) return done("Already indexing.", true)
-        val config = app.config
-        if (config.embedModel.isBlank()) return done("No embedding model is set: choose one in Settings → Search → Embedding model (for meaning) (for example: ollama pull nomic-embed-text).", true)
-        val vault = app.openVault().getOrNull() ?: return done("Open a vault first (Settings → Vault).", true)
-        val index = semanticIndexFor(config, vault)
-            ?: return done("${config.embedModel} is not installed on the Ollama server, or Ollama cannot be reached. Run: ollama pull ${config.embedModel}", true)
-        indexing = "Indexing notes…"
-        app.scope.launch(Dispatchers.IO) {
-            try {
-                val r = index.refresh { d, t -> indexing = if (t == 0) "Indexing: nothing to do…" else "Indexing $t notes… $d/$t" }
-                // the project folders too (a folder of code is only embedded by a search when it is small): each has its own index
-                val projects = projectRoots(config).mapNotNull { root ->
-                    val source = FolderSource(root, config.searchMaxFileKb.coerceIn(10, 5000) * 1000L, vaultRoot = vault.root.toAbsolutePath().normalize())
-                    projectIndexFor(config, source)?.let { idx ->
-                        val pr = idx.refresh { d, t -> indexing = if (t == 0) "Indexing ${root.fileName}: nothing to do…" else "Indexing ${root.fileName}… $d/$t files" }
-                        "${root.fileName}: ${pr.notes} files, ${pr.chunks} passages"
-                    }
-                }
-                done("Semantic index ready: ${r.notes} notes, ${r.chunks} passages (${r.embeddedNotes} embedded, ${r.removedNotes} dropped) in ${"%.1f".format(java.util.Locale.ROOT, r.millis / 1000.0)} s." + projects.joinToString("") { "; $it" }, false)
-            } catch (e: Exception) {
-                done("Indexing stopped: ${e.message}. What was finished is kept; run /reindex to go on.", true)
-            } finally {
-                indexing = null
-            }
-        }
-    }
-
-    /** Runs the tools the model asked for (asking the user first when needed) and returns the messages to continue with. */
-    private suspend fun runTools(text: String, calls: List<ToolCall>, stats: ReplyStats?): List<ChatMessage> {
-        val added = ArrayList<ChatMessage>()
-        val request = ChatMessage.assistantCalls(text, calls, stats, gen.takeThinking())
-        add(request)
-        added += request
-        var loopStep = LoopGuard.Step.None
-        for (call in calls) {
-            // the first semantic_search without an embedding model: set it up now (the user is asked once), then the call goes on with a toolbox that has the index
-            if ((call.name == "semantic_search" || (call.name == "search_vault" && (call.arguments["mode"] as? kotlinx.serialization.json.JsonPrimitive)?.content.equals("meaning", ignoreCase = true))) && toolbox != null && !semanticOn()) {
-                val problem = ensureSemanticModel()
-                if (problem != null) {
-                    val message = ChatMessage.toolResult(call.name, "Error: $problem")
-                    add(message)
-                    added += message
-                    continue
-                }
-                toolbox = toolboxFor(app.config)
-            }
-            // read again for every call: an earlier call of this round may have switched the mode, which rebuilds the toolbox
-            val box = toolbox
-            if (call.name == ASK_USER || call.name == REQUEST_ACCESS || call.name == REQUEST_MODE || call.name == CHAT_STATS || call.name == CHAT_STATS_JSON || call.name == TODO || call.name == CONSULT || box == null) {
-                val message = ChatMessage.toolResult(call.name, when {
-                    call.name == ASK_USER -> askUser(call, text)
-                    call.name == REQUEST_ACCESS -> requestAccess(call)
-                    call.name == REQUEST_MODE -> requestMode(call)
-                    call.name == CONSULT -> consult(call)
-                    call.name == TODO -> Todos.describe(Todos.parse((call.arguments["items"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()))
-                    call.name == CHAT_STATS -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList())
-                    call.name == CHAT_STATS_JSON -> ChatStats.describeJson(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList())
-                    else -> "Error: tools are off. Call request_access to ask the user for them."
-                })
-                add(message)
-                added += message
-                skillRun?.let { it.observe(call.name, call.arguments.toString(), message.content); skillTick++ }
-                continue
-            }
-            val spec = box.find(call.name)
-            // the same read, search or page asked for again in this turn, with nothing changed since: answer it from what the turn already has (no run, no dialog)
-            val callKey = call.name + " " + call.arguments
-            if (spec != null && spec.name !in NEVER_REMEMBERED) loopCalls.note(callKey).let { if (it > loopStep) loopStep = it }
-            val earlier = if (spec != null && repeatable(spec)) turnCalls[callKey]?.takeIf { System.currentTimeMillis() - it.first < app.config.repeatMemorySeconds * 1000L }?.second else null
-            if (earlier != null) {
-                val message = ChatMessage.toolResult(call.name, "You already made this exact call earlier in this turn and nothing has changed since, so the result is the same as the one above in this conversation (it began: $earlier). Use that result instead of asking again; if you need something different, change the arguments.")
-                add(message)
-                added += message
-                skillRun?.let { it.observe(call.name, call.arguments.toString(), message.content); skillTick++ }
-                continue
-            }
-            // a folder that is not allowed yet: ask the user, and when they agree remember it for good
-            val grant = box.folderToGrant(call)
-            var folderDenied = false
-            if (grant != null) {
-                val pending = Approval(
-                    "folder", "Allow Arcana to use this folder?",
-                    listOf("${grant}", "The model may read, and (with your approval each time) change, files inside it.", "You can remove it later in Settings → Tools → Allowed folders."),
-                    heading = "Allow this folder?", icon = "▤",
-                )
-                val choice = awaitApproval(pending)
-                if (choice == ApprovalChoice.Deny) {
-                    folderDenied = true
-                } else {
-                    box.allow(grant)
-                    val kept = app.config.toolFolders.split(';').map { it.trim() }.filter { it.isNotEmpty() }
-                    if (grant.toString() !in kept) app.update(app.config.copy(toolFolders = (kept + grant.toString()).joinToString(";")))
-                }
-            }
-            // a shell command: never run what is blocked, and when shell commands are off, ask for them here and now
-            val command = if (spec?.risk == ToolRisk.Shell) (call.arguments["command"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim() else ""
-            var refusal: String? = null
-            if (spec?.risk == ToolRisk.Shell) {
-                val blocked = ShellPolicy.blockedReason(command)
-                if (blocked != null) refusal = "Error: Arcana never runs this kind of command: $blocked."
-                else if (!app.config.toolShell && !folderDenied) {
-                    val pending = Approval(
-                        "shell-on", command,
-                        listOf("The model wants to run shell commands (builds, tests, git…).", "You still approve every single command before it runs.", "Turn it off again in Settings → Tools → Shell commands."),
-                        heading = "Turn on shell commands?", icon = "$", yes = "Turn on", always = false,
-                    )
-                    val choice = awaitApproval(pending)
-                    if (choice == ApprovalChoice.Deny) refusal = "The user did not allow shell commands. Do not ask again; tell them they can turn them on in Settings → Tools → Shell commands."
-                    else app.update(app.config.copy(toolShell = true))
-                }
-            }
-            // a web address: refuse the private ones before asking anything, and when web access is off ask for it here and now
-            val address = if (spec?.risk == ToolRisk.Web) (call.arguments[if (call.name == "web_search") "query" else "url"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim() else ""
-            if (spec?.risk == ToolRisk.Web && refusal == null) {
-                val blocked = if (call.name == "web_search") null else WebPolicy.refusal(address)
-                if (blocked != null) refusal = "Error: $blocked"
-                else if (!app.config.toolWeb && !folderDenied) {
-                    val pending = Approval(
-                        "web-on", address.chunked(76).first(),
-                        listOf("The model wants to search the web and read web pages.", "You approve every search and address before it is sent; only public pages are reachable.", "Turn it off again in Settings → Tools → Web pages."),
-                        heading = "Turn on web pages?", icon = "↗", yes = "Turn on", always = false,
-                    )
-                    val choice = awaitApproval(pending)
-                    if (choice == ApprovalChoice.Deny) refusal = "The user did not allow web access. Do not ask again; tell them they can turn it on in Settings → Tools → Web pages."
-                    else app.update(app.config.copy(toolWeb = true))
-                }
-            }
-            val ask = spec != null && refusal == null && call.name !in alwaysAllowed && when (spec.risk) {
-                ToolRisk.Write -> spec.alwaysAsk || app.config.toolMode != "auto" // deleting and moving ask even in Auto mode
-                ToolRisk.Read -> !app.config.toolAutoRead
-                ToolRisk.Shell -> !app.config.toolAutoShell && !(app.config.toolAutoRead && ShellPolicy.isSafe(command)) // never "always": each command is looked at, unless auto-run is on
-                ToolRisk.Web -> !(call.name in AUTO_WEB && app.config.toolAutoSearch) // never "always": the address itself can carry data out; only a search or a page read can be let through (Settings → Tools → Search and fetch without asking); http_request always asks
-            }
-            var allowed = !folderDenied && refusal == null
-            if (ask && allowed) {
-                val shell = spec!!.risk == ToolRisk.Shell
-                val pending = if (shell) Approval(call.name, "run_command", spec.preview(call.arguments), heading = "Run this command?", icon = "$", yes = "Run", always = false)
-                else if (spec.risk == ToolRisk.Web) Approval(call.name, call.name, spec.preview(call.arguments), heading = webHeading(call.name), icon = "↗", yes = if (call.name == "web_search") "Search" else if (call.name == "http_request") "Send" else "Fetch", always = false)
-                else Approval(
-                    call.name, "${call.name}  ${spec.summary(call.arguments)}", spec.preview(call.arguments),
-                    heading = spec.confirmHeading ?: "Allow this change?", icon = if (spec.alwaysAsk) "!" else "⚙", always = !spec.alwaysAsk,
-                )
-                val choice = awaitApproval(pending)
-                if (choice == ApprovalChoice.Always) alwaysAllowed += call.name
-                allowed = choice != ApprovalChoice.Deny
-            }
-            val startedAt = System.currentTimeMillis()
-            val result = when {
-                allowed -> runInterruptible(Dispatchers.IO) { box.execute(call) }
-                refusal != null -> refusal
-                else -> "The user denied this action. Do not try it again; ask what they want instead."
-            }
-            // remember a read for the rest of the turn; anything that changes or runs something makes an older read untrustworthy
-            if (allowed && spec != null) {
-                // a change, a command or a pause (time passes, a rate limit resets) makes older reads untrustworthy; a failed result is never remembered, so a retry really runs
-                if (!repeatable(spec) || spec.name in CLEARS_MEMORY) {
-                    turnCalls.clear()
-                    // a change or a command that worked makes an older call new again; one that failed changed nothing, so asking it again is still a repeat
-                    if (!Oracul.isFailure(ChatMessage.toolResult(call.name, result))) loopCalls.forget()
-                }
-                if (repeatable(spec) && !FAILURE_LOOK.containsMatchIn(result.take(300))) turnCalls[callKey] = System.currentTimeMillis() to result.take(160).replace('\n', ' ')
-            }
-            if (allowed && spec != null && !result.startsWith("Error:")) {
-                Artifacts.of(call.name, { (call.arguments[it] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty() }, result, System.currentTimeMillis())?.let { artifacts += it; app.recordEvent(Events.ARTIFACT, it.action) }
-                if (spec.risk != ToolRisk.Read) app.brain.changed()
-            }
-            // what each tool costs: time, outcome and how much text it put into the context (shown on the Usage screen's Tools page)
-            if (spec != null) app.recordToolUse(ToolUseRecord(startedAt, call.name, System.currentTimeMillis() - startedAt, if (!allowed) "denied" else if (result.startsWith("Error:")) "error" else "ok", result.length))
-            val message = ChatMessage.toolResult(call.name, result)
-            add(message)
-            added += message
-            noteToolUse(call, result)
-            if (call.name == "remember") when {
-                result.startsWith("Already remembered") -> app.recordEvent(Events.MEMORY, "duplicate")
-                result.startsWith("Error:") && "dead path" in result -> app.recordEvent(Events.MEMORY, "refused")
-            }
-            // the skill run: a skill the model loaded itself starts it; every call and result is ticked off against the required steps
-            if (call.name == "use_skill" && !result.startsWith("Error:")) {
-                val skill = Skills.find(box.skills, (call.arguments["name"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty())
-                val vault = app.openVault().getOrNull()
-                if (skill != null && vault != null && skillRun?.name != skill.name) startSkillRun(skill.name, Skills.requirementsOf(vault, skill.path))
-                if (skill != null && runWorker == null && runReviewer == null) applyRoles(skill.path) // a plan is only written at the start of a message, not here
-            }
-            skillRun?.let { it.observe(call.name, call.arguments.toString(), result); skillTick++ }
-        }
-        // the same calls again and again: a warning first, then the tools are taken away so the model has to answer (out of sight, like Generation's own nudges)
-        if (loopStep != LoopGuard.Step.None) {
-            val warn = loopStep == LoopGuard.Step.Warn
-            app.recordEvent(Events.LOOP, if (warn) "calls" else "halt")
-            added += ChatMessage.user(if (warn) LoopGuard.CALLS_NUDGE else LoopGuard.HALT_NUDGE)
-        }
-        // the turn keeps failing: the Oracul reads the attempts and its advice joins the loop, so the next round starts from it
-        stuckAdvice()?.let { add(it); added += it }
-        // what you typed while it worked joins the turn now, so the next round already knows
-        if (queued.isNotEmpty()) {
-            val text = takeQueued()
-            val message = ChatMessage.user(text)
-            add(message)
-            added += message
-        }
-        return added
-    }
-
-    /**
-     * The first time Chat opens with a vault that has no ARCANA.md: create it (with rules for using tools) and offer to open it to fill in.
-     * A note that already exists is left alone, and a file the user deletes later is not created again (it comes back with /memory).
-     */
-    fun offerMemory() {
-        val config = app.config
-        if (!config.memoryEnabled || config.memoryOffered || approval != null) return
-        val vault = app.openVault().getOrNull() ?: return
-        val existed = java.nio.file.Files.exists(vault.memoryFile())
-        app.update(config.copy(memoryOffered = true))
-        if (existed) return
-        val file = runCatching { vault.ensureMemory() }.getOrNull() ?: return
-        app.scope.launch {
-            val pending = Approval(
-                "memory", "${vault.memoryName()} was created${if (file.startsWith(vault.root)) " in your vault" else " at ${file.toString().replace(System.getProperty("user.home"), "~")}"}",
-                listOf(
-                    "It is read in every chat and already holds rules that make the assistant use its tools.",
-                    "Add who you are, where your projects are, how you like answers. /memory opens it any time.",
-                ),
-                heading = "Memory file created", icon = "✎", yes = "Open it to fill in", always = false,
-            )
-            val choice = awaitApproval(pending)
-            if (choice != ApprovalChoice.Deny) SystemOpen.open(file.toString())
-        }
-    }
-
-    /** The model found tools off (or plan mode on) and asked for what it needs: ask the user on the spot, and apply the answer at once. */
-    private suspend fun requestAccess(call: ToolCall): String {
-        val reason = (call.arguments["reason"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().ifBlank { "Work with your notes and files." }
-        if (!offerTools(reason)) return "The user did not allow it. Do not ask again; tell them they can turn tools on with /tools (or change the mode with /mode) and ask again."
-        val box = toolbox
-        gen.useTools(box?.definitions())
-        return "Done: tools are now on (${app.config.toolMode} mode). Carry on with the user's request using the tools. ${box?.describe().orEmpty()}"
-    }
-
-    /** What the model is offered when it has a toolbox: the tools, a way to ask for another mode, and (in plan mode) a way to ask to leave it. */
-    private fun definitionsFor(box: ToolBox): JsonArray =
-        JsonArray(box.definitions() + REQUEST_MODE_DEFINITION + CHAT_STATS_DEFINITION + CHAT_STATS_JSON_DEFINITION + TODO_DEFINITION + (if (app.config.flowTools && app.config.oraculEnabled) listOf(CONSULT_DEFINITION) else emptyList()) + (if (app.config.toolMode == "plan") listOf(REQUEST_ACCESS_DEFINITION) else emptyList()))
-
-    /** The model asks to switch the tool mode: the user always decides; when they agree the mode, the toolbox and the model's tools change at once. */
-    private suspend fun requestMode(call: ToolCall): String {
-        val mode = (call.arguments["mode"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().trim().lowercase()
-        val reason = (call.arguments["reason"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().ifBlank { "No reason given." }
-        if (mode !in TOOL_MODES) return "Error: mode must be one of ${TOOL_MODES.joinToString()}, not \"$mode\"."
-        if (mode == app.config.toolMode) return "Already in $mode mode; nothing to change."
-        val pending = Approval(
-            "mode", reason,
-            listOf(when (mode) {
-                "auto" -> "Auto: changes run at once, without asking; replaced files are backed up. Deleting and moving still ask."
-                "plan" -> "Plan: read-only. The model investigates and writes a plan; nothing is changed."
-                else -> "Ask: every change waits for your y / n."
-            }, "Now: ${app.config.toolMode}. Switch back any time with /mode."),
-            heading = "Switch to ${mode.replaceFirstChar { it.uppercase() }} mode?", icon = "⚙", yes = "Switch to ${mode.replaceFirstChar { it.uppercase() }}", always = false,
-        )
-        val choice = awaitApproval(pending)
-        if (choice == ApprovalChoice.Deny) return "The user did not allow the switch; you stay in ${app.config.toolMode} mode. Do not ask again; carry on in this mode or tell them what you need."
-        app.update(app.config.copy(toolMode = mode))
-        val box = toolboxFor(app.config).also { toolbox = it }
-        gen.useTools(box?.let { definitionsFor(it) })
-        return "Done: now in $mode mode. ${box?.describe().orEmpty()}"
-    }
-
-    /** Asks to turn tools on (or to leave plan mode); when the user agrees the settings change at once and [toolbox] is rebuilt. */
-    private suspend fun offerTools(reason: String): Boolean {
-        val off = !app.config.toolsEnabled
-        val pending = if (off) Approval(
-            "access", reason,
-            listOf("Searching and reading run at once; every change asks you first (Ask mode).", "Only your vault and the folders in Settings → Tools are reachable.", "Turn tools off again any time with /tools; switch mode with /mode."),
-            heading = "Turn on tools?", icon = "⚙", yes = "Turn on", always = false,
-        ) else Approval(
-            "access", reason,
-            listOf("Plan mode is read-only, so the model cannot make this change.", "Ask mode lets it try, and you approve every change before it happens.", "Switch back any time with /mode."),
-            heading = "Leave plan mode?", icon = "⚙", yes = "Switch to Ask mode", always = false,
-        )
-        val choice = awaitApproval(pending)
-        if (choice == ApprovalChoice.Deny) return false
-        app.update(app.config.copy(toolsEnabled = true, toolMode = if (app.config.toolMode == "plan") "ask" else app.config.toolMode))
-        toolbox = toolboxFor(app.config)
-        return true
-    }
-
-    /** "Ask" mode for a call the model only wrote out as text: show it and let the user decide whether it runs. */
-    private suspend fun confirmTextCalls(calls: List<ToolCall>): Boolean {
-        val lines = calls.take(3).map { call -> "${call.name}  " + call.arguments.entries.joinToString(", ") { (k, v) -> "$k=${(v as? kotlinx.serialization.json.JsonPrimitive)?.content ?: v}" }.take(90) }
-        val pending = Approval(
-            "textcall", "The model wrote ${if (calls.size == 1) "a tool call" else "${calls.size} tool calls"} as text",
-            lines + listOf("It did not make a real call, so nothing has run. Run it as one?", "Change this in Settings → Tools → Calls written as text."),
-            heading = "Run this tool call?", icon = "⚙", yes = "Run it", always = false,
-        )
-        val choice = awaitApproval(pending)
-        return choice != ApprovalChoice.Deny
-    }
-
-    /** The step limit was reached while the model still wanted tools: let the user decide whether it may go on. */
-    private suspend fun stepLimit(used: Int): Int {
-        when (app.config.stepLimit) {
-            "stop" -> return 0
-            // more steps at once, a few times; each call inside them keeps its own approval (a change, a command and a web address ask as usual)
-            "auto" -> if (used < app.config.toolSteps * (1 + STEP_LIMIT_AUTO_ROUNDS)) {
-                return app.config.toolSteps
-            }
-        }
-        val pending = Approval(
-            "steps", "The model has used $used steps and wants to continue.",
-            listOf("Allow ${app.config.toolSteps} more steps, or stop here and let it answer with what it has.", "Change the default in Settings → Tools → Steps per question."),
-            heading = "Step limit reached", icon = "⏱", yes = "${app.config.toolSteps} more steps", always = false,
-        )
-        val choice = awaitApproval(pending)
-        return if (choice == ApprovalChoice.Deny) 0 else app.config.toolSteps
-    }
-
-    init {
-        if (app.config.keepChats) store.latest()?.let { open(it) }
-    }
+    internal val chatToolHandlers: Map<String, suspend (ToolCall, String) -> String> = mapOf(
+        ASK_USER to { call, text -> askUser(call, text) },
+        com.arcana.brain.core.TURN_ON_TOOLS to { call, _ -> turnOnTools(call) },
+        REQUEST_ACCESS to { call, _ -> requestAccess(call) },
+        REQUEST_MODE to { call, _ -> requestMode(call) },
+        CONSULT to { call, _ -> consult(call) },
+        TODO to { call, _ -> Todos.describe(Todos.parse((call.arguments["items"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty())) },
+        CHAT_STATS to { _, _ -> ChatStats.describe(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList(), compactionState()) },
+        CHAT_STATS_JSON to { _, _ -> ChatStats.describeJson(messages.toList(), app.config.model, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext), app.config.estPriceIn, app.config.estPriceOut, System.currentTimeMillis() - app.sessionStart, Oracul.setupLine(app.config), app.usage.filter { it.time >= app.sessionStart }, app.usage.toList(), compactionState()) },
+    )
 
     val title: String get() = ChatStore.titleOf(messages)
 
@@ -1219,7 +468,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     val todos: List<TodoItem> get() = Todos.last(messages)
 
     fun add(message: ChatMessage) {
-        messages += message
+        // a reply keeps the name of the model that wrote it (the chat model now, unless it was stamped already: a takeover names the Oracul)
+        messages += if (message.role == "assistant" && message.model.isEmpty()) message.copy(model = app.config.model) else message
         persist()
     }
 
@@ -1249,7 +499,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     /** The notes attached to the message being written that are longer than [MAX_NOTE_CHARS] and have not been decided on yet in this chat: path and length. */
-    private fun longNotes(): List<Pair<String, Int>> {
+    internal fun longNotes(): List<Pair<String, Int>> {
         val vault = app.openVault().getOrNull() ?: return emptyList()
         return attachments.peek().notes.filter { it !in wholeNotes && it !in cutAccepted && !Skills.isEntry(it) }.mapNotNull { path ->
             val length = runCatching { Vault.splitFrontmatter(vault.read(path)).second.length }.getOrDefault(0)
@@ -1257,7 +507,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }
     }
 
-    private fun sendNow(typed: String) {
+    internal fun sendNow(typed: String) {
         // a path to a picture in the text (pasted, or dropped into the terminal) is attached as the picture itself: a model cannot open a path
         val text = attachments.takePastedPictures(typed)
         val sent = attachments.drain()
@@ -1268,7 +518,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         // an automatic opinion on the previous answer, still being written, is out of date now: the user has moved on (and it must not keep the Oracul pill lit through the new turn)
         autoConsult?.cancel()
         // a level picked with /effort counts for this message only, and only when the model lists it (the model may have been changed since)
-        val level = thinkNext.takeIf { it in com.arcana.brain.app.screens.thinkOptions(app.thinkingValues) }.orEmpty()
+        val level = thinkNext.takeIf { it in thinkOptions(app.thinkingValues) }.orEmpty()
         thinkNext = ""
         add(ChatMessage.user(body, sent.pictures, sent.notes, sent.files).copy(think = level))
         // a job that clearly needs file tools, with tools off: offer them now instead of letting the model say it cannot
@@ -1280,13 +530,28 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         } else ask(body)
     }
 
-    private var toolsDeclined = false
+    /**
+     * Sends your last task again (`/model … --retry`, `r` in the `/model` list): the last message you wrote, with its notes, pictures and files, as a new message to
+     * the model now set. The earlier attempt stays in the chat, so the new model sees what was tried and what was already written. False when you wrote nothing yet.
+     */
+    fun retryLastTask(): Boolean {
+        val task = com.arcana.brain.core.ModelSwitch.lastTask(messages) ?: return false
+        autoConsult?.cancel()
+        // a level picked with /effort for the next message counts for this one, as for a message you type (when the new model lists it)
+        val level = thinkNext.takeIf { it in thinkOptions(app.thinkingValues) }.orEmpty()
+        thinkNext = ""
+        add(com.arcana.brain.core.ModelSwitch.again(task).copy(think = level))
+        ask(task.content)
+        return true
+    }
+
+    internal var toolsDeclined = false
 
     /** The model being consulted right now (a second opinion or a comparison is being written); null otherwise. */
-    private var consultingNow by mutableStateOf<String?>(null)
+    internal var consultingNow by mutableStateOf<String?>(null)
     var consulting: String?
         get() = consultingNow
-        private set(value) {
+        internal set(value) {
             if (value != consultingNow) consultingSince = System.currentTimeMillis()
             // a helper model at work keeps the logo animated, like a reply does (the count goes up once when the first one starts and down once when none is left)
             if (consultingNow == null && value != null) app.busy++ else if (consultingNow != null && value == null) { app.busy = (app.busy - 1).coerceAtLeast(0); app.scope.launch { app.refreshLoadedContext() } }
@@ -1296,336 +561,44 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
 
     /** When [consulting] last changed, so the reply line can count the Oracul's own seconds. */
     var consultingSince = 0L
-        private set
-
-    /**
-     * The Oracul's tools: the same toolbox as the worker's (so plan mode, the allowed folders, the shell and web switches all apply), or null when
-     * tools are off, the setting says no, or the Oracul model cannot call tools (then it only talks).
-     */
-    private suspend fun oraculToolbox(model: String): ToolBox? {
-        if (!app.config.toolsEnabled || !app.config.oraculTools) return null
-        if ("tools" !in runCatching { clientFor(model).capabilities(model) }.getOrDefault(emptyList())) return null
-        return toolboxFor(app.config)
-    }
-
-    /**
-     * The Oracul works with its tools: asks [model] with [request], runs the tool calls it makes and asks again, up to the step limit, then
-     * returns its final text and the tools it used. Reads follow *Read without asking*; **everything else always asks the user**, in Auto mode
-     * too, in a dialog marked as the Oracul's. It has no `ask_user`, no mode or access requests: it cannot ask for more power.
-     */
-    private suspend fun oraculAgent(model: String, box: ToolBox, request: List<ChatMessage>): Pair<String, List<String>> {
-        val client = clientFor(model)
-        val definitions = box.definitions()
-        val limit = if (app.config.toolSteps <= 0) 10 else app.config.toolSteps.coerceIn(1, 10)
-        val used = ArrayList<String>()
-        var messages = request
-        for (step in 0..limit) {
-            val text = StringBuilder()
-            val calls = ArrayList<ToolCall>()
-            // the last round offers no tools, so it has to answer with what it has
-            client.chat(messages, false, if (step < limit) definitions else null).collect { chunk ->
-                text.append(chunk.content)
-                calls += chunk.toolCalls
-                if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) app.recordUsage("Oracul", chunk, model)
-            }
-            if (calls.isEmpty()) return text.toString().trim() to used
-            messages = messages + ChatMessage.assistantCalls(text.toString().trim(), calls)
-            for (call in calls) {
-                // what it did is told twice: live in the reply line while the tool runs (see oraculCall), and in the closing "Checked with" line of its block, with the arguments
-                used += call.name + (box.find(call.name)?.summary(call.arguments)?.trim()?.takeIf { it.isNotEmpty() }?.let { " (" + it.replace(Regex("\\s+"), " ").take(70) + ")" } ?: "")
-                messages = messages + ChatMessage.toolResult(call.name, oraculCall(model, box, call))
-            }
-        }
-        return "" to used
-    }
-
-    private fun webHeading(tool: String) = when (tool) { "web_search" -> "Search the web?"; "http_request" -> "Send this HTTP request?"; else -> "Fetch this web page?" }
-
-    /** One tool call of the Oracul: asked about first unless it only reads, then run on the IO thread; recorded like the worker's calls. */
-    private suspend fun oraculCall(model: String, box: ToolBox, call: ToolCall): String {
-        val spec = box.find(call.name) ?: return "Error: there is no tool called ${call.name}. Available: ${box.specs.joinToString { it.name }}."
-        val ask = if (spec.risk == ToolRisk.Read) !app.config.toolAutoRead else true // changes, commands and web: always, whatever the mode
-        var allowed = true
-        if (ask) {
-            val heading = when (spec.risk) {
-                ToolRisk.Shell -> "Run this command?"
-                ToolRisk.Web -> webHeading(call.name)
-                else -> spec.confirmHeading ?: if (spec.risk == ToolRisk.Read) "Allow this read?" else "Allow this change?"
-            }
-            val pending = Approval(call.name, "$model (Oracul)  ${call.name}  ${spec.summary(call.arguments)}", spec.preview(call.arguments), heading = "${Oracul.GLYPH} Oracul · $heading", icon = Oracul.GLYPH, always = false)
-            allowed = awaitApproval(pending) != ApprovalChoice.Deny
-        }
-        val startedAt = System.currentTimeMillis()
-        // the reply line names the call while it runs: "Ψ model is using read_file …" (without this the Oracul's tools were invisible until its block was added)
-        val stage = consultingStage
-        if (allowed) consultingStage = "using ${call.name} ${spec.summary(call.arguments).replace(Regex("\\s+"), " ").take(60)}".trim()
-        val result = if (allowed) try { runInterruptible(Dispatchers.IO) { box.execute(call) } } finally { consultingStage = stage } else "The user denied this action. Do not try it again; say what you would have done instead."
-        app.recordToolUse(ToolUseRecord(startedAt, call.name, System.currentTimeMillis() - startedAt, if (!allowed) "denied" else if (result.startsWith("Error:")) "error" else "ok", result.length))
-        // the reader sees every call in the chat (what it was about, how it ended); no model is sent it: see OraculSteps
-        add(OraculSteps.message(model, call.name, spec.summary(call.arguments), when { !allowed -> OraculSteps.DENIED; Oracul.isFailureText(result) -> OraculSteps.ERROR; else -> OraculSteps.OK }, result))
-        if (allowed && !result.startsWith("Error:")) {
-            if (spec.risk != ToolRisk.Read) app.brain.changed()
-        }
-        return result
-    }
+        internal set
 
     /** How many times the Oracul has already stepped in during this turn because the worker kept failing (reset by the next message). */
-    private var stuckAdvised = 0
+    internal var stuckAdvised = 0
 
     /** The reads, searches and page fetches of the current turn, with the start of what each returned: an identical repeat is not run (or asked about) again. Cleared with every new question and by anything that changes or runs something. */
-    private val turnCalls = HashMap<String, Pair<Long, String>>()
+    internal val turnCalls = HashMap<String, Pair<Long, String>>()
 
     /** The loop guard's count of identical calls in this turn, a failed one too (see [LoopGuard.Calls]): a warning to the model, then the tools are taken away. Cleared with every new question. */
-    private val loopCalls = LoopGuard.Calls { app.config.loopCalls }
-
-    /** What may be answered from [turnCalls]: tools that only look (and the web reads, which would ask the user again for the same address). */
-    private fun repeatable(spec: com.arcana.brain.core.ToolSpec) = spec.name !in NEVER_REMEMBERED && (spec.risk == ToolRisk.Read || spec.name == "fetch_url" || spec.name == "web_search")
-
-    /**
-     * The worker is in its tool loop and keeps failing (every [AppConfig.stuckCalls] failed calls of this turn): the Oracul reads the attempts so far and
-     * says what is going wrong and what to do differently. Returns the advice as a review block for the loop to carry on from, or null when it is not
-     * due, the Oracul is off or busy, or it could not answer (a failure here must never break the worker's turn). Same settings as the other automatic
-     * second opinions (`oraculAuto` not `off`), same tools and the same asking.
-     */
-    private suspend fun stuckAdvice(): ChatMessage? {
-        val config = app.config
-        val model = Oracul.model(config)
-        if (model.isEmpty() || config.oraculAuto == "off" || consulting != null) return null
-        val level = Oracul.stuckLevel(Oracul.turnFacts(messages.toList(), 0), config)
-        if (level <= stuckAdvised) return null
-        stuckAdvised = level
-        consulting = model
-        try {
-            val turn = Oracul.lastTurn(messages.toList())
-            val question = turn.firstOrNull()?.content.orEmpty()
-            val box = oraculToolbox(model)
-            val (text, used) = if (box != null) oraculAgent(model, box, Oracul.stuckRequest(question, turn, withTools = true, background = oraculBackground()))
-            else Oracul.ask(clientFor(model), Oracul.stuckRequest(question, turn, background = oraculBackground())) { app.recordUsage("Oracul", it, model) } to emptyList()
-            return if (text.isEmpty()) null else Oracul.stuckMessage(model, text + Oracul.toolsLine(used))
-        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return null
-        } finally {
-            consulting = null
-        }
-    }
-
-    /** A client for [model] with the current settings, so another model can be asked without touching the main one. */
-    private fun clientFor(model: String) = OllamaClient { Oracul.serverConfig(app.config, model) }
-
-    /**
-     * A second opinion on the last answer from the Oracul model: it reads the question and the answer (and may check with the worker's tools, see [oraculAgent]) and says what is wrong or
-     * missing. The result is added to the chat as a block of its own; returns a line for the user. Throws with a message when it cannot.
-     */
-    suspend fun secondOpinion(reviewer: String? = null, stage: String? = null, source: String = "manual"): String {
-        val model = (reviewer ?: Oracul.model(app.config)).ifEmpty { error(Oracul.missingModelMessage(app.config)) }
-        val (question, answer) = Oracul.lastExchange(messages.toList()) ?: error("There is no answer to review yet.")
-        check(consulting == null) { "The Oracul is already working." }
-        consulting = model; consultingStage = stage
-        try {
-            val facts = Oracul.turnFacts(messages.toList(), skillRun?.skippedCount ?: 0)
-            val box = oraculToolbox(model)
-            val used: List<String>
-            val text = if (box != null) {
-                oraculAgent(model, box, Oracul.reviewRequest(question, answer, facts.toolNames, withTools = true, background = oraculBackground())).also { used = it.second }.first
-            } else {
-                used = emptyList()
-                Oracul.ask(clientFor(model), Oracul.reviewRequest(question, answer, facts.toolNames, background = oraculBackground())) { app.recordUsage("Oracul", it, model) }
-            }
-            require(text.isNotEmpty()) { "$model returned an empty opinion; nothing was added." }
-            add(Oracul.opinionMessage(model, text + Oracul.toolsLine(used)))
-            app.recordEvent(Events.OPINION, source, model)
-            return "Second opinion from $model added."
-        } finally {
-            consulting = null
-        }
-    }
-
-    /**
-     * The Oracul model (and the extra models of Settings → Helpers → *More Oracul models*) answer the same question as the worker did, and the
-     * judge model compares all the answers and says which is best (with a best final answer). One block is added to the chat with every answer
-     * and the verdict. An extra model that cannot answer is left out with a line saying so; the Oracul model itself must answer.
-     */
-    suspend fun compare(only: String? = null): String {
-        val models = (only?.let { listOf(it) } ?: Oracul.models(app.config)).ifEmpty { error(Oracul.missingModelMessage(app.config)) }
-        val judge = Oracul.judge(app.config)
-        val (question, answer) = Oracul.lastExchange(messages.toList()) ?: error("There is no answer to compare yet.")
-        check(consulting == null) { "The Oracul is already working." }
-        try {
-            val answers = ArrayList<Pair<String, String>>()
-            val skipped = ArrayList<String>()
-            for ((i, model) in models.withIndex()) {
-                consulting = model
-                try {
-                    val box = oraculToolbox(model)
-                    val usedTools: List<String>
-                    val other = if (box != null) {
-                        oraculAgent(model, box, Oracul.answerRequest(question, withTools = true, background = oraculBackground())).also { usedTools = it.second }.first
-                    } else {
-                        usedTools = emptyList()
-                        Oracul.ask(clientFor(model), Oracul.answerRequest(question, background = oraculBackground())) { app.recordUsage("Oracul", it, model) }
-                    }
-                    require(other.isNotEmpty()) { "$model returned an empty answer." }
-                    answers += model to other + Oracul.toolsLine(usedTools)
-                } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    if (i == 0) throw IllegalStateException("${e.message} Nothing was added.")
-                    skipped += "$model (${e.message})"
-                }
-            }
-            consulting = judge
-            val verdict = Oracul.ask(clientFor(judge), Oracul.judgeRequest(question, app.config.model, answer, answers, oraculBackground())) { app.recordUsage("Judge", it, judge) }
-            require(verdict.isNotEmpty()) { "$judge returned an empty verdict; nothing was added." }
-            add(Oracul.comparisonMessage(app.config.model, answers, judge, answer, verdict + if (skipped.isEmpty()) "" else "\n\n_Left out: ${skipped.joinToString("; ")}_"))
-            return "Comparison added: ${answers.joinToString(", ") { it.first }} against ${app.config.model}, judged by $judge." + if (skipped.isEmpty()) "" else " Left out: ${skipped.joinToString { it.substringBefore(" (") }}."
-        } finally {
-            consulting = null
-        }
-    }
-
-    /**
-     * Escalation: the worker failed this turn (an error, an empty reply), so the Oracul model continues it from the same history, with its own model
-     * and the worker's tools (every change still asks, see [oraculAgent]). Its answer is added as an ordinary reply headed with the model's name.
-     * Returns a line for the user; throws with a message when it cannot.
-     */
-    suspend fun takeOver(): String {
-        val model = Oracul.model(app.config).ifEmpty { error(Oracul.missingModelMessage(app.config)) }
-        check(consulting == null) { "The Oracul is already working." }
-        check(messages.lastOrNull { !it.displayOnly }?.role.let { it == "user" || it == "tool" }) { "There is no unanswered message to take over." }
-        consulting = model
-        try {
-            val config = app.config.copy(model = model)
-            val vault = app.openVault().getOrNull()
-            val history = Compaction.forModel(messages.toList())
-            val box = oraculToolbox(model)
-            val request = Prompts.chatMessages(config, history, null, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, toolsNote = box?.describe().orEmpty(), memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "", goal = goal.orEmpty())
-            val (text, used) = if (box != null) oraculAgent(model, box, request) else Oracul.ask(clientFor(model), request) { app.recordUsage("Oracul", it, model) } to emptyList()
-            require(text.isNotEmpty()) { "$model returned an empty answer; nothing was added." }
-            add(ChatMessage.assistant(Oracul.takeoverHeading(model) + text + Oracul.toolsLine(used)))
-            return "$model took over and answered."
-        } finally {
-            consulting = null
-        }
-    }
-
-    /** Applies the latest second opinion: the worker is asked to revise its last answer with it (the opinion is already in the history). */
-    fun revise(extra: String = "") {
-        check(Oracul.hasOpenOpinion(messages.toList())) { "There is no second opinion to apply: ask for one with /oracul first." }
-        send(Oracul.REVISE_PROMPT + if (extra.isBlank()) "" else "\nThe user adds: ${extra.trim()}")
-    }
-
-    /** After a finished reply: ask for a second opinion by itself when the settings say a turn like this deserves one. A failure is ignored. */
-    private fun maybeConsult() {
-        val config = app.config
-        // the flow: the reviewer (when it has a model), then the controller, whatever the automatic setting says
-        val flow = Flow.of(config)
-        if (flow != null && flowControl && consulting == null) {
-            autoConsult = app.scope.launch {
-                runReviewer?.let { runCatching { secondOpinion(it, stage = "reviewing the answer", source = "flow") } }
-                control(flow)
-            }
-            return
-        }
-        // a skill that names a reviewer asks for the review itself, whatever the automatic setting says
-        runReviewer?.let { reviewer -> if (consulting == null) autoConsult = app.scope.launch { runCatching { secondOpinion(reviewer, source = "auto") } }; return }
-        // the Oracul already stepped in during this turn because the worker kept failing: one consultation per turn is enough
-        if (stuckAdvised > 0) return
-        if (Oracul.model(config).isEmpty() || config.oraculAuto == "off" || consulting != null) return
-        if (!Oracul.due(config, Oracul.turnFacts(messages.toList(), skillRun?.skippedCount ?: 0))) return
-        // opt-in (Settings → Opinions → Judge automatically): a full comparison with a verdict instead of one opinion
-        autoConsult = if (config.oraculJudgeAuto) app.scope.launch { runCatching { compare() } } else app.scope.launch {
-            runCatching { secondOpinion(source = "auto") }.onSuccess { runCatching { verdictOnOpinion() } }
-        }
-    }
-
-    /** The recent conversation the Oracul, the judge and the planner are shown (Settings → Helpers → Chat context). */
-    private fun oraculBackground() = Oracul.background(messages.toList(), app.config.oraculContextMessages, app.config.oraculContextChars)
+    internal val loopCalls = LoopGuard.Calls { app.config.loopCalls }
 
     /** The automatic opinion or comparison that runs after a reply; a new message of the user cancels it. */
-    private var autoConsult: kotlinx.coroutines.Job? = null
+    internal var autoConsult: kotlinx.coroutines.Job? = null
 
     /** An Oracul run the user started (`/oracul`, `/compare`, `/takeover`); set by the screen that launches it. */
     var manualConsult: kotlinx.coroutines.Job? = null
 
-    /** Esc: stops whatever the Oracul or the judge is doing outside the worker's turn. True when something was running. */
-    fun cancelOracul(): Boolean {
-        if (consulting == null) return false
-        autoConsult?.cancel()
-        manualConsult?.cancel()
-        return true
-    }
-
     /** True while a summary is being written (compacting runs apart from replies). */
     var compacting by mutableStateOf(false)
-        private set
+        internal set
 
     /** When the running compaction began, and whether Arcana started it (before a message) rather than `/compact`. */
     var compactingSince = 0L
-        private set
+        internal set
     var compactingAuto = false
-        private set
 
-    /**
-     * Compacts the chat: the model summarizes everything before the user's last [Compaction.KEEP_USER_TURNS] turns, and the summary is
-     * inserted at that point. Nothing is removed from the chat; the model just stops being sent what is above the summary.
-     * Returns what to tell the user; throws with a message when it cannot be done (too short, empty summary, no model).
-     */
-    suspend fun compact(auto: Boolean = false): String {
-        check(!compacting) { "Already compacting." }
-        val all = messages.toList()
-        val cut = Compaction.cutPoint(all, keepTokens()) ?: error("Nothing to compact yet: your latest messages (and the latest tool rounds) stay as they are, and there must be a few messages before them.")
-        val part = Compaction.toSummarize(all, cut)
-        compactingSince = System.currentTimeMillis()
-        compactingAuto = auto
-        compacting = true
-        app.busy++
-        try {
-            val text = StringBuilder()
-            app.client.chat(listOf(ChatMessage.system(Compaction.INSTRUCTIONS), ChatMessage.user(Compaction.transcript(part)))).collect { chunk ->
-                text.append(chunk.content)
-                if (chunk.done && (chunk.promptTokens > 0 || chunk.completionTokens > 0)) app.recordUsage("Compact", chunk)
-            }
-            val summary = text.toString().trim()
-            require(summary.isNotEmpty()) { "The model returned an empty summary; nothing was changed." }
-            // the chat may have grown while the model wrote (the cut is counted from the start, so it is still the right place)
-            val at = cut.coerceAtMost(messages.size)
-            messages.add(at, Compaction.summaryMessage(summary))
-            // the last reply's token counts are from before this: the context meter estimates until the next reply says (see contextTokens)
-            messages[at] = messages[at].copy(contextAt = messages.size)
-            if (savedMessages >= at) savedMessages++
-            persist()
-            app.recordEvent(Events.COMPACT, if (auto) "auto" else "manual")
-            return "Compacted ${part.size} messages into a summary of about ${UsageStats.compact(((summary.length + 3) / 4).toLong())} tokens. The model now sees the summary and your latest messages; everything stays visible here."
-        } finally {
-            compacting = false
-            app.busy = (app.busy - 1).coerceAtLeast(0)
-        }
-    }
-
-    /** How many tokens of the latest turns stay word for word when the chat is compacted ([AppConfig.compactKeepPercent] of the window; 0 = the last two turns, also while the window is not known). */
-    private fun keepTokens(): Int {
-        val percent = app.config.compactKeepPercent.takeIf { it > 0 } ?: return 0
-        return effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext) * percent / 100
-    }
-
-    /** True when [all] fills the context window past the auto-compact threshold and has enough older messages to summarize. */
-    private fun autoCompactDue(all: List<ChatMessage>): Boolean {
-        val percent = app.config.autoCompactPercent
-        if (percent <= 0 || compacting || Compaction.cutPoint(all, keepTokens()) == null) return false
-        val usage = contextUsage(all, effectiveContext(app.config.contextTokens, app.modelContext, app.loadedContext)) ?: return false
-        return usage.first * 100 >= percent
-    }
+    /** While a long chat is summarized in pieces: `2 of 5`; blank otherwise. */
+    var compactingPart by mutableStateOf("")
+        internal set
 
     /** The run was cut off: the message before the one being answered is not a final answer of the model (it is a tool call or result, or your own message that got no reply). */
-    private fun runInterrupted(history: List<ChatMessage>): Boolean {
+    internal fun runInterrupted(history: List<ChatMessage>): Boolean {
         if (skillRun?.finished != false) return false
         val before = history.dropLast(1).lastOrNull() ?: return false
         return before.role != "assistant" || before.toolCalls.isNotEmpty()
     }
 
-    private fun ask(body: String) {
+    internal fun ask(body: String) {
         val history = messages.toList()
         // a new request is a new run (what it writes is recorded against it: Provenance); a cut-off run that this message only continues keeps its run
         val newChip = history.lastOrNull { it.role == "user" }?.noteNames?.any { Skills.isEntry(it) } == true
@@ -1642,6 +615,8 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         turnCalls.clear()
         turnTools.clear()
         turnReads.clear()
+        webInTurn = false
+        webHosts.clear()
         loopCalls.reset()
         // ...and a skill chip on it starts a run of that skill (its required steps are then watched)
         history.lastOrNull { it.role == "user" }?.noteNames?.firstOrNull { Skills.isEntry(it) }?.let { entry ->
@@ -1650,7 +625,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }
         val canRequest = modelCanUseTools && box == null
         val offered = when {
-            box == null -> if (canRequest) JsonArray(listOf(REQUEST_ACCESS_DEFINITION, ASK_USER_DEFINITION)) else null
+            box == null -> com.arcana.brain.core.ChatTools.withoutToolbox(canRequest)?.let { JsonArray(it) }
             else -> definitionsFor(box)
         }
         gen.start(tools = offered, maxSteps = Skills.stepsFor(history, app.config.toolStepLimit)) {
@@ -1682,16 +657,41 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
             if (autoCompactDue(messages.toList())) runCatching { compact(auto = true) }
             // built again after a compaction between tool rounds: a long run of tools fills the window too, not only a long chat
             suspend fun compose(): List<ChatMessage> {
-                val history = Compaction.forModel(messages.toList())
                 val config = app.config
                 val vault = app.openVault().getOrNull()
-                val found = if (config.chatUseVault && vault != null && notesSearched(config)) vaultHits(vault, body, config) else null
-                val hits = found?.hits
-                pendingBy = found?.let { it.label + if (it.leftOut > 0) " · ${it.leftOut} weak left out" else "" }.orEmpty()
-                pendingInfo = found?.info.orEmpty()
-                pendingSources = hits?.map { it.note.path }.orEmpty()
-                pendingCut = if (found?.passages == true) emptyList() else hits?.filter { it.missing > 0 }?.map { it.note.path }.orEmpty()
-                return Prompts.chatMessages(config, history, hits, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, toolsNote = box?.describe().orEmpty(), canRequestTools = canRequest, memory = if (config.memoryEnabled) vault?.memory().orEmpty() else "", goal = goal.orEmpty(), effortNote = if (runWorker == null) Prompts.effortNote(config.model, app.thinkingValues, app.thinkingDefault) else "").also { request -> promptEstimate = request.sumOf { it.content.length } / 4 }
+                val effortNote = if (runWorker == null) Prompts.effortNote(config.model, app.thinkingValues, app.thinkingDefault) else ""
+                val vaultAnswers = config.chatUseVault && vault != null && semantic.notesSearched(config)
+                val toolsNote = box?.describe().orEmpty()
+                val parts = Prompts.SystemParts(Prompts.dateLine(java.time.ZonedDateTime.now()), toolsNote, if (config.memoryEnabled) vault?.memory().orEmpty() else "", goal.orEmpty())
+                // the message this turn answers: frozen the first time it is sent (excerpts, attached notes, what changed), then sent the same way every round and every later turn
+                val at = messages.indexOfLast { it.role == "user" && !it.displayOnly }
+                val fresh = at >= 0 && messages[at].sent.isEmpty()
+                val key = listOf(config.systemPrompt, config.model, box != null, canRequest, effortNote, vaultAnswers).joinToString("\u0000")
+                val (system, changed) = systemFreeze.take(key, parts, commit = fresh) { p ->
+                    Prompts.systemPrompt(config, box != null, p.toolsNote, canRequest, p.memory, p.goal, effortNote, p.date, vaultAnswers)
+                }
+                if (fresh) {
+                    val last = messages[at]
+                    // Arcana's own follow-ups (redo, revise, a goal or todo nudge) are not questions: the excerpts of the question they follow are still in the chat
+                    val ownPrompt = Oracul.isArcanaPrompt(body)
+                    val found = if (vaultAnswers && !ownPrompt) vaultHits(vault!!, body, config) else null
+                    val hits = found?.hits
+                    pendingBy = found?.let { it.label + if (it.leftOut > 0) " · ${it.leftOut} weak left out" else "" }.orEmpty()
+                    pendingInfo = found?.info.orEmpty()
+                    pendingSources = hits?.map { it.note.path }.orEmpty()
+                    pendingCut = if (found?.passages == true) emptyList() else hits?.filter { it.missing > 0 }?.map { it.note.path }.orEmpty()
+                    val sent = Prompts.userContent(last, hits, noteTexts(vault, listOf(last)), box != null, changed)
+                    messages[at] = last.copy(sent = sent)
+                }
+                val history = Compaction.forModel(messages.toList())
+                return Prompts.chatMessages(config, history, null, noteTexts(vault, Prompts.window(config.chatHistory, history)), tools = box != null, system = system)
+                    .also { request ->
+                        promptEstimate = request.sumOf { Compaction.messageTokens(it) }
+                        overheadTokens = Compaction.tokens(system) + (offered?.let { Compaction.tokens(it.toString()) } ?: 0)
+                        val typed = messages.getOrNull(at)?.content
+                        lastContext = com.arcana.brain.core.ContextInspector.inspect(request, offered, config.model, effectiveContext(config.contextTokens, app.modelContext, app.loadedContext), parts.memory, parts.toolsNote, parts.goal, typed, lastRequest)
+                        lastRequest = request
+                    }
             }
             refreshRequest = ::compose
             compose()
@@ -1703,11 +703,11 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
      * with the name of the method that really ran, shown on the answer's Sources line, and whether the excerpts are the matching passages (true) or the start of the note (the old search, a last
      * resort when nothing is found by words): only the latter can be "only the start was read".
      */
-    private class VaultContext(val hits: List<SearchHit>, val label: String, val passages: Boolean, val info: Map<String, String>, val leftOut: Int = 0)
+    internal class VaultContext(val hits: List<SearchHit>, val label: String, val passages: Boolean, val info: Map<String, String>, val leftOut: Int = 0)
 
-    private fun vaultHits(vault: Vault, query: String, config: AppConfig): VaultContext {
+    internal fun vaultHits(vault: Vault, query: String, config: AppConfig): VaultContext {
         val mode = RetrievalMode.of(config.searchBy)
-        val hybrid = HybridSearch(LexicalIndex.forVault(vault), semanticIndexFor(config, vault), SearchTuning.of(config))
+        val hybrid = HybridSearch(LexicalIndex.forVault(vault), semantic.semanticIndexFor(config, vault), SearchTuning.of(config))
         val (hits, r) = hybrid.hits(vault, query, config.contextNotes, config.contextCharsPerNote, mode)
         if (hits.isNotEmpty() || mode == RetrievalMode.Meaning) return VaultContext(hits, r.label, true, r.found.associate { it.path to (it.via + if (it.evidence.isEmpty()) "" else " · " + it.evidence) }, r.leftOut)
         val old = vault.search(query, config.contextNotes, config.contextCharsPerNote)
@@ -1715,7 +715,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     }
 
     /** The text of every note attached to [window], read from the vault now (so a note that changed is seen as it is). */
-    private fun noteTexts(vault: Vault?, window: List<ChatMessage>): Map<String, String> {
+    internal fun noteTexts(vault: Vault?, window: List<ChatMessage>): Map<String, String> {
         if (vault == null) return emptyMap()
         return window.flatMap { it.noteNames }.distinct().mapNotNull { path ->
             // a skill's entry note goes in as the skill loader gives it (folder, file list, instructions); any other note as its text
@@ -1724,7 +724,7 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         }.toMap()
     }
 
-    private fun finishReply(text: String, stats: ReplyStats?) {
+    internal fun finishReply(text: String, stats: ReplyStats?) {
         // what the answer is built from: the notes the model opened itself and the notes sent with the question, each with how it got there, and the tools it used
         val reads = turnReads.toList()
         val context = pendingSources
@@ -1766,63 +766,11 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
     /** Set by the Prompts screen: the Chat screen sends what is in the message field as soon as it is shown, then clears this. */
     var autoSend by mutableStateOf(false)
 
-    fun startNew() {
-        backlogQuestion = ""
-        backlogId = ""
-        workItemId = ""
-        run = null
-        skillRun = null
-        thinkNext = ""
-        clearRoles()
-        clearGoal()
-        artifacts.clear()
-        toolsDeclined = false
-        messages.clear(); wholeNotes.clear(); cutAccepted.clear()
-        queued.clear()
-        input.clear()
-        attachments.clear()
-        savedMessages = 0
-        id = newId()
+    init {
+        if (app.config.keepChats) store.latest()?.let { open(it) }
     }
 
-    fun open(chat: StoredChat) {
-        clearRoles()
-        clearGoal()
-        artifacts.clear()
-        backlogQuestion = ""
-        backlogId = ""
-        workItemId = ""
-        run = null
-        skillRun = null // a run belongs to the conversation it started in (see docs/skills.md)
-        skillTick++
-        messages.clear(); wholeNotes.clear(); cutAccepted.clear()
-        messages += chat.messages
-        attachments.clear()
-        id = chat.id
-        // A chat brought back from the history is not nagged about: it was already kept, and the user chose to open it.
-        savedMessages = messages.size
-    }
-
-    /** Erases this conversation (also from disk) and starts an empty one. */
-    fun deleteCurrent() {
-        store.delete(id)
-        startNew()
-    }
-
-    fun history(): List<StoredChat> = if (app.config.keepChats) store.list() else emptyList()
-
-    private fun persist() {
-        if (!app.config.keepChats || messages.isEmpty()) return
-        runCatching {
-            // pictures are sent from memory; only their names are kept on disk
-            store.save(StoredChat(id, title, System.currentTimeMillis(), app.config.model, messages.map { it.withoutImageData() }))
-            store.prune(app.config.chatsKept)
-        }
-    }
-
-    private fun newId() = System.currentTimeMillis().toString(36) + (0..99999).random().toString(36)
-
-    private companion object {
+    internal companion object {
         const val MAX_NOTE_CHARS = 60_000
 
         /** With roles for every message, a message shorter than this ("thanks", "yes") is answered without a plan. */
@@ -1837,7 +785,5 @@ class ChatSession(private val app: AppContext, private val store: ChatStore) {
         /** A result that looks like a failure (including a web service's own refusal) is not remembered. */
         val FAILURE_LOOK = Regex("""(?i)^error:|\bHTTP (4|5)\d\d\b|rate.?limit|too many requests|timed out|temporarily unavailable|try again""")
 
-        /** The web tools that *Search and fetch without asking* lets through; `http_request` is not one of them (it can send a body and headers). */
-        val AUTO_WEB = setOf("web_search", "fetch_url")
     }
 }

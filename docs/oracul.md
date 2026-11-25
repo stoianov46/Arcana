@@ -64,8 +64,9 @@ trigger ──► model/server resolved ──► request built ──► (tool 
   one**.
 - **With tools:** `oraculToolbox(model)` returns the worker's toolbox (`toolboxFor(config)`: same allowed folders, project, shell
   and web switches, Plan mode) or null when tools are off in Chat, *Oracul may use tools* is off, or the model has no `tools`
-  capability (`/api/show`); then it only talks. `oraculAgent` runs a short loop (at most `toolSteps` rounds, capped at 10; the last
-  round offers no tools so it must answer). `oraculCall` runs one call: reads follow *Read without asking*, everything else asks
+  capability (`/api/show`); then it only talks. `oraculAgent` runs its rounds through a hidden `Generation`, the same loop as the worker's (at most `toolSteps` rounds, capped at 10; the last
+  round offers no tools so it must answer; the loop guard, the retry after an empty reply or a malformed call, a tool call written as text and the nudge after an announced
+  step all apply; an empty final answer is still an empty opinion, not an error). `oraculCall` runs one call, asked about by `ApprovalPolicy` (`Actor.Oracul`): reads follow *Read without asking*, everything else asks
   through the shared approval queue with a heading `Ψ Oracul · …`, no "always" choice.
 - **One dialog at a time:** every dialog goes through `ChatSession.awaitApproval`, a `Mutex` around the single approval slot, so the
   worker's and the Oracul's requests wait for each other in order.
@@ -126,7 +127,7 @@ nothing** (`SkillRoles.withDefaults`). Roles apply only to a message that carrie
 `applyRoles` runs in the first round's `prepare` (so the worker applies from round one) for a skill **chip**, and when the model
 loads a skill itself with `use_skill` (worker and reviewer only: **a plan is written once, at the start of a message**). A model that is
 not installed or cannot use tools is skipped with a message (`roleNote`, shown as a toast) and the settings' model is used; nothing is
-ever written to the settings. The judge is only the judge: it sees all answers (`ANSWER 1` is the chat model's) and picks or merges.
+ever written to the settings. The judge is only the judge: it sees all answers without the models' names and in a random order (`ANSWER A`, `ANSWER B`…, `Oracul.judgeRequest(…, order)`), so neither the first place nor a name sways it, and picks or merges; `Oracul.judgeLabels` then writes each label's model after it (`Answer B (qwen3.8:27b)`) for the reader. The controller and the goal check are asked for JSON held to a schema (`CONTROL_SCHEMA`, `GOAL_SCHEMA`: `verdict` from a fixed list, `notes`; `Oracul.askVerdict`, Ollama's structured outputs); `parseControl` / `parseGoal` read that JSON first and the `VERDICT:` line as before, and an Ollama that refuses a schema is asked again in plain text.
 
 ## Flows (orchestration)
 
@@ -181,7 +182,7 @@ runs unless *Flow* is set (`AppConfig.flow`).
 ## Specialists as tools (`consult`)
 
 The *subagent* way to use the same stages, as in Claude Code: with **Settings → Flow → Specialists as tools** (`flowTools`, off by default) and tools on, the chat model is offered one
-more pseudo-tool, `consult` (`CONSULT_DEFINITION`, handled by `ChatSession.consult` like `ask_user`, not by the `ToolBox`). It names a `stage` (`analyst`, `planner`, `reviewer`; not the controller
+more chat tool, `consult` (`CONSULT_DEFINITION`, handled by `ChatSession.consult` like `ask_user`, not by the `ToolBox`). It names a `stage` (`analyst`, `planner`, `reviewer`; not the controller
 or the worker) and writes a `brief`; the stage's model (`Flow.careful(config).model(kind)`: *Flow analyst*, *Skill planner*, *Skill reviewer*, else the Oracul model) is asked with the stage's own
 instructions (`Oracul.consultRequest`) and **sees only the brief** (plus the usual earlier-chat header), and its text comes back as the tool's result: `Planner (model) says: …`. So the model
 decides when, and most messages call nobody. Limits: `MAX_CONSULTS` = 3 per message of the user (`consults`, reset by a message), one specialist at a time, no recursion. A stage without a
@@ -210,7 +211,7 @@ continues, so a vision answer is not redone by the chat model. A model-based sel
   under another.
 - **Slash menu:** the highlighted entry shows a usage line (`SlashItem.usage`, `e.g. /oracul qwen3:30b`).
 - **Memory advice (`ModelFit.advice`, `AppContext.memoryAdvice`):** besides the picker labels, a standing note for the model already chosen: `advice(model, role, sizes, worker, ram)` returns null when it is fine, a note when it fits only alone (Ollama swaps it with the main model), and a `⚠` warning when it is too big (swap to disk, CPU or out of memory) with the better installed choice (`Better: …`, or `Install a smaller model`). Roles: main, Oracul (also a skill's planner and reviewer), judge (the judge should stay loaded with the main model). Sizes come from one cheap `/api/tags` call (`OllamaClient.modelSizes`, kept in `AppContext.modelSizes`, refreshed with the connection). It shows in three places: the hint under the selected Settings row, the notice after saving such a row (red for `⚠`), and an orange `⚠` after the Oracul text in the Chat status bar. No advice when the Oracul runs on another server (its memory is unknown).
-- **Memory fit (`ModelFit`):** size on disk × 1.2 against 70% of the physical memory (a rule of thumb, not a measurement) gives
+- **Memory fit (`ModelFit`):** (the context estimate and the unloading before a request use the Mac GPU limit instead, see `GpuMemory` in functionality.md; a pair that fits together is never unloaded) size on disk × 1.2 against 70% of the physical memory (a rule of thumb, not a measurement) gives
   `fits with the main model` / `fits alone (swaps with the main model)` / `too big`. `★ suggested` marks the largest model that fits at all
   for the Oracul (with tools when needed, never the main model or an embedding model) and the largest that stays loaded with the main
   model for the judge. With an Oracul server the memory of that machine is unknown: no verdicts. Nothing is chosen for the user.
@@ -245,7 +246,7 @@ continues, so a vision answer is not redone by the chat model. A model-based sel
   right model, `/compare` with two, several and failing extra models, `/revise` with a note, tools (read tool, a change asks in Auto
   mode and a denial changes nothing, no capability means text only), `/takeover`, skill worker/reviewer/planner and the role table,
   the second server.
-- `CoreTest`: the message predicates, `comparisonParts`, `due`, `turnFacts`, `ModelFit`, `chat_stats` lines, `SkillRoles`.
+- `OraculCoreTest`: the message predicates, `comparisonParts`, `due`, `turnFacts`; `ModelMemoryTest`: `ModelFit`; `ChatStatsTest`: `chat_stats` lines; `SetupAndSkillsTest`: `SkillRoles`.
 - `DesignTest`: the slash parsing and usage lines, the column layout of the split view.
 - Tests never reach the real network: every model is a local fake.
 

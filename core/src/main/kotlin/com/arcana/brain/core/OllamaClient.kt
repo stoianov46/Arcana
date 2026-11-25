@@ -62,6 +62,17 @@ data class ChatMessage(
     val contextAt: Int = 0,
     /** When the message was made, in epoch milliseconds (0 = not known: a chat from before this was kept). `chat_stats` measures the chat's time from these. */
     val at: Long = 0,
+    /**
+     * For a message of yours: exactly what the model was sent for it the first time (its text with the vault excerpts, the attached notes and any note about what changed
+     * since the chat began), blank until it is sent. Every later request sends this again instead of building it anew, so the conversation the model reads never changes
+     * and Ollama can reuse what it already read (a changed earlier message makes it read everything after it again). Never shown; [content] stays what you wrote.
+     */
+    val sent: String = "",
+    /**
+     * For a reply: the model that wrote it, stamped when it joins the chat, so a reply keeps its author's name after the chat model is changed (`/model`, Settings, the
+     * status pane). Blank = not known (a chat from before this was kept): the chat model is named instead. Never sent to a model.
+     */
+    val model: String = "",
 ) {
     companion object {
         /**
@@ -103,7 +114,12 @@ data class ChatChunk(
     val evalMillis: Long = 0,
     /** Tools the model asked for (usually in the last chunk). */
     val toolCalls: List<ToolCall> = emptyList(),
+    /** On the last chunk, why the reply ended: `stop` (it finished), `length` (it hit the token or context limit and was cut off), `load`, `unload`; blank when not said. */
+    val doneReason: String = "",
 ) {
+    /** The reply was cut off by a limit, not finished by the model. */
+    val cutOff: Boolean get() = done && doneReason == "length"
+
     /** What to show under a finished reply; null when Ollama reported no token counts. */
     fun toStats(): ReplyStats? =
         if (promptTokens > 0 || completionTokens > 0) ReplyStats(promptTokens, completionTokens, totalMillis, evalMillis) else null
@@ -170,6 +186,7 @@ private data class WireChunk(
     @SerialName("eval_count") val evalCount: Int = 0,
     @SerialName("total_duration") val totalDuration: Long = 0,
     @SerialName("eval_duration") val evalDuration: Long = 0,
+    @SerialName("done_reason") val doneReason: String = "",
 )
 
 @Serializable
@@ -194,14 +211,19 @@ object OllamaProtocol {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** [jsonMode] asks Ollama to constrain the reply to valid JSON (used when the app needs to read the answer). */
-    fun chatRequest(config: AppConfig, messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, think: kotlinx.serialization.json.JsonElement? = null, repeatPenalty: Double? = null): JsonObject = buildJsonObject {
+    /** [format] is a JSON schema the reply must follow (Ollama's structured outputs); it wins over [jsonMode]. */
+    fun chatRequest(config: AppConfig, messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, think: kotlinx.serialization.json.JsonElement? = null, repeatPenalty: Double? = null, format: kotlinx.serialization.json.JsonElement? = null): JsonObject = buildJsonObject {
         put("model", config.model)
         put("stream", true)
         if (think != null) put("think", think)
         config.keepAliveValue()?.let { put("keep_alive", it) }
-        if (jsonMode) put("format", "json")
+        if (format != null) put("format", format) else if (jsonMode) put("format", "json")
         if (tools != null && tools.isNotEmpty()) put("tools", tools)
-        put("messages", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ChatMessage.serializer()), messages.filter { !it.displayOnly }.map { it.withFilesInlined().copy(thinking = "", think = "") }))
+        val sendable = messages.filter { !it.displayOnly }
+        // the model's thoughts go back only for its tool calls in the turn under way (from the last real message of the user on): a reasoning model then goes on
+        // from its plan instead of working it out again each round. Earlier turns' thoughts are never sent.
+        val turnStart = sendable.indexOfLast { Oracul.isRealUser(it) }
+        put("messages", JsonArray(sendable.mapIndexed { i, m -> wire(m.withFilesInlined(), keepThinking = i > turnStart && m.role == "assistant" && m.toolCalls.isNotEmpty()) }))
         put("options", buildJsonObject {
             // custom sampling (Settings → Ollama → Sampling); in model mode nothing is sent and the model's own defaults apply
             Sampling.options(config).forEach { (k, v) -> put(k, v) }
@@ -209,6 +231,19 @@ object OllamaProtocol {
             // the retry after a loop asks for more than whatever is set
             if (repeatPenalty != null) put("repeat_penalty", repeatPenalty)
         })
+    }
+
+    /** The most thinking sent back with one tool-call round (its end, where the plan stands): see [chatRequest]. */
+    const val SENT_THINKING = 4_000
+
+    /** One message as Ollama reads it: role, text, pictures, tool calls, the tool's name, and (when [keepThinking]) the thoughts. Arcana's own fields (stats, sources, [ChatMessage.sent]…) stay home. */
+    private fun wire(m: ChatMessage, keepThinking: Boolean): JsonObject = buildJsonObject {
+        put("role", m.role)
+        put("content", m.content)
+        if (m.images.isNotEmpty()) put("images", JsonArray(m.images.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+        if (m.toolCalls.isNotEmpty()) put("tool_calls", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ToolCall.serializer()), m.toolCalls))
+        m.toolName?.let { put("tool_name", it) }
+        if (keepThinking && m.thinking.isNotBlank()) put("thinking", m.thinking.takeLast(SENT_THINKING))
     }
 
     fun parseChunk(line: String): ChatChunk {
@@ -223,6 +258,7 @@ object OllamaProtocol {
             totalMillis = chunk.totalDuration / 1_000_000,
             evalMillis = chunk.evalDuration / 1_000_000,
             toolCalls = chunk.message?.toolCalls.orEmpty(),
+            doneReason = chunk.doneReason,
         )
     }
 
@@ -369,6 +405,52 @@ object OllamaProtocol {
     fun parseModels(body: String): List<String> =
         json.decodeFromString<WireTags>(body).models.map { it.name }.sorted()
 
+    /**
+     * True when an HTTP error is worth one more try: Ollama is busy (503, 429: its queue is full) or its model runner stopped and will be started again (a 500 that says
+     * so). Any other error (a bad request, a model that does not exist, a malformed tool call) would only fail again.
+     */
+    fun isTransient(status: Int, error: String): Boolean =
+        status == 503 || status == 429 || status == 502 || status == 504 ||
+            (status == 500 && Regex("""(?i)runner process (has )?(terminated|exited|no longer running)|connection (refused|reset)|EOF|server busy|unexpected server status""").containsMatchIn(error) && !isOutOfMemory(error))
+
+    /** The message when Ollama did not start answering within the Timeout setting. */
+    fun timeoutMessage(model: String, seconds: Int): String =
+        "Ollama did not start answering within $seconds s: $model may still be loading, or it is reading a long conversation. Try again (it may be ready now), " +
+            "raise Settings → Ollama → Timeout, or choose a smaller Context window or model."
+
+    /** The message when a streaming reply went silent for [seconds]. */
+    fun stalledMessage(model: String, seconds: Long): String =
+        "$model stopped sending anything for ${seconds / 60} minutes, so the reply was stopped. Ollama may be stuck: try again, or restart Ollama if it happens again."
+
+    /** True when an error from Ollama says the model ran out of memory (Metal's "Insufficient Memory" from the MLX runner, CUDA, llama.cpp allocation failures). */
+    fun isOutOfMemory(error: String): Boolean =
+        Regex("""(?i)insufficient memory|out ?of ?memory|OutOfMemory|failed to allocate|cudaMalloc failed|unable to allocate|requires more system memory""").containsMatchIn(error)
+
+    /**
+     * The message for an out-of-memory error: which model and context did not fit, how much the GPU may use ([gpu], on a Mac) and what to do about it, with Ollama's own words,
+     * shortened, at the end. [weightsBytes] and [kvBytesPerToken] (0 = unknown) give the estimate of what was needed.
+     */
+    fun outOfMemoryMessage(error: String, model: String, context: Int, weightsBytes: Long, kvBytesPerToken: Long, ramBytes: Long, gpu: GpuMemory.Cap?): String {
+        val ctx = if (context > 0) " with a ${UsageStats.contextSize(context.toLong())} context" else ""
+        // without the cost of a token the context cannot be counted: say what the figure covers instead of letting it read as the whole
+        val need = ModelFit.loadedNeed(weightsBytes, kvBytesPerToken, context).takeIf { it > 0 }?.let {
+            if (kvBytesPerToken > 0 || context <= 0) " needs about ${ModelFit.gb(it)}" else " needs about ${ModelFit.gb(it)} for the model alone, before the cache for its context"
+        }.orEmpty()
+        val limit = when {
+            gpu != null -> ", more than the ${GpuMemory.describe(gpu)} the GPU may use"
+            ramBytes > 0 -> ", more than this machine's ${ModelFit.gb(ramBytes)} can hold next to everything else"
+            else -> ""
+        }
+        val fixes = buildList {
+            add(if (context > 0) "a smaller Context window (Settings → Ollama, or the status pane)" else "a smaller Context window (Settings → Ollama)")
+            add("a smaller model (Ctrl+O)")
+            add("closing other apps")
+            if (gpu != null && ramBytes > 0 && GpuMemory.suggestedMb(ramBytes) * (1L shl 20) > gpu.bytes) add("raising the GPU limit with `${GpuMemory.raiseCommand(ramBytes)}` (until the next restart)")
+        }
+        val said = error.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().trim().let { if (it.length > 160) it.take(159) + "…" else it }
+        return "Out of memory: $model$ctx$need$limit, so Ollama could not run it. Try ${fixes.dropLast(1).joinToString(", ")} or ${fixes.last()}. (Ollama: $said)"
+    }
+
     /** The body of `/api/embed`: one vector per entry of [inputs], in order. */
     fun embedRequest(model: String, inputs: List<String>): JsonObject = buildJsonObject {
         put("model", model)
@@ -390,40 +472,179 @@ class OllamaClient(private val config: () -> AppConfig) {
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()
     private val thinkingValuesCache get() = thinkingValuesByModel
 
-    /** [repeatPenalty] (Ollama's `repeat_penalty`, 1.0 = none) is sent only for a retry after a loop; normally the model's own default stands. */
-    fun chat(messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, repeatPenalty: Double? = null): Flow<ChatChunk> = flow {
+    /**
+     * [repeatPenalty] (Ollama's `repeat_penalty`, 1.0 = none) is sent only for a retry after a loop; normally the model's own default stands. [think] replaces the
+     * thinking setting for this request (`off` for work that needs no reasoning, such as a summary; sent only when the model offers it). [format] is a JSON schema
+     * the reply must follow.
+     *
+     * How the request is guarded: the Timeout setting is how long Ollama may take to START answering (loading the model and reading the prompt come first); once lines
+     * flow, a reply that goes silent for [idleSeconds] is stopped as stalled. A failure before anything streamed (Ollama restarting, busy, its runner stopping) is tried
+     * again up to [RETRIES] times; one during the stream is not (the reply would be doubled). Cancelling the collector closes the stream at once, so Ollama stops too.
+     */
+    fun chat(messages: List<ChatMessage>, jsonMode: Boolean = false, tools: JsonArray? = null, repeatPenalty: Double? = null, think: String? = null, format: kotlinx.serialization.json.JsonElement? = null): Flow<ChatChunk> = flow {
         val cfg = config()
+        runCatching { makeRoom(cfg) }
         val request = HttpRequest.newBuilder(endpoint(cfg, "/api/chat"))
             .timeout(Duration.ofSeconds(cfg.timeoutSeconds.toLong()))
             .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(OllamaProtocol.chatRequest(cfg, messages, jsonMode, tools, thinkFor(cfg), repeatPenalty).toString()))
+            .POST(HttpRequest.BodyPublishers.ofString(OllamaProtocol.chatRequest(cfg, messages, jsonMode, tools, thinkFor(cfg, think), repeatPenalty, format).toString()))
             .build()
-        val future = http.sendAsync(request, HttpResponse.BodyHandlers.ofLines())
-        // Cancelling the future closes the connection, which unblocks the line reader below.
-        val handle = currentCoroutineContext().job.invokeOnCompletion { future.cancel(true) }
+        val stream = open(cfg, request)
+        // closing the stream is what really stops the request: the reader below is blocked in a read, and Ollama stops generating when the connection goes
+        val closer = currentCoroutineContext().job.invokeOnCompletion { runCatching { stream.close() } }
+        val lastLine = java.util.concurrent.atomic.AtomicLong(System.nanoTime())
+        val stalled = java.util.concurrent.atomic.AtomicBoolean(false)
+        val idle = idleSeconds(cfg)
+        val watchdog = WATCHDOG.scheduleAtFixedRate({
+            if (System.nanoTime() - lastLine.get() > idle * 1_000_000_000L && stalled.compareAndSet(false, true)) runCatching { stream.close() }
+        }, 1, 1, java.util.concurrent.TimeUnit.SECONDS)
         try {
+            var finished = false
+            stream.bufferedReader().use { reader ->
+                while (true) {
+                    val line = try {
+                        reader.readLine()
+                    } catch (e: java.io.IOException) {
+                        currentCoroutineContext().ensureActive()
+                        if (stalled.get()) throw OllamaException(OllamaProtocol.stalledMessage(cfg.model, idle), e)
+                        throw OllamaException("The connection to Ollama broke during the reply (${e.message ?: e.javaClass.simpleName}). Send the message again.", e)
+                    } ?: break
+                    lastLine.set(System.nanoTime())
+                    currentCoroutineContext().ensureActive()
+                    if (line.isBlank()) continue
+                    val chunk = try {
+                        OllamaProtocol.parseChunk(line)
+                    } catch (e: OllamaException) {
+                        // the runner can also die part-way, once the context cache grows past what the GPU may take
+                        if (OllamaProtocol.isOutOfMemory(e.message.orEmpty())) throw outOfMemory(cfg, e.message.orEmpty()) else throw e
+                    } catch (e: kotlinx.serialization.SerializationException) {
+                        throw OllamaException("Ollama sent a line Arcana cannot read: ${line.take(160)}", e)
+                    }
+                    emit(chunk)
+                    lastLine.set(System.nanoTime())
+                    if (chunk.done) { finished = true; break }
+                }
+            }
+            currentCoroutineContext().ensureActive()
+            if (stalled.get()) throw OllamaException(OllamaProtocol.stalledMessage(cfg.model, idle))
+            // every reply ends with a `done` line: a stream that stops without one was cut (the runner stopped, the server restarted)
+            if (!finished) throw OllamaException("Ollama ended the reply before it was finished (its model runner may have stopped). Send the message again.")
+        } finally {
+            watchdog.cancel(false)
+            closer.dispose()
+        }
+    }.flowOn(Dispatchers.IO)
+
+    /** How long a streaming reply may stay silent before it counts as stalled: the Timeout setting, but never under 10 minutes (a model writing a long tool call sends nothing until it is done). */
+    private fun idleSeconds(cfg: AppConfig): Long = maxOf(cfg.timeoutSeconds.toLong(), minIdleSeconds)
+
+    /**
+     * Sends [request] and returns the body of a 200 answer to read the stream from. Tries again ([RETRIES] times, waiting a little longer each time) when Ollama cannot be
+     * reached or answers that it is busy or that its runner stopped; never for a time-out (it would only double the wait) or for an out-of-memory error (it would fail again).
+     */
+    private suspend fun open(cfg: AppConfig, request: HttpRequest): java.io.InputStream {
+        var attempt = 0
+        while (true) {
+            val future = http.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream())
+            val handle = currentCoroutineContext().job.invokeOnCompletion { future.cancel(true) }
             val response = try {
                 future.get()
             } catch (e: Exception) {
-                throw OllamaException("Cannot reach Ollama at ${cfg.ollamaUrl}: ${e.cause?.message ?: e.message}", e)
+                currentCoroutineContext().ensureActive()
+                val cause = (e as? java.util.concurrent.ExecutionException)?.cause ?: e
+                if (cause is java.net.http.HttpTimeoutException) throw OllamaException(OllamaProtocol.timeoutMessage(cfg.model, cfg.timeoutSeconds), cause)
+                if (attempt < RETRIES) { kotlinx.coroutines.delay(retryDelaysMs[attempt++]); continue }
+                throw OllamaException(if (cause is java.net.ConnectException) "Cannot reach Ollama at ${cfg.ollamaUrl}: nothing answers there. Is Ollama running? Start the Ollama app (or `ollama serve`) and send the message again."
+                    else "Cannot reach Ollama at ${cfg.ollamaUrl}: ${cause.message ?: cause.javaClass.simpleName}", e)
+            } finally {
+                handle.dispose()
             }
-            if (response.statusCode() != 200) {
-                val body = response.body().use { it.toList().joinToString("\n") }
-                throw OllamaException("Ollama returned HTTP ${response.statusCode()}: ${errorText(body)}")
-            }
-            response.body().use { lines ->
-                for (line in lines) {
-                    currentCoroutineContext().ensureActive()
-                    if (line.isBlank()) continue
-                    val chunk = OllamaProtocol.parseChunk(line)
-                    emit(chunk)
-                    if (chunk.done) break
-                }
-            }
-        } finally {
-            handle.dispose()
+            if (response.statusCode() == 200) return response.body()
+            val error = errorText(response.body().use { it.readBytes().decodeToString() })
+            if (OllamaProtocol.isOutOfMemory(error)) throw outOfMemory(cfg, error)
+            if (OllamaProtocol.isTransient(response.statusCode(), error) && attempt < RETRIES) { kotlinx.coroutines.delay(retryDelaysMs[attempt++]); continue }
+            throw OllamaException("Ollama returned HTTP ${response.statusCode()}: $error")
         }
-    }.flowOn(Dispatchers.IO)
+    }
+
+    /** True when [cfg]'s Ollama runs on this machine, so this machine's memory is the one that counts. */
+    private fun local(cfg: AppConfig): Boolean =
+        runCatching { URI.create(cfg.ollamaUrl.trim()).host?.lowercase()?.trim('[', ']') }.getOrNull() in setOf("localhost", "127.0.0.1", "::1", "0.0.0.0")
+
+    /** What a token of context costs for a model, from `/api/show`, kept per server and model (it does not change). */
+    private val kvCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private suspend fun kvBytes(cfg: AppConfig, model: String): Long {
+        kvCache[cfg.ollamaUrl + " " + model]?.let { return it }
+        // from the model's description, or else from what the loaded model really takes (an MLX build does not describe its layers); 0 is not kept, so a later look can fill it
+        val known = (runCatching { show(model).kvBytesPerToken }.getOrNull() ?: 0L).takeIf { it > 0 } ?: observedKv(model)
+        if (known > 0) kvCache[cfg.ollamaUrl + " " + model] = known
+        return known
+    }
+
+    /** What a token of context costs for [model], seen while it is loaded ([ModelFit.observedKvPerToken]); 0 when it is not loaded or a size is missing. */
+    suspend fun observedKv(model: String): Long {
+        val loaded = loadedModels()?.firstOrNull { ModelStatus.sameModel(it.name, model) } ?: return 0
+        val sizes = modelSizes()
+        return ModelFit.observedKvPerToken(loaded.sizeBytes, sizes[model] ?: sizes["$model:latest"] ?: return 0, loaded.context)
+    }
+
+    /**
+     * Before a request to a local Ollama: when [cfg]'s model is not loaded yet (or will be reloaded with another context) and it would not fit next to the models already in memory,
+     * unloads those others, biggest first, until it fits ([ModelFit.toUnload]). Ollama would otherwise try to keep them and its MLX runner can run out of memory and crash.
+     * The limit is the Mac's GPU limit, or ~70% of the memory elsewhere. Never throws; a remote server is left alone (its memory is not this machine's).
+     */
+    private suspend fun makeRoom(cfg: AppConfig) {
+        if (!local(cfg)) return
+        val ram = ModelFit.physicalMemory().takeIf { it > 0 } ?: return
+        val loaded = loadedModels() ?: return
+        // nothing else in memory: nothing to make room from
+        if (loaded.none { !ModelStatus.sameModel(it.name, cfg.model) }) return
+        val mine = loaded.firstOrNull { ModelStatus.sameModel(it.name, cfg.model) }
+        if (mine != null && (cfg.contextTokens <= 0 || mine.context <= 0 || mine.context == cfg.contextTokens)) return
+        val sizes = modelSizes()
+        val weights = sizes[cfg.model] ?: sizes["${cfg.model}:latest"] ?: return
+        val need = ModelFit.loadedNeed(weights, kvBytes(cfg, cfg.model), cfg.contextTokens)
+        ModelFit.toUnload(cfg.model, need, cfg.contextTokens, loaded, ModelFit.usable(ram, GpuMemory.current())).forEach { unload(cfg, it) }
+    }
+
+    /** Asks Ollama to unload [model] now (`keep_alive: 0`, what `ollama stop` does); failures are ignored. */
+    private fun unload(cfg: AppConfig, model: String) {
+        val request = HttpRequest.newBuilder(endpoint(cfg, "/api/generate"))
+            .timeout(Duration.ofSeconds(30))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(buildJsonObject { put("model", model); put("keep_alive", 0) }.toString()))
+            .build()
+        runCatching { http.send(request, HttpResponse.BodyHandlers.discarding()) }
+        unloaded(model)
+    }
+
+    /** The clear message for an out-of-memory [error] from Ollama (see [OllamaProtocol.outOfMemoryMessage]), with the sizes Ollama can still tell. */
+    private suspend fun outOfMemory(cfg: AppConfig, error: String): OllamaException {
+        val ram = ModelFit.physicalMemory()
+        val local = local(cfg)
+        val sizes = if (local) runCatching { modelSizes() }.getOrDefault(emptyMap()) else emptyMap()
+        val weights = sizes[cfg.model] ?: sizes["${cfg.model}:latest"] ?: 0L
+        val kv = if (local && cfg.contextTokens > 0) runCatching { kvBytes(cfg, cfg.model) }.getOrDefault(0L) else 0L
+        return OllamaException(OllamaProtocol.outOfMemoryMessage(error, cfg.model, cfg.contextTokens, weights, kv, if (local) ram else 0L, if (local) GpuMemory.current() else null))
+    }
+
+    companion object {
+        /** How often a request that failed before anything streamed is sent again, and how long to wait before each try. */
+        const val RETRIES = 2
+
+        /** The shortest silence, in seconds, after which a streaming reply counts as stalled (see [idleSeconds]); tests lower it. */
+        @Volatile var minIdleSeconds = 600L
+
+        /** The waits before each retry, in milliseconds; tests shorten them. */
+        @Volatile var retryDelaysMs = longArrayOf(1_500, 4_000)
+
+        /** One daemon thread that checks every streaming reply for a stall once a second. */
+        private val WATCHDOG = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "ollama-stall-watchdog").apply { isDaemon = true } }
+
+        /** Told the name of each model Arcana unloads to make room (see [makeRoom]), for the status line; set by the app. */
+        @Volatile var unloaded: (String) -> Unit = {}
+    }
 
     /** What the model can do, as Ollama reports it ("completion", "vision", "tools", "thinking"…); empty when it does not say. */
     suspend fun capabilities(model: String): List<String> = show(model).capabilities
@@ -432,8 +653,8 @@ class OllamaClient(private val config: () -> AppConfig) {
      * The `think` to send: what the setting asks for, but only when the model lists that value (a model that cannot think answers `does not support
      * thinking` to any `think`, and one with only on/off has no "low"). Null leaves it to the model.
      */
-    private suspend fun thinkFor(cfg: AppConfig): kotlinx.serialization.json.JsonElement? {
-        val wanted = OllamaProtocol.thinkValue(cfg.thinking) ?: return null
+    private suspend fun thinkFor(cfg: AppConfig, setting: String? = null): kotlinx.serialization.json.JsonElement? {
+        val wanted = OllamaProtocol.thinkValue(setting ?: cfg.thinking) ?: return null
         val allowed = thinkingValuesCache[cfg.ollamaUrl + " " + cfg.model] ?: runCatching { show(cfg.model).thinkingValues }.getOrNull()?.also { thinkingValuesCache[cfg.ollamaUrl + " " + cfg.model] = it } ?: return null
         return wanted.takeIf { (it as kotlinx.serialization.json.JsonPrimitive).content in allowed }
     }
@@ -612,7 +833,7 @@ class OllamaClient(private val config: () -> AppConfig) {
     }
 
     private fun errorText(body: String): String =
-        runCatching { Json.parseToJsonElement(body).let { (it as JsonObject)["error"].toString().trim('"') } }
+        runCatching { ((Json.parseToJsonElement(body) as JsonObject)["error"] as kotlinx.serialization.json.JsonPrimitive).content }
             .getOrDefault(body.take(200))
 }
 

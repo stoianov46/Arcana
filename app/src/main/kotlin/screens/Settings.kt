@@ -241,7 +241,7 @@ private val declared: List<Setting> = listOf(
         "How long Ollama keeps the chat model in memory after your last message. Ollama's default is 5 minutes: after a longer pause the model is loaded again and the whole conversation is read again (a 26-minute pause cost one turn 7 minutes in a real log). A longer time avoids that but keeps the memory taken; Always holds it until Ollama stops. Sent only with requests to the chat model.",
         listOf("" to "Ollama default (5 min)", "30m" to "30 minutes", "1h" to "1 hour", "-1" to "Always"), { it.keepAlive }, { c, v -> c.copy(keepAlive = v) },
     ),
-    stepper(Group.Ollama, "Timeout", "How long to wait for a reply before giving up. ←/→ step by 15 s.", 5..3600, 15, { it.timeoutSeconds }, { c, n -> c.copy(timeoutSeconds = n) }, " s"),
+    stepper(Group.Ollama, "Timeout", "How long Ollama may take to start a reply (loading the model and reading the conversation come first); a reply already streaming is never cut by it, only one silent for 10 minutes. ←/→ step by 15 s.", 5..3600, 15, { it.timeoutSeconds }, { c, n -> c.copy(timeoutSeconds = n) }, " s"),
 
     Setting(
         Group.Vault, "Vault path", "Your Obsidian vault folder. Enter opens a folder browser.",
@@ -341,6 +341,7 @@ private val declared: List<Setting> = listOf(
         },
     ),
     toggle(Group.Ollama, "Model abilities in the bottom bar", "Next to the model name the bottom bar names what Ollama says the model can do: `vision` (it can look at pictures: attach one with Ctrl+O), `thinking` (it reasons before it answers: `]` in Chat shows that), `tools` (it can use your notes and run commands), `♪ audio` (it can hear sound) and `MoE 128` (a mixture of experts with 128 experts: only a few of them work on each token, so it answers faster than a dense model of the same file size, though all of it must still fit in memory) or `dense` (every part of the model works on each token: slower for its size, but no experts to choose from). Nothing is shown for a model that has none of these, or when Ollama does not say.", { it.showModelTraits }, { c, v -> c.copy(showModelTraits = v) }),
+    toggle(Group.Appearance, "Start screen", "On start, a short screen says what Arcana loaded: the model and Ollama, the vault, the memory file, the skills, the tools and semantic search. It closes by itself once everything is checked, or on any key.", { it.showSplash }, { c, v -> c.copy(showSplash = v) }),
     toggle(Group.Appearance, "Logo animation", "While a reply is being generated, the colours of the sidebar logo sweep along it. Off keeps the logo still.", { it.animateLogo }, { c, v -> c.copy(animateLogo = v) }),
 
     toggle(Group.Console, "Answer from vault", "Chat searches your notes for each question and answers from what it finds, citing the notes. You can also switch this per chat with /vault.", { it.chatUseVault }, { c, v -> c.copy(chatUseVault = v) }),
@@ -394,6 +395,7 @@ private val declared: List<Setting> = listOf(
     Setting(Group.Tools, "Brave API key", "Your Brave Search API key, used by the Brave backend. It is stored in config.json on this computer, so keep that file private. Enter types a new key; an empty value removes it.", value = { if (it.searchKey.isEmpty()) "(not set)" else "(set, ends …${it.searchKey.takeLast(4)})" }, editor = Editor.Text { c, v -> c.copy(searchKey = v.trim()) }).showWhen { it.searchBackend == "brave" },
     toggle(Group.Tools, "Web pages", "Lets the model ask to search the web (web_search) and to read a public web page (documentation, articles, JSON). Every address waits for your y / n and is shown in full; pages on your own computer or network are never fetched, and what a page says is treated as text, not as instructions. Plan mode never offers it. Off by default.", { it.toolWeb }, { c, v -> c.copy(toolWeb = v) }),
     toggle(Group.Tools, "Search and fetch without asking", "On: web_search and fetch_url run at once, without your y / n, even in Ask mode (the Chat status bar shows an orange ↗ auto-search). Warning: the search words and the address of a page can carry what the model has read to the outside, so use it for research chats, not with private notes in play. Private addresses are still refused, HTTP requests (http_request) still ask for every one, and the Oracul always asks. Needs Web pages on; Plan mode never offers it. Off by default.", { it.toolAutoSearch }, { c, v -> c.copy(toolAutoSearch = v) }),
+    toggle(Group.Tools, "Ask after web", "On: once the model has read a web page or search results in a turn, every change, shell command and fetch of a new site (or an address with a query) asks you first, even in Auto mode or after you chose \"always\". A page can carry hidden instructions that try to make the model write, run or send something. Turn it off only when you trust the pages it reads. On by default.", { it.askAfterWeb }, { c, v -> c.copy(askAfterWeb = v) }),
     toggle(Group.Tools, "Skills", "Skills are runbooks in your vault, one folder each (Skills/<name>/<name>.skill.md with its scripts and reference notes). On: the model is told which skills exist and can load one with use_skill, and Chat's / menu lists them. Needs Tools in Chat. Also /skills.", { it.skillsEnabled }, { c, v -> c.copy(skillsEnabled = v) }),
     text(Group.Tools, "Skills folder", "The vault folder that holds one folder per skill. Empty = automatic: .arcana/skills (a hidden folder, kept apart from your notes), or an existing Skills/; the row shows the folder in use. Skills in ~/.config/arcana/skills apply to every vault. Move an old Skills/ with: arcana --migrate.", { it.skillsFolder }, { c, v -> c.copy(skillsFolder = v.trim('/')) }, allowEmpty = true, emptyLabel = "(automatic)", emptyShown = { c -> "(automatic) " + skillsWhere(c) }),
     choice(Group.Tools, "Mode", "Ask: every change waits for your y / n. Auto: changes run at once (the old file is always backed up). Plan: read-only, the model investigates and writes a plan without changing anything. Also /mode in Chat.", listOf("ask" to "Ask", "auto" to "Auto", "plan" to "Plan"), { it.toolMode }, { c, v -> c.copy(toolMode = v) }),
@@ -504,7 +506,7 @@ private val sections: Map<Group, List<Pair<String, List<String>>>> = mapOf(
     Group.Tools to listOf(
         "Steps" to listOf("Tools in Chat", "Mode", "Finish open todos", "At the step limit", "Steps per question"),
         "Files and shell" to listOf("Working folder", "Allowed folders", "Read without asking", "Shell commands", "Run commands without asking"),
-        "Web" to listOf("Search backend", "Search address", "Ollama API key", "Brave API key", "Web pages", "Search and fetch without asking"),
+        "Web" to listOf("Search backend", "Search address", "Ollama API key", "Brave API key", "Web pages", "Search and fetch without asking", "Ask after web"),
         "Skills" to listOf("Skills", "Skills folder"),
         "Tool output" to listOf("Calls written as text", "Old tool output", "Remember repeated reads"),
     ),
@@ -607,7 +609,7 @@ private fun projectNote(app: AppContext): String {
     projectNoteCache[key]?.let { (at, text) -> if (System.currentTimeMillis() - at < 10_000) return text }
     val scope = com.arcana.brain.core.SearchScope.of(config.searchIn)
     val home = System.getProperty("user.home")
-    val roots = app.chat.projectRoots(config)
+    val roots = app.chat.semantic.projectRoots(config)
     fun tilde(p: java.nio.file.Path) = p.toString().replace(home, "~")
     fun files(root: java.nio.file.Path): String {
         val source = com.arcana.brain.core.FolderSource(root, config.searchMaxFileKb.coerceIn(10, 5000) * 1000L, vaultRoot = app.openVault().getOrNull()?.root?.toAbsolutePath()?.normalize())
@@ -677,7 +679,10 @@ private fun contextNote(app: AppContext): String {
         "\nOllama holds ${gb(m.sizeBytes)} for ${config.model} with this window (weights plus the cache)." +
             if (memory > 0 && m.sizeBytes > memory * 0.8) " ⚠ That is ${m.sizeBytes * 100 / memory}% of this machine's ${gb(memory)}: other programs will swap. A smaller window frees most of it." else ""
     }.orEmpty()
-    val room = app.tokenRoom?.let { "\nMemory: about ${real(it)} of context fit on this machine next to ${config.model}'s weights (an estimate from the model's cache size and ~70% of the memory)." }.orEmpty()
+    val gpu = app.gpuCap
+    val limit = if (gpu != null) "the ${com.arcana.brain.core.GpuMemory.describe(gpu)} the GPU may use" else "~70% of the memory"
+    val room = app.tokenRoom?.let { "\nMemory: about ${real(it)} of context fit on this machine next to ${config.model}'s weights (an estimate from the model's cache size and $limit)." }.orEmpty() +
+        gpu?.let { g -> val ram = com.arcana.brain.core.ModelFit.physicalMemory(); if (ram > 0 && com.arcana.brain.core.GpuMemory.suggestedMb(ram) * (1L shl 20) > g.bytes) "\nTo give the GPU more, run ${com.arcana.brain.core.GpuMemory.raiseCommand(ram)} in a terminal (asks for your password, lasts until the next restart; Arcana does not change it)." else null }.orEmpty()
     return slow + held + room + (if (tooBig) "\n⚠ You ask for ${real(config.contextTokens.toLong())} but ${config.model} is built for ${real(app.modelContext.toLong())}: the rest is wasted memory (the cache for the window is allocated up front) and can make your Mac swap. Choose ${real(app.modelContext.toLong())} or less." else "") + "\nRight now: " + when {
         loaded > 0 -> "Ollama runs ${config.model} with a window of ${real(loaded.toLong())}" +
             (if (config.contextTokens > 0 && loaded != config.contextTokens) " (you asked for ${real(config.contextTokens.toLong())}; Ollama's figure is the one that counts)" else "") +
@@ -778,7 +783,7 @@ fun SettingsScreen(app: AppContext) {
                             if (editor.embed) append(if ("embed" in d.name.lowercase()) " · embedding model" else " · not named like an embedding model (bge-m3 and all-minilm are, despite the name)")
                         }
                     }
-                    val machine = if (ram > 0) "this machine ${com.arcana.brain.core.ModelFit.gb(ram)}, ~${com.arcana.brain.core.ModelFit.gb(com.arcana.brain.core.ModelFit.budget(ram))} for models" else if (editor.oracul && app.config.oraculUrl.isNotBlank()) "the Oracul server's memory is unknown here" else ""
+                    val machine = if (ram > 0) "this machine ${com.arcana.brain.core.ModelFit.gb(ram)}, ~${com.arcana.brain.core.ModelFit.gb(com.arcana.brain.core.ModelFit.budget(ram))} for models" + (app.gpuCap?.let { " (GPU limit ${com.arcana.brain.core.GpuMemory.describe(it)})" }.orEmpty()) else if (editor.oracul && app.config.oraculUrl.isNotBlank()) "the Oracul server's memory is unknown here" else ""
                     editing = Editing.PickModel(editor, models, notes, androidx.compose.runtime.mutableStateListOf<String>().also { t -> if (editor.multi) t += editor.get(app.config).split(',').map { it.trim() }.filter { it.isNotEmpty() } }, machine)
                 } catch (e: Exception) {
                     notice = Notice("${e.message} Type the model name instead.", isError = true)
@@ -889,7 +894,7 @@ fun SettingsScreen(app: AppContext) {
                             editing = null
                             notice = Notice("Downloading ${com.arcana.brain.core.SemanticSetup.RECOMMENDED}…")
                             app.scope.launch {
-                                val problem = app.chat.installEmbeddingModel(com.arcana.brain.core.SemanticSetup.RECOMMENDED) { notice = Notice(it) }
+                                val problem = app.chat.semantic.installEmbeddingModel(com.arcana.brain.core.SemanticSetup.RECOMMENDED) { notice = Notice(it) }
                                 notice = if (problem == null) Notice("${com.arcana.brain.core.SemanticSetup.RECOMMENDED} is installed and selected. The first semantic search builds the index (or /reindex in Chat).")
                                     else Notice(problem, isError = true)
                             }

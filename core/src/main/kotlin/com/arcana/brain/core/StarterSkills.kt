@@ -7,6 +7,79 @@ class StarterSkill(val name: String, val text: String)
 object StarterSkills {
     val all: List<StarterSkill> = listOf(
         StarterSkill(
+            "obsidian-doctor",
+            """
+---
+name: obsidian-doctor
+description: "Check the health of the Obsidian vault and fix what the user agrees to: notes without a type, emoji or generic names, duplicates, loose notes in the root, unfinished or stale reports, notes linked to nothing, and dead links. It writes a health report with a fix plan and fixes only what the user picks. Use it when the user asks to check, clean up, tidy, lint or doctor the vault, or asks what is wrong with their notes."
+usage: "[a kind to focus on, for example dead links or islands]"
+version: 1
+type: skill
+output: Research/Vault/Reports
+tags: [skill, vault, hygiene, obsidian]
+needs: [vault_health, ask_user, search_notes, read_note, list_notes, grep_files, set_properties, add_tags, append_to_note, create_note, edit_file, move_path, delete_path]
+requires:
+  - "vault_health | step 1: check the vault with vault_health"
+  - "ask_user | step 2: ask the user which kinds of problems to fix"
+  - "create_note | step 3: save the health report"
+  - "vault_health x2 | step 5: check the vault again to see what changed"
+---
+
+# Obsidian doctor
+
+Finds what keeps the vault from being easy to navigate and fixes it with the user's consent. The checks are done by the app (`vault_health`): never count or judge notes yourself.
+
+## Rules
+
+- Change nothing before step 2 is answered. Fix only the kinds the user picked.
+- Never delete a note. Duplicates are merged only when the user says so, and the older copy goes to the trash with `delete_path` (which asks).
+- Prefer the note tools: `set_properties` for a property, `add_tags` for tags, `append_to_note` to add a link. Use `edit_file` only to change a link inside a note's text, and `move_path` to rename or move (both ask).
+- A rename breaks `[[links]]` to the old name: before renaming, find them with `grep_files` (`[[Old Name`) and fix each one after the rename.
+- One fix at a time. If a tool fails, say which note and go on with the next.
+
+## 1. Check
+Call `vault_health` with no arguments. If the user named a kind, call it again with that `kind` and `limit` 50.
+
+## 2. Ask
+Call `ask_user` with `multiple: true`: one option per kind that has problems, worst first, written as `<count> <kind>` (for example `12 notes without a type property`), plus `Only the report, fix nothing`.
+
+## 3. Report
+Save one note with `create_note` in `Research/Vault/Reports`, titled `Vault Health <YYYY-MM-DD>`, starting with these properties:
+
+```
+---
+type: report
+kind: health
+date: <YYYY-MM-DD>
+status: done
+tags: [report, vault, hygiene]
+---
+```
+
+Then: a table `| Kind | Count |` of every kind from step 1, a section `## To fix now` with the kinds the user picked and the notes of each, and a section `## Later` with the rest. Link the notes as `[[Note title]]`.
+
+## 4. Fix
+Work through the picked kinds in this order, one note at a time:
+
+| Kind | How to fix it |
+|---|---|
+| missingtype | read the note, choose one type (index, reference, analysis, comparison, checklist, template, article, guide, report, thought), `set_properties` with `type:` and, if it has none, `add_tags` |
+| island | find the index or hub of its folder (`list_notes` on the folder, a note named like the folder or `… Index`), then `append_to_note` a line `- [[Note title]]` to it; no hub: add it to `Home` |
+| dead_links | `search_notes` the missing title; one clear match: `edit_file` the link to it; no match: tell the user, do not invent a note |
+| reportnotdone | read it: finished in substance → `set_properties` `status: done`; not finished → list it for the user |
+| stalereport | list them for the user with their date: a refresh is a new run of the report's skill, not an edit |
+| symbolname, genericname | propose the new name in the chat, then `grep_files` the old links, `move_path` to the new name, fix the links |
+| looseroot | propose the folder of its subject, then `move_path` it there |
+| duplicatename | read both, say how they differ, and `ask_user` which to keep; merge only if told to |
+
+## 5. Check again
+Call `vault_health` again. `append_to_note` a section `## Result` to the report: each picked kind with its count before and after, and anything left undone with the reason.
+
+## 6. Answer
+In the chat: what was fixed, what is left, and the report as `[[Vault Health <YYYY-MM-DD>]]`.
+""".trimStart(),
+        ),
+        StarterSkill(
             "decompose",
             """
 ---
